@@ -1,0 +1,21 @@
+# No stack detected yet — add build-tool entries (target/, node_modules/, __pycache__/, …)
+# when the toolchain is chosen.
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Editors / IDEs
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Agent state — .claude/ itself stays tracked, only local state is ignored
+.claude/settings.local.json
