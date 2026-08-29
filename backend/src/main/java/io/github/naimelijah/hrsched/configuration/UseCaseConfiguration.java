@@ -1,7 +1,11 @@
 package io.github.naimelijah.hrsched.configuration;
 
+import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
-import io.github.naimelijah.hrsched.scheduling.application.service.ShiftService;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
+import io.github.naimelijah.hrsched.scheduling.application.service.SchedulingService;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
 import io.github.naimelijah.hrsched.workforce.application.service.EmployeeService;
@@ -24,8 +28,13 @@ import org.springframework.context.annotation.Configuration;
 public class UseCaseConfiguration {
 
   @Bean
-  ShiftService shiftService(ShiftRepository shiftRepository) {
-    return new ShiftService(shiftRepository);
+  SchedulingService schedulingService(
+      ShiftRepository shifts,
+      RosterRepository rosters,
+      ConstraintSetRepository constraintSets,
+      WorkforceDirectory workforce,
+      RosterGenerator generator) {
+    return new SchedulingService(shifts, rosters, constraintSets, workforce, generator);
   }
 
   @Bean
