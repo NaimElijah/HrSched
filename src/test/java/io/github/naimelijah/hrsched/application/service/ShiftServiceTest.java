@@ -29,11 +29,12 @@ class ShiftServiceTest {
   private final ShiftService service = new ShiftService(shifts);
 
   @Test
-  void GivenAValidPeriod_WhenSchedulingAShift_ThenItIsStoredAndRetrievable() {
-    ShiftId id = service.schedule(new ScheduleShiftCommand(EIGHT_AM, FOUR_PM));
+  void GivenAValidPeriod_WhenSchedulingAShift_ThenTheStoredShiftIsReturned() {
+    Shift scheduled = service.schedule(new ScheduleShiftCommand(EIGHT_AM, FOUR_PM));
 
-    assertThat(service.findById(id))
-        .hasValueSatisfying(shift -> assertThat(shift.period().start()).isEqualTo(EIGHT_AM));
+    assertThat(scheduled.period().start()).isEqualTo(EIGHT_AM);
+    assertThat(scheduled.period().end()).isEqualTo(FOUR_PM);
+    assertThat(service.findById(scheduled.id())).contains(scheduled);
   }
 
   @Test
