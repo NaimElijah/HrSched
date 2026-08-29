@@ -1,7 +1,7 @@
 package io.github.naimelijah.hrsched.configuration;
 
-import io.github.naimelijah.hrsched.application.port.out.ShiftRepository;
-import io.github.naimelijah.hrsched.application.service.ShiftService;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
+import io.github.naimelijah.hrsched.scheduling.application.service.ShiftService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
