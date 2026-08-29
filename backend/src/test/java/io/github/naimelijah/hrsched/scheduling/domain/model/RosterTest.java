@@ -53,6 +53,19 @@ class RosterTest {
   }
 
   @Test
+  void GivenADuplicateInAGeneratedList_WhenReplacingAssignments_ThenItIsRejected() {
+    ShiftId shift = ShiftId.newId();
+
+    assertThatThrownBy(
+            () ->
+                draft()
+                    .withAssignments(
+                        List.of(new Assignment(shift, ADA), new Assignment(shift, ADA))))
+        .describedAs("generation replaces the list wholesale and must honour the same invariant")
+        .isInstanceOf(DuplicateAssignmentException.class);
+  }
+
+  @Test
   void GivenADraft_WhenPublished_ThenItRecordsTheConstraintVersionThatApprovedIt() {
     Roster published = draft().publishedUnder(7);
 

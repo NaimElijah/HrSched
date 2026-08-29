@@ -4,10 +4,12 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Who works which shifts over a period: the aggregate root of the scheduling context.
@@ -65,23 +67,36 @@ public final class Roster {
   public Roster with(Assignment assignment) {
     Objects.requireNonNull(assignment, "assignment must not be null");
     requireDraft();
-    if (assignments.contains(assignment)) {
-      throw new DuplicateAssignmentException(assignment);
-    }
     List<Assignment> extended = new ArrayList<>(assignments);
     extended.add(assignment);
-    return new Roster(id, organisation, period, status, extended, null);
+    return new Roster(id, organisation, period, status, requireNoDuplicates(extended), null);
   }
 
   /**
    * @param replacement the assignments this draft should carry instead
    * @return a draft with exactly those assignments
    * @throws RosterNotEditableException if this roster is no longer a draft
+   * @throws DuplicateAssignmentException if the same employee appears twice on one shift
    */
   public Roster withAssignments(List<Assignment> replacement) {
     Objects.requireNonNull(replacement, "replacement must not be null");
     requireDraft();
-    return new Roster(id, organisation, period, status, replacement, null);
+    return new Roster(id, organisation, period, status, requireNoDuplicates(replacement), null);
+  }
+
+  /**
+   * Guards the same invariant whichever way assignments arrive, because generation replaces the
+   * list wholesale while manual editing appends one at a time, and an invariant enforced on only
+   * one of two paths is not enforced.
+   */
+  private static List<Assignment> requireNoDuplicates(List<Assignment> candidates) {
+    Set<Assignment> seen = new HashSet<>();
+    for (Assignment assignment : candidates) {
+      if (!seen.add(assignment)) {
+        throw new DuplicateAssignmentException(assignment);
+      }
+    }
+    return candidates;
   }
 
   /**
@@ -121,17 +136,19 @@ public final class Roster {
    * Groups the assignments into one schedule per employee, which is what constraints are evaluated
    * against.
    *
-   * @param shiftPeriods when each assigned shift runs
+   * @param shiftPeriods when each assigned shift runs; must cover every assigned shift
    * @return one schedule per employee appearing in this roster
+   * @throws RosterNotVerifiableException if any assigned shift is missing from {@code shiftPeriods}
    */
   public List<EmployeeSchedule> schedulesFor(Map<ShiftId, TimeRange> shiftPeriods) {
     Objects.requireNonNull(shiftPeriods, "shiftPeriods must not be null");
     Map<EmployeeId, List<TimeRange>> byEmployee = new LinkedHashMap<>();
     for (Assignment assignment : assignments) {
       TimeRange when = shiftPeriods.get(assignment.shift());
-      if (when != null) {
-        byEmployee.computeIfAbsent(assignment.employee(), key -> new ArrayList<>()).add(when);
+      if (when == null) {
+        throw new RosterNotVerifiableException(id, assignment.shift());
       }
+      byEmployee.computeIfAbsent(assignment.employee(), key -> new ArrayList<>()).add(when);
     }
     return byEmployee.entrySet().stream()
         .map(entry -> new EmployeeSchedule(entry.getKey(), entry.getValue()))
