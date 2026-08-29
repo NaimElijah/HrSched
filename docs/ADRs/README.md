@@ -12,6 +12,8 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-001](ADR-001-java-spring-boot-maven.md) | Build HrSched on Java 21, Spring Boot, and Maven | Accepted | 2026-08-29 |
 | [ADR-002](ADR-002-single-command-build-gate.md) | Make `./mvnw verify` the single build gate, formatted by Spotless | Accepted | 2026-08-29 |
 | [ADR-003](ADR-003-hexagonal-architecture-with-ddd.md) | Structure the application as a hexagon, enforced by ArchUnit | Accepted | 2026-08-29 |
+| [ADR-006](ADR-006-organise-packages-by-bounded-context.md) | Organise packages by bounded context, not by layer | Accepted | 2026-08-29 |
+| [ADR-007](ADR-007-monorepo-backend-and-frontend.md) | Keep backend and frontend in one repository, as sibling directories | Accepted | 2026-08-29 |
 
 ## Decisions waiting to be recorded
 
@@ -21,7 +23,6 @@ Known-open and blocking work elsewhere. An entry here is a placeholder, **not** 
 | --- | --- | --- |
 | ADR-004 | Data storage and schema strategy | Replacing the in-memory adapter; persistence guarantees; migration rules |
 | ADR-005 | Roster generation: manual, assisted, or solver-driven | Whether a constraint solver becomes a dependency |
-| ADR-006 | Bounded contexts, once there is more than one | Whether scheduling, absence, and identity stay one model |
 
 ## Conventions
 

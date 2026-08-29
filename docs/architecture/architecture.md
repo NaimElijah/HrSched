@@ -12,15 +12,25 @@ For *what the system must do*, see [requirements.md](../requirements/requirement
 > **Current state:** the hexagon is in place and enforced, but it is nearly empty. One
 > walking-skeleton use case exists — schedule a shift, read it back — which satisfies **no
 > stated functional requirement**. It is scaffolding that keeps the architecture rules
-> honest, not a delivered capability.
+> honest, not a delivered capability. The `workforce` context is smaller still: an identity
+> and a name, created ahead of its requirements so the cross-context rule is not vacuous
+> (see [ADR-006](../ADRs/ADR-006-organise-packages-by-bounded-context.md)).
 
 ---
 
 ## Architecture overview
 
-A single Spring Boot process, packaged as an executable JAR, serving HTTP on port 8080 via
-embedded Tomcat. Inside it, the code is a **hexagon**: a framework-free core surrounded by
-adapters that translate between the outside world and the core's ports.
+The repository holds `backend/` and, once a framework is chosen, `frontend/` as siblings
+([ADR-007](../ADRs/ADR-007-monorepo-backend-and-frontend.md)). Only the backend exists today.
+
+The backend is a single Spring Boot process, packaged as an executable JAR, serving HTTP on
+port 8080 via embedded Tomcat. Its code is organised **by bounded context** — each context a
+top-level package holding its own complete **hexagon**: a framework-free core surrounded by
+adapters that translate between the outside world and the core's ports
+([ADR-006](../ADRs/ADR-006-organise-packages-by-bounded-context.md)).
+
+Two contexts exist: `scheduling`, which has the walking skeleton, and `workforce`, which has
+only a domain. **Contexts may not depend on each other**, enforced by the build.
 
 Dependencies point inward only. The domain knows nothing about the application layer, the
 application layer knows nothing about adapters or Spring, and only `adapter` and
@@ -30,16 +40,22 @@ application layer knows nothing about adapters or Spring, and only `adapter` and
 flowchart LR
     client[HTTP client]
 
-    subgraph adapters [Adapters]
-        web["adapter.in.web<br/>ShiftController"]
-        store["adapter.out.persistence<br/>InMemoryShiftRepository"]
+    subgraph scheduling [scheduling context]
+        direction LR
+        subgraph adapters [Adapters]
+            web["adapter.in.web<br/>ShiftController"]
+            store["adapter.out.persistence<br/>InMemoryShiftRepository"]
+        end
+        subgraph hexagon [Hexagon - framework-free]
+            portIn["application.port.in<br/>ScheduleShiftUseCase, FindShiftUseCase"]
+            service["application.service<br/>ShiftService"]
+            portOut["application.port.out<br/>ShiftRepository"]
+            domain["domain.model<br/>Shift, ShiftPeriod, ShiftId"]
+        end
     end
 
-    subgraph hexagon [Hexagon - framework-free]
-        portIn["application.port.in<br/>ScheduleShiftUseCase, FindShiftUseCase"]
-        service["application.service<br/>ShiftService"]
-        portOut["application.port.out<br/>ShiftRepository"]
-        domain["domain.model<br/>Shift, ShiftPeriod, ShiftId"]
+    subgraph workforce [workforce context]
+        wfDomain["domain.model<br/>Employee, EmployeeId"]
     end
 
     client --> web
@@ -48,19 +64,22 @@ flowchart LR
     service --> domain
     service --> portOut
     store -.implements.-> portOut
+
+    scheduling -. "may not depend on<br/>(enforced by the build)" .- workforce
 ```
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
-| `domain.model` | `Shift` (entity, identity equality), `ShiftPeriod` and `ShiftId` (value objects), `InvalidShiftPeriodException`. Enforces the one invariant that exists: a period must end after it starts. JDK imports only. |
-| `application.port.in` | Driving ports — `ScheduleShiftUseCase`, `FindShiftUseCase` — plus the transport-independent `ScheduleShiftCommand`. |
-| `application.port.out` | Driven ports. `ShiftRepository` states what the application needs from storage; storage conforms to it, never the reverse. |
-| `application.service` | `ShiftService` orchestrates: turns a command into domain objects, lets the domain reject what is invalid, hands the result to a port. Holds no rules and no annotations. |
-| `adapter.in.web` | `ShiftController`, its request/response DTOs, and `ShiftExceptionHandler`, which translates a domain rule violation into an RFC 9457 problem with status 400. |
-| `adapter.out.persistence` | `InMemoryShiftRepository`, a `ConcurrentHashMap`. A placeholder until ADR-004. |
+| `scheduling.domain.model` | `Shift` (entity, identity equality), `ShiftPeriod` and `ShiftId` (value objects), `InvalidShiftPeriodException`. Enforces the one invariant that exists: a period must end after it starts. JDK imports only. |
+| `scheduling.application.port.in` | Driving ports — `ScheduleShiftUseCase`, `FindShiftUseCase` — plus the transport-independent `ScheduleShiftCommand`. |
+| `scheduling.application.port.out` | Driven ports. `ShiftRepository` states what the application needs from storage; storage conforms to it, never the reverse. |
+| `scheduling.application.service` | `ShiftService` orchestrates: turns a command into domain objects, lets the domain reject what is invalid, hands the result to a port. Holds no rules and no annotations. |
+| `scheduling.adapter.in.web` | `ShiftController`, its request/response DTOs, and `ShiftExceptionHandler`, which translates a domain rule violation into an RFC 9457 problem with status 400. |
+| `scheduling.adapter.out.persistence` | `InMemoryShiftRepository`, a `ConcurrentHashMap`. A placeholder until ADR-004. |
 | `configuration` | `UseCaseConfiguration` constructs application services as beans, so they need no Spring annotation. |
+| `workforce.domain.model` | `Employee` (entity, identity equality), `EmployeeId` (value object), `InvalidEmployeeNameException`. One invariant: a name that is not blank. No use cases and no adapters — see the current-state note above. |
 | `HrSchedApplication` | Composition root. Starts Spring and nothing else. |
 | Spring Boot Actuator | `/actuator/health`, `/health/liveness`, `/health/readiness`. Probes are enabled explicitly because Spring defaults them off outside Kubernetes. |
 
@@ -119,9 +138,28 @@ At build time:
   `@Service`; `configuration.UseCaseConfiguration` constructs them. Only `adapter` and
   `configuration` may import Spring.
 - **The dependency rule is enforced, not merely documented.** `HexagonalArchitectureTest`
-  runs in `./mvnw verify` with four rules: domain depends on nothing but the JDK, application
-  is free of the framework, dependencies point inward, packages are free of cycles. Both the
-  domain rule and the layered rule were confirmed to fail when a violation is introduced.
+  runs in `./mvnw verify` with five rules: the domain depends on nothing but the JDK, the
+  application is free of the framework, dependencies point inward, contexts do not depend on
+  each other, and a context's own layers are free of cycles.
+- **Every one of those five has been observed failing** on a deliberately introduced violation,
+  then reverted. Four fail in isolation; `layers_within_a_context_are_free_of_cycles` fires
+  alongside the inward-dependency rules, because any layer cycle also points outward.
+- **A sixth rule was removed as dead.** A context-level cycle check had no failure mode left:
+  any cycle between two contexts requires a dependency between them, which
+  `contexts_do_not_depend_on_each_other` already forbids outright. Cycles are now checked one
+  level deeper, between a context's own layers, where they can still occur.
+- **Bounded contexts are independent, and this is enforced.**
+  `contexts_do_not_depend_on_each_other` fails the build when one context references another.
+  The exemption is narrow on purpose: only classes actually annotated `@Configuration` may
+  cross contexts, not everything that happens to live in the `configuration` package — a
+  package-wide exemption would be a sanctioned back door for cross-context logic. Confirmed by
+  referencing `workforce.EmployeeId` from `scheduling.Shift` and watching the build fail.
+- **There is no `shared` package.** Nothing is shared by two contexts yet. It will be added the
+  first time two genuinely need the same type, and that deserves its own ADR — a shared kernel
+  is a coupling, not a convenience.
+- **The build is the boundary for style and correctness.** Spotless runs in `validate`, so a
+  formatting violation fails the build before tests execute. There is no separate lint step to
+  forget.
 - **`Shift` is an entity, not a record.** Equality is by `ShiftId` alone, because two shifts
   with identical periods are still different shifts. `ShiftId` and `ShiftPeriod` are records,
   because they *are* their values.
@@ -129,9 +167,12 @@ At build time:
   ends after it starts, so no caller has to check.
 - **`Shift` is not yet an aggregate root.** It will guard headcount, qualifications, and
   assignments once Q2 and Q4 are answered. Modelling them now would encode invented policy.
-- **Persistence is deliberately absent.** No JPA or JDBC starter is on the classpath, so
-  ADR-004 has not been made by accident. Replacing `InMemoryShiftRepository` is the whole of
-  the change when it is.
+- **`Employee` rejects a null name with a `NullPointerException`, not a domain exception.**
+  Null is a programming defect and must surface as a 500; only a blank name is a domain rule
+  and a 400. Every type in the codebase orders its checks the same way: null first, rule second.
+- **Persistence is deliberately absent.** No JPA or JDBC starter is on the classpath, so the
+  storage decision (ADR-004) has not been made by accident. Replacing
+  `InMemoryShiftRepository` is the whole of the change when it is.
 - **Time is modelled as `Instant`.** Rosters are usually read in a site's local time, so this
   is likely to change once Q3 and Q5 are answered.
 - **Jackson 3.** Boot 4.1.1 ships `tools.jackson.databind`, not `com.fasterxml.jackson.databind`.
