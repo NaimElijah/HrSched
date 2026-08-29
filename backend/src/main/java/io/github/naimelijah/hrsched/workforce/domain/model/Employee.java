@@ -15,7 +15,7 @@ import java.util.Objects;
  * policy in the one place that must be trustworthy.
  *
  * <p>What is here is only what holds in any jurisdiction and any tenancy model: a person has an
- * identity, and a name that is not blank. See ADR-004 for why this context exists at all before its
+ * identity, and a name that is not blank. See ADR-006 for why this context exists at all before its
  * requirements do.
  */
 public final class Employee {
@@ -26,11 +26,13 @@ public final class Employee {
   /**
    * @param id the employee's identity, never {@code null}
    * @param name the employee's name, never {@code null} and never blank
-   * @throws InvalidEmployeeNameException if {@code name} is null or contains only whitespace
+   * @throws NullPointerException if {@code id} or {@code name} is null
+   * @throws InvalidEmployeeNameException if {@code name} contains only whitespace
    */
   public Employee(EmployeeId id, String name) {
     this.id = Objects.requireNonNull(id, "id must not be null");
-    if (name == null || name.isBlank()) {
+    Objects.requireNonNull(name, "name must not be null");
+    if (name.isBlank()) {
       throw new InvalidEmployeeNameException();
     }
     this.name = name;

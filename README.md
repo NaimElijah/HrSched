@@ -141,7 +141,7 @@ database, no third-party API, and no authentication.
 | Framework | Spring Boot | 4.1.1 | Supplies the HTTP boundary and health endpoints as configuration rather than code |
 | HTTP | `spring-boot-starter-webmvc` | via Boot BOM | Embedded Tomcat. **Boot 4.x renamed this** from `spring-boot-starter-web` |
 | Operations | `spring-boot-starter-actuator` | via Boot BOM | Health and readiness probes, required of every service by the project baseline |
-| Architecture | ArchUnit | 1.5.0 | Fails the build on a broken dependency rule or a cross-context reference. [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md), [ADR-004](docs/ADRs/ADR-004-organise-packages-by-bounded-context.md) |
+| Architecture | ArchUnit | 1.5.0 | Fails the build on a broken dependency rule or a cross-context reference. [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md), [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md) |
 | Build | Maven Wrapper | 3.9.16 | Toolchain pinned in the repo; no global Maven install needed |
 | Format | Spotless + google-java-format | 3.10.0 / 1.27.0 | Bound to `validate`, so formatting is checked by the same command that builds |
 | Test | JUnit 5, AssertJ, MockMvc | via Boot BOM | Boot 4.x splits the old `spring-boot-starter-test` into per-concern starters |
@@ -188,9 +188,12 @@ flowchart LR
 
 These are not conventions — they are **build failures**. `HexagonalArchitectureTest` runs in
 `./mvnw verify` and fails when the domain imports Spring, when the application reaches into an
-adapter, when one context references another, or when packages form a cycle. Every rule has
-been observed failing on a deliberately introduced violation; a rule that has only ever been
-green proves nothing.
+adapter, when one context references another, or when a context's own layers form a cycle.
+
+All five rules have been observed failing on a deliberately introduced violation, then
+reverted — four in isolation, and the layer-cycle rule alongside the inward-dependency rules.
+A rule that has only ever been green proves nothing, so a sixth rule was **deleted** once it
+turned out it could no longer fail at all.
 
 Component detail, the request sequence, and what is deliberately *not* modelled yet are in
 [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
@@ -207,8 +210,8 @@ HrSched/
 │       │   ├── application/port/in/    #   driving ports + commands
 │       │   ├── application/port/out/   #   ShiftRepository
 │       │   ├── application/service/    #   ShiftService. No Spring annotations.
-│       │   └── adapter/in/web/         #   controller, DTOs, problem-detail handler
-│       │       out/persistence/        #   InMemoryShiftRepository (until ADR-006)
+│       │   ├── adapter/in/web/         #   controller, DTOs, problem-detail handler
+│       │   └── adapter/out/persistence/ #   InMemoryShiftRepository (until ADR-004)
 │       ├── workforce/                  # bounded context — domain only, no use cases
 │       │   └── domain/model/           #   Employee, EmployeeId
 │       ├── configuration/              # Spring wiring for every context
@@ -219,7 +222,7 @@ HrSched/
 ```
 
 `frontend/` does not exist yet — it is created when a framework is chosen, with its own ADR,
-rather than sitting empty ([ADR-005](docs/ADRs/ADR-005-monorepo-backend-and-frontend.md)).
+rather than sitting empty ([ADR-007](docs/ADRs/ADR-007-monorepo-backend-and-frontend.md)).
 
 There is no `shared/` package: nothing is shared by two contexts yet, and one created in
 anticipation becomes a dumping ground.
@@ -242,7 +245,8 @@ All of these run from `backend/`.
    `<context>/application/port/out`.
 4. Implement it in `<context>/application/service` — no annotations.
 5. Register the bean in `configuration/UseCaseConfiguration`.
-6. Add the adapters: `<context>/adapter/in/web` for transport, `adapter/out/…` for the port.
+6. Add the adapters: `<context>/adapter/in/web` for transport, `<context>/adapter/out/…` for
+   the port.
 7. Test the domain and service without Spring; test the slice through HTTP.
 
 Never reach into another context to do it. That fails the build, by design.
@@ -277,8 +281,8 @@ From `backend/`:
 | `ShiftPeriodTest` | Domain | The one invariant that exists, plus null and boundary cases. No Spring. |
 | `ShiftServiceTest` | Application | Use cases against a hand-written stub of their own port. No Spring, no mocking framework. |
 | `ShiftHttpTest` | End to end | Drives the full hexagon over HTTP — controller, port, service, in-memory adapter. |
-| `EmployeeTest` | Domain (workforce) | The non-blank-name invariant and identity equality. No Spring. |
-| `HexagonalArchitectureTest` | Whole codebase | Five ArchUnit rules: dependency direction, plus context independence. |
+| `EmployeeTest` | Domain (workforce) | Name and identity invariants, one scenario per test. No Spring. |
+| `HexagonalArchitectureTest` | Whole codebase | Five ArchUnit rules: dependency direction, context independence, layer cycles. |
 | `HrSchedApplicationTests` | Spring context | The application starts. |
 
 Naming follows `Given<scenario>_When<action>_Then<result>`. Tests run against the public
@@ -289,7 +293,7 @@ dependence.
 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). That single command is the merge gate.
 
 *Not yet:* coverage reporting, and integration tests against real dependencies in containers —
-there is nothing to connect to until ADR-006.
+there is nothing to connect to until ADR-004.
 
 ## Deployment and operations
 
@@ -308,10 +312,10 @@ instrumentation.
 | [ADR-001](docs/ADRs/ADR-001-java-spring-boot-maven.md) | Java 21, Spring Boot 4.1.1, Maven Wrapper | Boot 4.x is recent, so most existing tutorials name things that no longer exist |
 | [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md) | `./mvnw verify` as the single gate, Spotless for format | google-java-format is not configurable; formatting fails the build before tests run |
 | [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md) | Hexagon in one module, enforced by ArchUnit | Many more classes per use case; hand-wiring; enforcement is a test, not the compiler |
-| [ADR-004](docs/ADRs/ADR-004-organise-packages-by-bounded-context.md) | Organise packages by bounded context | A layer is no longer one place; `workforce` precedes its requirements |
-| [ADR-005](docs/ADRs/ADR-005-monorepo-backend-and-frontend.md) | Monorepo: `backend/` + `frontend/` siblings | Every backend command grows a `cd`; CI and Dependabot need explicit paths |
+| [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md) | Organise packages by bounded context | A layer is no longer one place; `workforce` precedes its requirements |
+| [ADR-007](docs/ADRs/ADR-007-monorepo-backend-and-frontend.md) | Monorepo: `backend/` + `frontend/` siblings | Every backend command grows a `cd`; CI and Dependabot need explicit paths |
 
-Still open and blocking: **ADR-006** (data storage) and **ADR-007** (roster generation
+Still open and blocking: **ADR-004** (data storage) and **ADR-005** (roster generation
 strategy). See the [ADR index](docs/ADRs/).
 
 ## Documentation
@@ -333,7 +337,7 @@ a two-endpoint walking skeleton, health probes, and the decisions behind them.
 
 **Next:** answer the [open questions](docs/requirements/requirements.md#open-questions) —
 particularly Q2 (roles) and Q4 (working-time jurisdiction) — then model the real domain and
-write ADR-006 before the first persistence adapter.
+write ADR-004 before the first persistence adapter.
 
 **Known limitations**
 
@@ -342,7 +346,7 @@ write ADR-006 before the first persistence adapter.
 - **`workforce` precedes its requirements.** It exists so the context-independence rule is not
   vacuous, and holds only an identity and a non-blank name. If Q2 or Q4 land differently,
   `Employee` may be wrong or may belong in a differently drawn context. It is small on purpose.
-- **Nothing survives a restart.** Storage is a `ConcurrentHashMap` until ADR-006.
+- **Nothing survives a restart.** Storage is a `ConcurrentHashMap` until ADR-004.
 - No authentication or authorisation. Every endpoint is open.
 - Time is modelled as `Instant`; rosters are usually read in local time, so this will likely
   change once Q3 and Q5 are answered.

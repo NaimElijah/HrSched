@@ -10,7 +10,7 @@ hexagon**, and both the hexagon and context independence are enforced by build-f
 What it does not have is a domain. `scheduling` holds one walking-skeleton use case (schedule
 a shift, read it back) that satisfies **no stated requirement**. `workforce` holds an identity
 and a non-blank name, and deliberately precedes its requirements — it exists so the
-context-independence rule is not vacuous (ADR-004). Neither is a feature.
+context-independence rule is not vacuous (ADR-006). Neither is a feature.
 
 Everything in `docs/requirements/requirements.md` from *Functional requirements* onward is
 still `TODO`. A `TODO` there is a question for the repo owner, not a gap for an agent to fill
@@ -18,13 +18,13 @@ in. Do not invent a requirement, a domain rule, or a persistence choice to make 
 look complete.
 
 Before extending the domain, Q2 (roles) and Q4 (working-time jurisdiction) need answers;
-before adding persistence, ADR-006 needs writing. Adding a JPA starter would make ADR-006 by
+before adding persistence, ADR-004 needs writing. Adding a JPA starter would make ADR-004 by
 accident — do not. Do not grow `workforce` to fill the gap either; it is small on purpose.
 
 ## Commands
 
 All commands run **from `backend/`** and go through the committed Maven Wrapper. No global
-Maven install is needed. The repository root builds nothing (ADR-005).
+Maven install is needed. The repository root builds nothing (ADR-007).
 
 - Build + test + format + architecture (**the whole gate; what CI runs**): `./mvnw verify`
 - Run: `./mvnw spring-boot:run` — serves on `http://localhost:8080`
@@ -37,10 +37,10 @@ On Windows without a POSIX shell, use `mvnw.cmd`. Add `-B` for non-interactive o
 ## Layout
 
 Repository root: `backend/`, `docs/`, `LICENSE`, `README.md`. `frontend/` will be a sibling of
-`backend/` when a framework is chosen (ADR-005); it does not exist yet.
+`backend/` when a framework is chosen (ADR-007); it does not exist yet.
 
 Inside `backend/src/main/java/io/github/naimelijah/hrsched/`, the package path *is* the
-dependency rule — see ADR-003 and ADR-004. Every context repeats the same shape:
+dependency rule — see ADR-003 and ADR-006. Every context repeats the same shape:
 
 - `<context>/domain/model/` — entities and value objects. **JDK imports only.**
 - `<context>/application/port/in/` — driving ports (use case interfaces) and commands.
@@ -55,6 +55,8 @@ them sit `configuration/` (Spring wiring for every context) and `HrSchedApplicat
 There is no `shared/` package. Do not create one to solve a single duplication — a shared
 kernel is a coupling and needs its own ADR.
 
+Outside `backend/`:
+
 - `docs/requirements/`, `docs/architecture/`, `docs/ADRs/` — what, how, and why.
 - `.github/workflows/ci.yml` — runs `./mvnw verify` in `backend/`, nothing else.
 
@@ -62,13 +64,15 @@ kernel is a coupling and needs its own ADR.
 
 - **Dependencies point inward, and contexts are independent. Both are enforced.**
   `HexagonalArchitectureTest` fails the build if the domain imports Spring, if the application
-  touches an adapter, if one context references another, or if packages form a cycle. Do not
-  weaken or delete a rule to make code pass — the rule is the point.
+  touches an adapter, if one context references another, or if a context's own layers form a
+  cycle. Do not weaken or delete a rule to make code pass — the rule is the point. Deleting one
+  because it is provably unable to fail is a different thing, and needs the proof.
 - **New code belongs to a context.** If it fits none of the existing ones, that is a new
   bounded context and a new ADR, not a new top-level package.
-- **When adding an architecture rule, watch it fail first.** Every rule here has been observed
-  failing on a deliberately introduced violation, then reverted. A rule that has only ever been
-  green proves nothing.
+- **When adding an architecture rule, watch it fail first.** All five rules here have been
+  observed failing on a deliberately introduced violation, then reverted. A rule that has only
+  ever been green proves nothing — one rule was deleted after it turned out it could no longer
+  fail, being fully subsumed by `contexts_do_not_depend_on_each_other`.
 - **Adding a use case:** pick the context → domain concept → port in/out → service (no
   annotation) → register in `UseCaseConfiguration` → adapters → tests. Forgetting the bean
   registration fails at startup, not at compile time.

@@ -1,4 +1,4 @@
-# ADR-005: Keep backend and frontend in one repository, as sibling directories
+# ADR-007: Keep backend and frontend in one repository, as sibling directories
 
 - **Status:** Accepted
 - **Date:** 2026-08-29
@@ -67,6 +67,15 @@ default.
 - **CI will grow.** A single job runs the backend today; a frontend means either a second job or
   path filters, and getting path filters wrong silently skips checks.
 - The repository root no longer builds anything, which surprises tools that assume it does.
+- **The repository baseline's "one command to set up, run, and test" is now unmet at the root.**
+  Before this change `./mvnw verify` at the top level was that command; it is now
+  `cd backend && ./mvnw verify`, and CI encodes the same knowledge separately in
+  `defaults.run.working-directory`. That is two places holding one fact — precisely the drift
+  ADR-002 exists to prevent. No root task runner is added here because `make` is not installed
+  on the development machine (see ADR-001) and inventing a shell script for a single `cd` would
+  be worse than the gap. **This is a known, accepted debt**, and it gets more expensive the
+  moment `frontend/` lands and the root needs to orchestrate two builds — which is the trigger
+  to fix it properly.
 
 ## Alternatives considered
 

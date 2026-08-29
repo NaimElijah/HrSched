@@ -16,16 +16,22 @@ class EmployeeTest {
   }
 
   @Test
-  void GivenABlankName_WhenConstructingAnEmployee_ThenItIsRejected() {
+  void GivenAWhitespaceOnlyName_WhenConstructingAnEmployee_ThenItIsRejected() {
     assertThatThrownBy(() -> new Employee(EmployeeId.newId(), "   "))
         .isInstanceOf(InvalidEmployeeNameException.class)
         .hasMessageContaining("not blank");
+  }
 
+  @Test
+  void GivenAnEmptyName_WhenConstructingAnEmployee_ThenItIsRejected() {
     assertThatThrownBy(() -> new Employee(EmployeeId.newId(), ""))
         .isInstanceOf(InvalidEmployeeNameException.class);
+  }
 
+  @Test
+  void GivenANullName_WhenConstructingAnEmployee_ThenItIsRejected() {
     assertThatThrownBy(() -> new Employee(EmployeeId.newId(), null))
-        .isInstanceOf(InvalidEmployeeNameException.class);
+        .isInstanceOf(NullPointerException.class);
   }
 
   @Test
