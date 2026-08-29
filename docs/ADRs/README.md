@@ -13,10 +13,16 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-002](ADR-002-single-command-build-gate.md) | Make `./mvnw verify` the single build gate, formatted by Spotless | Accepted | 2026-08-29 |
 | [ADR-003](ADR-003-hexagonal-architecture-with-ddd.md) | Structure the application as a hexagon, enforced by ArchUnit | Accepted | 2026-08-29 |
 | [ADR-004](ADR-004-organise-packages-by-bounded-context.md) | Organise packages by bounded context, not by layer | Accepted | 2026-08-29 |
+| [ADR-005](ADR-005-monorepo-backend-and-frontend.md) | Keep backend and frontend in one repository, as sibling directories | Accepted | 2026-08-29 |
 
 ## Decisions waiting to be recorded
 
 Known-open and blocking work elsewhere. An entry here is a placeholder, **not** a decision.
+
+Numbers here are **not reserved**. ADR-001 and ADR-003 refer to the storage decision as
+"ADR-004" because that number was free when they were written; it was taken by the
+bounded-context record, and storage is now ADR-006. Accepted ADRs are never edited to chase a
+renumbering — see the note in [ADR-004](ADR-004-organise-packages-by-bounded-context.md).
 
 | Will be | Decision | Blocks |
 | --- | --- | --- |

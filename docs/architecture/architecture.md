@@ -12,15 +12,25 @@ For *what the system must do*, see [requirements.md](../requirements/requirement
 > **Current state:** the hexagon is in place and enforced, but it is nearly empty. One
 > walking-skeleton use case exists — schedule a shift, read it back — which satisfies **no
 > stated functional requirement**. It is scaffolding that keeps the architecture rules
-> honest, not a delivered capability.
+> honest, not a delivered capability. The `workforce` context is smaller still: an identity
+> and a name, created ahead of its requirements so the cross-context rule is not vacuous
+> (see [ADR-004](../ADRs/ADR-004-organise-packages-by-bounded-context.md)).
 
 ---
 
 ## Architecture overview
 
-A single Spring Boot process, packaged as an executable JAR, serving HTTP on port 8080 via
-embedded Tomcat. Inside it, the code is a **hexagon**: a framework-free core surrounded by
-adapters that translate between the outside world and the core's ports.
+The repository holds `backend/` and, once a framework is chosen, `frontend/` as siblings
+([ADR-005](../ADRs/ADR-005-monorepo-backend-and-frontend.md)). Only the backend exists today.
+
+The backend is a single Spring Boot process, packaged as an executable JAR, serving HTTP on
+port 8080 via embedded Tomcat. Its code is organised **by bounded context** — each context a
+top-level package holding its own complete **hexagon**: a framework-free core surrounded by
+adapters that translate between the outside world and the core's ports
+([ADR-004](../ADRs/ADR-004-organise-packages-by-bounded-context.md)).
+
+Two contexts exist: `scheduling`, which has the walking skeleton, and `workforce`, which has
+only a domain. **Contexts may not depend on each other**, enforced by the build.
 
 Dependencies point inward only. The domain knows nothing about the application layer, the
 application layer knows nothing about adapters or Spring, and only `adapter` and
@@ -30,16 +40,22 @@ application layer knows nothing about adapters or Spring, and only `adapter` and
 flowchart LR
     client[HTTP client]
 
-    subgraph adapters [Adapters]
-        web["adapter.in.web<br/>ShiftController"]
-        store["adapter.out.persistence<br/>InMemoryShiftRepository"]
+    subgraph scheduling [scheduling context]
+        direction LR
+        subgraph adapters [Adapters]
+            web["adapter.in.web<br/>ShiftController"]
+            store["adapter.out.persistence<br/>InMemoryShiftRepository"]
+        end
+        subgraph hexagon [Hexagon - framework-free]
+            portIn["application.port.in<br/>ScheduleShiftUseCase, FindShiftUseCase"]
+            service["application.service<br/>ShiftService"]
+            portOut["application.port.out<br/>ShiftRepository"]
+            domain["domain.model<br/>Shift, ShiftPeriod, ShiftId"]
+        end
     end
 
-    subgraph hexagon [Hexagon - framework-free]
-        portIn["application.port.in<br/>ScheduleShiftUseCase, FindShiftUseCase"]
-        service["application.service<br/>ShiftService"]
-        portOut["application.port.out<br/>ShiftRepository"]
-        domain["domain.model<br/>Shift, ShiftPeriod, ShiftId"]
+    subgraph workforce [workforce context]
+        wfDomain["domain.model<br/>Employee, EmployeeId"]
     end
 
     client --> web
@@ -48,6 +64,8 @@ flowchart LR
     service --> domain
     service --> portOut
     store -.implements.-> portOut
+
+    scheduling -. "may not depend on<br/>(enforced by the build)" .- workforce
 ```
 
 ## Components
@@ -59,8 +77,9 @@ flowchart LR
 | `application.port.out` | Driven ports. `ShiftRepository` states what the application needs from storage; storage conforms to it, never the reverse. |
 | `application.service` | `ShiftService` orchestrates: turns a command into domain objects, lets the domain reject what is invalid, hands the result to a port. Holds no rules and no annotations. |
 | `adapter.in.web` | `ShiftController`, its request/response DTOs, and `ShiftExceptionHandler`, which translates a domain rule violation into an RFC 9457 problem with status 400. |
-| `adapter.out.persistence` | `InMemoryShiftRepository`, a `ConcurrentHashMap`. A placeholder until ADR-004. |
+| `adapter.out.persistence` | `InMemoryShiftRepository`, a `ConcurrentHashMap`. A placeholder until ADR-006. |
 | `configuration` | `UseCaseConfiguration` constructs application services as beans, so they need no Spring annotation. |
+| `workforce.domain.model` | `Employee` (entity, identity equality), `EmployeeId` (value object), `InvalidEmployeeNameException`. One invariant: a name that is not blank. No use cases and no adapters — see the current-state note above. |
 | `HrSchedApplication` | Composition root. Starts Spring and nothing else. |
 | Spring Boot Actuator | `/actuator/health`, `/health/liveness`, `/health/readiness`. Probes are enabled explicitly because Spring defaults them off outside Kubernetes. |
 
@@ -130,7 +149,7 @@ At build time:
 - **`Shift` is not yet an aggregate root.** It will guard headcount, qualifications, and
   assignments once Q2 and Q4 are answered. Modelling them now would encode invented policy.
 - **Persistence is deliberately absent.** No JPA or JDBC starter is on the classpath, so
-  ADR-004 has not been made by accident. Replacing `InMemoryShiftRepository` is the whole of
+  the storage decision (ADR-006) has not been made by accident. Replacing `InMemoryShiftRepository` is the whole of
   the change when it is.
 - **Time is modelled as `Instant`.** Rosters are usually read in a site's local time, so this
   is likely to change once Q3 and Q5 are answered.

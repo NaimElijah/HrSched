@@ -21,6 +21,15 @@ It stops being right as soon as there is more than one subject:
 
 The move is cheapest now, at sixteen classes.
 
+> **A note on numbering.** The ADR index previously *reserved* ADR-004 for the storage decision
+> and ADR-006 for bounded contexts. This record took ADR-004 because it was written first, and
+> the reserved numbers shifted: storage is now **ADR-006** and roster generation **ADR-007**.
+> [ADR-001](ADR-001-java-spring-boot-maven.md) and
+> [ADR-003](ADR-003-hexagonal-architecture-with-ddd.md) still refer to the storage decision as
+> "ADR-004". They are accepted and append-only, so they are left exactly as written; read those
+> references as pointing at ADR-006. Reserved numbers in the index are placeholders, not
+> promises — this is the cost of having treated them as such.
+
 ## Decision
 
 We organise the backend **context-first**: each bounded context is a top-level package holding

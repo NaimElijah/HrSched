@@ -4,10 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## State of the repository
 
-The application builds, tests, and runs, and the **hexagonal structure is in place and
-enforced**. What it does not have is a domain: one walking-skeleton use case exists (schedule
-a shift, read it back) which satisfies **no stated requirement** and is scaffolding, not a
-feature.
+The application builds, tests, and runs. It is organised into **bounded contexts, each a
+hexagon**, and both the hexagon and context independence are enforced by build-failing tests.
+
+What it does not have is a domain. `scheduling` holds one walking-skeleton use case (schedule
+a shift, read it back) that satisfies **no stated requirement**. `workforce` holds an identity
+and a non-blank name, and deliberately precedes its requirements — it exists so the
+context-independence rule is not vacuous (ADR-004). Neither is a feature.
 
 Everything in `docs/requirements/requirements.md` from *Functional requirements* onward is
 still `TODO`. A `TODO` there is a question for the repo owner, not a gap for an agent to fill
@@ -15,12 +18,13 @@ in. Do not invent a requirement, a domain rule, or a persistence choice to make 
 look complete.
 
 Before extending the domain, Q2 (roles) and Q4 (working-time jurisdiction) need answers;
-before adding persistence, ADR-004 needs writing. Adding a JPA starter would make ADR-004 by
-accident — do not.
+before adding persistence, ADR-006 needs writing. Adding a JPA starter would make ADR-006 by
+accident — do not. Do not grow `workforce` to fill the gap either; it is small on purpose.
 
 ## Commands
 
-All commands go through the committed Maven Wrapper. No global Maven install is needed.
+All commands run **from `backend/`** and go through the committed Maven Wrapper. No global
+Maven install is needed. The repository root builds nothing (ADR-005).
 
 - Build + test + format + architecture (**the whole gate; what CI runs**): `./mvnw verify`
 - Run: `./mvnw spring-boot:run` — serves on `http://localhost:8080`
@@ -32,29 +36,46 @@ On Windows without a POSIX shell, use `mvnw.cmd`. Add `-B` for non-interactive o
 
 ## Layout
 
-The package path *is* the dependency rule — see ADR-003.
+Repository root: `backend/`, `docs/`, `LICENSE`, `README.md`. `frontend/` will be a sibling of
+`backend/` when a framework is chosen (ADR-005); it does not exist yet.
 
-- `domain/model/` — entities and value objects. **JDK imports only.**
-- `application/port/in/` — driving ports (use case interfaces) and commands.
-- `application/port/out/` — driven ports (what the application needs from the outside).
-- `application/service/` — use case implementations. **No Spring annotations.**
-- `adapter/in/web/` — controllers, DTOs, exception translation. May use Spring.
-- `adapter/out/persistence/` — driven port implementations. May use Spring.
-- `configuration/` — Spring wiring for the framework-free layers.
+Inside `backend/src/main/java/io/github/naimelijah/hrsched/`, the package path *is* the
+dependency rule — see ADR-003 and ADR-004. Every context repeats the same shape:
+
+- `<context>/domain/model/` — entities and value objects. **JDK imports only.**
+- `<context>/application/port/in/` — driving ports (use case interfaces) and commands.
+- `<context>/application/port/out/` — driven ports (what the application needs outside).
+- `<context>/application/service/` — use case implementations. **No Spring annotations.**
+- `<context>/adapter/in/web/` — controllers, DTOs, exception translation. May use Spring.
+- `<context>/adapter/out/persistence/` — driven port implementations. May use Spring.
+
+Contexts today: `scheduling` (full hexagon), `workforce` (domain only). At the root beside
+them sit `configuration/` (Spring wiring for every context) and `HrSchedApplication`.
+
+There is no `shared/` package. Do not create one to solve a single duplication — a shared
+kernel is a coupling and needs its own ADR.
+
 - `docs/requirements/`, `docs/architecture/`, `docs/ADRs/` — what, how, and why.
-- `.github/workflows/ci.yml` — runs `./mvnw verify`, nothing else.
+- `.github/workflows/ci.yml` — runs `./mvnw verify` in `backend/`, nothing else.
 
 ## Conventions
 
-- **Dependencies point inward, and this is enforced.** `HexagonalArchitectureTest` fails the
-  build if the domain imports Spring, if the application touches an adapter, or if packages
-  form a cycle. Do not weaken or delete a rule to make code pass — the rule is the point.
-- **Adding a use case:** domain concept → port in/out → service (no annotation) → register in
-  `UseCaseConfiguration` → adapters → tests. Forgetting the bean registration fails at
-  startup, not at compile time.
-- **Entities vs value objects.** `Shift` is a class with identity equality because two shifts
-  with the same period are different shifts. `ShiftId` and `ShiftPeriod` are records because
-  they are their values. Do not turn an entity into a record.
+- **Dependencies point inward, and contexts are independent. Both are enforced.**
+  `HexagonalArchitectureTest` fails the build if the domain imports Spring, if the application
+  touches an adapter, if one context references another, or if packages form a cycle. Do not
+  weaken or delete a rule to make code pass — the rule is the point.
+- **New code belongs to a context.** If it fits none of the existing ones, that is a new
+  bounded context and a new ADR, not a new top-level package.
+- **When adding an architecture rule, watch it fail first.** Every rule here has been observed
+  failing on a deliberately introduced violation, then reverted. A rule that has only ever been
+  green proves nothing.
+- **Adding a use case:** pick the context → domain concept → port in/out → service (no
+  annotation) → register in `UseCaseConfiguration` → adapters → tests. Forgetting the bean
+  registration fails at startup, not at compile time.
+- **Entities vs value objects.** `Shift` and `Employee` are classes with identity equality,
+  because two shifts with the same period — or two people with the same name — are still
+  different things. `ShiftId`, `ShiftPeriod` and `EmployeeId` are records because they *are*
+  their values. Do not turn an entity into a record.
 - **Invariants live in constructors,** so illegal states cannot be represented and callers
   never have to check.
 - **The formatter is authoritative.** google-java-format is not configurable — 2-space indent,

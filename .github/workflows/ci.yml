@@ -17,6 +17,9 @@ jobs:
   verify:
     name: Build, test, format check
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v7
 
@@ -25,9 +28,11 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+          # setup-java runs outside the job default, so the cache key needs the real path.
+          cache-dependency-path: backend/pom.xml
 
       # Deliberately the exact command a developer runs locally. Spotless is bound to the
       # validate phase in pom.xml, so this single invocation is the whole gate: format
-      # check, compile, and tests. A CI-only variant would drift the day someone edits it.
+      # check, architecture rules, compile, and tests.
       - name: Verify
         run: ./mvnw -B verify

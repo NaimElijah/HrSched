@@ -17,9 +17,11 @@
 ---
 
 > [!WARNING]
-> **The architecture is real; the product is not.** The hexagon is in place and enforced by a
-> build-failing test, but it contains one walking-skeleton use case that satisfies **no stated
-> requirement**. There is no roster, no employee, no persistence that survives a restart.
+> **The architecture is real; the product is not.** Two bounded contexts exist, the hexagon is
+> enforced by build-failing tests, and contexts cannot reference each other. But `scheduling`
+> holds one walking-skeleton use case that satisfies **no stated requirement**, and `workforce`
+> holds an identity and a name. There is no roster, no assignment, and no persistence that
+> survives a restart.
 
 This README is ordered for a **contributor**, not an evaluator: there is not yet anything to
 evaluate, so Quick start comes before Architecture.
@@ -76,13 +78,14 @@ Maven is **not** a prerequisite — the committed wrapper downloads its own pinn
 
 ```bash
 git clone https://github.com/NaimElijah/HrSched.git
-cd HrSched
+cd HrSched/backend
 
-./mvnw verify          # format check + architecture rules + compile + tests
+./mvnw verify          # format + architecture rules + compile + tests
 ./mvnw spring-boot:run # starts on http://localhost:8080
 ```
 
-On Windows without a POSIX shell, use `mvnw.cmd` in place of `./mvnw`.
+All backend commands run from `backend/`. On Windows without a POSIX shell, use
+`mvnw.cmd` in place of `./mvnw`.
 
 There is no seed data and there are no credentials, because there is no database and no
 authentication yet.
@@ -119,7 +122,7 @@ $ curl -s -X POST localhost:8080/api/shifts -H 'Content-Type: application/json' 
 
 ## Configuration
 
-All configuration lives in `src/main/resources/application.properties`. There are no
+All configuration lives in `backend/src/main/resources/application.properties`. There are no
 environment variables and no `.env.example` yet, because nothing needs a secret — there is no
 database, no third-party API, and no authentication.
 
@@ -138,32 +141,39 @@ database, no third-party API, and no authentication.
 | Framework | Spring Boot | 4.1.1 | Supplies the HTTP boundary and health endpoints as configuration rather than code |
 | HTTP | `spring-boot-starter-webmvc` | via Boot BOM | Embedded Tomcat. **Boot 4.x renamed this** from `spring-boot-starter-web` |
 | Operations | `spring-boot-starter-actuator` | via Boot BOM | Health and readiness probes, required of every service by the project baseline |
-| Architecture | ArchUnit | 1.4.1 | Fails the build when the dependency rule is violated. [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md) |
+| Architecture | ArchUnit | 1.5.0 | Fails the build on a broken dependency rule or a cross-context reference. [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md), [ADR-004](docs/ADRs/ADR-004-organise-packages-by-bounded-context.md) |
 | Build | Maven Wrapper | 3.9.16 | Toolchain pinned in the repo; no global Maven install needed |
-| Format | Spotless + google-java-format | 2.44.5 / 1.27.0 | Bound to `validate`, so formatting is checked by the same command that builds |
+| Format | Spotless + google-java-format | 3.10.0 / 1.27.0 | Bound to `validate`, so formatting is checked by the same command that builds |
 | Test | JUnit 5, AssertJ, MockMvc | via Boot BOM | Boot 4.x splits the old `spring-boot-starter-test` into per-concern starters |
 
 ## Architecture
 
-**Hexagonal (ports and adapters) with a DDD domain model.** A framework-free core surrounded
-by adapters. Dependencies point inward only: the domain knows nothing about the application
+**Bounded contexts, each a hexagon.** Every context is a top-level package holding its own
+complete ports-and-adapters structure, so a context is one directory rather than five. Inside
+a context, dependencies point inward only: the domain knows nothing about the application
 layer, the application layer knows nothing about adapters or Spring, and only `adapter` and
-`configuration` import framework types.
+`configuration` import framework types. **Contexts may not reference each other.**
 
 ```mermaid
 flowchart LR
     client[HTTP client]
 
-    subgraph adapters [Adapters]
-        web["adapter.in.web<br/>ShiftController"]
-        store["adapter.out.persistence<br/>InMemoryShiftRepository"]
+    subgraph scheduling [scheduling context]
+        direction LR
+        subgraph adapters [Adapters]
+            web["adapter.in.web<br/>ShiftController"]
+            store["adapter.out.persistence<br/>InMemoryShiftRepository"]
+        end
+        subgraph hexagon [Hexagon - framework-free]
+            portIn["application.port.in<br/>use cases"]
+            service["application.service<br/>ShiftService"]
+            portOut["application.port.out<br/>ShiftRepository"]
+            domain["domain.model<br/>Shift, ShiftPeriod, ShiftId"]
+        end
     end
 
-    subgraph hexagon [Hexagon - framework-free]
-        portIn["application.port.in<br/>use cases"]
-        service["application.service<br/>ShiftService"]
-        portOut["application.port.out<br/>ShiftRepository"]
-        domain["domain.model<br/>Shift, ShiftPeriod, ShiftId"]
+    subgraph workforce [workforce context]
+        wfDomain["domain.model<br/>Employee, EmployeeId"]
     end
 
     client --> web
@@ -172,11 +182,15 @@ flowchart LR
     service --> domain
     service --> portOut
     store -.implements.-> portOut
+
+    scheduling -. "may not depend on<br/>(enforced by the build)" .- workforce
 ```
 
-This is not a convention — it is a **build failure**. `HexagonalArchitectureTest` runs in
+These are not conventions — they are **build failures**. `HexagonalArchitectureTest` runs in
 `./mvnw verify` and fails when the domain imports Spring, when the application reaches into an
-adapter, or when packages form a cycle.
+adapter, when one context references another, or when packages form a cycle. Every rule has
+been observed failing on a deliberately introduced violation; a rule that has only ever been
+green proves nothing.
 
 Component detail, the request sequence, and what is deliberately *not* modelled yet are in
 [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
@@ -184,29 +198,35 @@ Component detail, the request sequence, and what is deliberately *not* modelled 
 ## Project structure
 
 ```
-src/main/java/io/github/naimelijah/hrsched/
-├── domain/model/              # Entities and value objects. JDK imports only.
-│   ├── Shift.java             #   entity — identity equality, not a record
-│   ├── ShiftPeriod.java       #   value object — cannot exist ending before it starts
-│   ├── ShiftId.java           #   value object
-│   └── InvalidShiftPeriodException.java
-├── application/
-│   ├── port/in/               # Driving ports: what the outside may ask for
-│   ├── port/out/              # Driven ports: what the application needs
-│   └── service/               # Use case implementations. No Spring annotations.
-├── adapter/
-│   ├── in/web/                # REST controller, DTOs, problem-detail handler
-│   └── out/persistence/       # InMemoryShiftRepository — placeholder until ADR-004
-├── configuration/             # Spring wiring, so the hexagon needs no annotations
-└── HrSchedApplication.java    # Composition root; holds no logic on purpose
-
-src/test/java/…/architecture/HexagonalArchitectureTest.java   # enforces all of the above
+HrSched/
+├── backend/
+│   ├── pom.xml  mvnw  mvnw.cmd  .mvn/
+│   └── src/main/java/io/github/naimelijah/hrsched/
+│       ├── scheduling/                 # bounded context — the walking skeleton
+│       │   ├── domain/model/           #   Shift (entity), ShiftPeriod, ShiftId. JDK only.
+│       │   ├── application/port/in/    #   driving ports + commands
+│       │   ├── application/port/out/   #   ShiftRepository
+│       │   ├── application/service/    #   ShiftService. No Spring annotations.
+│       │   └── adapter/in/web/         #   controller, DTOs, problem-detail handler
+│       │       out/persistence/        #   InMemoryShiftRepository (until ADR-006)
+│       ├── workforce/                  # bounded context — domain only, no use cases
+│       │   └── domain/model/           #   Employee, EmployeeId
+│       ├── configuration/              # Spring wiring for every context
+│       └── HrSchedApplication.java     # composition root; holds no logic on purpose
+├── docs/                               # requirements, architecture, ADRs
+├── LICENSE
+└── README.md
 ```
 
-There is no `domain/service` package yet: no domain service exists, and empty packages are
-not created in anticipation.
+`frontend/` does not exist yet — it is created when a framework is chosen, with its own ADR,
+rather than sitting empty ([ADR-005](docs/ADRs/ADR-005-monorepo-backend-and-frontend.md)).
+
+There is no `shared/` package: nothing is shared by two contexts yet, and one created in
+anticipation becomes a dumping ground.
 
 ## Development
+
+All of these run from `backend/`.
 
 ```bash
 ./mvnw spotless:apply   # fix formatting (google-java-format; non-configurable)
@@ -216,13 +236,16 @@ not created in anticipation.
 
 **Adding a use case** — the order that keeps the hexagon intact:
 
-1. Model or extend the concept in `domain/model`, with its invariants in the constructor.
-2. Declare the driving port in `application/port/in` and anything new it needs in
-   `application/port/out`.
-3. Implement it in `application/service` — no annotations.
-4. Register the bean in `configuration/UseCaseConfiguration`.
-5. Add the adapters: `adapter/in/web` for transport, `adapter/out/…` for the port.
-6. Test the domain and service without Spring; test the slice through HTTP.
+1. Decide which **context** it belongs to. If it fits none, that is a new context and a new ADR.
+2. Model or extend the concept in `<context>/domain/model`, invariants in the constructor.
+3. Declare the driving port in `<context>/application/port/in` and anything new it needs in
+   `<context>/application/port/out`.
+4. Implement it in `<context>/application/service` — no annotations.
+5. Register the bean in `configuration/UseCaseConfiguration`.
+6. Add the adapters: `<context>/adapter/in/web` for transport, `adapter/out/…` for the port.
+7. Test the domain and service without Spring; test the slice through HTTP.
+
+Never reach into another context to do it. That fails the build, by design.
 
 **Conventions**
 
@@ -242,8 +265,10 @@ not created in anticipation.
 
 ## Testing
 
+From `backend/`:
+
 ```bash
-./mvnw verify                              # everything: format, architecture, unit, HTTP
+./mvnw verify                                  # everything: format, architecture, unit, HTTP
 ./mvnw test -Dtest=HexagonalArchitectureTest   # just the architecture rules
 ```
 
@@ -252,8 +277,9 @@ not created in anticipation.
 | `ShiftPeriodTest` | Domain | The one invariant that exists, plus null and boundary cases. No Spring. |
 | `ShiftServiceTest` | Application | Use cases against a hand-written stub of their own port. No Spring, no mocking framework. |
 | `ShiftHttpTest` | End to end | Drives the full hexagon over HTTP — controller, port, service, in-memory adapter. |
-| `HexagonalArchitectureTest` | Whole codebase | Four ArchUnit rules enforcing the dependency direction. |
-| `HrSchedApplicationTests` | Context | The application starts. |
+| `EmployeeTest` | Domain (workforce) | The non-blank-name invariant and identity equality. No Spring. |
+| `HexagonalArchitectureTest` | Whole codebase | Five ArchUnit rules: dependency direction, plus context independence. |
+| `HrSchedApplicationTests` | Spring context | The application starts. |
 
 Naming follows `Given<scenario>_When<action>_Then<result>`. Tests run against the public
 boundary, never internals, and are deterministic: no `sleep`, no real network, no ordering
@@ -263,7 +289,7 @@ dependence.
 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). That single command is the merge gate.
 
 *Not yet:* coverage reporting, and integration tests against real dependencies in containers —
-there is nothing to connect to until ADR-004.
+there is nothing to connect to until ADR-006.
 
 ## Deployment and operations
 
@@ -282,9 +308,11 @@ instrumentation.
 | [ADR-001](docs/ADRs/ADR-001-java-spring-boot-maven.md) | Java 21, Spring Boot 4.1.1, Maven Wrapper | Boot 4.x is recent, so most existing tutorials name things that no longer exist |
 | [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md) | `./mvnw verify` as the single gate, Spotless for format | google-java-format is not configurable; formatting fails the build before tests run |
 | [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md) | Hexagon in one module, enforced by ArchUnit | Many more classes per use case; hand-wiring; enforcement is a test, not the compiler |
+| [ADR-004](docs/ADRs/ADR-004-organise-packages-by-bounded-context.md) | Organise packages by bounded context | A layer is no longer one place; `workforce` precedes its requirements |
+| [ADR-005](docs/ADRs/ADR-005-monorepo-backend-and-frontend.md) | Monorepo: `backend/` + `frontend/` siblings | Every backend command grows a `cd`; CI and Dependabot need explicit paths |
 
-Still open and blocking: **ADR-004** (data storage), **ADR-005** (roster generation strategy),
-**ADR-006** (bounded contexts). See the [ADR index](docs/ADRs/).
+Still open and blocking: **ADR-006** (data storage) and **ADR-007** (roster generation
+strategy). See the [ADR index](docs/ADRs/).
 
 ## Documentation
 
@@ -300,18 +328,21 @@ Still open and blocking: **ADR-004** (data storage), **ADR-005** (roster generat
 **Maturity: skeleton.** The build, the test harness, CI, and the architecture are real and
 enforced. The product is not started.
 
-**Shipped:** an enforced hexagonal structure, a two-endpoint walking skeleton, health probes,
-and the decisions behind them.
+**Shipped:** two bounded contexts with an enforced hexagon and enforced context independence,
+a two-endpoint walking skeleton, health probes, and the decisions behind them.
 
 **Next:** answer the [open questions](docs/requirements/requirements.md#open-questions) —
 particularly Q2 (roles) and Q4 (working-time jurisdiction) — then model the real domain and
-write ADR-004 before the first persistence adapter.
+write ADR-006 before the first persistence adapter.
 
 **Known limitations**
 
-- No roster, no employee, no assignment. `Shift` is not yet an aggregate root, because the
-  invariants it would guard are unanswered questions.
-- **Nothing survives a restart.** Storage is a `ConcurrentHashMap` until ADR-004.
+- No roster and no assignment. `Shift` is not yet an aggregate root, because the invariants it
+  would guard are unanswered questions.
+- **`workforce` precedes its requirements.** It exists so the context-independence rule is not
+  vacuous, and holds only an identity and a non-blank name. If Q2 or Q4 land differently,
+  `Employee` may be wrong or may belong in a differently drawn context. It is small on purpose.
+- **Nothing survives a restart.** Storage is a `ConcurrentHashMap` until ADR-006.
 - No authentication or authorisation. Every endpoint is open.
 - Time is modelled as `Instant`; rosters are usually read in local time, so this will likely
   change once Q3 and Q5 are answered.
