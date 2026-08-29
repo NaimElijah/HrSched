@@ -4,21 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## State of the repository
 
-The application builds, tests, and runs. It is organised into **bounded contexts, each a
-hexagon**, and both the hexagon and context independence are enforced by build-failing tests.
+The domain is modelled and works end to end: define people and shifts, configure working-time
+rules, generate a roster, publish it. Three contexts — `scheduling`, `workforce`, `access` —
+plus a `shared` kernel, with the hexagon and the context boundaries enforced by build-failing
+tests.
 
-What it does not have is a domain. `scheduling` holds one walking-skeleton use case (schedule
-a shift, read it back) that satisfies **no stated requirement**. `workforce` holds an identity
-and a non-blank name, and deliberately precedes its requirements — it exists so the
-context-independence rule is not vacuous (ADR-006). Neither is a feature.
+Three things are **not** what they look like:
+
+- **Generation is greedy, not optimised.** Automatic generation is the point of the product and
+  a real implementation is a solver; `GreedyRosterGenerator` exists to prove the port (ADR-005).
+  It ignores fairness, preferences and disruption entirely.
+- **There is no authentication.** The acting identity comes from request headers, so any caller
+  can claim any role in any organisation. It is a placeholder to be deleted, not extended.
+- **Nothing survives a restart.** Every repository is in memory until ADR-004.
 
 Everything in `docs/requirements/requirements.md` from *Functional requirements* onward is
 still `TODO`. A `TODO` there is a question for the repo owner, not a gap for an agent to fill
 in. Do not invent a requirement, a domain rule, or a persistence choice to make a document
 look complete.
 
-Q2 (roles), Q3 (tenancy) and Q4 (working-time rules) are **answered** — see
-`docs/requirements/requirements.md`. Three consequences bind everything written from now on:
+Every question that blocked modelling is answered — see `docs/requirements/requirements.md`.
+Three consequences bind everything written from now on:
 
 - **Multi-tenant.** Every aggregate belongs to exactly one organisation and every query is
   scoped to it. A cross-tenant read is a security incident, not a bug.
@@ -29,7 +35,7 @@ Q2 (roles), Q3 (tenancy) and Q4 (working-time rules) are **answered** — see
   and there is no override.
 
 Before adding persistence, ADR-004 needs writing. Adding a JPA starter would make ADR-004 by
-accident — do not. Do not grow `workforce` beyond what a requirement asks for.
+accident — do not.
 
 ## Commands
 
@@ -52,6 +58,9 @@ Repository root: `backend/`, `docs/`, `LICENSE`, `README.md`. `frontend/` will b
 Inside `backend/src/main/java/io/github/naimelijah/hrsched/`, the package path *is* the
 dependency rule — see ADR-003 and ADR-006. Every context repeats the same shape:
 
+- `shared/domain/model/` — the kernel: identities (`OrganisationId`, `EmployeeId`,
+  `QualificationId`, `UserId`), `TimeRange`, and the sealed `Actor`. Depends on no context, and
+  must stay that way. Do not put behaviour here.
 - `<context>/domain/model/` — entities and value objects. **JDK imports only.**
 - `<context>/application/port/in/` — driving ports (use case interfaces) and commands.
 - `<context>/application/port/out/` — driven ports (what the application needs outside).
@@ -59,11 +68,14 @@ dependency rule — see ADR-003 and ADR-006. Every context repeats the same shap
 - `<context>/adapter/in/web/` — controllers, DTOs, exception translation. May use Spring.
 - `<context>/adapter/out/persistence/` — driven port implementations. May use Spring.
 
-Contexts today: `scheduling` (full hexagon), `workforce` (domain only). At the root beside
-them sit `configuration/` (Spring wiring for every context) and `HrSchedApplication`.
+Contexts today: `scheduling` (shifts, rosters, constraints, generation), `workforce` (employees,
+qualifications, availability), `access` (organisations). At the root beside them sit
+`configuration/` and `HrSchedApplication`.
 
-There is no `shared/` package. Do not create one to solve a single duplication — a shared
-kernel is a coupling and needs its own ADR.
+A context may reference another context's `application.port.in` package and **nothing else**
+(ADR-008). Consuming one belongs in an adapter — see
+`scheduling/adapter/out/workforce/WorkforceDirectoryAdapter`, the only class in scheduling that
+names another context.
 
 Outside `backend/`:
 
@@ -74,9 +86,17 @@ Outside `backend/`:
 
 - **Dependencies point inward, and contexts are independent. Both are enforced.**
   `HexagonalArchitectureTest` fails the build if the domain imports Spring, if the application
-  touches an adapter, if one context references another, or if a context's own layers form a
-  cycle. Do not weaken or delete a rule to make code pass — the rule is the point. Deleting one
-  because it is provably unable to fail is a different thing, and needs the proof.
+  touches an adapter, if a context reaches past another context's published ports, if the kernel
+  depends on a context, or if a context's own layers form a cycle. Do not weaken or delete a rule
+  to make code pass — the rule is the point. Deleting one because it is provably unable to fail
+  is a different thing, and needs the proof.
+- **NEVER write a working-time threshold as a constant.** No number from any statute belongs in
+  any class. A minimum rest period is a value in a `ConstraintSet`, supplied as configuration. A
+  jurisdiction is a preset whose numbers must be sourced from the statute and cited. Test values
+  are invented on purpose, and are labelled as such.
+- **Tenancy is in every signature.** Repository lookups take an `OrganisationId`; there is no
+  `findById(EmployeeId)`. Use cases take an `Actor` and call `requireAccessTo` first. A
+  cross-tenant attempt is a 404, never a 403 — a 403 confirms the resource exists.
 - **New code belongs to a context.** If it fits none of the existing ones, that is a new
   bounded context and a new ADR, not a new top-level package.
 - **When adding an architecture rule, watch it fail first.** All five rules here have been
