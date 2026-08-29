@@ -17,9 +17,19 @@ still `TODO`. A `TODO` there is a question for the repo owner, not a gap for an 
 in. Do not invent a requirement, a domain rule, or a persistence choice to make a document
 look complete.
 
-Before extending the domain, Q2 (roles) and Q4 (working-time jurisdiction) need answers;
-before adding persistence, ADR-004 needs writing. Adding a JPA starter would make ADR-004 by
-accident — do not. Do not grow `workforce` to fill the gap either; it is small on purpose.
+Q2 (roles), Q3 (tenancy) and Q4 (working-time rules) are **answered** — see
+`docs/requirements/requirements.md`. Three consequences bind everything written from now on:
+
+- **Multi-tenant.** Every aggregate belongs to exactly one organisation and every query is
+  scoped to it. A cross-tenant read is a security incident, not a bug.
+- **No legal threshold is ever hardcoded.** Working-time rules are a *configured constraint
+  set*; a jurisdiction is a preset, and a preset's numbers must come from the statute with the
+  source cited. Never write a rest period or an hours cap as a constant.
+- **Constraints are invariants.** A roster violating its constraint set cannot be published,
+  and there is no override.
+
+Before adding persistence, ADR-004 needs writing. Adding a JPA starter would make ADR-004 by
+accident — do not. Do not grow `workforce` beyond what a requirement asks for.
 
 ## Commands
 

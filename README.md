@@ -335,21 +335,24 @@ enforced. The product is not started.
 **Shipped:** two bounded contexts with an enforced hexagon and enforced context independence,
 a two-endpoint walking skeleton, health probes, and the decisions behind them.
 
-**Next:** answer the [open questions](docs/requirements/requirements.md#open-questions) —
-particularly Q2 (roles) and Q4 (working-time jurisdiction) — then model the real domain and
-write ADR-004 before the first persistence adapter.
+**Next:** Q2 (roles), Q3 (tenancy) and Q4 (working-time rules) are answered, so the real
+domain can now be modelled — multi-tenant, three roles, and working-time rules as a
+*configured constraint set* rather than any country's law hardcoded. ADR-004 (storage) is
+needed before the first persistence adapter, and tenancy raises its stakes.
 
 **Known limitations**
 
 - No roster and no assignment. `Shift` is not yet an aggregate root, because the invariants it
   would guard are unanswered questions.
-- **`workforce` precedes its requirements.** It exists so the context-independence rule is not
-  vacuous, and holds only an identity and a non-blank name. If Q2 or Q4 land differently,
-  `Employee` may be wrong or may belong in a differently drawn context. It is small on purpose.
+- **`workforce` was built before its requirements.** Q2 has since confirmed that employees are
+  real, so `Employee` survives — but it is still missing everything that matters: no
+  organisation, no qualifications, no contract.
+- **Nothing is tenant-aware.** The product is multi-tenant by decision; the code is not, at all.
+  No aggregate carries an organisation and no query is scoped to one.
 - **Nothing survives a restart.** Storage is a `ConcurrentHashMap` until ADR-004.
 - No authentication or authorisation. Every endpoint is open.
-- Time is modelled as `Instant`; rosters are usually read in local time, so this will likely
-  change once Q3 and Q5 are answered.
+- Time is modelled as `Instant`; rosters are read in local time across potentially different
+  regions, so this will have to carry a zone.
 - Architecture enforcement is a test, not the compiler — a multi-module layout would make
   violations impossible rather than merely detected.
 - Dependabot alerts are enabled, but nothing **blocks** a merge on a vulnerable dependency.

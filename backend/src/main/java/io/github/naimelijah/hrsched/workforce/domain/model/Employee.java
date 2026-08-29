@@ -8,15 +8,15 @@ import java.util.Objects;
  * <p>An entity, not a value object: two employees who happen to share a name are still different
  * people, so equality is by {@link EmployeeId} alone. This is why it is a class and not a record.
  *
- * <p>DELIBERATELY ALMOST EMPTY, AND AHEAD OF ITS REQUIREMENTS. An employee will eventually carry
- * contracted hours, qualifications, availability, and employment status — every one of which
- * depends on Q2 (roles) or Q4 (working-time jurisdiction) in {@code
- * docs/requirements/requirements.md}, both unanswered. Modelling them now would encode guessed
- * policy in the one place that must be trustworthy.
+ * <p>STILL ALMOST EMPTY. Q2, Q3 and Q4 are now answered — see {@code
+ * docs/requirements/requirements.md} — which confirms employees are real and unblocks the rest, but
+ * none of it is modelled yet. An employee will carry the organisation it belongs to (the product is
+ * multi-tenant), its qualifications, its availability, and its contracted hours.
  *
- * <p>What is here is only what holds in any jurisdiction and any tenancy model: a person has an
- * identity, and a name that is not blank. See ADR-006 for why this context exists at all before its
- * requirements do.
+ * <p>What is here is only what holds regardless of configuration: a person has an identity and a
+ * name that is not blank. Contracted-hours and rest thresholds are NOT fields on this class; they
+ * are values in a configured constraint set. See ADR-006 for why this context was created before
+ * its requirements existed.
  */
 public final class Employee {
 

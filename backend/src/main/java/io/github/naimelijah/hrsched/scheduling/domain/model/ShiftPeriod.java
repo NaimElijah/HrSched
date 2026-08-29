@@ -10,9 +10,9 @@ import java.util.Objects;
  * <p>A value object that makes the illegal state unrepresentable: an instance cannot exist unless
  * it ends strictly after it starts. Callers therefore never have to check.
  *
- * <p>ASSUMPTION: instants, not local date-times with a zone. Rosters are usually read in a site's
- * local time, so this is likely to change once Q3 (multi-tenancy) and Q5 (deployment) are answered
- * — see {@code docs/requirements/requirements.md}.
+ * <p>ASSUMPTION: instants, not local date-times with a zone. Rosters are read in local time, and
+ * the product is multi-tenant across potentially different regions, so this will have to carry a
+ * zone — see {@code docs/requirements/requirements.md}.
  *
  * @param start when the shift begins, never {@code null}
  * @param end when the shift ends, never {@code null} and strictly after {@code start}

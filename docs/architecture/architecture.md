@@ -165,14 +165,18 @@ At build time:
   because they *are* their values.
 - **`ShiftPeriod` makes an illegal state unrepresentable.** An instance cannot exist unless it
   ends after it starts, so no caller has to check.
-- **`Shift` is not yet an aggregate root.** It will guard headcount, qualifications, and
-  assignments once Q2 and Q4 are answered. Modelling them now would encode invented policy.
+- **`Shift` is not yet an aggregate root.** Q2, Q3 and Q4 are now answered, so the modelling
+  that was blocked is unblocked — but not yet done. Nothing in the code reflects multi-tenancy,
+  roles, or constraint sets.
 - **`Employee` rejects a null name with a `NullPointerException`, not a domain exception.**
   Null is a programming defect and must surface as a 500; only a blank name is a domain rule
   and a 400. Every type in the codebase orders its checks the same way: null first, rule second.
 - **Persistence is deliberately absent.** No JPA or JDBC starter is on the classpath, so the
   storage decision (ADR-004) has not been made by accident. Replacing
   `InMemoryShiftRepository` is the whole of the change when it is.
-- **Time is modelled as `Instant`.** Rosters are usually read in a site's local time, so this
-  is likely to change once Q3 and Q5 are answered.
+- **Time is modelled as `Instant`.** Rosters are read in local time, and the product is now
+  multi-tenant across potentially different regions, so this will have to carry a zone. Q5
+  (deployment) is still open.
+- **Nothing in the code is tenant-aware yet.** No aggregate carries an organisation, and no
+  query is scoped. Every use case written from here must be, and isolation needs its own tests.
 - **Jackson 3.** Boot 4.1.1 ships `tools.jackson.databind`, not `com.fasterxml.jackson.databind`.

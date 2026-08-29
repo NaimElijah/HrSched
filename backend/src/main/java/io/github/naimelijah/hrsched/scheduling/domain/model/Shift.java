@@ -9,11 +9,12 @@ import java.util.Objects;
  * so equality is by {@link ShiftId} alone. This is why it is a class and not a record — a record
  * would compare every component.
  *
- * <p>INCOMPLETE BY DESIGN. A shift will eventually carry required headcount, qualifications, and
- * the assignments made against it, and will become the aggregate root enforcing those rules. None
- * of that is modelled yet because the rules are open questions (Q2, Q4) in {@code
- * docs/requirements/requirements.md}, and guessing them would put invented policy in the one place
- * that must be trustworthy.
+ * <p>INCOMPLETE. A shift will carry the organisation it belongs to, its required headcount and
+ * qualifications, and the assignments made against it, and will become the aggregate root enforcing
+ * those rules. Q2, Q3 and Q4 are now answered, so that work is unblocked — see {@code
+ * docs/requirements/requirements.md} — but none of it is modelled yet. Note in particular that no
+ * working-time threshold belongs in this class: those are values in a configured constraint set,
+ * never constants in the domain.
  */
 public final class Shift {
 
