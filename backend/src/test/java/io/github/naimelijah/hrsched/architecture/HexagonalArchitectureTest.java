@@ -136,9 +136,9 @@ class HexagonalArchitectureTest {
    * Cycles are checked one level below the context, between a context's own layers.
    *
    * <p>A context-level cycle rule was removed as dead: any cycle between two contexts requires a
-   * dependency between them, which {@link #contexts_do_not_depend_on_each_other} already forbids
-   * outright, so it had no failure mode left. This rule does have one — a {@code scheduling.domain
-   * -> scheduling.application} dependency fails it, and was observed doing so.
+   * dependency between them, which {@link #contexts_touch_only_published_ports_of_other_contexts}
+   * already forbids outright, so it had no failure mode left. This rule does have one — a {@code
+   * scheduling.domain -> scheduling.application} dependency fails it, and was observed doing so.
    */
   @ArchTest
   static final ArchRule layers_within_a_context_are_free_of_cycles =

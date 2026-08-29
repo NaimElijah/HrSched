@@ -70,7 +70,7 @@ Three rules hold this together, and each fails the build when broken:
 
 | Component | Responsibility |
 | --- | --- |
-| `shared.domain.model` | The kernel: `OrganisationId`, `UserId`, `EmployeeId`, `QualificationId`, `Role`, `TimeRange`, and the sealed `Actor` (`TenantActor`, `Operator`). Identities and pure values that cross contexts, with no behaviour of their own. |
+| `shared.domain.model` | The kernel: `OrganisationId`, `UserId`, `EmployeeId`, `QualificationId`, `Role`, `TimeRange`, and the sealed `Actor` (`TenantActor`, `Operator`). Identities and pure values that cross contexts, with no behaviour of their own. A `TenantActor` also carries the `EmployeeId` it is, when it is one ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). |
 | `access.domain.model` | `Organisation` — the tenant itself. Deliberately small: the tenancy *types* live in the kernel because every context needs them. |
 | `workforce.domain.model` | `Employee` (aggregate root: qualifications, unavailability, preferences, contract terms), `Qualification`, `ShiftPreference`, `ContractTerms`. |
 | `workforce.application` | Employee and qualification use cases. `FindRosterableEmployeesUseCase` is this context's **published API**, returning `RosterableEmployee` rather than the aggregate. |
@@ -159,13 +159,36 @@ Nothing is persisted beyond process lifetime.
 - **Constraint checking lives in the application layer**, not in `Roster`. It needs when each
   shift runs and who is available — data the aggregate cannot reach. The judgement itself is
   still the domain's.
-- **`EmployeeSchedule.workingDays()` counts days in UTC**, because `TimeRange` carries no zone.
-  For shifts crossing local midnight this miscounts, and it is one more reason the zone question
-  must be answered before production.
+- **Days are counted in UTC**, because `TimeRange` carries no zone. `EmployeeSchedule` splits every
+  period at midnight and totals the time landing on each day, so a shift running past midnight is
+  counted against both days it touches and a shift ending exactly at midnight does not make the
+  next day a working day. The arithmetic is right; the *zone* is not necessarily, and for an
+  organisation whose local midnight is not UTC midnight this attributes work to the wrong day. That
+  is Q17, and it must be answered before production.
 - **`MaximumWeeklyWorkingTime` treats the roster period as the reference period.** Jurisdictions
   that average over a longer window cannot be expressed; that needs history beyond the roster.
 - **The header-based actor is insecure by design** and must be deleted when authentication
   arrives. It exists so the use cases can be exercised, not as a step towards a real one.
+  `X-Organisation` names the organisation being acted *on* and is always required; `X-Role:
+  OPERATOR` claims the platform operator, which is how the one identity permitted to cross tenants
+  is reachable over HTTP at all rather than only from unit tests. `X-Employee` supplies the
+  employee link. Every header is validated at the boundary, so a malformed one is a 400 and never
+  a 500.
 - **The constraint store keeps only the current version**, while a published roster records the
   version that approved it. Historical versions must be retrievable before that record means
   anything — owed alongside ADR-004.
+- **Publishing supersedes, so exactly one roster is authoritative.** `publish` marks every
+  published roster of that organisation whose period overlaps as `SUPERSEDED`. Overlap rather than
+  equality decides it, because a partly-overlapping published roster would otherwise still govern
+  the days it shares. Whether a partial replacement should supersede the old roster whole is Q16.
+- **Work that cannot be checked refuses publication.** If an assignment names a shift the
+  repository cannot return, publication fails with `RosterNotVerifiableException` rather than
+  quietly omitting that work from the constraint check. Omission would publish hours nobody
+  counted, which is the failure publication exists to prevent.
+- **Reading the people of an organisation is restricted to Admins and Schedulers**, because
+  unavailability is personal data. Generation reaches the same data through the anti-corruption
+  layer carrying the Scheduler's own identity, so the restriction holds there too.
+- **Constraint revision and publication are read-modify-write cycles with no locking.** Two
+  concurrent admins can lose a constraint revision; two concurrent publishes of one draft can both
+  succeed. The remedy is transactional persistence, which is ADR-004 — a lock around an in-memory
+  map would be discarded with it — so this is recorded rather than patched.

@@ -44,16 +44,16 @@ implemented; the rest are not.
 | F1 | Scheduler | Define the shifts that need covering, with headcount and qualifications | `SchedulingService`, `RosteringHttpTest` |
 | F2 | Scheduler | Assign an employee to a shift, and remove that assignment | *not implemented* |
 | F3 | Scheduler | Publish a roster, after it passes the organisation rules | `SchedulingService`, `RosteringHttpTest` |
-| F4 | Scheduler | See the roster and availability of every employee in their organisation | *not implemented* |
-| F5 | Employee | See their own published roster | *partially: rosters are readable, not yet filtered to self* |
-| F6 | Employee | Declare when they cannot work, and state soft preferences | `EmployeeService`, `EmployeeServiceTest` |
+| F4 | Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest` |
+| F5 | Employee | See their own published roster | *not implemented: rosters are readable by Schedulers only* |
+| F6 | Employee | Declare when they cannot work, and state soft preferences | `EmployeeService`, `EmployeeServiceTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)) |
 | F7 | Employee | Request a swap of one of their assignments with another employee | *not implemented* |
 | F8 | Admin | Add employees | `EmployeeService`, `EmployeeServiceTest` |
 | F9 | Admin | Define qualifications, and grant them to employees | `QualificationService`, `EmployeeServiceTest` |
 | F10 | Admin | Configure the organisation's working-time constraint set | `SchedulingService`, `RosteringHttpTest` |
 | F11 | Scheduler | Generate a draft roster covering a period, filling every shift it legally can | `SchedulingService`, `RosteringHttpTest` |
 | F12 | Scheduler | Publish a draft, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest` |
-| F13 | Operator | Administer organisations across the platform | *not implemented* |
+| F13 | Operator | Administer organisations across the platform | *partially: an Operator may act across tenants; there is nothing to administer yet* |
 
 **Swaps (F7)** are approved by a **Scheduler**; the other employee is informed rather than
 asked. Not yet implemented.
@@ -99,11 +99,21 @@ a published roster is superseded rather than edited (R6).
 | R3 | An employee may not hold two overlapping assignments. *`GreedyRosterGenerator`, `MinimumRestBetweenAssignments`* |
 | R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `EmployeeTest`* |
 | R5 | An employee may only be assigned within their own organisation. *`SchedulingService`, `RosteringHttpTest`* |
-| R6 | A published roster may not be edited; it is superseded by a new version. *`Roster`, `RosterTest`* |
+| R6 | A published roster may not be edited; it is superseded by a new version. *`Roster`, `SchedulingService`, `SchedulingServiceTest`* |
 | R7 | An employee may not declare overlapping unavailability. *`Employee`, `EmployeeTest`* |
 | R8 | A shift must require at least one person. *`Shift`, `RosteringHttpTest`* |
+| R9 | A shift may only require qualifications its own organisation has defined. *`SchedulingService`, `SchedulingServiceTest`* |
+| R10 | A roster assigning a shift that cannot be resolved cannot be published. *`Roster`, `SchedulingServiceTest`* |
+| R11 | Publishing a roster supersedes every published roster of that organisation whose period it overlaps. *`SchedulingService`, `SchedulingServiceTest`* |
 
-A roster moves `DRAFT → PUBLISHED → SUPERSEDED`, and no other transition is legal.
+A roster moves `DRAFT → PUBLISHED → SUPERSEDED`, and no other transition is legal. Exactly one
+roster is authoritative for any given moment, which is what R11 enforces.
+
+**Only a Scheduler builds rosters.** An Admin manages people, qualifications and the constraint
+set and cannot define shifts, generate or publish — F1/F3/F11/F12 against F8/F9/F10.
+
+**Unavailability is personal data.** Listing the people in an organisation, which carries their
+unavailability, is restricted to Admins and Schedulers; an Employee cannot read a colleague's.
 
 ### Constraints a set may express
 
@@ -165,6 +175,8 @@ applicant tracking, and being the HR system of record.
 | Q13 | How are the generator objectives weighted against one another? | NaimElijah | ADR-010, and introducing a solver |
 | Q14 | Over what reference period is a weekly maximum averaged? | NaimElijah | Whether constraint checking needs history beyond the roster |
 | Q15 | What are the non-goals? | NaimElijah | Deferred deliberately |
+| Q16 | When a new roster only partly overlaps a published one, should the old one be superseded whole, or only for the days replaced? | NaimElijah | Refining R11; today the whole roster is superseded |
+| Q17 | Which time zone are working-time rules evaluated in? | NaimElijah | Daily and consecutive-day limits currently count days in UTC |
 
 **Resolved**
 
@@ -182,4 +194,4 @@ applicant tracking, and being the HR system of record.
 | Q8 | What a constraint set is attached to | One per organisation; per-person variation is contract terms, held separately | 2026-08-30 |
 | Q11 | Who approves a swap | A Scheduler; the colleague is informed | 2026-08-30 |
 
-Question numbers are never reused. The answers above raised Q12 to Q15.
+Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17.

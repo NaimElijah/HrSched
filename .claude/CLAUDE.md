@@ -97,12 +97,22 @@ Outside `backend/`:
 - **Tenancy is in every signature.** Repository lookups take an `OrganisationId`; there is no
   `findById(EmployeeId)`. Use cases take an `Actor` and call `requireAccessTo` first. A
   cross-tenant attempt is a 404, never a 403 — a 403 confirms the resource exists.
+- **`UserId` and `EmployeeId` are never compared.** They are different identities on purpose. To
+  ask whether an actor is the person being acted on, use `TenantActor.isThemself` — the link is
+  carried, not inferred from matching UUIDs (ADR-012).
+- **Only a Scheduler builds rosters.** `MAY_SCHEDULE` is `{SCHEDULER}`; an Admin manages people,
+  qualifications and the constraint set. The role javadoc and the requirements table agree, and
+  the permission sets must follow them rather than the other way round.
+- **Never let unverifiable data pass a check.** If evidence a rule needs cannot be loaded, refuse
+  — a skipped assignment is a roster published with hours nobody counted.
 - **New code belongs to a context.** If it fits none of the existing ones, that is a new
   bounded context and a new ADR, not a new top-level package.
-- **When adding an architecture rule, watch it fail first.** All five rules here have been
+- **When adding an architecture rule, watch it fail first.** All six rules here have been
   observed failing on a deliberately introduced violation, then reverted. A rule that has only
   ever been green proves nothing — one rule was deleted after it turned out it could no longer
-  fail, being fully subsumed by `contexts_do_not_depend_on_each_other`.
+  fail, being fully subsumed by what is now
+  `contexts_touch_only_published_ports_of_other_contexts`. The same applies to a test: a fix
+  whose test was never seen failing has not been shown to fix anything.
 - **Adding a use case:** pick the context → domain concept → port in/out → service (no
   annotation) → register in `UseCaseConfiguration` → adapters → tests. Forgetting the bean
   registration fails at startup, not at compile time.

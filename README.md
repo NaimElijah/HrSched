@@ -66,6 +66,7 @@ What works today, end to end over HTTP:
   than filling it illegally.
 - **Publish a roster**, which is refused if it breaks any rule, and records the constraint
   version that approved it so a later rule change can never make it retroactively illegal.
+  Publishing supersedes any published roster it overlaps, so exactly one is ever authoritative.
 - **Multi-tenant throughout.** Every aggregate belongs to an organisation and every query is
   scoped to it.
 
@@ -348,8 +349,12 @@ instrumentation.
 | [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md) | Organise packages by bounded context | A layer is no longer one place; `workforce` precedes its requirements |
 | [ADR-007](docs/ADRs/ADR-007-monorepo-backend-and-frontend.md) | Monorepo: `backend/` + `frontend/` siblings | Every backend command grows a `cd`; CI and Dependabot need explicit paths |
 
-Still open and blocking: **ADR-004** (data storage) and **ADR-005** (roster generation
-strategy). See the [ADR index](docs/ADRs/).
+| [ADR-008](docs/ADRs/ADR-008-context-integration.md) | Contexts integrate through published ports and a small shared kernel | Translation duplicated at every boundary; the kernel is a coupling every context pays for |
+| [ADR-009](docs/ADRs/ADR-009-tenant-isolation-in-the-domain.md) | Tenancy in every signature, enforced in the application | Every signature is longer, and that verbosity is the point |
+| [ADR-012](docs/ADRs/ADR-012-acting-identity-carries-its-employee-record.md) | The acting identity carries the employee record it is | One more field in the shared kernel, which ADR-008 named as the thing to watch |
+
+Still open and blocking: **ADR-004** (data storage), **ADR-010** (objectives) and **ADR-011**
+(authentication). See the [ADR index](docs/ADRs/).
 
 ## Documentation
 
@@ -386,10 +391,15 @@ needed before the first persistence adapter, and tenancy raises its stakes.
 - **The constraint store keeps only the current version**, while published rosters reference the
   version that approved them. Historical versions must be retrievable before that record means
   anything.
-- **Time is UTC-only.** `TimeRange` carries no zone, so daily limits miscount for shifts crossing
-  local midnight.
+- **Time is UTC-only.** `TimeRange` carries no zone. Periods are split correctly at midnight, so
+  the arithmetic is right, but the *day* is a UTC day — for an organisation whose local midnight
+  is not UTC midnight, work is counted against the wrong one.
+- **Concurrent writes can be lost.** Constraint revision and publication are read-modify-write
+  cycles with no locking, which transactional persistence (ADR-004) fixes and a lock around a
+  hash map would not.
 - **Nothing survives a restart.** Storage is a `ConcurrentHashMap` until ADR-004.
-- No authentication or authorisation. Every endpoint is open.
+- No authentication. Authorisation is real and tested, but the identity it acts on is claimed in
+  a header, so every endpoint is effectively open.
 - Time is modelled as `Instant`; rosters are read in local time across potentially different
   regions, so this will have to carry a zone.
 - Architecture enforcement is a test, not the compiler — a multi-module layout would make
