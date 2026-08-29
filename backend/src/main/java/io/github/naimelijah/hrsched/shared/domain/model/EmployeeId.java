@@ -1,4 +1,4 @@
-package io.github.naimelijah.hrsched.workforce.domain.model;
+package io.github.naimelijah.hrsched.shared.domain.model;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -6,9 +6,9 @@ import java.util.UUID;
 /**
  * Identity of an {@link Employee}.
  *
- * <p>A value object, mirroring {@code ShiftId} in the scheduling context. The two are separate
- * types on purpose: a bare {@link UUID} would let an employee identity be passed where a shift
- * identity is expected, and the compiler could not object.
+ * <p>In the kernel because it crosses contexts: workforce owns the employee, while scheduling
+ * records which employee an assignment is for. A bare {@link UUID} would let an employee identity
+ * be passed where a shift identity is expected, and the compiler could not object.
  *
  * @param value the underlying identifier, never {@code null}
  */

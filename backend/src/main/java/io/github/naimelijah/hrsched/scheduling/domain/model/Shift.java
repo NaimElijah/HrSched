@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.scheduling.domain.model;
 
+import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.util.Objects;
 
 /**
@@ -19,13 +20,13 @@ import java.util.Objects;
 public final class Shift {
 
   private final ShiftId id;
-  private final ShiftPeriod period;
+  private final TimeRange period;
 
   /**
    * @param id the shift's identity, never {@code null}
    * @param period when the shift runs, never {@code null}
    */
-  public Shift(ShiftId id, ShiftPeriod period) {
+  public Shift(ShiftId id, TimeRange period) {
     this.id = Objects.requireNonNull(id, "id must not be null");
     this.period = Objects.requireNonNull(period, "period must not be null");
   }
@@ -34,7 +35,7 @@ public final class Shift {
     return id;
   }
 
-  public ShiftPeriod period() {
+  public TimeRange period() {
     return period;
   }
 

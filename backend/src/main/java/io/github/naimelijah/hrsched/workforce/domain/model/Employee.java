@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.workforce.domain.model;
 
+import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import java.util.Objects;
 
 /**

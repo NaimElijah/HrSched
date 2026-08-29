@@ -5,9 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ScheduleShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
-import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidShiftPeriodException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -40,7 +40,7 @@ class ShiftServiceTest {
   @Test
   void GivenAnEndBeforeItsStart_WhenSchedulingAShift_ThenNothingIsStored() {
     assertThatThrownBy(() -> service.schedule(new ScheduleShiftCommand(FOUR_PM, EIGHT_AM)))
-        .isInstanceOf(InvalidShiftPeriodException.class);
+        .isInstanceOf(InvalidTimeRangeException.class);
 
     assertThat(shifts.saved).isEmpty();
   }

@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.workforce.domain.model;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import org.junit.jupiter.api.Test;
 
 /** Specification of the one invariant the workforce context currently enforces. */

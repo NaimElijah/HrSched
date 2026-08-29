@@ -1,7 +1,7 @@
 package io.github.naimelijah.hrsched.scheduling.application.port.in;
 
-import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidShiftPeriodException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
+import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
 
 /** Driving port: places a new shift on the schedule. */
 public interface ScheduleShiftUseCase {
@@ -14,7 +14,7 @@ public interface ScheduleShiftUseCase {
    *
    * @param command the shift to place, never {@code null}
    * @return the newly created shift
-   * @throws InvalidShiftPeriodException if the requested period does not end after it starts
+   * @throws InvalidTimeRangeException if the requested period does not end after it starts
    */
   Shift schedule(ScheduleShiftCommand command);
 }

@@ -6,7 +6,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.ScheduleShift
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
-import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftPeriod;
+import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -34,7 +34,7 @@ public class ShiftService implements ScheduleShiftUseCase, FindShiftUseCase {
   @Override
   public Shift schedule(ScheduleShiftCommand command) {
     Objects.requireNonNull(command, "command must not be null");
-    Shift shift = new Shift(ShiftId.newId(), new ShiftPeriod(command.start(), command.end()));
+    Shift shift = new Shift(ShiftId.newId(), new TimeRange(command.start(), command.end()));
     shiftRepository.save(shift);
     return shift;
   }

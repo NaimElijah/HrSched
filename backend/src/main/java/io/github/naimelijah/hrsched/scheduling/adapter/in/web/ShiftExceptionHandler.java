@@ -1,6 +1,6 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
-import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidShiftPeriodException;
+import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -22,8 +22,8 @@ public class ShiftExceptionHandler {
    * @param exception the rule violation raised by the domain
    * @return an RFC 9457 problem detail with status 400
    */
-  @ExceptionHandler(InvalidShiftPeriodException.class)
-  public ProblemDetail handleInvalidShiftPeriod(InvalidShiftPeriodException exception) {
+  @ExceptionHandler(InvalidTimeRangeException.class)
+  public ProblemDetail handleInvalidTimeRange(InvalidTimeRangeException exception) {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     problem.setTitle("Invalid shift period");
