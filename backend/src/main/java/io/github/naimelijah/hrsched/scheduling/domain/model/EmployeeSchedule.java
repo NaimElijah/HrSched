@@ -3,13 +3,16 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
+import java.util.TreeMap;
 
 /**
  * Everything one employee is being asked to work, in order.
@@ -37,22 +40,41 @@ public record EmployeeSchedule(EmployeeId employee, List<TimeRange> workingPerio
   }
 
   /**
-   * @return the distinct calendar days touched by any period, in order
-   *     <p>ASSUMPTION: days are counted in UTC, because a {@link TimeRange} carries no zone yet.
-   *     For an organisation whose shifts cross midnight in local time this will miscount, which is
-   *     one more reason the zone question has to be answered before this is trusted in production.
+   * Splits every period at midnight and totals the time falling on each calendar day.
+   *
+   * <p>Splitting rather than attributing a whole period to the day it starts on is what makes a
+   * daily cap mean anything: a shift running 22:00 to 06:00 places two hours on the first day and
+   * six on the second, so the second day's total includes work that began the day before.
+   *
+   * <p>ASSUMPTION: days are counted in UTC, because a {@link TimeRange} carries no zone yet. For an
+   * organisation whose shifts cross midnight in local time this attributes work to the wrong day,
+   * which is one more reason the zone question has to be answered before this is trusted in
+   * production.
+   *
+   * @return time worked per calendar day, in date order, with no zero-length entries
    */
-  public Set<LocalDate> workingDays() {
-    Set<LocalDate> days = new TreeSet<>();
+  public Map<LocalDate, Duration> workingTimePerDay() {
+    Map<LocalDate, Duration> perDay = new TreeMap<>();
     for (TimeRange period : workingPeriods) {
-      LocalDate day = LocalDate.ofInstant(period.start(), ZoneOffset.UTC);
-      LocalDate last = LocalDate.ofInstant(period.end(), ZoneOffset.UTC);
-      while (!day.isAfter(last)) {
-        days.add(day);
-        day = day.plusDays(1);
+      Instant cursor = period.start();
+      while (cursor.isBefore(period.end())) {
+        LocalDate day = LocalDate.ofInstant(cursor, ZoneOffset.UTC);
+        Instant midnight = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant sliceEnd = midnight.isBefore(period.end()) ? midnight : period.end();
+        perDay.merge(day, Duration.between(cursor, sliceEnd), Duration::plus);
+        cursor = sliceEnd;
       }
     }
-    return days;
+    return Collections.unmodifiableMap(perDay);
+  }
+
+  /**
+   * @return the distinct calendar days on which any time is actually worked, in order
+   *     <p>A period's end is exclusive, so a shift finishing exactly at midnight does not make the
+   *     following day a working day.
+   */
+  public Set<LocalDate> workingDays() {
+    return Collections.unmodifiableSet(workingTimePerDay().keySet());
   }
 
   /**
