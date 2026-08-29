@@ -1,0 +1,24 @@
+# Language-agnostic only. Add per-language rules (indent width, line length) alongside the
+# formatter config when the toolchain is chosen — see docs/ADRs/ (ADR-001, unwritten).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,jsonc,yml,yaml,toml,xml,html,css,js,jsx,ts,tsx}]
+indent_size = 2
+
+[*.md]
+# Markdown gives meaning to a two-space line ending; trimming it silently joins lines.
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab
+
+[*.{bat,cmd,ps1}]
+end_of_line = crlf

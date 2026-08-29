@@ -1,0 +1,46 @@
+# Architecture Decision Records
+
+One file per decision, recording **why** a solution was chosen — the context that forced
+it, what it costs, and what was turned down. For *what the system must do* see
+[requirements.md](../requirements/requirements.md); for *how it is built* see
+[architecture.md](../architecture/architecture.md).
+
+## Index
+
+| ADR | Title | Status | Date |
+| --- | --- | --- | --- |
+| — | *no decisions recorded yet* | — | — |
+
+## Decisions waiting to be recorded
+
+These are known-open and blocking work elsewhere in the repository. They are **not** ADRs
+yet — an entry here is a placeholder, not a decision.
+
+| Will be | Decision | Blocks |
+| --- | --- | --- |
+| ADR-001 | Language, runtime, and framework | Every build/run/test command; the whole of `architecture.md` |
+| ADR-002 | Module boundaries and dependency direction | Project structure, review standards |
+| ADR-003 | Data storage and schema strategy | Persistence guarantees, migration rules |
+
+## Conventions
+
+- **Filename** — `ADR-NNN-short-kebab-title.md`, zero-padded and monotonically increasing.
+  Numbers are never reused, even if an ADR is superseded.
+- **Contents** — Title, Status, Date, Context, Decision, Consequences, Alternatives
+  considered. Start from [`adr-template.md`](adr-template.md).
+- **Status** — `Proposed`, `Accepted`, or `Superseded by ADR-NNN`.
+- **Append-only** — an accepted ADR is never rewritten or deleted. To change course, write a
+  new ADR and mark the old one `Superseded by ADR-NNN`. The history is the point.
+- **Same commit** — when work invalidates or extends a decision, the status change ships in
+  the commit that changes the behaviour, not afterwards.
+
+## When to write one
+
+Whenever a decision shapes the architecture: language, framework, library, tool or
+technology choices; layering and module boundaries; data storage and schema strategy; API
+style and contracts; authentication; deployment and infrastructure topology; build and test
+strategy; or any deliberate trade-off a future maintainer would otherwise have to
+reverse-engineer.
+
+Write them for **rejections** too — something considered and turned down — including the
+concrete threshold or event that would make us revisit it.
