@@ -1,9 +1,12 @@
 package io.github.naimelijah.hrsched.architecture;
 
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
+import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -70,4 +73,19 @@ class HexagonalArchitectureTest {
   @ArchTest
   static final ArchRule packages_are_free_of_cycles =
       slices().matching("io.github.naimelijah.hrsched.(*)..").should().beFreeOfCycles();
+
+  /**
+   * Bounded contexts are independent. Configuration is exempt because wiring every context is
+   * precisely its job; see ADR-004.
+   */
+  @ArchTest
+  static final ArchRule contexts_do_not_depend_on_each_other =
+      slices()
+          .matching("io.github.naimelijah.hrsched.(*)..")
+          .namingSlices("$1")
+          .should()
+          .notDependOnEachOther()
+          .ignoreDependency(
+              resideInAPackage("..configuration.."), DescribedPredicate.<JavaClass>alwaysTrue())
+          .because("a bounded context that reaches into another is no longer a boundary");
 }
