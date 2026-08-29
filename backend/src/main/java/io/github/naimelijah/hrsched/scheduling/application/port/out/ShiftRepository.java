@@ -2,30 +2,27 @@ package io.github.naimelijah.hrsched.scheduling.application.port.out;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import java.util.List;
 import java.util.Optional;
 
 /**
- * Driven port: stores and retrieves shifts.
+ * Driven port: storing shifts.
  *
- * <p>Declared here, in the application layer, and implemented outward in an adapter. That inversion
- * is the whole point of the hexagon — the application states what it needs, and storage technology
- * conforms to it, never the reverse.
- *
- * <p>The interface is deliberately narrow. It will grow as use cases need it, not in anticipation
- * of them.
+ * <p>Every lookup is scoped by organisation, so a cross-tenant read cannot be written by forgetting
+ * a filter.
  */
 public interface ShiftRepository {
 
-  /**
-   * Persists a shift, replacing any existing shift with the same identity.
-   *
-   * @param shift the shift to store, never {@code null}
-   */
   void save(Shift shift);
 
+  Optional<Shift> findById(OrganisationId organisation, ShiftId id);
+
   /**
-   * @param id the identity to look up, never {@code null}
-   * @return the stored shift, or {@link Optional#empty()} if there is none
+   * @param organisation whose shifts
+   * @param within the span to look inside
+   * @return every shift of that organisation that overlaps the span
    */
-  Optional<Shift> findById(ShiftId id);
+  List<Shift> findWithin(OrganisationId organisation, TimeRange within);
 }
