@@ -32,11 +32,11 @@ public class ShiftService implements ScheduleShiftUseCase, FindShiftUseCase {
   }
 
   @Override
-  public ShiftId schedule(ScheduleShiftCommand command) {
+  public Shift schedule(ScheduleShiftCommand command) {
     Objects.requireNonNull(command, "command must not be null");
     Shift shift = new Shift(ShiftId.newId(), new ShiftPeriod(command.start(), command.end()));
     shiftRepository.save(shift);
-    return shift.id();
+    return shift;
   }
 
   @Override

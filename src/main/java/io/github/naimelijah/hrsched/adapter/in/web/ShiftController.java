@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.adapter.in.web;
 import io.github.naimelijah.hrsched.application.port.in.FindShiftUseCase;
 import io.github.naimelijah.hrsched.application.port.in.ScheduleShiftCommand;
 import io.github.naimelijah.hrsched.application.port.in.ScheduleShiftUseCase;
+import io.github.naimelijah.hrsched.domain.model.Shift;
 import io.github.naimelijah.hrsched.domain.model.ShiftId;
 import java.net.URI;
 import java.util.UUID;
@@ -41,14 +42,9 @@ public class ShiftController {
    */
   @PostMapping
   public ResponseEntity<ShiftResponse> schedule(@RequestBody ScheduleShiftRequest request) {
-    ShiftId id = scheduleShift.schedule(new ScheduleShiftCommand(request.start(), request.end()));
-    ShiftResponse body =
-        findShift
-            .findById(id)
-            .map(ShiftResponse::from)
-            .orElseThrow(
-                () -> new IllegalStateException("Shift %s vanished after saving".formatted(id)));
-    return ResponseEntity.created(URI.create("/api/shifts/" + id.value())).body(body);
+    Shift shift = scheduleShift.schedule(new ScheduleShiftCommand(request.start(), request.end()));
+    return ResponseEntity.created(URI.create("/api/shifts/" + shift.id().value()))
+        .body(ShiftResponse.from(shift));
   }
 
   /**

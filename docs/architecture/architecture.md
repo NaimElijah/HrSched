@@ -92,7 +92,7 @@ sequenceDiagram
     else valid
         S->>R: save(shift)
         R->>A: put into map
-        S-->>W: ShiftId
+        S-->>W: Shift
         W-->>C: 201 Created + Location + ShiftResponse
     end
 ```
