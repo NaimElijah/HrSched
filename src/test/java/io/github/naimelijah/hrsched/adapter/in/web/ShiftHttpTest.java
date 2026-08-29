@@ -66,6 +66,13 @@ class ShiftHttpTest {
   }
 
   @Test
+  void GivenABodyMissingItsFields_WhenPostingAShift_ThenTheRequestIsRejected() throws Exception {
+    mockMvc
+        .perform(post("/api/shifts").contentType(MediaType.APPLICATION_JSON).content("{}"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
   void GivenAnUnknownIdentity_WhenGettingAShift_ThenItIsNotFound() throws Exception {
     mockMvc.perform(get("/api/shifts/" + UUID.randomUUID())).andExpect(status().isNotFound());
   }
