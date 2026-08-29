@@ -1,7 +1,8 @@
 # Requirements — HrSched
 
-**Status: skeleton.** The purpose below is settled. Everything from *Functional
-requirements* onward is not, and is marked `TODO` rather than guessed at.
+**Status: skeleton.** The purpose below is settled and a runnable application skeleton
+exists, but **no functional requirement is implemented**. Everything from *Functional
+requirements* onward is still `TODO` rather than guessed at.
 
 This document states **what the system must do**. *How* it is built lives in
 [architecture.md](../architecture/architecture.md); *why* a given solution was chosen lives
@@ -90,9 +91,12 @@ and attendance clocking, applicant tracking, HR records of record.
 
 | # | Question | Owner | Blocks |
 | --- | --- | --- | --- |
-| Q1 | Which language, runtime, and framework? | NaimElijah | ADR-001, and every command in the README |
 | Q2 | Which roles use the system, and what may each do? | NaimElijah | Functional requirements, authorisation model |
 | Q3 | Single organisation, or multi-tenant? | NaimElijah | Data model, ADR on storage strategy |
 | Q4 | Which jurisdiction's working-time rules must a roster satisfy? | NaimElijah | Business rules, compliance |
 | Q5 | Where does this run — local, self-hosted, or a cloud target? | NaimElijah | Architecture, deployment section of the README |
 | Q6 | Is roster generation manual, assisted, or automatic (solver)? | NaimElijah | Scope, and whether a constraint solver is a dependency |
+
+**Resolved:** Q1 — language, runtime, and framework — is answered by
+[ADR-001](../ADRs/ADR-001-java-spring-boot-maven.md). Question numbers are never reused,
+so Q2–Q6 keep the identifiers other documents already reference.
