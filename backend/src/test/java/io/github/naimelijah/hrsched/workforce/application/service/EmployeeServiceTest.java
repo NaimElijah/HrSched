@@ -120,7 +120,7 @@ class EmployeeServiceTest {
   @Test
   void GivenAnEmployee_WhenDeclaringTheirOwnUnavailability_ThenItIsAllowed() {
     EmployeeId id = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
-    TenantActor themselves = new TenantActor(new UserId(id.value()), ACME, Role.EMPLOYEE);
+    TenantActor themselves = new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(id));
 
     assertThatCode(
             () ->
@@ -138,6 +138,31 @@ class EmployeeServiceTest {
             () ->
                 service.declareUnavailability(
                     someoneElse, new DeclareUnavailabilityCommand(ACME, other, MONDAY)))
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenAnEmployeeLinkedToAnotherRecord_WhenDeclaringUnavailability_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    EmployeeId grace = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Grace"));
+    TenantActor gracesAccount =
+        new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(grace));
+
+    assertThatThrownBy(
+            () ->
+                service.declareUnavailability(
+                    gracesAccount, new DeclareUnavailabilityCommand(ACME, ada, MONDAY)))
+        .describedAs("holding an employee link must not permit acting on a different record")
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenAnEmployee_WhenListingColleagues_ThenItIsRefused() {
+    service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor employee = new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE);
+
+    assertThatThrownBy(() -> service.findRosterable(employee, ACME))
+        .describedAs("unavailability is personal data; an employee has no reason to read another's")
         .isInstanceOf(NotPermittedException.class);
   }
 

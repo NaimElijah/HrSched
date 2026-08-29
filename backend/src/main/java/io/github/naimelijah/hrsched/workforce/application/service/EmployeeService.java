@@ -86,9 +86,13 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
     employees.save(employee.preferring(new ShiftPreference(command.period(), command.strength())));
   }
 
+  /**
+   * Restricted to Admins and Schedulers: unavailability is personal data — medical appointments,
+   * caring responsibilities — and an employee has no reason to read a colleague's.
+   */
   @Override
   public List<RosterableEmployee> findRosterable(Actor actor, OrganisationId organisation) {
-    actor.requireAccessTo(organisation);
+    authorise(actor, organisation, MAY_SEE_EVERYONE);
     return employees.findByOrganisation(organisation).stream()
         .map(EmployeeService::publish)
         .toList();
@@ -119,16 +123,18 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
   }
 
   /**
-   * Employees may declare their own unavailability and preferences; an Admin or Scheduler may do it
-   * on anyone's behalf. An Employee acting on someone else is refused.
+   * Anyone may act on their own record; acting on someone else's takes an Admin or Scheduler.
+   *
+   * <p>Whether the actor <em>is</em> the subject is decided by the employee link the actor carries,
+   * never by comparing a {@link io.github.naimelijah.hrsched.shared.domain.model.UserId} with an
+   * {@link EmployeeId}. Those are deliberately different identities and comparing them is always
+   * false, which silently makes self-service impossible.
    */
   private void authoriseSelfOrManager(
       Actor actor, OrganisationId organisation, EmployeeId subject) {
     actor.requireAccessTo(organisation);
-    if (actor instanceof TenantActor tenant && tenant.role() == Role.EMPLOYEE) {
-      if (!tenant.id().value().equals(subject.value())) {
-        tenant.requireRoleIn(MAY_SEE_EVERYONE);
-      }
+    if (actor instanceof TenantActor tenant && !tenant.isThemself(subject)) {
+      tenant.requireRoleIn(MAY_SEE_EVERYONE);
     }
   }
 }

@@ -17,6 +17,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-007](ADR-007-monorepo-backend-and-frontend.md) | Keep backend and frontend in one repository, as sibling directories | Accepted | 2026-08-29 |
 | [ADR-008](ADR-008-context-integration.md) | Contexts integrate through published ports and a minimal shared kernel | Accepted | 2026-08-30 |
 | [ADR-009](ADR-009-tenant-isolation-in-the-domain.md) | Carry tenancy in the domain and enforce it at the application boundary | Accepted | 2026-08-30 |
+| [ADR-012](ADR-012-acting-identity-carries-its-employee-record.md) | The acting identity carries the employee record it is | Accepted | 2026-08-30 |
 
 ## Decisions waiting to be recorded
 
