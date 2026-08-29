@@ -18,15 +18,20 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,7 +52,12 @@ import java.util.Set;
 public class SchedulingService
     implements ManageShiftsUseCase, ConfigureConstraintsUseCase, PlanRostersUseCase {
 
-  private static final Set<Role> MAY_SCHEDULE = Set.of(Role.SCHEDULER, Role.ADMIN);
+  /**
+   * Building rosters belongs to the Scheduler alone. An Admin manages people, qualifications and
+   * the constraint set — {@link Role#ADMIN} says so, and so does requirements F1/F3/F11/F12.
+   */
+  private static final Set<Role> MAY_SCHEDULE = Set.of(Role.SCHEDULER);
+
   private static final Set<Role> MAY_CONFIGURE = Set.of(Role.ADMIN);
 
   private final ShiftRepository shifts;
@@ -72,6 +82,7 @@ public class SchedulingService
   @Override
   public ShiftId defineShift(Actor actor, DefineShiftCommand command) {
     authorise(actor, command.organisation(), MAY_SCHEDULE);
+    requireDefinedQualifications(actor, command.organisation(), command.requiredQualifications());
     Shift shift =
         new Shift(
             ShiftId.newId(),
@@ -128,6 +139,7 @@ public class SchedulingService
       throw new RosterNotCompliantException(violations);
     }
 
+    supersedeOverlapping(organisation, draft);
     Roster published = draft.publishedUnder(constraints.version());
     rosters.save(published);
     return published;
@@ -148,14 +160,47 @@ public class SchedulingService
       OrganisationId organisation, Roster roster, ConstraintSet constraints) {
     Map<ShiftId, TimeRange> periods = new LinkedHashMap<>();
     for (Assignment assignment : roster.assignments()) {
-      shifts
-          .findById(organisation, assignment.shift())
-          .ifPresent(shift -> periods.put(shift.id(), shift.period()));
+      Shift shift =
+          shifts
+              .findById(organisation, assignment.shift())
+              .orElseThrow(() -> new RosterNotVerifiableException(roster.id(), assignment.shift()));
+      periods.put(shift.id(), shift.period());
     }
     return roster.schedulesFor(periods).stream()
         .map(constraints::violationsFor)
         .flatMap(List::stream)
         .toList();
+  }
+
+  /**
+   * Marks every published roster this one replaces as superseded, so that exactly one roster is
+   * authoritative for any given moment.
+   *
+   * <p>Overlap, not equality, decides what is replaced: a roster republished for a shorter window
+   * during the week still governs the days it covers, and leaving the old one PUBLISHED would give
+   * those days two authoritative answers. This is the mechanism that removes the need for an
+   * override — see ADR-005 and requirement R6.
+   */
+  private void supersedeOverlapping(OrganisationId organisation, Roster replacement) {
+    rosters.findByOrganisation(organisation).stream()
+        .filter(existing -> existing.status() == RosterStatus.PUBLISHED)
+        .filter(existing -> !existing.id().equals(replacement.id()))
+        .filter(existing -> existing.period().overlaps(replacement.period()))
+        .forEach(existing -> rosters.save(existing.superseded()));
+  }
+
+  /** Refuses a shift demanding a qualification the organisation has never defined. */
+  private void requireDefinedQualifications(
+      Actor actor, OrganisationId organisation, Set<QualificationId> required) {
+    if (required.isEmpty()) {
+      return;
+    }
+    Set<QualificationId> defined = workforce.definedQualifications(actor, organisation);
+    Set<QualificationId> unknown = new LinkedHashSet<>(required);
+    unknown.removeAll(defined);
+    if (!unknown.isEmpty()) {
+      throw new UnknownRequiredQualificationException(unknown);
+    }
   }
 
   private ConstraintSet currentOrInitial(OrganisationId organisation) {

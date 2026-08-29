@@ -4,9 +4,14 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandid
 import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.workforce.application.port.in.FindRosterableEmployeesUseCase;
+import io.github.naimelijah.hrsched.workforce.application.port.in.ManageQualificationsUseCase;
+import io.github.naimelijah.hrsched.workforce.application.port.in.PublishedQualification;
 import io.github.naimelijah.hrsched.workforce.application.port.in.RosterableEmployee;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 /**
@@ -23,9 +28,12 @@ import org.springframework.stereotype.Component;
 public class WorkforceDirectoryAdapter implements WorkforceDirectory {
 
   private final FindRosterableEmployeesUseCase workforce;
+  private final ManageQualificationsUseCase qualifications;
 
-  public WorkforceDirectoryAdapter(FindRosterableEmployeesUseCase workforce) {
+  public WorkforceDirectoryAdapter(
+      FindRosterableEmployeesUseCase workforce, ManageQualificationsUseCase qualifications) {
     this.workforce = workforce;
+    this.qualifications = qualifications;
   }
 
   @Override
@@ -33,6 +41,13 @@ public class WorkforceDirectoryAdapter implements WorkforceDirectory {
     return workforce.findRosterable(actor, organisation).stream()
         .map(WorkforceDirectoryAdapter::translate)
         .toList();
+  }
+
+  @Override
+  public Set<QualificationId> definedQualifications(Actor actor, OrganisationId organisation) {
+    return qualifications.findQualifications(actor, organisation).stream()
+        .map(PublishedQualification::id)
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   private static RosterCandidate translate(RosterableEmployee employee) {
