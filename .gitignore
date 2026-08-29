@@ -1,5 +1,13 @@
-# No stack detected yet — add build-tool entries (target/, node_modules/, __pycache__/, …)
-# when the toolchain is chosen.
+# Build output
+target/
+build/
+!**/src/main/**/target/
+!**/src/test/**/target/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Maven wrapper downloads its own distribution; the jar is not committed.
+.mvn/wrapper/maven-wrapper.jar
 
 # Secrets
 .env
@@ -9,8 +17,15 @@
 # Editors / IDEs
 .idea/
 *.iml
+*.ipr
+*.iws
 .vscode/
 *.swp
+.classpath
+.project
+.settings/
+.factorypath
+.apt_generated
 
 # OS
 .DS_Store
