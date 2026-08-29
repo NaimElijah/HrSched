@@ -1,8 +1,8 @@
 # Requirements — HrSched
 
-**Status: skeleton.** The purpose below is settled and a runnable application skeleton
-exists, but **no functional requirement is implemented**. Everything from *Functional
-requirements* onward is still `TODO` rather than guessed at.
+**Status: specified, partially built.** Every question that blocked modelling is answered. The
+domain is modelled and F1, F3, F5 (read), F8, F9 and F10 work end to end; generation is greedy
+rather than optimised, nothing survives a restart, and there is no authentication.
 
 This document states **what the system must do**. *How* it is built lives in
 [architecture.md](../architecture/architecture.md); *why* a given solution was chosen lives
@@ -12,19 +12,21 @@ in the [ADRs](../ADRs/). Neither is restated here.
 
 ## Purpose and scope
 
-HrSched is a **staff shift scheduling (rostering) system**. It exists to turn two inputs —
-a set of shifts that need covering, and a set of employees with availability and
-eligibility constraints — into a published roster, and to keep that roster correct as
-reality changes (sickness, swaps, demand shifts, late cancellations).
+HrSched is a **staff shift scheduling (rostering) system, sold as a product to multiple
+organisations**. It exists to turn two inputs — a set of shifts that need covering, and a set
+of employees with availability and eligibility constraints — into a published roster, and to
+keep that roster correct as reality changes (sickness, swaps, demand shifts, late
+cancellations).
 
 The value is in the constraints, not the calendar: a roster that ignores rest periods,
 qualifications, or contracted hours is worse than no roster, because it looks authoritative
 while being wrong.
 
-**Who it is for** — `TODO`: which organisation type and size (single site vs. multi-site,
-10 staff vs. 1,000), and which roles use it (scheduler, employee, manager, admin).
+**Who it is for** — independent organisations, each running its own staff, shifts, and rules
+on a shared deployment, with no visibility of one another. Within an organisation there are
+three roles: **Employee**, **Scheduler**, and **Admin**.
 
-**Deliberately out of scope** — see [Non-goals](#non-goals), currently open.
+**Deliberately out of scope** — see [Non-goals](#non-goals).
 
 ---
 
@@ -33,57 +35,135 @@ while being wrong.
 Each requirement is stated as something a user or caller can *do*, and names the test or
 class that enforces it once one exists — so this table can be checked rather than trusted.
 
-| ID | Requirement | Enforced by |
-| --- | --- | --- |
-| `TODO` | `TODO` — e.g. *"A scheduler can publish a roster for a date range."* | *not implemented* |
+`TODO`: this table was derived from the confirmed role definitions rather than stated directly,
+so each row is **proposed until reviewed line by line**. Rows naming a class and a test are
+implemented; the rest are not.
 
-`TODO`: enumerate the capabilities. Suggested order to work through — **roster
-construction**, **availability capture**, **publication and notification**, **change
-after publication** (swaps, cancellations, cover), **reporting**. Do not add a row until
-the capability is actually wanted; a speculative row is worse than a missing one.
+| ID | Role | Requirement | Enforced by |
+| --- | --- | --- | --- |
+| F1 | Scheduler | Define the shifts that need covering, with headcount and qualifications | `SchedulingService`, `RosteringHttpTest` |
+| F2 | Scheduler | Assign an employee to a shift, and remove that assignment | *not implemented* |
+| F3 | Scheduler | Publish a roster, after it passes the organisation rules | `SchedulingService`, `RosteringHttpTest` |
+| F4 | Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest` |
+| F5 | Employee | See their own published roster | *not implemented: rosters are readable by Schedulers only* |
+| F6 | Employee | Declare when they cannot work, and state soft preferences | `EmployeeService`, `EmployeeServiceTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)) |
+| F7 | Employee | Request a swap of one of their assignments with another employee | *not implemented* |
+| F8 | Admin | Add employees | `EmployeeService`, `EmployeeServiceTest` |
+| F9 | Admin | Define qualifications, and grant them to employees | `QualificationService`, `EmployeeServiceTest` |
+| F10 | Admin | Configure the organisation's working-time constraint set | `SchedulingService`, `RosteringHttpTest` |
+| F11 | Scheduler | Generate a draft roster covering a period, filling every shift it legally can | `SchedulingService`, `RosteringHttpTest` |
+| F12 | Scheduler | Publish a draft, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest` |
+| F13 | Operator | Administer organisations across the platform | *partially: an Operator may act across tenants; there is nothing to administer yet* |
+
+**Swaps (F7)** are approved by a **Scheduler**; the other employee is informed rather than
+asked. Not yet implemented.
+
+**Roster generation is automatic** — that is the point of the product. A Scheduler states what
+needs covering and the system produces a legal roster. Today it does so greedily and optimises
+nothing; see [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md).
 
 ---
 
 ## Business rules and invariants
 
-The constraints the domain enforces: limits, legal state transitions, uniqueness, validation.
+### Working-time rules are configuration, not code
 
-`TODO`. These are the questions that decide the shape of the domain model — answer them
-before any code is written, because each answer either is or is not representable in the
-type system, and that is the difference between a bug and an impossible state:
+**The domain enforces a configured set of constraints. It does not encode any country's law.**
+A jurisdiction — Israel, the EU directive, the UK regulations, a US state — is expressed as a
+*preset*: a named constraint set with particular values. A constraint set belonging to no
+jurisdiction at all is equally valid, and an organisation may define its own.
 
-- Can one employee hold two overlapping assignments? Never, or with an explicit override?
-- What is the minimum rest period between two assignments, and is it a hard rule or a warning?
-- Which states can a roster be in, and which transitions are legal
-  (`draft → published → ?`)? Can a published roster be edited in place, or only superseded?
-- Does a shift have a minimum and maximum headcount, and what happens when it is under-filled?
-- Which qualifications gate which shifts, and who may grant one?
-- Are contracted hours a hard cap, a soft target, or informational?
+This has three consequences that the model must honour:
+
+- **No legal threshold is hardcoded anywhere.** A minimum rest period is a value in a
+  constraint set, never a constant in a domain class.
+- **Each organisation configures its own set** (F10), because tenants may operate under
+  different law or under stricter internal policy.
+- **A preset is data, and its values must be sourced.** Before any preset ships, its numbers
+  are taken from the statute and the source cited. A preset that is wrong produces rosters
+  that are confidently illegal, which is the exact failure this product exists to prevent.
+
+### Constraints are invariants, not warnings
+
+A roster that violates its organisation's constraint set **cannot be published**. There is no
+override, and none is needed: emergency cover means publishing a replacement roster that is
+itself legal, or leaving the shift uncovered so the business sees the real problem. That is why
+a published roster is superseded rather than edited (R6).
+
+### Rules that hold regardless of configuration
+
+| ID | Rule |
+| --- | --- |
+| R1 | A time range must end strictly after it starts. *`TimeRange`, `TimeRangeTest`* |
+| R2 | An employee must have a name that is not blank. *`Employee`, `EmployeeTest`* |
+| R3 | An employee may not hold two overlapping assignments. *`GreedyRosterGenerator`, `MinimumRestBetweenAssignments`* |
+| R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `EmployeeTest`* |
+| R5 | An employee may only be assigned within their own organisation. *`SchedulingService`, `RosteringHttpTest`* |
+| R6 | A published roster may not be edited; it is superseded by a new version. *`Roster`, `SchedulingService`, `SchedulingServiceTest`* |
+| R7 | An employee may not declare overlapping unavailability. *`Employee`, `EmployeeTest`* |
+| R8 | A shift must require at least one person. *`Shift`, `RosteringHttpTest`* |
+| R9 | A shift may only require qualifications its own organisation has defined. *`SchedulingService`, `SchedulingServiceTest`* |
+| R10 | A roster assigning a shift that cannot be resolved cannot be published. *`Roster`, `SchedulingServiceTest`* |
+| R11 | Publishing a roster supersedes every published roster of that organisation whose period it overlaps. *`SchedulingService`, `SchedulingServiceTest`* |
+
+A roster moves `DRAFT → PUBLISHED → SUPERSEDED`, and no other transition is legal. Exactly one
+roster is authoritative for any given moment, which is what R11 enforces.
+
+**Only a Scheduler builds rosters.** An Admin manages people, qualifications and the constraint
+set and cannot define shifts, generate or publish — F1/F3/F11/F12 against F8/F9/F10.
+
+**Unavailability is personal data.** Listing the people in an organisation, which carries their
+unavailability, is restricted to Admins and Schedulers; an Employee cannot read a colleague's.
+
+### Constraints a set may express
+
+Implemented: **minimum rest between assignments**, **maximum daily working time**, **maximum
+working time across the roster period**, **maximum consecutive working days**. Each is optional;
+an unset constraint is simply not enforced, and an empty set is a valid configuration.
+
+`TODO`: minimum uninterrupted weekly rest; limits specific to night work; contracted-hours
+floors and ceilings; and averaging a weekly maximum over a reference period longer than the
+roster, which needs history the current model does not hold.
+
+### What makes one legal roster better than another
+
+The objectives a generator should optimise, **none of them modelled yet**: fair distribution of
+unpopular shifts, respect for stated preferences, and minimal disruption when re-generating a
+published roster. These are explicitly *not* constraints — see ADR-005 and ADR-010.
 
 ---
 
 ## Non-functional requirements
 
-- **Authentication and authorisation** — `TODO`: identity source, and the role/permission
-  model. At minimum: who may publish a roster, and who may see whose availability.
+- **Authentication and authorisation** — three roles per organisation: **Employee**,
+  **Scheduler**, **Admin**, plus a platform **Operator** belonging to no organisation and the
+  only identity permitted to cross the tenant boundary. Authorisation is enforced in the
+  application services. **Authentication does not exist**: the acting identity currently comes
+  from request headers and any caller can claim any role. The identity provider is `TODO`
+  (ADR-011), and the placeholder must be deleted when it lands.
+- **Tenant isolation** — the deployment is shared by independent organisations that must never
+  see one another's data. Every aggregate belongs to exactly one organisation, and every query
+  is scoped to it. A cross-tenant read is a security incident, not a bug, and isolation must be
+  covered by its own tests rather than assumed.
 - **Persistence guarantees** — `TODO`: what must survive a crash, whether roster history is
-  append-only or mutable, and the retention period.
-- **Performance and scale** — `TODO`: expected employees, shifts per planning period, and
-  concurrent schedulers. State targets as measurable numbers (e.g. *p99 under 200 ms for a
-  roster read at 500 employees*), never as "fast".
-- **Availability** — `TODO`: is this business-hours-only tooling, or does it need to be up
-  when a 04:00 shift starts?
-- **Compliance** — `TODO`: two live questions. (1) Rosters encode working-time regulation,
-  which is jurisdiction-specific — which jurisdiction? (2) Availability, absence, and
-  qualification records are personal data; confirm the obligations that follow.
+  append-only, and the retention period. Blocked on ADR-004.
+- **Performance and scale** — `TODO`: state as measurable numbers per organisation (employees,
+  shifts per planning period, concurrent schedulers), plus expected number of organisations.
+- **Availability** — `TODO`: is this business-hours tooling, or must it be up when a 04:00
+  shift starts? Selling it to third parties raises the bar.
+- **Deployment** — containerised with externalised configuration; the provider is deliberately
+  deferred to its own ADR so the choice does not leak into the design.
+- **Compliance** — availability, absence, and qualification records are personal data across
+  multiple client organisations. `TODO`: confirm the obligations, including which regime
+  applies and whether data location is constrained.
 
 ---
 
 ## Non-goals
 
-`TODO`. What the project deliberately does not do, so nobody re-proposes it. Candidates
-worth deciding on explicitly rather than drifting into: payroll and pay calculation, time
-and attendance clocking, applicant tracking, HR records of record.
+Deliberately not written yet, at the repository owner's direction. Candidates worth deciding on
+explicitly rather than drifting into: payroll and pay calculation, time and attendance clocking,
+applicant tracking, and being the HR system of record.
 
 ---
 
@@ -91,12 +171,27 @@ and attendance clocking, applicant tracking, HR records of record.
 
 | # | Question | Owner | Blocks |
 | --- | --- | --- | --- |
-| Q2 | Which roles use the system, and what may each do? | NaimElijah | Functional requirements, authorisation model |
-| Q3 | Single organisation, or multi-tenant? | NaimElijah | Data model, ADR on storage strategy |
-| Q4 | Which jurisdiction's working-time rules must a roster satisfy? | NaimElijah | Business rules, compliance |
-| Q5 | Where does this run — local, self-hosted, or a cloud target? | NaimElijah | Architecture, deployment section of the README |
-| Q6 | Is roster generation manual, assisted, or automatic (solver)? | NaimElijah | Scope, and whether a constraint solver is a dependency |
+| Q12 | What identity provider, and how does an Actor get built from a real credential? | NaimElijah | Deleting the header placeholder; ADR-011 |
+| Q13 | How are the generator objectives weighted against one another? | NaimElijah | ADR-010, and introducing a solver |
+| Q14 | Over what reference period is a weekly maximum averaged? | NaimElijah | Whether constraint checking needs history beyond the roster |
+| Q15 | What are the non-goals? | NaimElijah | Deferred deliberately |
+| Q16 | When a new roster only partly overlaps a published one, should the old one be superseded whole, or only for the days replaced? | NaimElijah | Refining R11; today the whole roster is superseded |
+| Q17 | Which time zone are working-time rules evaluated in? | NaimElijah | Daily and consecutive-day limits currently count days in UTC |
 
-**Resolved:** Q1 — language, runtime, and framework — is answered by
-[ADR-001](../ADRs/ADR-001-java-spring-boot-maven.md). Question numbers are never reused,
-so Q2–Q6 keep the identifiers other documents already reference.
+**Resolved**
+
+| # | Question | Answer | Date |
+| --- | --- | --- | --- |
+| Q1 | Language, runtime, framework | Java 21, Spring Boot, Maven — [ADR-001](../ADRs/ADR-001-java-spring-boot-maven.md) | 2026-08-29 |
+| Q2 | Which roles use the system | Employee, Scheduler, Admin | 2026-08-30 |
+| Q3 | Single organisation or multi-tenant | Multi-tenant: independent organisations, strict isolation | 2026-08-30 |
+| Q4 | Whose working-time rules apply | None hardcoded. A configurable constraint set; jurisdictions are presets | 2026-08-30 |
+| Q5 | Where it runs | Containerised, provider deferred to its own ADR | 2026-08-30 |
+| Q6 | How rosters are built | Automatic generation is the point — [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md) | 2026-08-30 |
+| Q7 | Who administers organisations | A platform Operator, the only identity crossing tenants | 2026-08-30 |
+| Q9 | A published roster when rules change | It keeps the version that approved it; changes are never retroactive | 2026-08-30 |
+| Q10 | Emergency cover without an override | Supersede with a new compliant roster | 2026-08-30 |
+| Q8 | What a constraint set is attached to | One per organisation; per-person variation is contract terms, held separately | 2026-08-30 |
+| Q11 | Who approves a swap | A Scheduler; the colleague is informed | 2026-08-30 |
+
+Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17.

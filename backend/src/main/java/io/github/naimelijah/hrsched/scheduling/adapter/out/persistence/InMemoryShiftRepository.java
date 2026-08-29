@@ -3,6 +3,10 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -11,25 +15,31 @@ import org.springframework.stereotype.Repository;
 /**
  * Driven adapter storing shifts in memory.
  *
- * <p>PLACEHOLDER. Nothing survives a restart. It exists so the hexagon is complete and provable
- * without choosing a database, because that choice is ADR-004 and is not yet made. Adding a JPA
- * starter here would have made that decision by default.
- *
- * <p>When ADR-004 lands, this class is replaced and nothing inward of the {@link ShiftRepository}
- * port changes — which is the property the architecture exists to buy.
+ * <p>PLACEHOLDER until ADR-004. Nothing survives a restart. Every read filters by organisation
+ * first, mirroring the tenant predicate a real store will need.
  */
 @Repository
 public class InMemoryShiftRepository implements ShiftRepository {
 
-  private final Map<ShiftId, Shift> shiftsById = new ConcurrentHashMap<>();
+  private final Map<ShiftId, Shift> byId = new ConcurrentHashMap<>();
 
   @Override
   public void save(Shift shift) {
-    shiftsById.put(shift.id(), shift);
+    byId.put(shift.id(), shift);
   }
 
   @Override
-  public Optional<Shift> findById(ShiftId id) {
-    return Optional.ofNullable(shiftsById.get(id));
+  public Optional<Shift> findById(OrganisationId organisation, ShiftId id) {
+    return Optional.ofNullable(byId.get(id))
+        .filter(shift -> shift.organisation().equals(organisation));
+  }
+
+  @Override
+  public List<Shift> findWithin(OrganisationId organisation, TimeRange within) {
+    return byId.values().stream()
+        .filter(shift -> shift.organisation().equals(organisation))
+        .filter(shift -> shift.period().overlaps(within))
+        .sorted(Comparator.comparing(shift -> shift.period().start()))
+        .toList();
   }
 }
