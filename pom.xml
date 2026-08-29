@@ -20,6 +20,7 @@
 		<java.version>21</java.version>
 		<spotless.version>2.44.5</spotless.version>
 		<google-java-format.version>1.27.0</google-java-format.version>
+		<archunit.version>1.4.1</archunit.version>
 	</properties>
 
 	<dependencies>
@@ -41,6 +42,17 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!--
+		  Enforces the hexagon. Nothing in the JDK, Maven, or Spring can fail a build when the
+		  domain imports a framework type; without this the dependency rule is only a comment.
+		  Apache-2.0, actively maintained. See ADR-003.
+		-->
+		<dependency>
+			<groupId>com.tngtech.archunit</groupId>
+			<artifactId>archunit-junit5</artifactId>
+			<version>${archunit.version}</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

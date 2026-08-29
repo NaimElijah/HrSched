@@ -7,6 +7,7 @@
 ![status](https://img.shields.io/badge/status-skeleton-lightgrey?style=flat-square)
 ![java](https://img.shields.io/badge/Java-21%20LTS-blue?style=flat-square)
 ![spring boot](https://img.shields.io/badge/Spring%20Boot-4.1.1-brightgreen?style=flat-square)
+![architecture](https://img.shields.io/badge/architecture-hexagonal-orange?style=flat-square)
 ![licence](https://img.shields.io/badge/licence-proprietary-lightgrey?style=flat-square)
 
 [Requirements](docs/requirements/requirements.md) · [Architecture](docs/architecture/architecture.md) · [Decisions](docs/ADRs/)
@@ -16,9 +17,9 @@
 ---
 
 > [!WARNING]
-> **The application runs, but it does nothing yet.** It starts, serves health and readiness
-> endpoints, and has no rostering logic — no domain model, no persistence, no API beyond
-> Actuator. What is real is the build, the test harness, and the decisions behind them.
+> **The architecture is real; the product is not.** The hexagon is in place and enforced by a
+> build-failing test, but it contains one walking-skeleton use case that satisfies **no stated
+> requirement**. There is no roster, no employee, no persistence that survives a restart.
 
 This README is ordered for a **contributor**, not an evaluator: there is not yet anything to
 evaluate, so Quick start comes before Architecture.
@@ -43,7 +44,8 @@ the shop floor at 04:00, not in the spreadsheet.
 HrSched takes the shifts that need covering and the people available to cover them, and
 produces a roster that respects those constraints, then keeps it correct as sickness, swaps,
 and cancellations arrive. The value is in the constraint checking; the calendar is the easy
-part.
+part — which is why that logic is deliberately kept away from HTTP, storage, and the
+framework.
 
 What it deliberately does *not* do is not yet settled — see
 [Non-goals](docs/requirements/requirements.md#non-goals), currently an open question rather
@@ -53,8 +55,12 @@ than an answer.
 
 **None yet.** No functional requirement is implemented; the
 [requirements table](docs/requirements/requirements.md#functional-requirements) is still
-empty by design. This section stays empty until a capability exists in code — a feature
-listed here and absent from the build is a bug report waiting to be filed.
+empty by design.
+
+The `/api/shifts` endpoints below exist as a **walking skeleton** — the thinnest possible
+slice through every layer, so the architecture rules have real classes to check. They are
+scaffolding, not a capability, and this section stays empty until something satisfies a
+stated requirement.
 
 ## Quick start
 
@@ -72,7 +78,7 @@ Maven is **not** a prerequisite — the committed wrapper downloads its own pinn
 git clone https://github.com/NaimElijah/HrSched.git
 cd HrSched
 
-./mvnw verify          # format check + compile + tests. First run downloads Maven and deps.
+./mvnw verify          # format check + architecture rules + compile + tests
 ./mvnw spring-boot:run # starts on http://localhost:8080
 ```
 
@@ -82,23 +88,33 @@ There is no seed data and there are no credentials, because there is no database
 authentication yet.
 
 > [!TIP]
-> `./mvnw verify` is the whole gate — format check, build, and tests in one command. CI runs
-> that exact command and nothing else, so it cannot drift away from what gates a merge. See
-> [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md).
+> `./mvnw verify` is the whole gate — formatting, architecture, build, and tests in one
+> command. CI runs that exact command and nothing else, so it cannot drift away from what
+> gates a merge. See [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md).
 
 ## Usage
 
-The only endpoints that exist today are the health probes. Real responses from a local run:
+Walking skeleton only. Real responses from a local run:
 
 ```console
+$ curl -si -X POST localhost:8080/api/shifts -H 'Content-Type: application/json' \
+    -d '{"start":"2026-09-01T08:00:00Z","end":"2026-09-01T16:00:00Z"}'
+HTTP/1.1 201
+Location: /api/shifts/1f9c1e2a-...
+{"id":"1f9c1e2a-...","start":"2026-09-01T08:00:00Z","end":"2026-09-01T16:00:00Z"}
+
 $ curl -s localhost:8080/actuator/health
 {"groups":["liveness","readiness"],"status":"UP"}
+```
 
-$ curl -s localhost:8080/actuator/health/readiness
-{"status":"UP"}
+A period that ends before it starts is rejected by the domain and translated to an RFC 9457
+problem by the web adapter:
 
-$ curl -s localhost:8080/actuator/health/liveness
-{"status":"UP"}
+```console
+$ curl -s -X POST localhost:8080/api/shifts -H 'Content-Type: application/json' \
+    -d '{"start":"2026-09-01T16:00:00Z","end":"2026-09-01T08:00:00Z"}'
+{"type":"about:blank","title":"Invalid shift period","status":400,
+ "detail":"A shift must end after it starts, but got start=... end=..."}
 ```
 
 ## Configuration
@@ -114,118 +130,147 @@ database, no third-party API, and no authentication.
 | `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info` |
 | `server.port` | HTTP port | `8080` (Spring default, not overridden) |
 
-When the first secret appears, it goes in an environment variable and a committed
-`.env.example` with keys and no values — never in the repository, the logs, or an error
-message.
-
 ## Tech stack
 
 | Layer | Technology | Version | Why |
 | --- | --- | --- | --- |
 | Language | Java | 21 (LTS) | Matches the installed JDK; supported by Boot 4.x. [ADR-001](docs/ADRs/ADR-001-java-spring-boot-maven.md) |
 | Framework | Spring Boot | 4.1.1 | Supplies the HTTP boundary and health endpoints as configuration rather than code |
-| HTTP | `spring-boot-starter-webmvc` | via Boot BOM | Embedded Tomcat. **Note:** Boot 4.x renamed this from `spring-boot-starter-web` |
+| HTTP | `spring-boot-starter-webmvc` | via Boot BOM | Embedded Tomcat. **Boot 4.x renamed this** from `spring-boot-starter-web` |
 | Operations | `spring-boot-starter-actuator` | via Boot BOM | Health and readiness probes, required of every service by the project baseline |
+| Architecture | ArchUnit | 1.4.1 | Fails the build when the dependency rule is violated. [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md) |
 | Build | Maven Wrapper | 3.9.16 | Toolchain pinned in the repo; no global Maven install needed |
-| Format | Spotless + google-java-format | 2.44.5 / 1.27.0 | Bound to `validate`, so formatting is checked by the same command that builds. [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md) |
-| Test | JUnit 5 via Boot test starters | via Boot BOM | Boot 4.x splits the old `spring-boot-starter-test` into per-concern starters |
+| Format | Spotless + google-java-format | 2.44.5 / 1.27.0 | Bound to `validate`, so formatting is checked by the same command that builds |
+| Test | JUnit 5, AssertJ, MockMvc | via Boot BOM | Boot 4.x splits the old `spring-boot-starter-test` into per-concern starters |
 
 ## Architecture
 
-One Spring Boot process, packaged as an executable JAR, serving HTTP on 8080 via embedded
-Tomcat. No database, no broker, no second deployable. The only path through the system today
-is a health check.
+**Hexagonal (ports and adapters) with a DDD domain model.** A framework-free core surrounded
+by adapters. Dependencies point inward only: the domain knows nothing about the application
+layer, the application layer knows nothing about adapters or Spring, and only `adapter` and
+`configuration` import framework types.
 
 ```mermaid
 flowchart LR
-    client[HTTP client] -->|GET /actuator/health| tomcat[Embedded Tomcat]
-    tomcat --> actuator[Actuator health endpoint]
-    actuator -->|UP / DOWN| client
+    client[HTTP client]
+
+    subgraph adapters [Adapters]
+        web["adapter.in.web<br/>ShiftController"]
+        store["adapter.out.persistence<br/>InMemoryShiftRepository"]
+    end
+
+    subgraph hexagon [Hexagon - framework-free]
+        portIn["application.port.in<br/>use cases"]
+        service["application.service<br/>ShiftService"]
+        portOut["application.port.out<br/>ShiftRepository"]
+        domain["domain.model<br/>Shift, ShiftPeriod, ShiftId"]
+    end
+
+    client --> web
+    web --> portIn
+    portIn --> service
+    service --> domain
+    service --> portOut
+    store -.implements.-> portOut
 ```
 
-Full detail — components, dependency direction, and what is *not* yet enforced — is in
+This is not a convention — it is a **build failure**. `HexagonalArchitectureTest` runs in
+`./mvnw verify` and fails when the domain imports Spring, when the application reaches into an
+adapter, or when packages form a cycle.
+
+Component detail, the request sequence, and what is deliberately *not* modelled yet are in
 [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
 
 ## Project structure
 
 ```
-.
-├── .github/workflows/ci.yml   # Runs `./mvnw verify` on every push and PR
-├── .claude/                   # Agent configuration, tracked in git
-├── docs/
-│   ├── ADRs/                  # Decision records, index, and template
-│   ├── architecture/          # The system as it actually is
-│   └── requirements/          # What the system must do
-├── src/
-│   ├── main/java/io/github/naimelijah/hrsched/
-│   │   └── HrSchedApplication.java   # Composition root; holds no logic on purpose
-│   ├── main/resources/application.properties
-│   └── test/java/io/github/naimelijah/hrsched/
-│       └── HrSchedApplicationTests.java
-├── mvnw, mvnw.cmd, .mvn/      # Maven Wrapper — the single entry point
-└── pom.xml
+src/main/java/io/github/naimelijah/hrsched/
+├── domain/model/              # Entities and value objects. JDK imports only.
+│   ├── Shift.java             #   entity — identity equality, not a record
+│   ├── ShiftPeriod.java       #   value object — cannot exist ending before it starts
+│   ├── ShiftId.java           #   value object
+│   └── InvalidShiftPeriodException.java
+├── application/
+│   ├── port/in/               # Driving ports: what the outside may ask for
+│   ├── port/out/              # Driven ports: what the application needs
+│   └── service/               # Use case implementations. No Spring annotations.
+├── adapter/
+│   ├── in/web/                # REST controller, DTOs, problem-detail handler
+│   └── out/persistence/       # InMemoryShiftRepository — placeholder until ADR-004
+├── configuration/             # Spring wiring, so the hexagon needs no annotations
+└── HrSchedApplication.java    # Composition root; holds no logic on purpose
+
+src/test/java/…/architecture/HexagonalArchitectureTest.java   # enforces all of the above
 ```
 
-There is no domain package yet. When one lands, it must not import Spring, I/O, or transport
-types — see [Structural decisions](docs/architecture/architecture.md#structural-decisions-not-visible-from-the-file-layout).
+There is no `domain/service` package yet: no domain service exists, and empty packages are
+not created in anticipation.
 
 ## Development
 
 ```bash
-./mvnw spotless:apply   # fix formatting (google-java-format; non-negotiable, non-configurable)
-./mvnw spotless:check   # check only — what the build runs during `validate`
+./mvnw spotless:apply   # fix formatting (google-java-format; non-configurable)
 ./mvnw spring-boot:run  # run locally
 ./mvnw clean            # drop build output
 ```
 
+**Adding a use case** — the order that keeps the hexagon intact:
+
+1. Model or extend the concept in `domain/model`, with its invariants in the constructor.
+2. Declare the driving port in `application/port/in` and anything new it needs in
+   `application/port/out`.
+3. Implement it in `application/service` — no annotations.
+4. Register the bean in `configuration/UseCaseConfiguration`.
+5. Add the adapters: `adapter/in/web` for transport, `adapter/out/…` for the port.
+6. Test the domain and service without Spring; test the slice through HTTP.
+
 **Conventions**
 
 - **Commits** — [Conventional Commits](https://www.conventionalcommits.org/):
-  `type(scope): imperative subject`, under 72 characters. The body explains *why* and
-  references the issue or ADR. One logical change per commit; never a refactor mixed with a
-  behaviour change.
+  `type(scope): imperative subject`, under 72 characters. One logical change per commit.
 - **Branches** — `type/short-kebab-description`. Never commit straight to `main`.
 - **Formatting** — the formatter is authoritative. Never hand-format; run `spotless:apply`.
-- **Documentation** — a change to behaviour and the documentation describing it ship in the
-  same commit.
-- **Dependencies** — every new third-party dependency needs a recorded justification: what it
-  replaces, its maintenance status, its licence, and why the standard library or an existing
-  dependency is not enough. Add it to the table in
+- **Dependencies** — each new one needs a justification recorded in
   [`architecture.md`](docs/architecture/architecture.md#external-dependencies-and-integration-points).
 
 > [!IMPORTANT]
-> Spring Boot 4.x renamed starters that most tutorials and AI answers still refer to by their
-> 3.x names — `spring-boot-starter-web` is now `spring-boot-starter-webmvc`, and
-> `spring-boot-starter-test` is split per concern. Copy-pasted advice will not compile. Check
-> `pom.xml`, not the internet.
+> Spring Boot 4.x renamed things that most tutorials and AI answers still use by their 3.x
+> names: `spring-boot-starter-web` → `spring-boot-starter-webmvc`; `spring-boot-starter-test`
+> split per concern; `@WebMvcTest` moved to `org.springframework.boot.webmvc.test.autoconfigure`;
+> `@MockBean` replaced by `@MockitoBean`; and **Jackson 3** means `tools.jackson.databind`, not
+> `com.fasterxml.jackson.databind`. Check `pom.xml` and the jars, not the internet.
 
 ## Testing
 
 ```bash
-./mvnw verify                            # everything
-./mvnw test -Dtest=HrSchedApplicationTests   # a single test class
+./mvnw verify                              # everything: format, architecture, unit, HTTP
+./mvnw test -Dtest=HexagonalArchitectureTest   # just the architecture rules
 ```
 
-One test exists: a smoke test asserting the Spring context loads. Naming follows
-`Given<scenario>_When<action>_Then<result>`.
+| Test | Layer | What it covers |
+| --- | --- | --- |
+| `ShiftPeriodTest` | Domain | The one invariant that exists, plus null and boundary cases. No Spring. |
+| `ShiftServiceTest` | Application | Use cases against a hand-written stub of their own port. No Spring, no mocking framework. |
+| `ShiftHttpTest` | End to end | Drives the full hexagon over HTTP — controller, port, service, in-memory adapter. |
+| `HexagonalArchitectureTest` | Whole codebase | Four ArchUnit rules enforcing the dependency direction. |
+| `HrSchedApplicationTests` | Context | The application starts. |
 
-Tests run against the public boundary — the port, the API, the CLI — never against internals,
-so that refactoring stays possible. They are deterministic: injected clock, seeded randomness,
-no `sleep`, no real network, no dependence on ordering.
+Naming follows `Given<scenario>_When<action>_Then<result>`. Tests run against the public
+boundary, never internals, and are deterministic: no `sleep`, no real network, no ordering
+dependence.
 
 **CI** runs `./mvnw verify` on every push and pull request
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). That single command is the merge
-gate: a formatting violation, a compile error, or a failing test all turn it red.
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). That single command is the merge gate.
 
 *Not yet:* coverage reporting, and integration tests against real dependencies in containers —
-neither has anything to measure or connect to.
+there is nothing to connect to until ADR-004.
 
 ## Deployment and operations
 
 *Not written yet — blocked on [Q5](docs/requirements/requirements.md#open-questions) (where
-this runs).* The build already produces an executable JAR at
-`target/hrsched-0.0.1-SNAPSHOT.jar`, and liveness/readiness probes are exposed, so the
-operational primitives exist even though no environment does.
+this runs).* The build produces an executable JAR at `target/hrsched-0.0.1-SNAPSHOT.jar` and
+liveness/readiness probes are exposed, so the operational primitives exist even though no
+environment does.
 
 Still owed: structured JSON logging, correlation-ID propagation, and OpenTelemetry
 instrumentation.
@@ -234,45 +279,46 @@ instrumentation.
 
 | ADR | Decision | Cost accepted |
 | --- | --- | --- |
-| [ADR-001](docs/ADRs/ADR-001-java-spring-boot-maven.md) | Java 21, Spring Boot 4.1.1, Maven Wrapper | Boot 4.x is recent, so most existing tutorials name starters that no longer exist |
+| [ADR-001](docs/ADRs/ADR-001-java-spring-boot-maven.md) | Java 21, Spring Boot 4.1.1, Maven Wrapper | Boot 4.x is recent, so most existing tutorials name things that no longer exist |
 | [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md) | `./mvnw verify` as the single gate, Spotless for format | google-java-format is not configurable; formatting fails the build before tests run |
+| [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md) | Hexagon in one module, enforced by ArchUnit | Many more classes per use case; hand-wiring; enforcement is a test, not the compiler |
 
-Three decisions are known-open and blocking: **ADR-003** (module boundaries), **ADR-004**
-(data storage), **ADR-005** (roster generation strategy). See the
-[ADR index](docs/ADRs/).
+Still open and blocking: **ADR-004** (data storage), **ADR-005** (roster generation strategy),
+**ADR-006** (bounded contexts). See the [ADR index](docs/ADRs/).
 
 ## Documentation
 
 | Document | Answers |
 | --- | --- |
-| [`docs/requirements/requirements.md`](docs/requirements/requirements.md) | **What** the system must do, and the six open questions blocking it |
+| [`docs/requirements/requirements.md`](docs/requirements/requirements.md) | **What** the system must do, and the five open questions blocking it |
 | [`docs/architecture/architecture.md`](docs/architecture/architecture.md) | **How** it is built, as it actually is today |
 | [`docs/ADRs/`](docs/ADRs/) | **Why** each choice was made, and what was rejected |
 | [`.claude/CLAUDE.md`](.claude/CLAUDE.md) | Repository guidance for coding agents |
 
 ## Status and limitations
 
-**Maturity: skeleton.** The build, test harness, and CI are real and verified. The product is
-not started.
+**Maturity: skeleton.** The build, the test harness, CI, and the architecture are real and
+enforced. The product is not started.
 
-**Shipped:** a runnable Spring Boot application with health and readiness probes, a green
-build gate, and the decisions behind them.
+**Shipped:** an enforced hexagonal structure, a two-endpoint walking skeleton, health probes,
+and the decisions behind them.
 
 **Next:** answer the [open questions](docs/requirements/requirements.md#open-questions) —
-particularly Q2 (roles) and Q3 (multi-tenancy) — then write ADR-003 and ADR-004 before the
-first domain module.
+particularly Q2 (roles) and Q4 (working-time jurisdiction) — then model the real domain and
+write ADR-004 before the first persistence adapter.
 
 **Known limitations**
 
-- No domain model, no persistence, no authentication, no API beyond Actuator.
-- Dependency direction is *intended* but **not enforced** — no ArchUnit test or module
-  boundary stops the domain importing Spring once one exists.
-- Dependabot alerts are enabled, but nothing **blocks** a merge on a vulnerable dependency;
-  `dependency-review-action` needs Advanced Security on a private repo. See
-  [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md).
-- No static analysis (Checkstyle/PMD/SpotBugs) — deliberately deferred until there is code
-  worth analysing.
-- No `CHANGELOG.md` until the first release.
+- No roster, no employee, no assignment. `Shift` is not yet an aggregate root, because the
+  invariants it would guard are unanswered questions.
+- **Nothing survives a restart.** Storage is a `ConcurrentHashMap` until ADR-004.
+- No authentication or authorisation. Every endpoint is open.
+- Time is modelled as `Instant`; rosters are usually read in local time, so this will likely
+  change once Q3 and Q5 are answered.
+- Architecture enforcement is a test, not the compiler — a multi-module layout would make
+  violations impossible rather than merely detected.
+- Dependabot alerts are enabled, but nothing **blocks** a merge on a vulnerable dependency.
+- No static analysis, and no `CHANGELOG.md` until the first release.
 
 ## Contributing
 
