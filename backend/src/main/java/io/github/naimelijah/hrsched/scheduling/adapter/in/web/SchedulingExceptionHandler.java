@@ -6,6 +6,8 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintExc
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
@@ -54,7 +56,9 @@ public class SchedulingExceptionHandler {
     InvalidHeadcountException.class,
     InvalidConstraintException.class,
     DuplicateAssignmentException.class,
-    RosterNotEditableException.class
+    RosterNotEditableException.class,
+    UnknownRequiredQualificationException.class,
+    MalformedRequestException.class
   })
   public ProblemDetail handleInvalidInput(RuntimeException exception) {
     ProblemDetail problem =
@@ -69,6 +73,19 @@ public class SchedulingExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.BAD_REQUEST, "The request body is malformed or is missing required fields.");
     problem.setTitle("Malformed request");
+    return problem;
+  }
+
+  /**
+   * A roster naming a shift that cannot be resolved is refused, not published with that work
+   * unchecked. Like a rule breach it is a 422: the request was well formed, the roster is not
+   * publishable.
+   */
+  @ExceptionHandler(RosterNotVerifiableException.class)
+  public ProblemDetail handleNotVerifiable(RosterNotVerifiableException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
+    problem.setTitle("Roster cannot be checked against the rules");
     return problem;
   }
 

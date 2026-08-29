@@ -4,7 +4,6 @@ import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
-import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.workforce.application.port.in.AddEmployeeCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.DeclareUnavailabilityCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.FindRosterableEmployeesUseCase;
@@ -50,22 +49,25 @@ public class EmployeeController {
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @RequestBody AddEmployeeRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
-    OrganisationId org = new OrganisationId(UUID.fromString(organisation));
-    EmployeeId id = manageEmployees.addEmployee(actor, new AddEmployeeCommand(org, request.name()));
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    OrganisationId org = ActorFromHeaders.organisationOf(organisation);
+    EmployeeId id =
+        manageEmployees.addEmployee(actor, new AddEmployeeCommand(org, request.requiredName()));
     return ResponseEntity.created(URI.create("/api/employees/" + id.value()))
-        .body(new EmployeeResponse(id.value(), request.name(), List.of()));
+        .body(new EmployeeResponse(id.value(), request.requiredName(), List.of()));
   }
 
   @GetMapping
   public List<EmployeeResponse> list(
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
+      @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs) {
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     return findEmployees
-        .findRosterable(actor, new OrganisationId(UUID.fromString(organisation)))
+        .findRosterable(actor, ActorFromHeaders.organisationOf(organisation))
         .stream()
         .map(
             employee ->
@@ -81,13 +83,14 @@ public class EmployeeController {
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @PathVariable UUID id,
       @PathVariable UUID qualification) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     manageEmployees.grantQualification(
         actor,
         new GrantQualificationCommand(
-            new OrganisationId(UUID.fromString(organisation)),
+            ActorFromHeaders.organisationOf(organisation),
             new EmployeeId(id),
             new QualificationId(qualification)));
     return ResponseEntity.noContent().build();
@@ -98,13 +101,14 @@ public class EmployeeController {
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @PathVariable UUID id,
       @RequestBody ContractRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     manageEmployees.setContractTerms(
         actor,
         new SetContractTermsCommand(
-            new OrganisationId(UUID.fromString(organisation)),
+            ActorFromHeaders.organisationOf(organisation),
             new EmployeeId(id),
             Duration.ofMinutes(request.weeklyContractedMinutes())));
     return ResponseEntity.noContent().build();
@@ -115,15 +119,14 @@ public class EmployeeController {
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @PathVariable UUID id,
       @RequestBody PeriodRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     manageEmployees.declareUnavailability(
         actor,
         new DeclareUnavailabilityCommand(
-            new OrganisationId(UUID.fromString(organisation)),
-            new EmployeeId(id),
-            new TimeRange(request.start(), request.end())));
+            ActorFromHeaders.organisationOf(organisation), new EmployeeId(id), request.toPeriod()));
     return ResponseEntity.noContent().build();
   }
 
@@ -132,16 +135,17 @@ public class EmployeeController {
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @PathVariable UUID id,
       @RequestBody PreferenceRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     manageEmployees.statePreference(
         actor,
         new StatePreferenceCommand(
-            new OrganisationId(UUID.fromString(organisation)),
+            ActorFromHeaders.organisationOf(organisation),
             new EmployeeId(id),
-            new TimeRange(request.start(), request.end()),
-            request.strength()));
+            request.toPeriod(),
+            request.requiredStrength()));
     return ResponseEntity.noContent().build();
   }
 }

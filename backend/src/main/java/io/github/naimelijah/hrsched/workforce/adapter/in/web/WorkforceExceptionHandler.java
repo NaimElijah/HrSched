@@ -33,7 +33,8 @@ public class WorkforceExceptionHandler {
     InvalidQualificationNameException.class,
     InvalidContractTermsException.class,
     InvalidTimeRangeException.class,
-    OverlappingUnavailabilityException.class
+    OverlappingUnavailabilityException.class,
+    MalformedRequestException.class
   })
   public ProblemDetail handleInvalidInput(RuntimeException exception) {
     ProblemDetail problem =

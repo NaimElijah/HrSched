@@ -11,13 +11,8 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
-import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
-import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
-import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.net.URI;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -55,22 +50,17 @@ public class SchedulingController {
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @RequestBody DefineShiftRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
-    Set<QualificationId> required =
-        request.requiredQualifications() == null
-            ? Set.of()
-            : request.requiredQualifications().stream()
-                .map(QualificationId::new)
-                .collect(Collectors.toUnmodifiableSet());
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     ShiftId id =
         manageShifts.defineShift(
             actor,
             new DefineShiftCommand(
-                new OrganisationId(UUID.fromString(organisation)),
-                new TimeRange(request.start(), request.end()),
+                ActorFromHeaders.organisationOf(organisation),
+                request.toPeriod(),
                 request.requiredHeadcount(),
-                required));
+                request.toRequiredQualifications()));
     return ResponseEntity.created(URI.create("/api/shifts/" + id.value()))
         .body(
             new ShiftResponse(
@@ -82,13 +72,14 @@ public class SchedulingController {
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @RequestBody ConstraintSetRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     ConstraintSet revised =
         configureConstraints.reviseConstraints(
             actor,
             new ReviseConstraintsCommand(
-                new OrganisationId(UUID.fromString(organisation)), request.toConstraints()));
+                ActorFromHeaders.organisationOf(organisation), request.toConstraints()));
     return ConstraintSetResponse.from(revised);
   }
 
@@ -96,11 +87,12 @@ public class SchedulingController {
   public ConstraintSetResponse currentConstraints(
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
+      @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs) {
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     return ConstraintSetResponse.from(
         configureConstraints.currentConstraints(
-            actor, new OrganisationId(UUID.fromString(organisation))));
+            actor, ActorFromHeaders.organisationOf(organisation)));
   }
 
   @PostMapping("/rosters")
@@ -108,14 +100,14 @@ public class SchedulingController {
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @RequestBody PeriodRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     Roster draft =
         planRosters.generateDraft(
             actor,
             new GenerateRosterCommand(
-                new OrganisationId(UUID.fromString(organisation)),
-                new TimeRange(request.start(), request.end())));
+                ActorFromHeaders.organisationOf(organisation), request.toPeriod()));
     return ResponseEntity.created(URI.create("/api/rosters/" + draft.id().value()))
         .body(RosterResponse.from(draft));
   }
@@ -125,11 +117,12 @@ public class SchedulingController {
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @PathVariable UUID id) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     return RosterResponse.from(
         planRosters.publish(
-            actor, new OrganisationId(UUID.fromString(organisation)), new RosterId(id)));
+            actor, ActorFromHeaders.organisationOf(organisation), new RosterId(id)));
   }
 
   @GetMapping("/rosters/{id}")
@@ -137,10 +130,11 @@ public class SchedulingController {
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @PathVariable UUID id) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     return planRosters
-        .findRoster(actor, new OrganisationId(UUID.fromString(organisation)), new RosterId(id))
+        .findRoster(actor, ActorFromHeaders.organisationOf(organisation), new RosterId(id))
         .map(RosterResponse::from)
         .map(ResponseEntity::ok)
         .orElseGet(() -> ResponseEntity.notFound().build());

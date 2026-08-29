@@ -1,13 +1,11 @@
 package io.github.naimelijah.hrsched.workforce.adapter.in.web;
 
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
-import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.workforce.application.port.in.DefineQualificationCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.ManageQualificationsUseCase;
 import java.net.URI;
 import java.util.List;
-import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,25 +30,27 @@ public class QualificationController {
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @RequestBody DefineQualificationRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     QualificationId id =
         manageQualifications.defineQualification(
             actor,
             new DefineQualificationCommand(
-                new OrganisationId(UUID.fromString(organisation)), request.name()));
+                ActorFromHeaders.organisationOf(organisation), request.requiredName()));
     return ResponseEntity.created(URI.create("/api/qualifications/" + id.value()))
-        .body(new QualificationResponse(id.value(), request.name()));
+        .body(new QualificationResponse(id.value(), request.requiredName()));
   }
 
   @GetMapping
   public List<QualificationResponse> list(
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role);
+      @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs) {
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     return manageQualifications
-        .findQualifications(actor, new OrganisationId(UUID.fromString(organisation)))
+        .findQualifications(actor, ActorFromHeaders.organisationOf(organisation))
         .stream()
         .map(
             qualification ->

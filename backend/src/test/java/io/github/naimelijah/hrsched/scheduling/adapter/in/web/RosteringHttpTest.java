@@ -30,8 +30,13 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @AutoConfigureMockMvc
 class RosteringHttpTest {
 
-  private static final String ACME = UUID.randomUUID().toString();
-  private static final String RIVAL = UUID.randomUUID().toString();
+  /**
+   * A fresh organisation per test. The repositories behind this context are singletons, so a shared
+   * identifier lets one test's data decide another test's assertion.
+   */
+  private static String anOrganisation() {
+    return UUID.randomUUID().toString();
+  }
 
   @Autowired private MockMvc mockMvc;
 
@@ -145,13 +150,14 @@ class RosteringHttpTest {
   @Test
   void GivenAnEmployeeOfAnotherOrganisation_WhenGeneratingARoster_ThenTheyAreNeverUsed()
       throws Exception {
-    addEmployee(RIVAL, "Their Employee");
-    defineShift(ACME, "2026-10-08T08:00:00Z", "2026-10-08T16:00:00Z", 1);
+    String ours = anOrganisation();
+    addEmployee(anOrganisation(), "Their Employee");
+    defineShift(ours, "2026-10-08T08:00:00Z", "2026-10-08T16:00:00Z", 1);
 
-    String roster = generateRoster(ACME, "2026-10-08T00:00:00Z", "2026-10-09T00:00:00Z");
+    String roster = generateRoster(ours, "2026-10-08T00:00:00Z", "2026-10-09T00:00:00Z");
 
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), ACME, "SCHEDULER"))
+        .perform(as(get("/api/rosters/" + roster), ours, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.assignments.length()").value(0));
   }
@@ -164,7 +170,7 @@ class RosteringHttpTest {
     String roster = generateRoster(organisation, "2026-10-09T00:00:00Z", "2026-10-10T00:00:00Z");
 
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), RIVAL, "SCHEDULER"))
+        .perform(as(get("/api/rosters/" + roster), anOrganisation(), "SCHEDULER"))
         .andExpect(status().isNotFound());
   }
 
@@ -172,7 +178,7 @@ class RosteringHttpTest {
   void GivenAnEmployeeRole_WhenDefiningAShift_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/shifts"), ACME, "EMPLOYEE")
+            as(post("/api/shifts"), anOrganisation(), "EMPLOYEE")
                 .content(
                     "{\"start\":\"2026-10-10T08:00:00Z\",\"end\":\"2026-10-10T16:00:00Z\","
                         + "\"requiredHeadcount\":1}"))
@@ -183,7 +189,7 @@ class RosteringHttpTest {
   void GivenAnInvertedPeriod_WhenDefiningAShift_ThenItIsRejected() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/shifts"), ACME, "SCHEDULER")
+            as(post("/api/shifts"), anOrganisation(), "SCHEDULER")
                 .content(
                     "{\"start\":\"2026-10-11T16:00:00Z\",\"end\":\"2026-10-11T08:00:00Z\","
                         + "\"requiredHeadcount\":1}"))
@@ -224,11 +230,20 @@ class RosteringHttpTest {
   }
 
   @Test
-  void GivenAnEmployeeAndAScheduler_WhenAnEmployeeConfiguresConstraints_ThenItIsForbidden()
-      throws Exception {
+  void GivenAScheduler_WhenConfiguringConstraints_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(
-            as(put("/api/constraints"), ACME, "SCHEDULER").content("{\"maximumDailyMinutes\":600}"))
+            as(put("/api/constraints"), anOrganisation(), "SCHEDULER")
+                .content("{\"maximumDailyMinutes\":600}"))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenAnEmployee_WhenConfiguringConstraints_ThenItIsForbidden() throws Exception {
+    mockMvc
+        .perform(
+            as(put("/api/constraints"), anOrganisation(), "EMPLOYEE")
+                .content("{\"maximumDailyMinutes\":600}"))
         .andExpect(status().isForbidden());
   }
 
@@ -262,5 +277,73 @@ class RosteringHttpTest {
         .andExpect(jsonPath("$.constraints.length()").value(0));
 
     assertThat(first).isNotEqualTo(second);
+  }
+
+  @Test
+  void GivenABodyWithoutAPeriod_WhenDefiningAShift_ThenItIsABadRequestNotAServerError()
+      throws Exception {
+    mockMvc
+        .perform(
+            as(post("/api/shifts"), anOrganisation(), "SCHEDULER")
+                .content("{\"requiredHeadcount\":1}"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void GivenAnOrganisationHeaderThatIsNotAUuid_WhenGenerating_ThenItIsABadRequest()
+      throws Exception {
+    mockMvc
+        .perform(
+            as(post("/api/rosters"), "not-a-uuid", "SCHEDULER")
+                .content("{\"start\":\"2026-10-05T00:00:00Z\",\"end\":\"2026-10-06T00:00:00Z\"}"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void GivenARoleNobodyDefined_WhenDefiningAShift_ThenItIsABadRequest() throws Exception {
+    mockMvc
+        .perform(
+            as(post("/api/shifts"), anOrganisation(), "SUPREME_LEADER")
+                .content(
+                    "{\"start\":\"2026-10-05T08:00:00Z\",\"end\":\"2026-10-05T16:00:00Z\","
+                        + "\"requiredHeadcount\":1}"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void GivenAQualificationNobodyDefined_WhenDefiningAShift_ThenItIsRejected() throws Exception {
+    mockMvc
+        .perform(
+            as(post("/api/shifts"), anOrganisation(), "SCHEDULER")
+                .content(
+                    "{\"start\":\"2026-10-05T08:00:00Z\",\"end\":\"2026-10-05T16:00:00Z\","
+                        + "\"requiredHeadcount\":1,\"requiredQualifications\":[\"%s\"]}"
+                            .formatted(UUID.randomUUID())))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void GivenAPlatformOperator_WhenReadingAnotherOrganisationsRoster_ThenItIsPermitted()
+      throws Exception {
+    String organisation = anOrganisation();
+    addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-19T08:00:00Z", "2026-10-19T16:00:00Z", 1);
+    String roster = generateRoster(organisation, "2026-10-19T00:00:00Z", "2026-10-20T00:00:00Z");
+
+    mockMvc
+        .perform(as(get("/api/rosters/" + roster), organisation, "OPERATOR"))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  void GivenATenantActor_WhenReadingAnotherOrganisationsRoster_ThenItIsNotFound() throws Exception {
+    String organisation = anOrganisation();
+    addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-20T08:00:00Z", "2026-10-20T16:00:00Z", 1);
+    String roster = generateRoster(organisation, "2026-10-20T00:00:00Z", "2026-10-21T00:00:00Z");
+
+    mockMvc
+        .perform(as(get("/api/rosters/" + roster), anOrganisation(), "SCHEDULER"))
+        .andExpect(status().isNotFound());
   }
 }
