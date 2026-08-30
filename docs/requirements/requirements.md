@@ -58,7 +58,7 @@ implemented; the rest are not.
 | F9 | Admin | Define qualifications, and grant them to employees | `QualificationService`, `EmployeeServiceTest` |
 | F10 | Admin | Configure the organisation's working-time constraint set | `SchedulingService`, `RosteringHttpTest` |
 | F11 | Scheduler | Generate a draft roster covering a period, filling every shift it legally can | `SchedulingService`, `RosteringHttpTest` |
-| F11a | Scheduler | See the rosters their organisation holds | `SchedulingService`, `SchedulingServiceTest` |
+| F11a | Scheduler | See the rosters their organisation holds | `SchedulingService`, `RosteringHttpTest` |
 | F12 | Scheduler | Publish a draft, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest` |
 | F13 | Operator | Administer organisations across the platform | *partially: an Operator may act across tenants; there is nothing to administer yet* |
 
@@ -112,6 +112,7 @@ a published roster is superseded rather than edited (R6).
 | R9 | A shift may only require qualifications its own organisation has defined. *`SchedulingService`, `SchedulingServiceTest`* |
 | R10 | A roster assigning a shift that cannot be resolved cannot be published. *`Roster`, `SchedulingServiceTest`* |
 | R11 | Publishing a roster supersedes every published roster of that organisation whose period it overlaps. *`SchedulingService`, `SchedulingServiceTest`* |
+| R12 | A roster may only be read by an Admin or a Scheduler, because it is personal data about every colleague. *`SchedulingService`, `RosteringHttpTest`* |
 
 A roster moves `DRAFT → PUBLISHED → SUPERSEDED`, and no other transition is legal. Exactly one
 roster is authoritative for any given moment, which is what R11 enforces.
@@ -119,8 +120,15 @@ roster is authoritative for any given moment, which is what R11 enforces.
 **Only a Scheduler builds rosters.** An Admin manages people, qualifications and the constraint
 set and cannot define shifts, generate or publish — F1/F3/F11/F12 against F8/F9/F10.
 
-**Unavailability is personal data.** Listing the people in an organisation, which carries their
-unavailability, is restricted to Admins and Schedulers; an Employee cannot read a colleague's.
+**Unavailability and rosters are personal data.** Listing the people in an organisation, and
+reading any roster, are both restricted to Admins and Schedulers; an Employee cannot read a
+colleague's. F5 — an employee seeing *their own* roster — is a narrower capability that does not
+exist, which is what Q18 asks about.
+
+**Revising the rules replaces the whole set.** There is no partial update: a caller sends the rules
+that should apply from now on, and any rule omitted is switched off. `GET /api/constraints`
+therefore returns the thresholds, not only the rule names, so a caller changing one rule can resend
+the rest instead of silently deleting them.
 
 ### Constraints a set may express
 
@@ -184,7 +192,7 @@ applicant tracking, and being the HR system of record.
 | Q15 | What are the non-goals? | NaimElijah | Deferred deliberately |
 | Q16 | When a new roster only partly overlaps a published one, should the old one be superseded whole, or only for the days replaced? | NaimElijah | Refining R11; today the whole roster is superseded |
 | Q17 | Which time zone are working-time rules evaluated in? | NaimElijah | Daily and consecutive-day limits currently count days in UTC |
-| Q18 | Should reading rosters be narrowed to a Scheduler, or to an employee's own roster (F5)? | NaimElijah | Today any member of an organisation can read every roster in it |
+| Q18 | Should an employee be able to see their own roster (F5), and how is "their own" defined? | NaimElijah | Reading rosters now needs Admin or Scheduler, so an employee sees none at all |
 
 **Resolved**
 

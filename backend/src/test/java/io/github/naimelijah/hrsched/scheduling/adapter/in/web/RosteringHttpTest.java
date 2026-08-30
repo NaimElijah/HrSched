@@ -366,6 +366,58 @@ class RosteringHttpTest {
   }
 
   @Test
+  void GivenConfiguredRules_WhenReadingThem_ThenTheirThresholdsComeBackNotJustTheirNames()
+      throws Exception {
+    String organisation = anOrganisation();
+    // Invented values, chosen to be recognisable in the response. They are not any statute's.
+    mockMvc
+        .perform(
+            as(put("/api/constraints"), organisation, "ADMIN")
+                .content("{\"minimumRestMinutes\":661,\"maximumConsecutiveDays\":5}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(as(get("/api/constraints"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        // Revising replaces the whole set, so a caller changing one rule must be able to read the
+        // others back or it will silently delete them.
+        .andExpect(jsonPath("$.minimumRestMinutes").value(661))
+        .andExpect(jsonPath("$.maximumConsecutiveDays").value(5))
+        .andExpect(jsonPath("$.maximumDailyMinutes").doesNotExist());
+  }
+
+  @Test
+  void GivenAnEmployee_WhenListingRosters_ThenItIsForbidden() throws Exception {
+    String organisation = anOrganisation();
+    addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-25T08:00:00Z", "2026-10-25T16:00:00Z", 1);
+    String roster = generateRoster(organisation, "2026-10-25T00:00:00Z", "2026-10-26T00:00:00Z");
+
+    // A roster says who works when, which is personal data about every colleague.
+    mockMvc
+        .perform(as(get("/api/rosters"), organisation, "EMPLOYEE"))
+        .andExpect(status().isForbidden());
+    mockMvc
+        .perform(as(get("/api/rosters/" + roster), organisation, "EMPLOYEE"))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenARoster_WhenRead_ThenItCarriesThePeriodItCovers() throws Exception {
+    String organisation = anOrganisation();
+    addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-27T08:00:00Z", "2026-10-27T16:00:00Z", 1);
+    String roster = generateRoster(organisation, "2026-10-27T00:00:00Z", "2026-10-28T00:00:00Z");
+
+    // Without the period a caller cannot resolve the roster's assignments against the right shifts.
+    mockMvc
+        .perform(as(get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.start").value("2026-10-27T00:00:00Z"))
+        .andExpect(jsonPath("$.end").value("2026-10-28T00:00:00Z"));
+  }
+
+  @Test
   void GivenABodyWithoutAPeriod_WhenDefiningAShift_ThenItIsABadRequestNotAServerError()
       throws Exception {
     mockMvc

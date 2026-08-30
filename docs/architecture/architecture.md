@@ -188,7 +188,15 @@ Nothing is persisted beyond process lifetime.
   would be a working-time threshold chosen by a developer, which is exactly what this system
   refuses to contain.
 - **The 422 body carries structured violations**, not formatted sentences, so a caller can resolve
-  an employee to a name and group by person without parsing prose.
+  an employee to a name and group by person without parsing prose. The UI does exactly that.
+- **`GET /api/constraints` returns thresholds, not just rule names.** `ConstraintSet.revisedTo`
+  replaces the whole set rather than merging, so a caller that cannot read the current values cannot
+  change one rule without deleting the others. The response mirrors the request shape for that
+  reason.
+- **A roster carries the period it covers**, so a caller resolves its assignments against the shifts
+  that actually fall in it rather than whatever span it happens to be displaying.
+- **Reading a roster requires Admin or Scheduler**, on the same reasoning as listing people: a
+  roster says who works when.
 - **The header-based actor is insecure by design** and must be deleted when authentication
   arrives. It exists so the use cases can be exercised, not as a step towards a real one.
   `X-Organisation` names the organisation being acted *on* and is always required; `X-Role:

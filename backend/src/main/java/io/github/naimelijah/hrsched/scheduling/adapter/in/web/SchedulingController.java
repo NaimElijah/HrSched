@@ -16,6 +16,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -58,6 +59,7 @@ public class SchedulingController {
       @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @RequestBody DefineShiftRequest request) {
     Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    Set<QualificationId> required = request.toRequiredQualifications();
     ShiftId id =
         manageShifts.defineShift(
             actor,
@@ -65,7 +67,7 @@ public class SchedulingController {
                 ActorFromHeaders.organisationOf(organisation),
                 request.toPeriod(),
                 request.requiredHeadcount(),
-                request.toRequiredQualifications()));
+                required));
     return ResponseEntity.created(URI.create("/api/shifts/" + id.value()))
         .body(
             new ShiftResponse(
@@ -73,9 +75,7 @@ public class SchedulingController {
                 request.start(),
                 request.end(),
                 request.requiredHeadcount(),
-                List.copyOf(request.toRequiredQualifications()).stream()
-                    .map(QualificationId::value)
-                    .toList()));
+                required.stream().map(QualificationId::value).toList()));
   }
 
   /**
