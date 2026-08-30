@@ -21,6 +21,7 @@
 		<spotless.version>3.10.0</spotless.version>
 		<google-java-format.version>1.27.0</google-java-format.version>
 		<archunit.version>1.5.0</archunit.version>
+		<jacoco.version>0.8.13</jacoco.version>
 	</properties>
 
 	<dependencies>
@@ -87,6 +88,40 @@
 						<phase>validate</phase>
 						<goals>
 							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<!--
+			  Coverage is measured and reported, never enforced: there is no `check`
+			  goal and no <rules>, so nothing here can fail a build. It is a map of
+			  where to look next, read by a person. See ADR-015.
+
+			  The version is pinned because neither spring-boot-dependencies nor
+			  spring-boot-starter-parent manages JaCoCo.
+
+			  prepare-agent sets the `argLine` property, which surefire reads. Nothing
+			  else configures argLine today; anyone adding one must write
+			  `@{argLine}` into it, or coverage silently drops to zero while the build
+			  stays green.
+			-->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco.version}</version>
+				<executions>
+					<execution>
+						<id>jacoco-prepare-agent</id>
+						<phase>initialize</phase>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>jacoco-report</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>report</goal>
 						</goals>
 					</execution>
 				</executions>
