@@ -34,6 +34,25 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
+		<!--
+		  Vendor-neutral instrumentation, which ADR-001 names as a baseline demand. Supplies the
+		  OpenTelemetry API, the Micrometer Tracing bridge over it, and the OTLP exporters, so a
+		  W3C trace id exists on every request and reaches the log lines it produces. Apache-2.0, and
+		  version-managed by the Boot BOM. See ADR-016.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-opentelemetry</artifactId>
+		</dependency>
+		<!--
+		  Renders the meters Micrometer already collects in the format a scraper reads. Nothing
+		  pushes: metrics are pulled from /actuator/prometheus. Apache-2.0, version managed by the
+		  Boot BOM through micrometer-bom. See ADR-017.
+		-->
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-registry-prometheus</artifactId>
+		</dependency>
 
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

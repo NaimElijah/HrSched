@@ -168,6 +168,24 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
   shift starts? Selling it to third parties raises the bar.
 - **Deployment** — containerised with externalised configuration; the provider is deliberately
   deferred to its own ADR so the choice does not leak into the design.
+- **Observability** — every request is traced, and the trace id appears in every log line it
+  produces and on the HTTP response, so a report from a person can be joined to what the process
+  recorded. Logs are structured and machine-readable on stdout. Liveness and readiness are exposed
+  as probes. Rate, latency, error rate, saturation and the product's own coverage measure are
+  published for a scraper to pull. Instrumentation is vendor-neutral (OpenTelemetry), and nothing is
+  exported until there is somewhere to export to — Q19.
+  *Enforced by `TraceIdResponseFilter`, `TraceIdHttpTest`, `MetricsHttpTest`;
+  [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md),
+  [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md).*
+- **Auditability** — every state change records who made it, in which organisation, and the
+  identifier of what changed; every refusal, including a cross-tenant attempt, is recorded too. The
+  record carries identifiers only and never a name, so the trail says who to ask rather than the
+  answer. `TODO`: whether that trail must be durable, readable by an Admin, and for how long it is
+  retained — Q20, blocked on ADR-004 and on the Compliance obligations below.
+  *Enforced by `SchedulingService`, `EmployeeService`, `QualificationService` and their tests;
+  `SchedulingAuditLogTest`, `WorkforceAuditLogTest`, `SchedulingExceptionHandlerTest`,
+  `WorkforceExceptionHandlerTest`;
+  [ADR-018](../ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md).*
 - **Compliance** — availability, absence, and qualification records are personal data across
   multiple client organisations. `TODO`: confirm the obligations, including which regime
   applies and whether data location is constrained.
@@ -193,6 +211,8 @@ applicant tracking, and being the HR system of record.
 | Q16 | When a new roster only partly overlaps a published one, should the old one be superseded whole, or only for the days replaced? | NaimElijah | Refining R11; today the whole roster is superseded |
 | Q17 | Which time zone are working-time rules evaluated in? | NaimElijah | Daily and consecutive-day limits currently count days in UTC |
 | Q18 | Should an employee be able to see their own roster (F5), and how is "their own" defined? | NaimElijah | Reading rosters now needs Admin or Scheduler, so an employee sees none at all |
+| Q19 | Which observability backend receives the OpenTelemetry export, and at what sampling rate? | NaimElijah | Turning OTLP export on; sampling below 1.0 |
+| Q20 | Should an Admin be able to read their organisation's audit trail, and under what retention and erasure obligations? | NaimElijah | An `audit` bounded context; ADR-018's revisit trigger; part of the Compliance TODO |
 
 **Resolved**
 
@@ -210,4 +230,4 @@ applicant tracking, and being the HR system of record.
 | Q8 | What a constraint set is attached to | One per organisation; per-person variation is contract terms, held separately | 2026-08-30 |
 | Q11 | Who approves a swap | A Scheduler; the colleague is informed | 2026-08-30 |
 
-Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18.
+Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20.

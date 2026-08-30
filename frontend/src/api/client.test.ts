@@ -17,10 +17,16 @@ const IDENTITY: ActingIdentity = {
   employee: null,
 };
 
-function respondWith(status: number, body: unknown, ok = status < 400) {
+function respondWith(
+  status: number,
+  body: unknown,
+  ok = status < 400,
+  headers: Record<string, string> = {},
+) {
   const stub = vi.fn().mockResolvedValue({
     ok,
     status,
+    headers: new Headers(headers),
     text: () => Promise.resolve(body === null ? '' : JSON.stringify(body)),
   });
   vi.stubGlobal('fetch', stub);
@@ -133,6 +139,7 @@ describe('failures', () => {
       vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
+        headers: new Headers(),
         text: () => Promise.resolve('<html>Gateway exploded</html>'),
       }),
     );
@@ -155,6 +162,7 @@ describe('failures', () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
+        headers: new Headers(),
         text: () => Promise.resolve('<html>a misrouted SPA fallback</html>'),
       }),
     );
@@ -204,5 +212,55 @@ describe('the reload key', () => {
 
     const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
     expect(headers.get('X-Employee')).toBeNull();
+  });
+});
+
+describe('the trace reference', () => {
+  it('GivenARefusalCarryingATraceId_WhenItIsRaised_ThenTheErrorCanBeQuotedByIt', async () => {
+    respondWith(403, { detail: 'Your role does not permit this.' }, false, {
+      'X-Trace-Id': '4bf92f3577b34da6a3ce929d0e0e4736',
+    });
+
+    await expect(api.post(IDENTITY, '/api/qualifications', { name: 'Forklift' })).rejects.toThrow(
+      ApiError,
+    );
+  });
+
+  it('GivenARefusalCarryingATraceId_WhenItIsCaught_ThenTheReferenceIsTheTraceId', async () => {
+    respondWith(404, { detail: 'No such resource.' }, false, {
+      'X-Trace-Id': '4bf92f3577b34da6a3ce929d0e0e4736',
+    });
+
+    const failure = await api.get(IDENTITY, '/api/rosters/1').catch((error: unknown) => error);
+
+    expect((failure as ApiError).reference).toBe('4bf92f3577b34da6a3ce929d0e0e4736');
+  });
+
+  /**
+   * A missing header means no span was active, not that some id was lost. Inventing one here would
+   * hand the user a reference that appears in no log line.
+   */
+  it('GivenAResponseWithoutATraceId_WhenItFails_ThenThereIsNoReferenceToQuote', async () => {
+    respondWith(500, { detail: 'Something broke.' }, false);
+
+    const failure = await api.get(IDENTITY, '/api/rosters').catch((error: unknown) => error);
+
+    expect((failure as ApiError).reference).toBeNull();
+  });
+
+  it('GivenASuccessCarryingANonJsonBody_WhenItIsRejected_ThenTheReferenceSurvives', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'X-Trace-Id': 'abc123' }),
+        text: () => Promise.resolve('<!doctype html>'),
+      }),
+    );
+
+    const failure = await api.get(IDENTITY, '/api/shifts').catch((error: unknown) => error);
+
+    expect((failure as ApiError).reference).toBe('abc123');
   });
 });

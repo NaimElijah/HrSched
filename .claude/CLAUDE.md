@@ -9,7 +9,7 @@ rules, generate a roster, publish it. Three contexts — `scheduling`, `workforc
 plus a `shared` kernel, with the hexagon and the context boundaries enforced by build-failing
 tests.
 
-Three things are **not** what they look like:
+Four things are **not** what they look like:
 
 - **Generation is greedy, not optimised.** Automatic generation is the point of the product and
   a real implementation is a solver; `GreedyRosterGenerator` exists to prove the port (ADR-005).
@@ -17,6 +17,10 @@ Three things are **not** what they look like:
 - **There is no authentication.** The acting identity comes from request headers, so any caller
   can claim any role in any organisation. It is a placeholder to be deleted, not extended.
 - **Nothing survives a restart.** Every repository is in memory until ADR-004.
+- **The audit trail is a log stream, not a trail.** Every change and refusal is recorded through
+  an `AuditTrail` driven port, but nothing is stored and nothing is queryable: the record lives
+  only wherever stdout is collected. Whether an Admin may read it, and for how long it is kept,
+  is Q20 (ADR-018).
 
 Everything in `docs/requirements/requirements.md` from *Functional requirements* onward is
 still `TODO`. A `TODO` there is a question for the repo owner, not a gap for an agent to fill
@@ -139,7 +143,32 @@ Outside `backend/`:
   as a table and hides which row is the one whose failure is a security incident. Nor for rows
   that differ in setup, or whose comment explains *why* — the comment then belongs to no row. If a
   table passes about a dozen rows, split it.
-- **When adding an architecture rule, watch it fail first.** All six rules here have been
+- **Instrumentation lives in adapters, and three rules enforce it.** Nothing prints anywhere; the
+  domain may not touch `org.slf4j`, `ch.qos.logback` or `java.util.logging`; and neither the domain
+  nor the application layer may touch `io.micrometer` or `io.opentelemetry`. So Micrometer's
+  `@Timed` and `@Counted` cannot go on a use case, and a service that needs to record something
+  records it through a driven port. See ADR-016 to ADR-018.
+- **NEVER log personal data.** Names, absence and contracted hours say things about a person's
+  health and household, and a log is copied to places a database is not. `AuditedChange` carries a
+  bare `UUID` subject so a name is *unrepresentable*, not merely discouraged, and
+  `SchedulingAuditLogTest`/`WorkforceAuditLogTest` assert every field is an identifier or an enum.
+  Attach fields with slf4j `addKeyValue`, never by interpolating them into the message: the message
+  is a constant, and everything variable is a field the ECS encoder publishes as JSON.
+- **The audit port is per context on purpose.** `scheduling` and `workforce` each own an
+  `AuditTrail` and an `AuditedChange` with their own change enum. They are different types, not
+  duplication, and anything shared would have to enter the kernel ADR-008 keeps small. The
+  collision shows up only in `UseCaseConfiguration`, which writes one of them out in full.
+- **Recording happens after the save, and a refused act records nothing.** An entry for something
+  that then failed to store is a record of something that did not happen. `publish` records inside
+  the supersede loop as well as for itself — the rosters it demotes did not demote themselves.
+- **Two `@Component` classes may not share a simple name.** Spring derives a bean name from it
+  alone, so identically-named adapters in two contexts collide, and they collide at startup rather
+  than at compile time. Hence `SchedulingAuditLog` and `WorkforceAuditLog`.
+- **Boot disables metrics export under test.** `/actuator/prometheus` answers 404 in a
+  `@SpringBootTest` while working in production; `@AutoConfigureMetrics` opts back in, at the cost
+  of a second Spring context. `MetricsHttpTest` is the only test here that does not share the one
+  the others use.
+- **When adding an architecture rule, watch it fail first.** All nine rules here have been
   observed failing on a deliberately introduced violation, then reverted. A rule that has only
   ever been green proves nothing — one rule was deleted after it turned out it could no longer
   fail, being fully subsumed by what is now

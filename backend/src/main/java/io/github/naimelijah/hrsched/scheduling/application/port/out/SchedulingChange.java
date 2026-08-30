@@ -1,0 +1,33 @@
+package io.github.naimelijah.hrsched.scheduling.application.port.out;
+
+/**
+ * The scheduling changes worth a permanent record.
+ *
+ * <p>An enum rather than a string, so a change that is recorded is a change somebody declared. It
+ * lists state transitions only: reads are not audited, because auditing every read of a roster
+ * would bury the writes and this trail exists to answer who changed what.
+ */
+public enum SchedulingChange {
+
+  /** A shift was defined that somebody now has to cover. */
+  SHIFT_DEFINED,
+
+  /**
+   * An organisation's working-time rules were replaced. Revision replaces the whole set, so a rule
+   * omitted is a rule switched off — which makes this the most consequential change here.
+   */
+  CONSTRAINTS_REVISED,
+
+  /** A draft roster was produced. It binds nobody until it is published. */
+  ROSTER_GENERATED,
+
+  /** A roster became the authoritative answer to who works when. */
+  ROSTER_PUBLISHED,
+
+  /**
+   * A published roster stopped being authoritative because a newer one overlapped it. Recorded
+   * separately because nobody asked for it: it is a consequence of publishing something else, and
+   * without its own entry a roster would appear to demote itself.
+   */
+  ROSTER_SUPERSEDED
+}

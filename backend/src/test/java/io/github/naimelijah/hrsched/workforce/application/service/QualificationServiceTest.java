@@ -14,7 +14,9 @@ import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.workforce.application.port.in.DefineQualificationCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.PublishedQualification;
+import io.github.naimelijah.hrsched.workforce.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
+import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChange;
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidQualificationNameException;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import java.util.HashMap;
@@ -41,7 +43,8 @@ class QualificationServiceTest {
   private static final OrganisationId RIVAL = OrganisationId.newId();
 
   private final StubQualificationRepository qualifications = new StubQualificationRepository();
-  private final QualificationService service = new QualificationService(qualifications);
+  private final RecordingAuditTrail audit = new RecordingAuditTrail();
+  private final QualificationService service = new QualificationService(qualifications, audit);
 
   private static TenantActor admin(OrganisationId organisation) {
     return new TenantActor(UserId.newId(), organisation, Role.ADMIN);
@@ -181,5 +184,39 @@ class QualificationServiceTest {
           .filter(qualification -> qualification.organisation().equals(organisation))
           .toList();
     }
+  }
+
+  @Test
+  void GivenAnAdmin_WhenDefiningAQualification_ThenTheChangeIsRecordedAgainstThem() {
+    TenantActor admin = admin(ACME);
+
+    QualificationId defined =
+        service.defineQualification(admin, new DefineQualificationCommand(ACME, "Forklift"));
+
+    assertThat(audit.of(WorkforceChange.QUALIFICATION_DEFINED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, admin.id(), WorkforceChange.QUALIFICATION_DEFINED, defined.value()));
+  }
+
+  @Test
+  void GivenASchedulerRole_WhenDefiningIsRefused_ThenNothingIsRecorded() {
+    assertThatThrownBy(
+            () ->
+                service.defineQualification(
+                    actor(ACME, Role.SCHEDULER), new DefineQualificationCommand(ACME, "Forklift")))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  @Test
+  void GivenABlankName_WhenDefiningFails_ThenNoChangeIsRecordedForIt() {
+    assertThatThrownBy(
+            () ->
+                service.defineQualification(admin(ACME), new DefineQualificationCommand(ACME, " ")))
+        .isInstanceOf(InvalidQualificationNameException.class);
+
+    assertThat(audit.changes()).isEmpty();
   }
 }

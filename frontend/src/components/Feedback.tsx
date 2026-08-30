@@ -1,6 +1,17 @@
 import { ApiError } from '../api/problem';
 
 /**
+ * Shows the trace id of the request that was refused, when the backend sent one.
+ *
+ * Every log line that request produced carries the same value, so this turns "it broke this
+ * morning" into something findable. It is shown quietly: it is for reporting a problem, not for
+ * understanding one.
+ */
+function Reference({ of }: { of: ApiError }) {
+  return of.reference === null ? null : <p className="reference">Reference: {of.reference}</p>;
+}
+
+/**
  * Renders whatever went wrong, distinguishing the refusals that mean different things.
  *
  * A rule breach is not an error in the usual sense: the request was well formed and the rules said
@@ -30,6 +41,7 @@ export function Failure({
             </li>
           ))}
         </ul>
+        <Reference of={error} />
       </div>
     );
   }
@@ -37,6 +49,7 @@ export function Failure({
     return (
       <div className="failure" role="alert">
         <strong>Your role may not do this.</strong> {error.message}
+        <Reference of={error} />
       </div>
     );
   }
@@ -45,12 +58,14 @@ export function Failure({
       <div className="failure" role="alert">
         <strong>Nothing here for this organisation.</strong> A cross-tenant attempt answers 404
         rather than 403, so this may also mean it exists for somebody else.
+        <Reference of={error} />
       </div>
     );
   }
   return (
     <div className="failure" role="alert">
       {error instanceof Error ? error.message : String(error)}
+      {error instanceof ApiError ? <Reference of={error} /> : null}
     </div>
   );
 }

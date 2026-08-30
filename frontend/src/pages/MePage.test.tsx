@@ -20,7 +20,12 @@ function accepting() {
   const stub = vi.fn((path: string, init?: RequestInit) => {
     void path;
     void init;
-    return Promise.resolve({ ok: true, status: 204, text: () => Promise.resolve('') });
+    return Promise.resolve({
+      ok: true,
+      status: 204,
+      headers: new Headers(),
+      text: () => Promise.resolve(''),
+    });
   });
   vi.stubGlobal('fetch', stub);
   return stub;
@@ -33,6 +38,7 @@ function refusing(status: number, body: unknown) {
     return Promise.resolve({
       ok: false,
       status,
+      headers: new Headers(),
       text: () => Promise.resolve(JSON.stringify(body)),
     });
   });

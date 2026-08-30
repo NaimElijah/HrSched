@@ -121,3 +121,22 @@ describe('what a status means', () => {
     expect(error.isNotFound).toBe(false);
   });
 });
+
+describe('the trace reference', () => {
+  const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
+
+  it('GivenATraceId_WhenBuildingTheError_ThenItIsCarriedAlongsideTheBody', () => {
+    const error = toApiError(422, { detail: 'Refused', violations: [] }, TRACE);
+
+    expect(error.reference).toBe(TRACE);
+    expect(error.message).toBe('Refused');
+  });
+
+  it('GivenABodyThatIsNotAnObject_WhenBuildingTheError_ThenTheTraceIdStillSurvives', () => {
+    expect(toApiError(502, 'Bad Gateway', TRACE).reference).toBe(TRACE);
+  });
+
+  it('GivenNoTraceId_WhenBuildingTheError_ThenTheReferenceIsNullRatherThanInvented', () => {
+    expect(toApiError(500, {}).reference).toBeNull();
+  });
+});

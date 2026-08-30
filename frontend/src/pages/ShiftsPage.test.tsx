@@ -29,6 +29,7 @@ function routeTo(options: { onPost?: () => { ok: boolean; status: number; body: 
       return Promise.resolve({
         ok: outcome.ok,
         status: outcome.status,
+        headers: new Headers(),
         text: () => Promise.resolve(JSON.stringify(outcome.body)),
       });
     }
@@ -36,6 +37,7 @@ function routeTo(options: { onPost?: () => { ok: boolean; status: number; body: 
     return Promise.resolve({
       ok: true,
       status: 200,
+      headers: new Headers(),
       text: () => Promise.resolve(JSON.stringify(body)),
     });
   });

@@ -26,6 +26,7 @@ function routeTo(body: unknown) {
     return Promise.resolve({
       ok: true,
       status: 200,
+      headers: new Headers(),
       text: () => Promise.resolve(JSON.stringify(body)),
     });
   });

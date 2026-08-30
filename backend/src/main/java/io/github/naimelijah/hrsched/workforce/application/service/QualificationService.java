@@ -8,7 +8,10 @@ import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.workforce.application.port.in.DefineQualificationCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.ManageQualificationsUseCase;
 import io.github.naimelijah.hrsched.workforce.application.port.in.PublishedQualification;
+import io.github.naimelijah.hrsched.workforce.application.port.out.AuditTrail;
+import io.github.naimelijah.hrsched.workforce.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
+import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChange;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import java.util.List;
 import java.util.Objects;
@@ -20,9 +23,11 @@ public class QualificationService implements ManageQualificationsUseCase {
   private static final Set<Role> MAY_DEFINE = Set.of(Role.ADMIN);
 
   private final QualificationRepository qualifications;
+  private final AuditTrail audit;
 
-  public QualificationService(QualificationRepository qualifications) {
+  public QualificationService(QualificationRepository qualifications, AuditTrail audit) {
     this.qualifications = Objects.requireNonNull(qualifications, "qualifications must not be null");
+    this.audit = Objects.requireNonNull(audit, "audit must not be null");
   }
 
   @Override
@@ -34,6 +39,12 @@ public class QualificationService implements ManageQualificationsUseCase {
     Qualification qualification =
         new Qualification(QualificationId.newId(), command.organisation(), command.name());
     qualifications.save(qualification);
+    audit.record(
+        new AuditedChange(
+            command.organisation(),
+            actor.id(),
+            WorkforceChange.QUALIFICATION_DEFINED,
+            qualification.id().value()));
     return qualification.id();
   }
 

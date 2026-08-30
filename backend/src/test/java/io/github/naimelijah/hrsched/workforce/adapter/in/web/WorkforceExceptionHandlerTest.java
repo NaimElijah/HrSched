@@ -17,6 +17,7 @@ import io.github.naimelijah.hrsched.workforce.domain.model.InvalidQualificationN
 import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.InputStream;
 import java.time.Duration;
 import java.time.Instant;
@@ -46,7 +47,13 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
  */
 class WorkforceExceptionHandlerTest {
 
-  private final WorkforceExceptionHandler handler = new WorkforceExceptionHandler();
+  private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+  private final WorkforceExceptionHandler handler = new WorkforceExceptionHandler(meters);
+
+  private double denied(String kind) {
+    var counter = meters.find("hrsched.access.denied").tag("kind", kind).counter();
+    return counter == null ? 0.0 : counter.count();
+  }
 
   private static TimeRange aPeriod() {
     return new TimeRange(
@@ -150,6 +157,36 @@ class WorkforceExceptionHandlerTest {
     assertThat(problem.getTitle()).isEqualTo("Not found");
     assertThat(problem.getDetail()).isEqualTo("No such resource.");
     assertThat(problem.getDetail()).doesNotContain(theirs.value().toString());
+  }
+
+  /**
+   * The counter that makes a security incident detectable. The response is the same 404 an ordinary
+   * miss earns, on purpose, so nothing derived from the status code can tell the two apart.
+   */
+  @Test
+  void GivenACrossTenantAttempt_WhenTranslated_ThenItIsCountedAsOne() {
+    handler.handleCrossTenant(
+        new CrossTenantAccessException(UserId.newId(), OrganisationId.newId()));
+
+    assertThat(denied("cross_tenant")).isEqualTo(1.0);
+    assertThat(denied("role")).isZero();
+  }
+
+  @Test
+  void GivenAnOrdinaryUnknownRecord_WhenTranslated_ThenNothingIsCountedAsASecurityEvent() {
+    handler.handleUnknown(new UnknownEmployeeException(EmployeeId.newId()));
+
+    assertThat(denied("cross_tenant")).isZero();
+    assertThat(denied("role")).isZero();
+  }
+
+  @Test
+  void GivenARoleRefusal_WhenTranslated_ThenItIsCountedSeparatelyFromATenantBreach() {
+    handler.handleNotPermitted(
+        new NotPermittedException(UserId.newId(), Role.EMPLOYEE, Set.of(Role.ADMIN)));
+
+    assertThat(denied("role")).isEqualTo(1.0);
+    assertThat(denied("cross_tenant")).isZero();
   }
 
   /**

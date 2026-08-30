@@ -19,6 +19,7 @@ function respondWith(outcome: { ok: boolean; status: number; body: unknown }) {
     Promise.resolve({
       ok: outcome.ok,
       status: outcome.status,
+      headers: new Headers(),
       text: () => Promise.resolve(JSON.stringify(outcome.body)),
     }),
   );

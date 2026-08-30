@@ -171,8 +171,15 @@ database, no third-party API, and no authentication.
 | --- | --- | --- |
 | `spring.application.name` | Name reported in logs and Actuator | `HrSched` |
 | `management.endpoint.health.probes.enabled` | Exposes `health/liveness` and `health/readiness` | `true` (set explicitly; Spring defaults it off outside Kubernetes) |
-| `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info` |
+| `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info,metrics,prometheus`. An allow list: `loggers`, `env` and `heapdump` are deliberately absent while there is no authentication ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md)) |
 | `server.port` | HTTP port | `8080` (Spring default, not overridden) |
+| `logging.structured.format.console` | Log format on stdout | `ecs` — Elastic Common Schema JSON, always, with no profile that turns it off ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
+| `logging.structured.ecs.service.name` / `.version` | Identify the emitting service in every line | `HrSched` / the Maven project version, filtered in at build time |
+| `logging.structured.ecs.service.environment` | Which environment produced the line | **Deliberately unset.** A committed default would travel to a real environment that forgot to override it |
+| `management.tracing.sampling.probability` | Share of requests given a trace id | `1.0` — free while nothing is exported |
+| `management.tracing.export.otlp.enabled` | Ship spans over OTLP | `false` — nothing listens yet (Q19), and an exporter with nowhere to send logs its own failure forever |
+| `management.logging.export.otlp.enabled` | Ship logs over OTLP | `false`, same reason |
+| `management.otlp.metrics.export.enabled` | Push metrics over OTLP | `false`, same reason. Metrics are pulled instead, from `/actuator/prometheus` |
 
 ## Tech stack
 
@@ -182,6 +189,9 @@ database, no third-party API, and no authentication.
 | Framework | Spring Boot | 4.1.1 | Supplies the HTTP boundary and health endpoints as configuration rather than code |
 | HTTP | `spring-boot-starter-webmvc` | via Boot BOM | Embedded Tomcat. **Boot 4.x renamed this** from `spring-boot-starter-web` |
 | Operations | `spring-boot-starter-actuator` | via Boot BOM | Health and readiness probes, required of every service by the project baseline |
+| Observability | `spring-boot-starter-opentelemetry` | via Boot BOM | OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters, so a W3C trace id reaches every response and every log line the request produces. Export is off. [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) |
+| Logging | Boot's built-in structured logging | via Boot BOM | ECS JSON needs no encoder library and no `logback-spring.xml` — one property. [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) |
+| Metrics | `micrometer-registry-prometheus` | via Boot BOM | Renders the meters Micrometer already collects for a scraper to pull. Nothing pushes. [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) |
 | Frontend | React | 19.2.8 | Largest ecosystem for a small SPA; TypeScript makes an API contract drift a compile error. [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) |
 | Frontend build | Vite | 8.2.2 | Dev server proxies `/api`, so no CORS exists anywhere. |
 | Frontend types | TypeScript | 6.0.3 | `strict`, plus the TS 6 defaults `verbatimModuleSyntax` and `noUncheckedIndexedAccess`. |
@@ -236,7 +246,9 @@ flowchart LR
 
 These are not conventions — they are **build failures**. `HexagonalArchitectureTest` runs in
 `./mvnw verify` and fails when the domain imports Spring, when the application reaches into an
-adapter, when one context references another, or when a context's own layers form a cycle.
+adapter, when one context references another, when a context's own layers form a cycle, when
+anything prints to stdout, when a domain class logs, or when a meter or a span appears inward of an
+adapter.
 
 Every rule has been observed failing on a deliberately introduced violation, then reverted —
 including the cross-context rule in both directions, since it *permits* something it used to
@@ -353,7 +365,10 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `SchedulingExceptionHandlerTest`, `WorkforceExceptionHandlerTest` | Driving adapters | Which failure earns which status, the structured 422, and that there is no catch-all. |
 | `GreedyRosterGeneratorTest` | Driven adapter | The placeholder generator never breaks a rule, and leaves a shift short rather than filling it illegally. |
 | `RosteringHttpTest`, `EmployeeHttpTest`, `QualificationHttpTest` | End to end | All sixteen endpoints through the real hexagon and the real adapters. |
-| `HexagonalArchitectureTest` | Whole codebase | **Six** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, and layer cycles. |
+| `TraceIdHttpTest` | Observability over HTTP | Every response carries a trace id, including the refusals — which are the ones a person has cause to report. |
+| `MetricsHttpTest` | Operations over HTTP | Both probes answer, the meters are published, and `loggers`, `env` and `heapdump` are **not** exposed. |
+| `SchedulingAuditLogTest`, `WorkforceAuditLogTest` | Driven adapters | Every audit field is an identifier and never a name, the message is a constant, and the counter is not tagged by tenant. |
+| `HexagonalArchitectureTest` | Whole codebase | **Nine** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, layer cycles, no printing, no logging in the domain, and no instrumentation inward of an adapter. |
 | `HrSchedApplicationTests` | Spring context | The application starts. |
 
 Naming follows `Given<scenario>_When<action>_Then<result>`. Tests run against the public
@@ -389,13 +404,38 @@ debt, to be revisited the first time UI/API drift actually bites.
 
 ## Deployment and operations
 
-*Not written yet — blocked on [Q5](docs/requirements/requirements.md#open-questions) (where
-this runs).* The build produces an executable JAR at `target/hrsched-0.0.1-SNAPSHOT.jar` and
-liveness/readiness probes are exposed, so the operational primitives exist even though no
-environment does.
+*Not written yet.* [Q5](docs/requirements/requirements.md#open-questions) answered that this is
+containerised with the provider deferred to its own ADR, so there is a shape but still no
+environment to describe. The operational primitives exist: the build produces an executable JAR at
+`target/hrsched-0.0.1-SNAPSHOT.jar`, liveness and readiness probes are exposed, and every log line
+is machine-readable.
 
-Still owed: structured JSON logging, correlation-ID propagation, and OpenTelemetry
-instrumentation.
+**Logs.** One ECS JSON object per line on stdout, ready for whatever collects the container's
+output. Every line a request produces carries `trace_id` — startup and shutdown lines have no span
+to belong to and carry none — and every HTTP response carries the same value as
+`X-Trace-Id` — which the user interface shows on a refusal, so a report from a person can be joined
+to the log ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)). Pipe it
+through `jq` to read it locally.
+
+**Metrics.** Pulled, never pushed: point a scraper at `/actuator/prometheus`
+([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md)).
+
+| Meter | What it answers |
+| --- | --- |
+| `http_server_requests_seconds` | Request rate, latency and error rate, per endpoint and status |
+| `jvm_*`, `process_*`, `tomcat_*` | Saturation: heap, threads, file descriptors, connections |
+| `hrsched_shifts_required_places` | Places each generation was asked to fill |
+| `hrsched_shifts_uncovered_places` | Places it could not fill without breaking a rule — the product's own success metric, and the ratio of the two is coverage |
+| `hrsched_access_denied_total{kind}` | Refusals, split into `cross_tenant` and `role`. A rise in `cross_tenant` is a security signal, not a usage one — and it is the only way to tell that 404 apart from an ordinary miss |
+| `hrsched_rosters_refused_total{reason}` | Publications refused by the working-time rules, or because the work could not be checked |
+| `hrsched_changes_total{context,change}` | Every recorded state change, by context and kind |
+
+Exposure is an allow list. `loggers`, `env` and `heapdump` are deliberately shut, and
+`MetricsHttpTest` fails the build if one of them opens.
+
+Still owed: somewhere to export telemetry to
+([Q19](docs/requirements/requirements.md#open-questions)), and a dashboard to read it on — both
+blocked on the same missing environment.
 
 ## Design decisions
 
@@ -404,6 +444,7 @@ instrumentation.
 | [ADR-001](docs/ADRs/ADR-001-java-spring-boot-maven.md) | Java 21, Spring Boot 4.1.1, Maven Wrapper | Boot 4.x is recent, so most existing tutorials name things that no longer exist |
 | [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md) | `./mvnw verify` as the single gate, Spotless for format | google-java-format is not configurable; formatting fails the build before tests run |
 | [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md) | Hexagon in one module, enforced by ArchUnit | Many more classes per use case; hand-wiring; enforcement is a test, not the compiler |
+| [ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md) | Generation behind a port, greedy for now | The product does not yet do the thing it exists to do; a greedy result is a poor solver baseline |
 | [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md) | Organise packages by bounded context | A layer is no longer one place; `workforce` precedes its requirements |
 | [ADR-007](docs/ADRs/ADR-007-monorepo-backend-and-frontend.md) | Monorepo: `backend/` + `frontend/` siblings | Every backend command grows a `cd`; CI and Dependabot need explicit paths |
 
@@ -412,6 +453,10 @@ instrumentation.
 | [ADR-012](docs/ADRs/ADR-012-acting-identity-carries-its-employee-record.md) | The acting identity carries the employee record it is | One more field in the shared kernel, which ADR-008 named as the thing to watch |
 | [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) | React + TypeScript + Vite, with a dev proxy instead of CORS | A second toolchain and CI job; a hand-written client that can drift from the DTOs |
 | [ADR-014](docs/ADRs/ADR-014-root-task-runner.md) | A Node script orchestrates both builds from the root | The root becomes nominally an npm project; per-project commands are named in two places |
+| [ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md) | Coverage measured on both projects, never enforced | A number nothing gates on is a number that can quietly fall |
+| [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) | ECS JSON logs everywhere, and a W3C trace id on every response | Local output is JSON and not pleasant to read; one starter brings the whole OpenTelemetry SDK |
+| [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) | Metrics pulled from `/actuator/prometheus`; no monitoring stack committed | The endpoint is unauthenticated, like everything else here; nothing scrapes it yet |
+| [ADR-018](docs/ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md) | Changes and refusals recorded through a port, as log events | The trail is only as durable as the log; every new use case must remember to call the port |
 
 Still open and blocking: **ADR-004** (data storage), **ADR-010** (objectives) and **ADR-011**
 (authentication). See the [ADR index](docs/ADRs/).

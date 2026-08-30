@@ -31,12 +31,25 @@ export interface ProblemDetail {
 export class ApiError extends Error {
   readonly status: number;
   readonly violations: readonly Violation[];
+  /**
+   * The trace id the backend put on the response, or null when it sent none.
+   *
+   * Every log line the request produced carries the same value, so this is the one thing a person
+   * looking at a refusal can quote that will actually find it again.
+   */
+  readonly reference: string | null;
 
-  constructor(status: number, message: string, violations: readonly Violation[] = []) {
+  constructor(
+    status: number,
+    message: string,
+    violations: readonly Violation[] = [],
+    reference: string | null = null,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.violations = violations;
+    this.reference = reference;
   }
 
   /** True when the refusal was the working-time rules rather than the request. */
@@ -70,10 +83,17 @@ function isViolation(value: unknown): value is Violation {
  *
  * Validates rather than casts: this is the boundary where untyped data enters, and a body that is
  * not the shape we expect must not be waved through as though it were.
+ *
+ * The reference comes from a response header rather than the body, so it is passed in rather than
+ * parsed out.
  */
-export function toApiError(status: number, body: unknown): ApiError {
+export function toApiError(
+  status: number,
+  body: unknown,
+  reference: string | null = null,
+): ApiError {
   if (typeof body !== 'object' || body === null) {
-    return new ApiError(status, `The server returned ${status}.`);
+    return new ApiError(status, `The server returned ${status}.`, [], reference);
   }
   const problem = body as Record<string, unknown>;
   const detail = typeof problem.detail === 'string' ? problem.detail : undefined;
@@ -81,5 +101,10 @@ export function toApiError(status: number, body: unknown): ApiError {
   const violations = Array.isArray(problem.violations)
     ? problem.violations.filter(isViolation)
     : [];
-  return new ApiError(status, detail ?? title ?? `The server returned ${status}.`, violations);
+  return new ApiError(
+    status,
+    detail ?? title ?? `The server returned ${status}.`,
+    violations,
+    reference,
+  );
 }

@@ -21,6 +21,9 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-013](ADR-013-react-typescript-vite-frontend.md) | Build the frontend on React, TypeScript and Vite, talking to the backend over a dev proxy | Accepted | 2026-08-30 |
 | [ADR-014](ADR-014-root-task-runner.md) | Orchestrate both builds from the root with a Node script | Accepted | 2026-08-30 |
 | [ADR-015](ADR-015-report-coverage-without-a-threshold.md) | Report test coverage on both projects, and never enforce a threshold | Accepted | 2026-08-30 |
+| [ADR-016](ADR-016-structured-logs-and-a-propagated-trace-id.md) | Emit structured JSON logs everywhere, and propagate a W3C trace id | Accepted | 2026-08-30 |
+| [ADR-017](ADR-017-expose-metrics-to-be-scraped.md) | Expose metrics for a scraper to pull, and ship no monitoring stack | Accepted | 2026-08-30 |
+| [ADR-018](ADR-018-audit-through-a-port-not-a-queryable-trail.md) | Record every change and refusal through a driven port, and build no queryable trail | Accepted | 2026-08-30 |
 
 ## Decisions waiting to be recorded
 
