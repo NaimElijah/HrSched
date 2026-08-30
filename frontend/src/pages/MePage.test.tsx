@@ -17,21 +17,25 @@ import { MePage } from './MePage';
 const EMPLOYEE = '11111111-1111-4111-8111-111111111111';
 
 function accepting() {
-  const stub = vi.fn(() =>
-    Promise.resolve({ ok: true, status: 204, text: () => Promise.resolve('') }),
-  );
+  const stub = vi.fn((path: string, init?: RequestInit) => {
+    void path;
+    void init;
+    return Promise.resolve({ ok: true, status: 204, text: () => Promise.resolve('') });
+  });
   vi.stubGlobal('fetch', stub);
   return stub;
 }
 
 function refusing(status: number, body: unknown) {
-  const stub = vi.fn(() =>
-    Promise.resolve({
+  const stub = vi.fn((path: string, init?: RequestInit) => {
+    void path;
+    void init;
+    return Promise.resolve({
       ok: false,
       status,
       text: () => Promise.resolve(JSON.stringify(body)),
-    }),
-  );
+    });
+  });
   vi.stubGlobal('fetch', stub);
   return stub;
 }

@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
 
 /**
@@ -22,7 +23,9 @@ afterEach(() => {
   logged.mockRestore();
 });
 
-function Throws({ message = 'the render broke' }: { message?: string }) {
+/** Always throws; the explicit return type is needed because an inferred `never` is not a JSX
+ * component as far as TypeScript is concerned. */
+function Throws({ message = 'the render broke' }: { message?: string }): ReactNode {
   throw new Error(message);
 }
 
