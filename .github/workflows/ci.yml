@@ -13,8 +13,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Both jobs run on every push, with no path filters. ADR-007 warned that getting path filters
+# wrong silently skips checks, and a check that is skipped still reports green — which is worse
+# than one that is merely slow.
 jobs:
-  verify:
+  backend:
     name: Build, test, format check
     runs-on: ubuntu-latest
     defaults:
@@ -36,3 +39,27 @@ jobs:
       # check, architecture rules, compile, and tests.
       - name: Verify
         run: ./mvnw -B verify
+
+  frontend:
+    name: Frontend format, lint, types, test, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          # setup-node runs outside the job default, so the cache key needs the real path.
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Deliberately the exact command a developer runs locally, as ADR-002 requires of the
+      # backend: format check, lint, types, tests and a production build in one invocation.
+      - name: Verify
+        run: npm run verify
