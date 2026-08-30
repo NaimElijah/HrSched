@@ -50,7 +50,7 @@ implemented; the rest are not.
 | F1a | Scheduler | See the shifts needing covering over a span | `SchedulingService`, `SchedulingServiceTest` |
 | F2 | Scheduler | Assign an employee to a shift, and remove that assignment | *not implemented* |
 | F3 | Scheduler | Publish a roster, after it passes the organisation rules | `SchedulingService`, `RosteringHttpTest` |
-| F4 | Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` |
+| F4 | Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest`. *Partially: `EmployeeResponse` carries neither availability nor a roster, so the HTTP listing does not satisfy this row — only the use case does.* |
 | F5 | Employee | See their own published roster | *not implemented: rosters are readable by Schedulers only* |
 | F6 | Employee | Declare when they cannot work, and state soft preferences | `EmployeeService`, `EmployeeServiceTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)) |
 | F7 | Employee | Request a swap of one of their assignments with another employee | *not implemented* |

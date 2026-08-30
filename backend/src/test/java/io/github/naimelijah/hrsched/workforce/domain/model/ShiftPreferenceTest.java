@@ -14,9 +14,10 @@ import org.junit.jupiter.params.provider.EnumSource;
 /**
  * The invariants a stated preference owns.
  *
- * <p>A preference is soft by construction: it carries a span and a strength and nothing else, so
- * there is no field through which it could ever block an assignment. That is asserted rather than
- * assumed, because the day it gains one is the day preferences quietly become constraints.
+ * <p>A preference is soft by construction: it carries a span and a strength and nothing else. The
+ * shape is pinned below, because the day it gains a third field is the day a preference could start
+ * behaving like a constraint. That the generator ignores preferences entirely is a different claim,
+ * and belongs to the generator's own tests rather than here.
  */
 class ShiftPreferenceTest {
 
@@ -54,7 +55,7 @@ class ShiftPreferenceTest {
   }
 
   @Test
-  void GivenAPreference_WhenExamined_ThenItCarriesNoPowerToBlockAnAssignment() {
+  void GivenAPreference_WhenExamined_ThenItCarriesOnlyAPeriodAndAStrength() {
     assertThat(ShiftPreference.class.getRecordComponents())
         .extracting(RecordComponent::getName)
         .containsExactlyInAnyOrder("period", "strength");

@@ -11,12 +11,15 @@ import { useAsync } from './useAsync';
  * comparison rather than a setState inside the effect, and the loader held in a ref so it can close
  * over fresh props.
  *
- * One thing these tests deliberately do not claim to cover. Deleting the `live` flag from the
- * effect breaks nothing here, and that was checked rather than assumed: the guard that actually
- * keeps stale data off the screen is the `settled.key === wanted` comparison in the return, which
- * discards a late answer whether or not the flag stopped it being stored. The flag avoids a
- * pointless setState after unmount; it is not what makes the hook correct, and no outside observer
- * can tell it is gone.
+ * Both guards are load-bearing and both are covered. The `live` flag stops a late answer being
+ * stored at all; the `settled.key === wanted` comparison in the return stops one being shown.
+ * Removing either fails this file — checked, in both directions.
+ *
+ * Flushing matters here more than anywhere else in the suite. An earlier version of the
+ * stale-answer test awaited a single microtask, which does not flush a React re-render, so it
+ * asserted against the previous DOM and passed with the `live` flag deleted. It reported a
+ * property the hook does not have. Anything that resolves a promise and then inspects the tree
+ * needs a macrotask and a `waitFor`, not `await Promise.resolve()`.
  */
 
 /** A promise whose settlement this test decides, so response ordering is chosen and never raced. */
@@ -74,7 +77,8 @@ describe('holding the three states a caller has to render', () => {
 describe('when the question changes', () => {
   /**
    * A user who changes the span twice must not be shown the first answer because it arrived last.
-   * Verified to bite: replacing the keyed return with a bare `settled.value` fails this file.
+   * Verified to bite in both directions: deleting the `live` flag fails this test, and replacing
+   * the keyed return with a bare `settled.value` fails the one below it.
    */
   it('GivenAKeyChange_WhenTheFirstResponseArrivesLast_ThenItIsDropped', async () => {
     const first = deferred<string>();
@@ -86,9 +90,9 @@ describe('when the question changes', () => {
     await waitFor(() => expect(value()).toBe('second answer'));
 
     first.resolve('first answer');
-    await Promise.resolve();
+    await new Promise((settle) => setTimeout(settle, 0));
 
-    expect(value()).toBe('second answer');
+    await waitFor(() => expect(value()).toBe('second answer'));
   });
 
   it('GivenAKeyChange_WhenTheAnswerIsStillInFlight_ThenItIsBusyAgain', async () => {

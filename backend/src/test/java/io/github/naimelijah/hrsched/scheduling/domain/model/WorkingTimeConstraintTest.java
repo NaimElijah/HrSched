@@ -152,13 +152,19 @@ class WorkingTimeConstraintTest {
         .isEmpty();
   }
 
-  @Test
-  void GivenAnEmptySchedule_WhenCheckingAnyRule_ThenNothingIsViolated() {
-    assertThat(new MinimumRestBetweenAssignments(Duration.ofHours(8)).violatedBy(working()))
-        .isEmpty();
-    assertThat(new MaximumDailyWorkingTime(Duration.ofHours(8)).violatedBy(working())).isEmpty();
-    assertThat(new MaximumWeeklyWorkingTime(Duration.ofHours(40)).violatedBy(working())).isEmpty();
-    assertThat(new MaximumConsecutiveWorkingDays(5).violatedBy(working())).isEmpty();
+  /** Every rule, so one failure cannot mask the other three. All figures invented. */
+  private static Stream<WorkingTimeConstraint> everyRule() {
+    return Stream.of(
+        new MinimumRestBetweenAssignments(Duration.ofHours(8)),
+        new MaximumDailyWorkingTime(Duration.ofHours(8)),
+        new MaximumWeeklyWorkingTime(Duration.ofHours(17)),
+        new MaximumConsecutiveWorkingDays(3));
+  }
+
+  @ParameterizedTest
+  @MethodSource("everyRule")
+  void GivenAnEmptySchedule_WhenCheckingAnyRule_ThenNothingIsViolated(WorkingTimeConstraint rule) {
+    assertThat(rule.violatedBy(working())).isEmpty();
   }
 
   @Test
@@ -167,9 +173,9 @@ class WorkingTimeConstraintTest {
         .isEqualTo("minimum rest between assignments");
     assertThat(new MaximumDailyWorkingTime(Duration.ofHours(8)).name())
         .isEqualTo("maximum daily working time");
-    assertThat(new MaximumWeeklyWorkingTime(Duration.ofHours(40)).name())
+    assertThat(new MaximumWeeklyWorkingTime(Duration.ofHours(17)).name())
         .isEqualTo("maximum weekly working time");
-    assertThat(new MaximumConsecutiveWorkingDays(5).name())
+    assertThat(new MaximumConsecutiveWorkingDays(3).name())
         .isEqualTo("maximum consecutive working days");
   }
 

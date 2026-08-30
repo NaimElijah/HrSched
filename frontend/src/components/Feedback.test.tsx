@@ -18,7 +18,7 @@ function ruleBreach(violations: { employee: string; constraint: string; detail: 
 }
 
 describe('when there is nothing wrong', () => {
-  it.each([null, undefined])('GivenNoError_WhenRendering_ThenNothingIsShown', (error) => {
+  it.each([null, undefined])('GivenNoError_WhenRendering_ThenNothingIsShown (%j)', (error) => {
     const { container } = render(<Failure error={error} />);
 
     expect(container).toBeEmptyDOMElement();
@@ -100,7 +100,7 @@ describe('the other refusals', () => {
   });
 
   it.each([['a string'], [42], [{ odd: true }], [true]])(
-    'GivenSomethingThatIsNotAnError_WhenRendering_ThenItIsStringifiedRatherThanCrashing',
+    'GivenSomethingThatIsNotAnError_WhenRendering_ThenItIsStringifiedRatherThanCrashing (%j)',
     (thrown) => {
       render(<Failure error={thrown} />);
 

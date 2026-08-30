@@ -11,7 +11,7 @@ import { ApiError, toApiError } from './problem';
 
 describe('a body that is not the shape we expect', () => {
   it.each([[null], [undefined], ['plain text'], [42], [true]])(
-    'GivenABodyThatIsNotAnObject_WhenTranslating_ThenOnlyTheStatusIsReported',
+    'GivenABodyThatIsNotAnObject_WhenTranslating_ThenOnlyTheStatusIsReported (%j)',
     (body) => {
       const error = toApiError(500, body);
 
@@ -49,7 +49,7 @@ describe('choosing the message', () => {
   });
 
   it.each([[42], [null], [{ nested: true }], [['a']]])(
-    'GivenADetailThatIsNotAString_WhenTranslating_ThenItFallsBackRatherThanCasting',
+    'GivenADetailThatIsNotAString_WhenTranslating_ThenItFallsBackRatherThanCasting (%j)',
     (detail) => {
       expect(toApiError(400, { detail }).message).toBe('The server returned 400.');
     },
@@ -70,14 +70,14 @@ describe('violations', () => {
   });
 
   it.each([['a string'], [42], [null], [{ employee: 1 }], [{ employee: 'ada' }], [{}]])(
-    'GivenAnEntryThatIsNotAViolation_WhenTranslating_ThenItIsDiscarded',
+    'GivenAnEntryThatIsNotAViolation_WhenTranslating_ThenItIsDiscarded (%j)',
     (entry) => {
       expect(toApiError(422, { violations: [valid, entry] }).violations).toEqual([valid]);
     },
   );
 
   it.each([['not an array'], [42], [null], [{ employee: 'ada' }]])(
-    'GivenAViolationsFieldThatIsNotAnArray_WhenTranslating_ThenThereAreNone',
+    'GivenAViolationsFieldThatIsNotAnArray_WhenTranslating_ThenThereAreNone (%j)',
     (violations) => {
       expect(toApiError(422, { violations }).violations).toEqual([]);
     },

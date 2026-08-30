@@ -133,10 +133,12 @@ Outside `backend/`:
 - **`@ParameterizedTest` is an accepted idiom, for data-only rows.** `junit-jupiter-params` comes
   with the Boot BOM; no dependency to add. Use it where the rows differ only in *data* and the
   assertion sentence is identical — null-check batteries, blank-name batteries, the identity
-  records, exception-type lists. Do **not** use it where rows differ in setup or reasoning:
-  anything involving an actor, a role or a tenant boundary, and anything whose comment explains
-  *why*. A parameterised tenant-isolation test reads as a table and hides which row is the one
-  whose failure is a security incident. If a table passes about a dozen rows, split it.
+  records, exception-type lists, and *parsing* a role or header string — `ActorFromHeadersTest`
+  tables its role strings and is right to. Do **not** use it for a permission or tenancy
+  **decision**: who may do what, and who may see whose data. A parameterised isolation test reads
+  as a table and hides which row is the one whose failure is a security incident. Nor for rows
+  that differ in setup, or whose comment explains *why* — the comment then belongs to no row. If a
+  table passes about a dozen rows, split it.
 - **When adding an architecture rule, watch it fail first.** All six rules here have been
   observed failing on a deliberately introduced violation, then reverted. A rule that has only
   ever been green proves nothing — one rule was deleted after it turned out it could no longer

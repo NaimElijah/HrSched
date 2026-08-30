@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { defaultSpan, localDate, startOfLocalDay } from './localDates';
 
 /**
@@ -10,17 +10,13 @@ import { defaultSpan, localDate, startOfLocalDay } from './localDates';
  * Every assertion is therefore a round trip or a relative property, both of which hold everywhere.
  */
 
-afterEach(() => {
-  vi.useRealTimers();
-});
-
 describe('reading a date input', () => {
   it('GivenAnEmptyField_WhenTakingTheStartOfTheLocalDay_ThenThereIsNoInstant', () => {
     expect(startOfLocalDay('')).toBeNull();
   });
 
   it.each(['not-a-date', '2026-13-45', 'yesterday'])(
-    'GivenAnUnparseableField_WhenTakingTheStartOfTheLocalDay_ThenThereIsNoInstant',
+    'GivenAnUnparseableField_WhenTakingTheStartOfTheLocalDay_ThenThereIsNoInstant (%s)',
     (value) => {
       expect(startOfLocalDay(value)).toBeNull();
     },
@@ -40,7 +36,7 @@ describe('the local day an instant falls on', () => {
   });
 
   it.each(['2026-01-01', '2026-06-15', '2026-12-31'])(
-    'GivenAnyDateInTheYear_WhenRoundTripped_ThenItSurvives',
+    'GivenAnyDateInTheYear_WhenRoundTripped_ThenItSurvives (%s)',
     (date) => {
       expect(localDate(startOfLocalDay(date) as string)).toBe(date);
     },
@@ -66,19 +62,13 @@ describe('the local day an instant falls on', () => {
 
 describe('the default planning span', () => {
   it('GivenAFixedClock_WhenTakingTheSpan_ThenItStartsOnTodaysLocalDate', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 9, 5, 13, 45, 0));
-
-    const span = defaultSpan(new Date());
+    const span = defaultSpan(new Date(2026, 9, 5, 13, 45, 0));
 
     expect(localDate(span.from)).toBe('2026-10-05');
   });
 
   it('GivenAFixedClock_WhenTakingTheSpan_ThenItRunsAFortnight', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 9, 5, 13, 45, 0));
-
-    const span = defaultSpan(new Date());
+    const span = defaultSpan(new Date(2026, 9, 5, 13, 45, 0));
     const days =
       (new Date(span.to).getTime() - new Date(span.from).getTime()) / (24 * 60 * 60 * 1000);
 

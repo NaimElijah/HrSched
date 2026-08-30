@@ -113,8 +113,12 @@ class InMemoryShiftRepositoryTest {
     repository.save(original);
     repository.save(revised);
 
+    // Shift compares by identity, so asserting on the element itself would pass whichever
+    // version were held. A distinguishing field is the only thing that can tell them apart.
     assertThat(repository.findWithin(ACME, between("2026-09-07T00:00:00Z", "2026-09-08T00:00:00Z")))
-        .containsExactly(revised);
+        .singleElement()
+        .extracting(Shift::requiredHeadcount)
+        .isEqualTo(2);
   }
 
   @Test
