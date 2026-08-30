@@ -280,6 +280,68 @@ class RosteringHttpTest {
   }
 
   @Test
+  void GivenDefinedShifts_WhenListingThemForASpan_ThenTheyAreReturned() throws Exception {
+    String organisation = anOrganisation();
+    defineShift(organisation, "2026-10-21T08:00:00Z", "2026-10-21T16:00:00Z", 2);
+
+    mockMvc
+        .perform(
+            as(get("/api/shifts"), organisation, "SCHEDULER")
+                .param("from", "2026-10-21T00:00:00Z")
+                .param("to", "2026-10-22T00:00:00Z"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].requiredHeadcount").value(2));
+  }
+
+  @Test
+  void GivenShiftsOfAnotherOrganisation_WhenListingThem_ThenNothingLeaks() throws Exception {
+    defineShift(anOrganisation(), "2026-10-22T08:00:00Z", "2026-10-22T16:00:00Z", 1);
+
+    mockMvc
+        .perform(
+            as(get("/api/shifts"), anOrganisation(), "SCHEDULER")
+                .param("from", "2026-10-22T00:00:00Z")
+                .param("to", "2026-10-23T00:00:00Z"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
+  }
+
+  @Test
+  void GivenNoSpan_WhenListingShifts_ThenItIsABadRequest() throws Exception {
+    mockMvc
+        .perform(as(get("/api/shifts"), anOrganisation(), "SCHEDULER"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void GivenAGeneratedRoster_WhenListingRosters_ThenItIsReturned() throws Exception {
+    String organisation = anOrganisation();
+    addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-23T08:00:00Z", "2026-10-23T16:00:00Z", 1);
+    generateRoster(organisation, "2026-10-23T00:00:00Z", "2026-10-24T00:00:00Z");
+
+    mockMvc
+        .perform(as(get("/api/rosters"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].status").value("DRAFT"));
+  }
+
+  @Test
+  void GivenRostersOfAnotherOrganisation_WhenListingThem_ThenNothingLeaks() throws Exception {
+    String organisation = anOrganisation();
+    addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-24T08:00:00Z", "2026-10-24T16:00:00Z", 1);
+    generateRoster(organisation, "2026-10-24T00:00:00Z", "2026-10-25T00:00:00Z");
+
+    mockMvc
+        .perform(as(get("/api/rosters"), anOrganisation(), "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
+  }
+
+  @Test
   void GivenABodyWithoutAPeriod_WhenDefiningAShift_ThenItIsABadRequestNotAServerError()
       throws Exception {
     mockMvc

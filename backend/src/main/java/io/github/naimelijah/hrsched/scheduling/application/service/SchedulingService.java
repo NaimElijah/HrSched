@@ -95,6 +95,12 @@ public class SchedulingService
   }
 
   @Override
+  public List<Shift> findShifts(Actor actor, OrganisationId organisation, TimeRange within) {
+    actor.requireAccessTo(organisation);
+    return shifts.findWithin(organisation, within);
+  }
+
+  @Override
   public ConstraintSet reviseConstraints(Actor actor, ReviseConstraintsCommand command) {
     authorise(actor, command.organisation(), MAY_CONFIGURE);
     ConstraintSet revised =
@@ -149,6 +155,12 @@ public class SchedulingService
   public Optional<Roster> findRoster(Actor actor, OrganisationId organisation, RosterId rosterId) {
     actor.requireAccessTo(organisation);
     return rosters.findById(organisation, rosterId);
+  }
+
+  @Override
+  public List<Roster> findRosters(Actor actor, OrganisationId organisation) {
+    actor.requireAccessTo(organisation);
+    return rosters.findByOrganisation(organisation);
   }
 
   /**
