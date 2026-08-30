@@ -19,12 +19,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ON_WINDOWS = process.platform === 'win32';
 
 function settled(child, description) {
-  return new Promise((resolve, reject) => {
+  const done = new Promise((resolve, reject) => {
     child.on('error', reject);
     child.on('close', (code) =>
       code === 0 ? resolve() : reject(new Error(`${description} exited with ${code}`)),
     );
   });
+  done.child = child;
+  return done;
 }
 
 /**
@@ -63,10 +65,17 @@ const frontend = () => run(NPM, ['run', 'verify'], 'frontend');
  * configuration exists anywhere in this repository.
  */
 async function dev() {
-  await Promise.race([
-    run(MVNW, ['-B', 'spring-boot:run'], 'backend'),
-    run(NPM, ['run', 'dev'], 'frontend'),
-  ]);
+  const running = [run(MVNW, ['-B', 'spring-boot:run'], 'backend'), run(NPM, ['run', 'dev'], 'frontend')];
+  try {
+    await Promise.race(running);
+  } finally {
+    // Whichever finishes first, the other is torn down. Leaving it would orphan a server still
+    // holding its port, so the next `npm run dev` fails on a port the previous one leaked.
+    for (const pending of running) {
+      pending.child.kill();
+      pending.catch(() => {});
+    }
+  }
 }
 
 const TASKS = {
@@ -79,12 +88,18 @@ const TASKS = {
   },
 };
 
-const task = TASKS[process.argv[2]];
+const requested = process.argv[2] ?? '';
 
-if (task === undefined) {
+// Object.hasOwn, not plain property access: `TASKS.constructor` and `TASKS.toString` resolve to
+// inherited Object.prototype functions, so a mistyped task name would run harmlessly and exit 0
+// having verified nothing. A gate that reports green without running is the failure this
+// repository takes most seriously — ci.yml says as much about path filters.
+if (!Object.hasOwn(TASKS, requested)) {
   process.stderr.write(`Usage: node scripts/run.mjs <${Object.keys(TASKS).join('|')}>\n`);
   process.exit(2);
 }
+
+const task = TASKS[requested];
 
 try {
   await task();
