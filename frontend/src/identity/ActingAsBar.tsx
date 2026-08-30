@@ -66,6 +66,13 @@ export function ActingAsBar({ employees }: { employees: readonly Employee[] }) {
                 {employee.name}
               </option>
             ))}
+            {/* An EMPLOYEE may not list colleagues, so the picker is empty for exactly the role
+                that needs it. Without this the control would read "nobody" while X-Employee was
+                still being sent -- the UI disagreeing with the request it makes. */}
+            {identity.employee !== null &&
+            !employees.some((employee) => employee.id === identity.employee) ? (
+              <option value={identity.employee}>{identity.employee}</option>
+            ) : null}
           </select>
         </label>
       </div>

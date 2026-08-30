@@ -24,14 +24,23 @@ export function RostersPage({ span }: { span: { from: string; to: string } }) {
   const [selected, setSelected] = useState<string | null>(null);
 
   const rosters = useAsync(() => scheduling.findRosters(identity), identityKey(identity));
-  const shifts = useAsync(
-    () => scheduling.findShifts(identity, span.from, span.to),
-    `${identityKey(identity)}|${span.from}|${span.to}`,
-  );
   const people = useAsync(() => workforce.findEmployees(identity), identityKey(identity));
+
+  const chosen = (rosters.value ?? []).find((roster) => roster.id === selected) ?? null;
+
+  // Against the chosen roster's own period, not the planning span: a roster opened while the span
+  // points elsewhere would otherwise resolve none of its shifts and degrade to raw identifiers.
+  const shifts = useAsync(
+    () =>
+      chosen === null
+        ? Promise.resolve([])
+        : scheduling.findShifts(identity, chosen.start, chosen.end),
+    `${identityKey(identity)}|${chosen?.start ?? ''}|${chosen?.end ?? ''}`,
+  );
 
   const shiftById = new Map((shifts.value ?? []).map((shift) => [shift.id, shift]));
   const personById = new Map((people.value ?? []).map((person) => [person.id, person]));
+  const nameOf = (employee: string): string | undefined => personById.get(employee)?.name;
 
   async function act(action: () => Promise<unknown>) {
     setFailure(null);
@@ -42,8 +51,6 @@ export function RostersPage({ span }: { span: { from: string; to: string } }) {
       setFailure(error);
     }
   }
-
-  const chosen = (rosters.value ?? []).find((roster) => roster.id === selected) ?? null;
 
   return (
     <section>
@@ -61,7 +68,7 @@ export function RostersPage({ span }: { span: { from: string; to: string } }) {
         Generate a draft for this span
       </button>
 
-      <Failure error={failure} />
+      <Failure error={failure} nameOf={nameOf} />
       <Failure error={rosters.error} />
       <Busy busy={rosters.busy} />
 
@@ -79,6 +86,9 @@ export function RostersPage({ span }: { span: { from: string; to: string } }) {
           {(rosters.value ?? []).map((roster) => (
             <tr key={roster.id}>
               <td>
+                {new Date(roster.start).toLocaleDateString()} to{' '}
+                {new Date(roster.end).toLocaleDateString()}
+                <br />
                 <code>{roster.id}</code>
               </td>
               <td>{roster.status}</td>

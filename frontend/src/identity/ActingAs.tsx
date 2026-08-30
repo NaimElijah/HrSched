@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { ROLES } from '../api/client';
 import type { ActingIdentity, Role } from '../api/client';
 
 /**
@@ -25,16 +26,78 @@ function randomUuid(): string {
   return crypto.randomUUID();
 }
 
-function initialIdentity(): ActingIdentity {
+function isRole(value: unknown): value is Role {
+  return typeof value === 'string' && (ROLES as readonly string[]).includes(value);
+}
+
+/**
+ * Validates what came out of storage instead of casting it.
+ *
+ * localStorage is a boundary like any other: it carries data written by an older build of this app,
+ * or by anything else on the origin. A stored identity missing its role would otherwise send the
+ * literal string "undefined" as X-Role — the Headers API stringifies it — and every request would
+ * fail with a 400 while the UI showed a perfectly normal role.
+ */
+function parseIdentity(raw: string): ActingIdentity | null {
+  let value: unknown;
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored !== null) {
-      return JSON.parse(stored) as ActingIdentity;
-    }
+    value = JSON.parse(raw);
   } catch {
-    // A browser that refuses storage still gets a working app with a fresh identity.
+    return null;
   }
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.organisation !== 'string' ||
+    typeof candidate.user !== 'string' ||
+    !isRole(candidate.role)
+  ) {
+    return null;
+  }
+  const employee = candidate.employee;
+  return {
+    organisation: candidate.organisation,
+    user: candidate.user,
+    role: candidate.role,
+    employee: typeof employee === 'string' ? employee : null,
+  };
+}
+
+function freshIdentity(): ActingIdentity {
   return { organisation: randomUuid(), user: randomUuid(), role: 'ADMIN', employee: null };
+}
+
+function store(identity: ActingIdentity): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(identity));
+  } catch {
+    // A browser that refuses storage still gets a working session; only persistence is lost.
+  }
+}
+
+/**
+ * Reads the stored identity, minting and **persisting** a fresh one when there is none.
+ *
+ * Persisting the fresh one is the whole point. Without it, a reload mints another random
+ * organisation, and because the repositories are in-memory and organisation-scoped, everything
+ * created in the previous session becomes unreachable.
+ */
+function initialIdentity(): ActingIdentity {
+  let stored: string | null;
+  try {
+    stored = window.localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return freshIdentity();
+  }
+  const parsed = stored === null ? null : parseIdentity(stored);
+  if (parsed !== null) {
+    return parsed;
+  }
+  const fresh = freshIdentity();
+  store(fresh);
+  return fresh;
 }
 
 export function ActingAsProvider({ children }: { children: ReactNode }) {
@@ -42,11 +105,7 @@ export function ActingAsProvider({ children }: { children: ReactNode }) {
 
   const update = useCallback((next: ActingIdentity) => {
     setIdentity(next);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // Persisting is a convenience; losing it must not break the session.
-    }
+    store(next);
   }, []);
 
   const value = useMemo<ActingAsContextValue>(

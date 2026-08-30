@@ -27,10 +27,16 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
   async function define(event: React.FormEvent) {
     event.preventDefault();
     setFailure(null);
+    const from = new Date(start);
+    const to = new Date(end);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      setFailure(new Error('Give both a start and an end.'));
+      return;
+    }
     try {
       await scheduling.defineShift(identity, {
-        start: new Date(start).toISOString(),
-        end: new Date(end).toISOString(),
+        start: from.toISOString(),
+        end: to.toISOString(),
         requiredHeadcount: Number(headcount),
         requiredQualifications: required,
       });

@@ -1,4 +1,4 @@
-import { toApiError } from './problem';
+import { ApiError, toApiError } from './problem';
 
 /**
  * Who the caller claims to be.
@@ -41,26 +41,31 @@ async function request<T>(
   }
 
   const response = await fetch(path, { ...init, headers });
+  const text = await response.text();
 
   if (!response.ok) {
-    throw toApiError(response.status, await readBody(response));
+    throw toApiError(response.status, parseOrNull(text) ?? { detail: text });
   }
-  if (response.status === 204) {
+  if (response.status === 204 || text.length === 0) {
     return undefined as T;
   }
-  return (await readBody(response)) as T;
+  const body = parseOrNull(text);
+  if (body === null) {
+    // A 200 carrying something other than JSON is a broken deployment, not a value. Casting it
+    // would hand a page an object where it expects an array, and the render would throw.
+    throw new ApiError(response.status, `Expected JSON from ${path} but the body was not JSON.`);
+  }
+  return body as T;
 }
 
-async function readBody(response: Response): Promise<unknown> {
-  const text = await response.text();
+function parseOrNull(text: string): unknown {
   if (text.length === 0) {
     return null;
   }
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    // A non-JSON body is still information; surfacing it beats reporting a parse failure.
-    return { detail: text };
+    return null;
   }
 }
 

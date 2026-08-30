@@ -14,6 +14,10 @@ const SPAN = { from: '2026-10-05T00:00:00.000Z', to: '2026-10-12T00:00:00.000Z' 
 
 const ROSTER = {
   id: 'roster-1',
+  // Deliberately outside SPAN: a roster must resolve against its own period, not the span the
+  // scheduler happens to be looking at.
+  start: '2026-11-02T00:00:00Z',
+  end: '2026-11-09T00:00:00Z',
   status: 'DRAFT',
   assignments: [{ shift: 'shift-1', employee: 'emp-1' }],
   validatedAgainstConstraintVersion: null,
@@ -21,8 +25,8 @@ const ROSTER = {
 
 const SHIFT = {
   id: 'shift-1',
-  start: '2026-10-05T08:00:00Z',
-  end: '2026-10-05T16:00:00Z',
+  start: '2026-11-03T08:00:00Z',
+  end: '2026-11-03T16:00:00Z',
   requiredHeadcount: 1,
   requiredQualifications: [],
 };
@@ -30,18 +34,17 @@ const SHIFT = {
 const ADA = { id: 'emp-1', name: 'Ada', qualifications: [] };
 
 function routeTo(handlers: Record<string, { status: number; body: unknown }>) {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((path: string) => {
-      const key = Object.keys(handlers).find((candidate) => path.startsWith(candidate));
-      const match = key === undefined ? { status: 404, body: {} } : handlers[key]!;
-      return Promise.resolve({
-        ok: match.status < 400,
-        status: match.status,
-        text: () => Promise.resolve(JSON.stringify(match.body)),
-      });
-    }),
-  );
+  const stub = vi.fn((path: string) => {
+    const key = Object.keys(handlers).find((candidate) => path.startsWith(candidate));
+    const match = key === undefined ? { status: 404, body: {} } : handlers[key]!;
+    return Promise.resolve({
+      ok: match.status < 400,
+      status: match.status,
+      text: () => Promise.resolve(JSON.stringify(match.body)),
+    });
+  });
+  vi.stubGlobal('fetch', stub);
+  return stub;
 }
 
 function renderPage() {
@@ -58,8 +61,8 @@ afterEach(() => {
 });
 
 describe('the rosters page', () => {
-  it('GivenARosterAndItsShift_WhenOpened_ThenAssignmentsReadAsNamesAndTimes', async () => {
-    routeTo({
+  it('GivenARosterOutsideTheSelectedSpan_WhenOpened_ThenItsShiftsStillResolve', async () => {
+    const stub = routeTo({
       '/api/rosters': { status: 200, body: [ROSTER] },
       '/api/shifts': { status: 200, body: [SHIFT] },
       '/api/employees': { status: 200, body: [ADA] },
@@ -68,10 +71,14 @@ describe('the rosters page', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Open' }));
 
-    const detail = await screen.findByText(/Ada/);
-    expect(detail).toBeInTheDocument();
-    // Joined client-side from the shift list rather than served as a view model.
+    // Joined client-side against the roster's own period, not the span on screen.
+    const detail = await screen.findByText(/Ada —.*2026/);
     expect(detail.textContent).not.toContain('shift-1');
+
+    const shiftCalls = stub.mock.calls
+      .map((call) => String(call[0]))
+      .filter((path) => path.startsWith('/api/shifts'));
+    expect(shiftCalls.at(-1)).toContain(encodeURIComponent(ROSTER.start));
   });
 
   it('GivenARosterThatBreaksTheRules_WhenPublishing_ThenEveryViolationIsShown', async () => {
@@ -98,6 +105,8 @@ describe('the rosters page', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Publish' }));
 
     const alert = await screen.findByRole('alert');
+    // Resolved to a name: the reason the 422 payload is structured at all.
+    expect(alert).toHaveTextContent('Ada');
     expect(alert).toHaveTextContent('maximum daily working time');
     expect(alert).toHaveTextContent('exceeds the maximum of PT1H');
     expect(alert).toHaveTextContent('There is no override');

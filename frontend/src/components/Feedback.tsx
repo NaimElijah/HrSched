@@ -6,7 +6,14 @@ import { ApiError } from '../api/problem';
  * A rule breach is not an error in the usual sense: the request was well formed and the rules said
  * no. It gets the violation list, because a scheduler told only "rejected" cannot act on it.
  */
-export function Failure({ error }: { error: unknown }) {
+export function Failure({
+  error,
+  nameOf,
+}: {
+  error: unknown;
+  /** Resolves an employee id to a name. Without it a scheduler is shown a UUID to act on. */
+  nameOf?: (employee: string) => string | undefined;
+}) {
   if (error === null || error === undefined) {
     return null;
   }
@@ -18,7 +25,8 @@ export function Failure({ error }: { error: unknown }) {
         <ul>
           {error.violations.map((violation, index) => (
             <li key={index}>
-              <code>{violation.employee}</code> — {violation.constraint}: {violation.detail}
+              <strong>{nameOf?.(violation.employee) ?? violation.employee}</strong> —{' '}
+              {violation.constraint}: {violation.detail}
             </li>
           ))}
         </ul>

@@ -25,11 +25,41 @@ export function MePage() {
 
   const employee = identity.employee;
 
-  async function act(action: () => Promise<unknown>, message: string) {
+  /**
+   * Both actions share one span, so the span is validated once, here.
+   *
+   * The `required` attributes on the inputs do nothing on their own: neither control submits the
+   * form, so the browser never runs constraint validation and an empty field would reach
+   * `new Date('')` and surface as a bare "Invalid time value".
+   */
+  function span(): { start: string; end: string } | null {
+    const from = new Date(start);
+    const to = new Date(end);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      setDone(null);
+      setFailure(new Error('Give both a start and an end.'));
+      return null;
+    }
+    if (to <= from) {
+      setDone(null);
+      setFailure(new Error('The end has to come after the start.'));
+      return null;
+    }
+    return { start: from.toISOString(), end: to.toISOString() };
+  }
+
+  async function act(
+    action: (when: { start: string; end: string }) => Promise<unknown>,
+    message: string,
+  ) {
+    const when = span();
+    if (when === null) {
+      return;
+    }
     setFailure(null);
     setDone(null);
     try {
-      await action();
+      await action(when);
       setDone(message);
     } catch (error) {
       setFailure(error);
@@ -64,7 +94,6 @@ export function MePage() {
             type="datetime-local"
             value={start}
             onChange={(event) => setStart(event.target.value)}
-            required
           />
         </label>
         <label>
@@ -73,7 +102,6 @@ export function MePage() {
             type="datetime-local"
             value={end}
             onChange={(event) => setEnd(event.target.value)}
-            required
           />
         </label>
         <label>
@@ -90,13 +118,7 @@ export function MePage() {
           type="button"
           onClick={() =>
             void act(
-              () =>
-                workforce.declareUnavailability(
-                  identity,
-                  employee,
-                  new Date(start).toISOString(),
-                  new Date(end).toISOString(),
-                ),
+              (when) => workforce.declareUnavailability(identity, employee, when.start, when.end),
               'Recorded: you cannot work then.',
             )
           }
@@ -107,14 +129,8 @@ export function MePage() {
           type="button"
           onClick={() =>
             void act(
-              () =>
-                workforce.statePreference(
-                  identity,
-                  employee,
-                  new Date(start).toISOString(),
-                  new Date(end).toISOString(),
-                  strength,
-                ),
+              (when) =>
+                workforce.statePreference(identity, employee, when.start, when.end, strength),
               'Recorded: a preference, which never blocks a roster.',
             )
           }

@@ -128,7 +128,6 @@ describe('failures', () => {
   });
 
   it('GivenANonJsonBody_WhenItFails_ThenTheTextIsSurfacedRatherThanAParseError', async () => {
-    respondWith(500, null, false);
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -148,5 +147,22 @@ describe('failures', () => {
     respondWith(204, null);
 
     await expect(api.put(IDENTITY, '/api/employees/1/contract', { a: 1 })).resolves.toBeUndefined();
+  });
+
+  it('GivenA200CarryingSomethingOtherThanJson_WhenRequesting_ThenItFailsRatherThanCasting', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve('<html>a misrouted SPA fallback</html>'),
+      }),
+    );
+
+    const error = (await api.get(IDENTITY, '/api/shifts').catch((e: unknown) => e)) as ApiError;
+
+    expect(error).toBeInstanceOf(ApiError);
+    // Casting it would hand a page an object where it expects an array, and the render would throw.
+    expect(error.message).toContain('not JSON');
   });
 });

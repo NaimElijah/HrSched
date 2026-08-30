@@ -18,15 +18,26 @@ export interface Assignment {
 /** Mirrors RosterResponse. `validatedAgainstConstraintVersion` is null while a draft. */
 export interface Roster {
   readonly id: string;
+  readonly start: string;
+  readonly end: string;
   readonly status: 'DRAFT' | 'PUBLISHED' | 'SUPERSEDED';
   readonly assignments: readonly Assignment[];
   readonly validatedAgainstConstraintVersion: number | null;
 }
 
-/** Mirrors ConstraintSetResponse: a version, and the rules by name. */
+/**
+ * Mirrors ConstraintSetResponse: a version, the rules by name, and their thresholds.
+ *
+ * The thresholds matter because revising replaces the whole set. A caller changing one rule has to
+ * resend the others, which it can only do if it can read them back.
+ */
 export interface ConstraintSet {
   readonly version: number;
   readonly constraints: readonly string[];
+  readonly minimumRestMinutes: number | null;
+  readonly maximumDailyMinutes: number | null;
+  readonly maximumWeeklyMinutes: number | null;
+  readonly maximumConsecutiveDays: number | null;
 }
 
 /**
@@ -36,10 +47,10 @@ export interface ConstraintSet {
  * no jurisdiction: whoever configures an organisation supplies the numbers.
  */
 export interface ConstraintSetRequest {
-  readonly minimumRestMinutes?: number;
-  readonly maximumDailyMinutes?: number;
-  readonly maximumWeeklyMinutes?: number;
-  readonly maximumConsecutiveDays?: number;
+  readonly minimumRestMinutes?: number | undefined;
+  readonly maximumDailyMinutes?: number | undefined;
+  readonly maximumWeeklyMinutes?: number | undefined;
+  readonly maximumConsecutiveDays?: number | undefined;
 }
 
 export interface DefineShiftRequest {
@@ -61,9 +72,6 @@ export const scheduling = {
 
   findRosters: (identity: ActingIdentity): Promise<Roster[]> =>
     api.get<Roster[]>(identity, '/api/rosters'),
-
-  findRoster: (identity: ActingIdentity, id: string): Promise<Roster> =>
-    api.get<Roster>(identity, `/api/rosters/${id}`),
 
   generateRoster: (identity: ActingIdentity, from: string, to: string): Promise<Roster> =>
     api.post<Roster>(identity, '/api/rosters', { start: from, end: to }),
