@@ -280,6 +280,30 @@ class RosteringHttpTest {
   }
 
   @Test
+  void GivenRulesTightenedAfterGeneration_WhenPublishing_ThenEachViolationIsStructured()
+      throws Exception {
+    String organisation = anOrganisation();
+    String ada = addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-26T08:00:00Z", "2026-10-26T16:00:00Z", 1);
+    String roster = generateRoster(organisation, "2026-10-26T00:00:00Z", "2026-10-27T00:00:00Z");
+    // Invented: one hour a day, which the eight-hour shift already assigned cannot satisfy.
+    mockMvc
+        .perform(
+            as(put("/api/constraints"), organisation, "ADMIN")
+                .content("{\"maximumDailyMinutes\":60}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(as(post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.violations.length()").value(1))
+        // Structured, so a caller can resolve the employee to a name without parsing prose.
+        .andExpect(jsonPath("$.violations[0].employee").value(ada))
+        .andExpect(jsonPath("$.violations[0].constraint").value("maximum daily working time"))
+        .andExpect(jsonPath("$.violations[0].detail").isString());
+  }
+
+  @Test
   void GivenDefinedShifts_WhenListingThemForASpan_ThenTheyAreReturned() throws Exception {
     String organisation = anOrganisation();
     defineShift(organisation, "2026-10-21T08:00:00Z", "2026-10-21T16:00:00Z", 2);
