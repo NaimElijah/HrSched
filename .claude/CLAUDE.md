@@ -49,12 +49,15 @@ From the **root**: `npm run setup` · `npm run dev` · `npm run verify` (runs bo
 - Test (all): `./mvnw test`
 - Test (single class): `./mvnw test -Dtest=HexagonalArchitectureTest`
 - Format check / fix: `./mvnw spotless:check` / `./mvnw spotless:apply`
+- Coverage: written by `./mvnw verify` to `target/site/jacoco/index.html`. `./mvnw test` alone
+  writes none — the report goal binds to `verify`. Nothing fails on it (ADR-015).
 
 From `frontend/`:
 
 - Everything CI runs: `npm run verify` — format check, lint, typecheck, tests, production build
 - Dev server: `npm run dev` — serves on 5173 and proxies `/api` to 8080
 - One check at a time: `npm run lint` / `npm run typecheck` / `npm test`
+- Coverage: `npm run test:coverage` → `coverage/index.html`. Deliberately not part of `verify`.
 
 On Windows without a POSIX shell, use `mvnw.cmd`; it is a batch/PowerShell polyglot, so PowerShell
 must be on `PATH`. Add `-B` for non-interactive output.
@@ -127,6 +130,13 @@ Outside `backend/`:
   — a skipped assignment is a roster published with hours nobody counted.
 - **New code belongs to a context.** If it fits none of the existing ones, that is a new
   bounded context and a new ADR, not a new top-level package.
+- **`@ParameterizedTest` is an accepted idiom, for data-only rows.** `junit-jupiter-params` comes
+  with the Boot BOM; no dependency to add. Use it where the rows differ only in *data* and the
+  assertion sentence is identical — null-check batteries, blank-name batteries, the identity
+  records, exception-type lists. Do **not** use it where rows differ in setup or reasoning:
+  anything involving an actor, a role or a tenant boundary, and anything whose comment explains
+  *why*. A parameterised tenant-isolation test reads as a table and hides which row is the one
+  whose failure is a security incident. If a table passes about a dozen rows, split it.
 - **When adding an architecture rule, watch it fail first.** All six rules here have been
   observed failing on a deliberately introduced violation, then reverted. A rule that has only
   ever been green proves nothing — one rule was deleted after it turned out it could no longer
