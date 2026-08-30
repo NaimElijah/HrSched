@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.workforce.adapter.in.web;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -239,19 +240,39 @@ class EmployeeHttpTest {
   }
 
   /**
-   * The field is a primitive {@code long}, so an absent one is indistinguishable from a supplied
-   * zero by the time the domain sees it. Both are refused, which is the safe outcome; that they are
-   * refused with the same message is a separate question raised in the pull request.
+   * {@code weeklyContractedMinutes} is a primitive {@code long}, which under Jackson 2 would have
+   * defaulted an absent field to zero and reported it back as a value that is not positive -- a
+   * caller told the number they never sent is invalid. Jackson 3 refuses to construct the record
+   * instead, so the absent case and the explicit-zero case already read differently. Pinned here
+   * because the distinction is the deserialiser's, not this codebase's, and an upgrade could take
+   * it away without touching a line of our own.
    */
   @Test
-  void GivenNoContractedMinutes_WhenSettingContractTerms_ThenItIsRejected() throws Exception {
+  void GivenNoContractedMinutes_WhenSettingContractTerms_ThenTheBodyIsReportedAsIncomplete()
+      throws Exception {
     String organisation = anOrganisation();
     String ada = addEmployee(organisation, "Ada");
 
     mockMvc
         .perform(
             as(put("/api/employees/" + ada + "/contract"), organisation, "ADMIN").content("{}"))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.title").value("Malformed request"))
+        .andExpect(jsonPath("$.detail").value(containsString("missing required fields")));
+  }
+
+  @Test
+  void GivenZeroContractedMinutesExplicitly_WhenSettingContractTerms_ThenItIsReportedAsInvalid()
+      throws Exception {
+    String organisation = anOrganisation();
+    String ada = addEmployee(organisation, "Ada");
+
+    mockMvc
+        .perform(
+            as(put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
+                .content("{\"weeklyContractedMinutes\":0}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.detail").value(containsString("positive")));
   }
 
   @Test
