@@ -280,6 +280,144 @@ class RosteringHttpTest {
   }
 
   @Test
+  void GivenRulesTightenedAfterGeneration_WhenPublishing_ThenEachViolationIsStructured()
+      throws Exception {
+    String organisation = anOrganisation();
+    String ada = addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-26T08:00:00Z", "2026-10-26T16:00:00Z", 1);
+    String roster = generateRoster(organisation, "2026-10-26T00:00:00Z", "2026-10-27T00:00:00Z");
+    // Invented: one hour a day, which the eight-hour shift already assigned cannot satisfy.
+    mockMvc
+        .perform(
+            as(put("/api/constraints"), organisation, "ADMIN")
+                .content("{\"maximumDailyMinutes\":60}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(as(post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.violations.length()").value(1))
+        // Structured, so a caller can resolve the employee to a name without parsing prose.
+        .andExpect(jsonPath("$.violations[0].employee").value(ada))
+        .andExpect(jsonPath("$.violations[0].constraint").value("maximum daily working time"))
+        .andExpect(jsonPath("$.violations[0].detail").isString());
+  }
+
+  @Test
+  void GivenDefinedShifts_WhenListingThemForASpan_ThenTheyAreReturned() throws Exception {
+    String organisation = anOrganisation();
+    defineShift(organisation, "2026-10-21T08:00:00Z", "2026-10-21T16:00:00Z", 2);
+
+    mockMvc
+        .perform(
+            as(get("/api/shifts"), organisation, "SCHEDULER")
+                .param("from", "2026-10-21T00:00:00Z")
+                .param("to", "2026-10-22T00:00:00Z"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].requiredHeadcount").value(2));
+  }
+
+  @Test
+  void GivenShiftsOfAnotherOrganisation_WhenListingThem_ThenNothingLeaks() throws Exception {
+    defineShift(anOrganisation(), "2026-10-22T08:00:00Z", "2026-10-22T16:00:00Z", 1);
+
+    mockMvc
+        .perform(
+            as(get("/api/shifts"), anOrganisation(), "SCHEDULER")
+                .param("from", "2026-10-22T00:00:00Z")
+                .param("to", "2026-10-23T00:00:00Z"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
+  }
+
+  @Test
+  void GivenNoSpan_WhenListingShifts_ThenItIsABadRequest() throws Exception {
+    mockMvc
+        .perform(as(get("/api/shifts"), anOrganisation(), "SCHEDULER"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void GivenAGeneratedRoster_WhenListingRosters_ThenItIsReturned() throws Exception {
+    String organisation = anOrganisation();
+    addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-23T08:00:00Z", "2026-10-23T16:00:00Z", 1);
+    generateRoster(organisation, "2026-10-23T00:00:00Z", "2026-10-24T00:00:00Z");
+
+    mockMvc
+        .perform(as(get("/api/rosters"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].status").value("DRAFT"));
+  }
+
+  @Test
+  void GivenRostersOfAnotherOrganisation_WhenListingThem_ThenNothingLeaks() throws Exception {
+    String organisation = anOrganisation();
+    addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-24T08:00:00Z", "2026-10-24T16:00:00Z", 1);
+    generateRoster(organisation, "2026-10-24T00:00:00Z", "2026-10-25T00:00:00Z");
+
+    mockMvc
+        .perform(as(get("/api/rosters"), anOrganisation(), "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
+  }
+
+  @Test
+  void GivenConfiguredRules_WhenReadingThem_ThenTheirThresholdsComeBackNotJustTheirNames()
+      throws Exception {
+    String organisation = anOrganisation();
+    // Invented values, chosen to be recognisable in the response. They are not any statute's.
+    mockMvc
+        .perform(
+            as(put("/api/constraints"), organisation, "ADMIN")
+                .content("{\"minimumRestMinutes\":661,\"maximumConsecutiveDays\":5}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(as(get("/api/constraints"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        // Revising replaces the whole set, so a caller changing one rule must be able to read the
+        // others back or it will silently delete them.
+        .andExpect(jsonPath("$.minimumRestMinutes").value(661))
+        .andExpect(jsonPath("$.maximumConsecutiveDays").value(5))
+        .andExpect(jsonPath("$.maximumDailyMinutes").doesNotExist());
+  }
+
+  @Test
+  void GivenAnEmployee_WhenListingRosters_ThenItIsForbidden() throws Exception {
+    String organisation = anOrganisation();
+    addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-25T08:00:00Z", "2026-10-25T16:00:00Z", 1);
+    String roster = generateRoster(organisation, "2026-10-25T00:00:00Z", "2026-10-26T00:00:00Z");
+
+    // A roster says who works when, which is personal data about every colleague.
+    mockMvc
+        .perform(as(get("/api/rosters"), organisation, "EMPLOYEE"))
+        .andExpect(status().isForbidden());
+    mockMvc
+        .perform(as(get("/api/rosters/" + roster), organisation, "EMPLOYEE"))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenARoster_WhenRead_ThenItCarriesThePeriodItCovers() throws Exception {
+    String organisation = anOrganisation();
+    addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-27T08:00:00Z", "2026-10-27T16:00:00Z", 1);
+    String roster = generateRoster(organisation, "2026-10-27T00:00:00Z", "2026-10-28T00:00:00Z");
+
+    // Without the period a caller cannot resolve the roster's assignments against the right shifts.
+    mockMvc
+        .perform(as(get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.start").value("2026-10-27T00:00:00Z"))
+        .andExpect(jsonPath("$.end").value("2026-10-28T00:00:00Z"));
+  }
+
+  @Test
   void GivenABodyWithoutAPeriod_WhenDefiningAShift_ThenItIsABadRequestNotAServerError()
       throws Exception {
     mockMvc

@@ -24,7 +24,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  *
  * <p>The interesting one is a non-compliant roster. It returns 422 rather than 400: the request was
  * perfectly well formed, and what failed was the rules. The response lists every rule broken and
- * for whom, because a scheduler told only "rejected" cannot act on it.
+ * for whom, as structured {@link ViolationResponse} objects rather than prose, because a scheduler
+ * told only "rejected" cannot act on it and a caller should not have to parse a sentence to show
+ * one.
  *
  * <p>There is no override anywhere here. A roster that breaks the rules is not published, and the
  * remedy is a different roster.
@@ -41,14 +43,8 @@ public class SchedulingExceptionHandler {
     return problem;
   }
 
-  private static List<String> describe(List<ConstraintViolation> violations) {
-    return violations.stream()
-        .map(
-            violation ->
-                "%s: %s (%s)"
-                    .formatted(
-                        violation.employee().value(), violation.constraint(), violation.detail()))
-        .toList();
+  private static List<ViolationResponse> describe(List<ConstraintViolation> violations) {
+    return violations.stream().map(ViolationResponse::from).toList();
   }
 
   @ExceptionHandler({

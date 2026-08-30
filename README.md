@@ -100,10 +100,28 @@ All backend commands run from `backend/`. On Windows without a POSIX shell, use
 There is no seed data and there are no credentials, because there is no database and no
 authentication yet.
 
+To run the user interface as well, from the repository root:
+
+```bash
+npm run setup     # install frontend dependencies
+npm run dev       # backend on :8080 and the UI on :5173
+npm run verify    # both gates: mvnw verify, then the frontend's own verify
+```
+
+The UI opens on <http://localhost:5173>. Vite proxies `/api` to the backend, so the browser only
+ever sees one origin and there is no CORS configuration anywhere in this repository.
+
 > [!TIP]
-> `./mvnw verify` is the whole gate — formatting, architecture, build, and tests in one
-> command. CI runs that exact command and nothing else, so it cannot drift away from what
-> gates a merge. See [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md).
+> `./mvnw verify` in `backend/` is the whole backend gate — formatting, architecture, build, and
+> tests in one command — and `npm run verify` in `frontend/` is the whole frontend gate. CI runs
+> those exact commands and nothing else, so neither can drift away from what gates a merge. See
+> [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md) and
+> [ADR-014](docs/ADRs/ADR-014-root-task-runner.md).
+
+> [!WARNING]
+> The UI shows a permanent red banner where you choose the organisation, user and role every
+> request claims. That is not a placeholder for a login screen — it *is* the authentication story
+> today. Switch the role and writes become 403s; switch the organisation and reads become 404s.
 
 ## Usage
 
@@ -164,6 +182,10 @@ database, no third-party API, and no authentication.
 | Framework | Spring Boot | 4.1.1 | Supplies the HTTP boundary and health endpoints as configuration rather than code |
 | HTTP | `spring-boot-starter-webmvc` | via Boot BOM | Embedded Tomcat. **Boot 4.x renamed this** from `spring-boot-starter-web` |
 | Operations | `spring-boot-starter-actuator` | via Boot BOM | Health and readiness probes, required of every service by the project baseline |
+| Frontend | React | 19.2.8 | Largest ecosystem for a small SPA; TypeScript makes an API contract drift a compile error. [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) |
+| Frontend build | Vite | 8.2.2 | Dev server proxies `/api`, so no CORS exists anywhere. |
+| Frontend types | TypeScript | 6.0.3 | `strict`, plus the TS 6 defaults `verbatimModuleSyntax` and `noUncheckedIndexedAccess`. |
+| Frontend tests | Vitest | 4.1.11 | `fetch` is stubbed directly; the HTTP API is our own port. |
 | Architecture | ArchUnit | 1.5.0 | Fails the build on a broken dependency rule, a cross-context reference, or a kernel that learns about a context. [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md), [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md), [ADR-008](docs/ADRs/ADR-008-context-integration.md) |
 | Build | Maven Wrapper | 3.9.16 | Toolchain pinned in the repo; no global Maven install needed |
 | Format | Spotless + google-java-format | 3.10.0 / 1.27.0 | Bound to `validate`, so formatting is checked by the same command that builds |
@@ -226,40 +248,41 @@ Component detail, the request sequence, and what is deliberately *not* modelled 
 
 ```
 HrSched/
+├── package.json  scripts/run.mjs        # root task runner (ADR-014)
 ├── backend/
 │   ├── pom.xml  mvnw  mvnw.cmd  .mvn/
 │   └── src/main/java/io/github/naimelijah/hrsched/
-│       ├── scheduling/                 # bounded context — the walking skeleton
-│       │   ├── domain/model/           #   Shift (entity), ShiftPeriod, ShiftId. JDK only.
-│       │   ├── application/port/in/    #   driving ports + commands
-│       │   ├── application/port/out/   #   ShiftRepository
-│       │   ├── application/service/    #   ShiftService. No Spring annotations.
-│       │   ├── adapter/in/web/         #   controller, DTOs, problem-detail handler
-│       │   └── adapter/out/persistence/ #   InMemoryShiftRepository (until ADR-004)
-│       ├── workforce/                  # bounded context — domain only, no use cases
-│       │   └── domain/model/           #   Employee, EmployeeId
-│       ├── configuration/              # Spring wiring for every context
-│       └── HrSchedApplication.java     # composition root; holds no logic on purpose
-├── docs/                               # requirements, architecture, ADRs
+│       ├── shared/domain/model/         # kernel: identities, TimeRange, sealed Actor. Knows no context.
+│       ├── scheduling/                  # shifts, rosters, constraint sets, generation
+│       ├── workforce/                   # employees, qualifications, unavailability, preferences
+│       ├── access/                      # organisations
+│       ├── configuration/               # Spring wiring; the only place that sees two contexts
+│       └── HrSchedApplication.java      # composition root; holds no logic on purpose
+├── frontend/
+│   ├── vite.config.ts                   # dev proxy: /api -> localhost:8080
+│   └── src/
+│       ├── api/                         # typed client; client.ts is the only caller of fetch
+│       ├── identity/                    # acting-as context and its warning bar
+│       ├── components/                  # failure rendering, async loading
+│       └── pages/                       # People, Qualifications, Rules, Shifts, Rosters, Me
+├── docs/                                # requirements, architecture, ADRs
 ├── LICENSE
 └── README.md
 ```
 
-Inside `backend/src/main/java/io/github/naimelijah/hrsched/`:
+Every bounded context repeats the same hexagon, and the package path *is* the dependency rule:
 
 ```
-shared/domain/model/     # kernel: identities, TimeRange, the sealed Actor. Knows no context.
-scheduling/              # shifts, rosters, constraint sets, generation
-workforce/               # employees, qualifications, unavailability, preferences
-access/                  # organisations
-configuration/           # Spring wiring; the only place that sees two contexts at once
+<context>/domain/model/          entities and value objects. JDK imports only.
+<context>/application/port/in/   driving ports — this context's published API
+<context>/application/port/out/  driven ports — what it needs from outside
+<context>/application/service/   use cases. No Spring annotations.
+<context>/adapter/in/web/        controllers, DTOs, exception translation
+<context>/adapter/out/...        driven port implementations
 ```
 
-`frontend/` does not exist yet — it is created when a framework is chosen, with its own ADR,
-rather than sitting empty ([ADR-007](docs/ADRs/ADR-007-monorepo-backend-and-frontend.md)).
-
-There is no `shared/` package: nothing is shared by two contexts yet, and one created in
-anticipation becomes a dumping ground.
+A context may reference another context's `application.port.in` package and nothing else, and the
+build fails if it does otherwise ([ADR-008](docs/ADRs/ADR-008-context-integration.md)).
 
 ## Development
 
@@ -352,6 +375,8 @@ instrumentation.
 | [ADR-008](docs/ADRs/ADR-008-context-integration.md) | Contexts integrate through published ports and a small shared kernel | Translation duplicated at every boundary; the kernel is a coupling every context pays for |
 | [ADR-009](docs/ADRs/ADR-009-tenant-isolation-in-the-domain.md) | Tenancy in every signature, enforced in the application | Every signature is longer, and that verbosity is the point |
 | [ADR-012](docs/ADRs/ADR-012-acting-identity-carries-its-employee-record.md) | The acting identity carries the employee record it is | One more field in the shared kernel, which ADR-008 named as the thing to watch |
+| [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) | React + TypeScript + Vite, with a dev proxy instead of CORS | A second toolchain and CI job; a hand-written client that can drift from the DTOs |
+| [ADR-014](docs/ADRs/ADR-014-root-task-runner.md) | A Node script orchestrates both builds from the root | The root becomes nominally an npm project; per-project commands are named in two places |
 
 Still open and blocking: **ADR-004** (data storage), **ADR-010** (objectives) and **ADR-011**
 (authentication). See the [ADR index](docs/ADRs/).
@@ -394,6 +419,9 @@ needed before the first persistence adapter, and tenancy raises its stakes.
 - **Time is UTC-only.** `TimeRange` carries no zone. Periods are split correctly at midnight, so
   the arithmetic is right, but the *day* is a UTC day — for an organisation whose local midnight
   is not UTC midnight, work is counted against the wrong one.
+- **Nothing automated proves the UI and the API agree.** The typed client is written by hand from
+  the Java records, so a DTO change can drift silently. There is no contract test and no browser
+  test — see ADR-013 for the trigger to add one.
 - **Concurrent writes can be lost.** Constraint revision and publication are read-modify-write
   cycles with no locking, which transactional persistence (ADR-004) fixes and a lock around a
   hash map would not.

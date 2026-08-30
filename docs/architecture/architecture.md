@@ -16,8 +16,14 @@ these choices were made, see the [ADRs](../ADRs/).
 
 ## Architecture overview
 
-The repository holds `backend/` and, once a framework is chosen, `frontend/` as siblings
-([ADR-007](../ADRs/ADR-007-monorepo-backend-and-frontend.md)). Only the backend exists.
+The repository holds `backend/` and `frontend/` as siblings with independent builds
+([ADR-007](../ADRs/ADR-007-monorepo-backend-and-frontend.md)), orchestrated from the root by
+`scripts/run.mjs` ([ADR-014](../ADRs/ADR-014-root-task-runner.md)).
+
+`frontend/` is a React 19 single-page application built by Vite
+([ADR-013](../ADRs/ADR-013-react-typescript-vite-frontend.md)). In development its dev server
+proxies `/api` to the backend on 8080, so the browser sees one origin and **no CORS configuration
+exists anywhere in this repository**.
 
 The backend is a single Spring Boot process serving HTTP on 8080. Its code is organised **by
 bounded context**, each context a top-level package holding its own complete **hexagon**
@@ -80,11 +86,18 @@ Three rules hold this together, and each fails the build when broken:
 | `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. |
 | `*.adapter.out.persistence` | In-memory repositories, every read scoped by organisation. Placeholders until ADR-004. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
+| `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a request header exists; `problem.ts` validates the RFC 9457 body into a typed `ApiError`; `scheduling.ts` and `workforce.ts` mirror the backend DTOs one module per context. |
+| `frontend/src/identity` | The acting-as context and its warning bar — the placeholder that supplies `X-Organisation`, `X-User`, `X-Role` and `X-Employee`, deleted with the backend placeholder when ADR-011 lands. |
+| `frontend/src/pages` | One screen per capability: People, Qualifications, Rules, Shifts, Rosters, Me. |
 
 ## Communication
 
 Inbound HTTP only; nothing calls out. Contexts talk in-process, through published driving ports,
 by direct method call. There are no events and no queues.
+
+The browser talks to the backend over JSON on `/api`. In development that request goes to the Vite
+dev server, which proxies it; in production the built bundle is served however the deployment
+chooses and the same paths apply. The backend is unaware of either arrangement.
 
 ## Data flow
 
@@ -167,6 +180,23 @@ Nothing is persisted beyond process lifetime.
   is Q17, and it must be answered before production.
 - **`MaximumWeeklyWorkingTime` treats the roster period as the reference period.** Jurisdictions
   that average over a longer window cannot be expressed; that needs history beyond the roster.
+- **The user interface enforces nothing.** Every rule is the backend's. The UI renders refusals —
+  a 422 with its violations, a 403, a 404 that may mean another tenant owns the resource — and it
+  is written so those refusals read as outcomes rather than as bugs, but removing the UI removes no
+  guarantee.
+- **The rules screen offers no default values.** Not a styling choice: a number suggested by the UI
+  would be a working-time threshold chosen by a developer, which is exactly what this system
+  refuses to contain.
+- **The 422 body carries structured violations**, not formatted sentences, so a caller can resolve
+  an employee to a name and group by person without parsing prose. The UI does exactly that.
+- **`GET /api/constraints` returns thresholds, not just rule names.** `ConstraintSet.revisedTo`
+  replaces the whole set rather than merging, so a caller that cannot read the current values cannot
+  change one rule without deleting the others. The response mirrors the request shape for that
+  reason.
+- **A roster carries the period it covers**, so a caller resolves its assignments against the shifts
+  that actually fall in it rather than whatever span it happens to be displaying.
+- **Reading a roster requires Admin or Scheduler**, on the same reasoning as listing people: a
+  roster says who works when.
 - **The header-based actor is insecure by design** and must be deleted when authentication
   arrives. It exists so the use cases can be exercised, not as a step towards a real one.
   `X-Organisation` names the organisation being acted *on* and is always required; `X-Role:

@@ -60,6 +60,13 @@ public class SchedulingService
 
   private static final Set<Role> MAY_CONFIGURE = Set.of(Role.ADMIN);
 
+  /**
+   * Reading rosters is restricted for the same reason listing people is: a roster says who works
+   * when, which is personal data about every colleague. An employee seeing only their own roster
+   * (F5) is a narrower capability that does not exist yet — see Q18.
+   */
+  private static final Set<Role> MAY_SEE_ROSTERS = Set.of(Role.ADMIN, Role.SCHEDULER);
+
   private final ShiftRepository shifts;
   private final RosterRepository rosters;
   private final ConstraintSetRepository constraintSets;
@@ -92,6 +99,12 @@ public class SchedulingService
             command.requiredQualifications());
     shifts.save(shift);
     return shift.id();
+  }
+
+  @Override
+  public List<Shift> findShifts(Actor actor, OrganisationId organisation, TimeRange within) {
+    actor.requireAccessTo(organisation);
+    return shifts.findWithin(organisation, within);
   }
 
   @Override
@@ -147,8 +160,14 @@ public class SchedulingService
 
   @Override
   public Optional<Roster> findRoster(Actor actor, OrganisationId organisation, RosterId rosterId) {
-    actor.requireAccessTo(organisation);
+    authorise(actor, organisation, MAY_SEE_ROSTERS);
     return rosters.findById(organisation, rosterId);
+  }
+
+  @Override
+  public List<Roster> findRosters(Actor actor, OrganisationId organisation) {
+    authorise(actor, organisation, MAY_SEE_ROSTERS);
+    return rosters.findByOrganisation(organisation);
   }
 
   /**

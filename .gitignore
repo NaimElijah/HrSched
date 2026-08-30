@@ -1,6 +1,8 @@
 # Build output
 target/
 build/
+dist/
+node_modules/
 !**/src/main/**/target/
 !**/src/test/**/target/
 !**/src/main/**/build/
