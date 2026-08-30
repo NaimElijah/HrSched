@@ -443,6 +443,7 @@ blocked on the same missing environment.
 | [ADR-001](docs/ADRs/ADR-001-java-spring-boot-maven.md) | Java 21, Spring Boot 4.1.1, Maven Wrapper | Boot 4.x is recent, so most existing tutorials name things that no longer exist |
 | [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md) | `./mvnw verify` as the single gate, Spotless for format | google-java-format is not configurable; formatting fails the build before tests run |
 | [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md) | Hexagon in one module, enforced by ArchUnit | Many more classes per use case; hand-wiring; enforcement is a test, not the compiler |
+| [ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md) | Generation behind a port, greedy for now | The product does not yet do the thing it exists to do; a greedy result is a poor solver baseline |
 | [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md) | Organise packages by bounded context | A layer is no longer one place; `workforce` precedes its requirements |
 | [ADR-007](docs/ADRs/ADR-007-monorepo-backend-and-frontend.md) | Monorepo: `backend/` + `frontend/` siblings | Every backend command grows a `cd`; CI and Dependabot need explicit paths |
 
@@ -451,6 +452,7 @@ blocked on the same missing environment.
 | [ADR-012](docs/ADRs/ADR-012-acting-identity-carries-its-employee-record.md) | The acting identity carries the employee record it is | One more field in the shared kernel, which ADR-008 named as the thing to watch |
 | [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) | React + TypeScript + Vite, with a dev proxy instead of CORS | A second toolchain and CI job; a hand-written client that can drift from the DTOs |
 | [ADR-014](docs/ADRs/ADR-014-root-task-runner.md) | A Node script orchestrates both builds from the root | The root becomes nominally an npm project; per-project commands are named in two places |
+| [ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md) | Coverage measured on both projects, never enforced | A number nothing gates on is a number that can quietly fall |
 | [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) | ECS JSON logs everywhere, and a W3C trace id on every response | Local output is JSON and not pleasant to read; one starter brings the whole OpenTelemetry SDK |
 | [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) | Metrics pulled from `/actuator/prometheus`; no monitoring stack committed | The endpoint is unauthenticated, like everything else here; nothing scrapes it yet |
 | [ADR-018](docs/ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md) | Changes and refusals recorded through a port, as log events | The trail is only as durable as the log; every new use case must remember to call the port |
