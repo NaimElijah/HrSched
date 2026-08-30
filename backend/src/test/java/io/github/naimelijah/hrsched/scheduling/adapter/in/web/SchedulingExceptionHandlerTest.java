@@ -1,0 +1,225 @@
+package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
+import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
+import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
+import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
+import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
+import io.github.naimelijah.hrsched.shared.domain.model.Role;
+import io.github.naimelijah.hrsched.shared.domain.model.UserId;
+import java.io.InputStream;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Stream;
+import org.assertj.core.api.InstanceOfAssertFactories;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpInputMessage;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+
+/**
+ * Specification of which scheduling failure earns which status.
+ *
+ * <p>The 422 carrying structured violations is the most product-critical mapping in the codebase.
+ * Refusing to publish an illegal roster is this system's central claim, so the response explaining
+ * the refusal has to say which person broke which rule in fields rather than in prose -- a caller
+ * that has to parse a sentence back apart will eventually parse it wrong.
+ *
+ * <p>Driven directly rather than over HTTP, because the cross-tenant branch is unreachable from any
+ * HTTP test: the acting identity's organisation is built from the same header the operation
+ * targets, so a tenant actor can never fail its own access check. See the workforce handler's test
+ * for the same note.
+ */
+class SchedulingExceptionHandlerTest {
+
+  private final SchedulingExceptionHandler handler = new SchedulingExceptionHandler();
+
+  /**
+   * Spring 7 dropped the message-only constructors, so an unreadable body needs an input message.
+   * Hand-written rather than mocked, like every other double here.
+   */
+  private static HttpInputMessage anUnreadableBody() {
+    return new HttpInputMessage() {
+      @Override
+      public InputStream getBody() {
+        return InputStream.nullInputStream();
+      }
+
+      @Override
+      public HttpHeaders getHeaders() {
+        return new HttpHeaders();
+      }
+    };
+  }
+
+  /** Every failure the handler promises to render as a 400 carrying its own message. */
+  private static Stream<RuntimeException> invalidInput() {
+    return Stream.of(
+        new InvalidTimeRangeException(
+            Instant.parse("2026-09-07T16:00:00Z"), Instant.parse("2026-09-07T08:00:00Z")),
+        new InvalidHeadcountException(0),
+        new InvalidConstraintException("Minimum rest must be positive"),
+        new DuplicateAssignmentException(new Assignment(ShiftId.newId(), EmployeeId.newId())),
+        new RosterNotEditableException(
+            RosterId.newId(), RosterStatus.PUBLISHED, "a roster can only be changed while a draft"),
+        new UnknownRequiredQualificationException(Set.of(QualificationId.newId())),
+        new MalformedRequestException("X-Role is required"));
+  }
+
+  @Test
+  void GivenARosterBreachingTheRules_WhenTranslated_ThenItIsUnprocessable() {
+    RosterNotCompliantException breach =
+        new RosterNotCompliantException(
+            List.of(
+                new ConstraintViolation(
+                    EmployeeId.newId(),
+                    "maximum daily working time",
+                    "worked PT12H on 2026-09-07")));
+
+    ProblemDetail problem = handler.handleNotCompliant(breach);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY.value());
+    assertThat(problem.getTitle()).isEqualTo("Roster breaks the working-time rules");
+  }
+
+  @Test
+  void GivenARosterBreachingTheRules_WhenTranslated_ThenEveryViolationTravelsAsFields() {
+    EmployeeId ada = EmployeeId.newId();
+    RosterNotCompliantException breach =
+        new RosterNotCompliantException(
+            List.of(
+                new ConstraintViolation(ada, "maximum daily working time", "worked PT12H"),
+                new ConstraintViolation(ada, "minimum rest between assignments", "only PT4H")));
+
+    ProblemDetail problem = handler.handleNotCompliant(breach);
+
+    assertThat(problem.getProperties()).containsKey("violations");
+    assertThat(problem.getProperties().get("violations"))
+        .asInstanceOf(InstanceOfAssertFactories.list(ViolationResponse.class))
+        .containsExactly(
+            new ViolationResponse(ada.value(), "maximum daily working time", "worked PT12H"),
+            new ViolationResponse(ada.value(), "minimum rest between assignments", "only PT4H"));
+  }
+
+  @Test
+  void GivenARosterThatCannotBeChecked_WhenTranslated_ThenItIsUnprocessableRatherThanPublished() {
+    ProblemDetail problem =
+        handler.handleNotVerifiable(
+            new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY.value());
+    assertThat(problem.getTitle()).isEqualTo("Roster cannot be checked against the rules");
+  }
+
+  @ParameterizedTest
+  @MethodSource("invalidInput")
+  void GivenAnInvalidInput_WhenTranslated_ThenItIsABadRequestCarryingTheMessage(
+      RuntimeException failure) {
+    ProblemDetail problem = handler.handleInvalidInput(failure);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+    assertThat(problem.getTitle()).isEqualTo("Invalid request");
+    assertThat(problem.getDetail()).isEqualTo(failure.getMessage());
+  }
+
+  @Test
+  void GivenAnUnreadableBody_WhenTranslated_ThenItIsABadRequestWithAGenericDetail() {
+    ProblemDetail problem =
+        handler.handleUnreadableBody(
+            new HttpMessageNotReadableException("raw parser noise", anUnreadableBody()));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+    assertThat(problem.getTitle()).isEqualTo("Malformed request");
+    assertThat(problem.getDetail()).doesNotContain("raw parser noise");
+  }
+
+  @Test
+  void GivenARoleRefusal_WhenTranslated_ThenItIsForbiddenWithoutNamingTheRole() {
+    ProblemDetail problem =
+        handler.handleNotPermitted(
+            new NotPermittedException(UserId.newId(), Role.EMPLOYEE, Set.of(Role.SCHEDULER)));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+    assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getDetail()).isEqualTo("Your role does not permit this.");
+  }
+
+  /**
+   * Both an unknown roster and a cross-tenant reach answer the same way on purpose. A caller must
+   * not be able to tell "there is no such roster" from "there is, but not yours".
+   */
+  @Test
+  void GivenAnUnknownRoster_WhenTranslated_ThenItIsNotFoundAndSaysNothingMore() {
+    ProblemDetail problem = handler.handleUnknown(new UnknownRosterException(RosterId.newId()));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
+    assertThat(problem.getTitle()).isEqualTo("Not found");
+    assertThat(problem.getDetail()).isEqualTo("No such resource.");
+  }
+
+  @Test
+  void GivenACrossTenantAttempt_WhenTranslated_ThenItIsNotFoundAndTheMessageIsReplaced() {
+    OrganisationId theirs = OrganisationId.newId();
+
+    ProblemDetail problem =
+        handler.handleUnknown(new CrossTenantAccessException(UserId.newId(), theirs));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
+    assertThat(problem.getDetail()).isEqualTo("No such resource.");
+    assertThat(problem.getDetail()).doesNotContain(theirs.value().toString());
+  }
+
+  /**
+   * Every exception type this handler is registered for. Spring reads the annotation's own list
+   * when it has one and falls back to the method's parameter types when it does not, so both have
+   * to be considered to know what is really caught.
+   */
+  private static Stream<Class<?>> registeredFor(Class<?> handler) {
+    return Arrays.stream(handler.getDeclaredMethods())
+        .filter(method -> method.isAnnotationPresent(ExceptionHandler.class))
+        .flatMap(
+            method -> {
+              Class<? extends Throwable>[] declared =
+                  method.getAnnotation(ExceptionHandler.class).value();
+              return declared.length > 0
+                  ? Arrays.stream(declared)
+                  : Arrays.stream(method.getParameterTypes())
+                      .filter(Throwable.class::isAssignableFrom);
+            });
+  }
+
+  /**
+   * The class javadoc promises an unexpected failure stays a 500 and stays visible. A catch-all
+   * added later would quietly turn every unhandled bug into a tidy 400, which is the difference
+   * between a bug that pages somebody and a bug that looks like the caller's fault.
+   */
+  @Test
+  void GivenTheHandler_WhenListingWhatItTranslates_ThenThereIsNoCatchAll() {
+    assertThat(registeredFor(SchedulingExceptionHandler.class))
+        .isNotEmpty()
+        .doesNotContain(Exception.class, RuntimeException.class, Throwable.class);
+  }
+}

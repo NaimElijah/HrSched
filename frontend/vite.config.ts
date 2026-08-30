@@ -27,5 +27,19 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
     css: false,
+    /*
+     * Reported, never enforced: no thresholds, and `enabled` defaults to false, so this block
+     * only takes effect under --coverage and `npm run verify` is unchanged. See ADR-015.
+     *
+     * `include` is required. Without it only files a test already touches are listed, which is
+     * the opposite of what a report meant to find gaps is for.
+     */
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      reportsDirectory: './coverage',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/main.tsx', 'src/vite-env.d.ts', 'src/test-setup.ts', 'src/**/*.test.{ts,tsx}'],
+    },
   },
 });

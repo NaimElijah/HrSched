@@ -186,10 +186,12 @@ database, no third-party API, and no authentication.
 | Frontend build | Vite | 8.2.2 | Dev server proxies `/api`, so no CORS exists anywhere. |
 | Frontend types | TypeScript | 6.0.3 | `strict`, plus the TS 6 defaults `verbatimModuleSyntax` and `noUncheckedIndexedAccess`. |
 | Frontend tests | Vitest | 4.1.11 | `fetch` is stubbed directly; the HTTP API is our own port. |
+| Frontend coverage | `@vitest/coverage-v8` | 4.1.11 | Pinned to Vitest by peer dependency; reported, never enforced (ADR-015) |
 | Architecture | ArchUnit | 1.5.0 | Fails the build on a broken dependency rule, a cross-context reference, or a kernel that learns about a context. [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md), [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md), [ADR-008](docs/ADRs/ADR-008-context-integration.md) |
 | Build | Maven Wrapper | 3.9.16 | Toolchain pinned in the repo; no global Maven install needed |
 | Format | Spotless + google-java-format | 3.10.0 / 1.27.0 | Bound to `validate`, so formatting is checked by the same command that builds |
 | Test | JUnit 5, AssertJ, MockMvc | via Boot BOM | Boot 4.x splits the old `spring-boot-starter-test` into per-concern starters |
+| Backend coverage | JaCoCo | 0.8.13 | Pinned explicitly: the Boot 4.1.1 BOM manages no JaCoCo version. Reported, never enforced (ADR-015) |
 
 ## Architecture
 
@@ -333,24 +335,57 @@ From `backend/`:
 ./mvnw test -Dtest=HexagonalArchitectureTest   # just the architecture rules
 ```
 
+`./mvnw verify` also writes a coverage report to `target/site/jacoco/index.html`. It is reported
+and never enforced — there is no threshold and nothing fails a build on it ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)).
+`./mvnw test` alone does not produce one; the report goal runs at `verify`.
+
 | Test | Layer | What it covers |
 | --- | --- | --- |
-| `ShiftPeriodTest` | Domain | The one invariant that exists, plus null and boundary cases. No Spring. |
-| `ShiftServiceTest` | Application | Use cases against a hand-written stub of their own port. No Spring, no mocking framework. |
-| `ShiftHttpTest` | End to end | Drives the full hexagon over HTTP — controller, port, service, in-memory adapter. |
-| `EmployeeTest` | Domain (workforce) | Name and identity invariants, one scenario per test. No Spring. |
-| `HexagonalArchitectureTest` | Whole codebase | Five ArchUnit rules: dependency direction, context independence, layer cycles. |
+| `TimeRangeTest`, `ActorTest`, `IdentityTest` | Shared kernel | The range invariant, which actor may cross an organisation boundary, and every identity record — including that a `UserId` and an `EmployeeId` wrapping one UUID stay unequal ([ADR-012](docs/ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). |
+| `OrganisationTest`, `EmployeeTest`, `QualificationTest`, `ContractTermsTest`, `ShiftPreferenceTest` | Domain (access, workforce) | Constructor invariants and identity equality. No Spring. |
+| `ShiftTest`, `RosterTest`, `ConstraintSetTest`, `WorkingTimeConstraintTest`, `EmployeeScheduleTest`, `SchedulingValueObjectsTest` | Domain (scheduling) | Headcount, the roster lifecycle, rule thresholds at their boundaries, and day arithmetic. |
+| `SchedulingServiceTest`, `EmployeeServiceTest`, `QualificationServiceTest` | Application | Use cases against hand-written stubs of their own ports. No Spring, no mocking framework. |
+| `SchedulingCommandsTest`, `WorkforceCommandsTest` | Application | Every command rejects a null field, copies what it is handed, and stops short of judging what it carries. |
+| `RosterCandidateTest`, `PublishedLanguageTest` | Published language | What one context tells another, and nothing more. |
+| `WorkforceDirectoryAdapterTest` | Anti-corruption layer | The only class in scheduling permitted to name another context, including that contracted hours do not cross. |
+| `InMemory*RepositoryTest` (×5) | Driven adapters | Every read filters by organisation before returning anything, plus the ordering each one promises. |
+| `ActorFromHeadersTest` (×2) | Driving adapters | The header placeholder in both contexts, including every malformed header. |
+| `SchedulingExceptionHandlerTest`, `WorkforceExceptionHandlerTest` | Driving adapters | Which failure earns which status, the structured 422, and that there is no catch-all. |
+| `GreedyRosterGeneratorTest` | Driven adapter | The placeholder generator never breaks a rule, and leaves a shift short rather than filling it illegally. |
+| `RosteringHttpTest`, `EmployeeHttpTest`, `QualificationHttpTest` | End to end | All sixteen endpoints through the real hexagon and the real adapters. |
+| `HexagonalArchitectureTest` | Whole codebase | **Six** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, and layer cycles. |
 | `HrSchedApplicationTests` | Spring context | The application starts. |
 
 Naming follows `Given<scenario>_When<action>_Then<result>`. Tests run against the public
 boundary, never internals, and are deterministic: no `sleep`, no real network, no ordering
-dependence.
+dependence. There is no `Clock` and `.now()` is never called in `backend/src` — every time value
+enters through a `TimeRange` the caller supplies.
 
-**CI** runs `./mvnw verify` on every push and pull request
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). That single command is the merge gate.
+From `frontend/`:
 
-*Not yet:* coverage reporting, and integration tests against real dependencies in containers —
-there is nothing to connect to until ADR-004.
+```bash
+npm run verify         # format, lint, types, tests, build — no coverage
+npm run test:coverage  # the same tests, plus coverage/index.html
+```
+
+| Test | What it covers |
+| --- | --- |
+| `api/client.test.ts` | The one module that calls `fetch`: the claim headers, the failure shapes, and the reload key. |
+| `api/problem.test.ts` | The error boundary: a body that is not the shape we expect is validated, never cast. |
+| `components/useAsync.test.tsx` | The state machine: a stale answer never reaches the screen, `busy` is derived, reload works after a failure. |
+| `components/localDates.test.ts` | The local-day round trip and the documented timezone hazard, asserted relatively so it holds in any zone. |
+| `components/Feedback.test.tsx` | All four refusal branches, including the 404 that may also mean another tenant owns it. |
+| `components/ErrorBoundary.test.tsx` | One broken render does not become a blank page, and "Try again" recovers. |
+| `identity/ActingAs.test.tsx`, `identity/ActingAsBar.test.tsx` | The acting-as placeholder: persistence, validation, the synthetic option, and the operator rule that clears the employee link. |
+| `pages/*.test.tsx` (×6) | One per screen: what is sent, what is refused before sending, and what the user is told. |
+| `App.test.tsx` | Tab navigation, and the one 403 the shell deliberately swallows — with the proof that nothing else is. |
+
+**CI** runs `./mvnw verify` and `npm run verify` on every push and pull request
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Those two commands are the merge gate.
+
+*Not yet:* integration tests against real dependencies in containers — there is nothing to connect
+to until ADR-004. No contract test and no browser test either; ADR-013 records that as accepted
+debt, to be revisited the first time UI/API drift actually bites.
 
 ## Deployment and operations
 

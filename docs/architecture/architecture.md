@@ -146,6 +146,8 @@ Nothing is persisted beyond process lifetime.
 | `spring-boot-starter-actuator` | Health and readiness probes | Required of every service by the project baseline. |
 | `archunit-junit5` | Enforcing the hexagon and the context boundaries | Nothing else can fail a build on a dependency direction. |
 | `spotless-maven-plugin` + `google-java-format` | Format check bound to `validate` | ADR-002. |
+| `jacoco-maven-plugin` | Coverage measurement, reported and never enforced | [ADR-015](../ADRs/ADR-015-report-coverage-without-a-threshold.md). The version is pinned because the Boot 4.1.1 BOM manages none. |
+| `@vitest/coverage-v8` (frontend) | The same, for the SPA | ADR-015. Pinned to the exact Vitest version by peer dependency. |
 
 ## Structural decisions not visible from the file layout
 
@@ -161,6 +163,18 @@ Nothing is persisted beyond process lifetime.
   [ADR-009](../ADRs/ADR-009-tenant-isolation-in-the-domain.md).
 - **A cross-tenant attempt returns 404, never 403.** A 403 would confirm the resource exists in
   another organisation.
+- **Over HTTP that 404 is produced by the repositories, not by the tenant guard.**
+  `ActorFromHeaders` builds a `TenantActor`'s organisation from the same `X-Organisation` header
+  the operation targets, so `Actor.requireAccessTo` compares an organisation with itself and can
+  never fail for a caller arriving over HTTP. Isolation there comes from every repository read
+  filtering by organisation and returning nothing, which surfaces as an unknown-record 404.
+  `CrossTenantAccessException` still guards every direct caller and would guard a second adapter,
+  and both exception handlers still translate it — but that branch is reachable only from a unit
+  test, which is where it is covered. Worth knowing before anyone concludes the guard is dead code
+  and deletes it.
+- **Coverage is measured and never enforced.** `./mvnw verify` writes `target/site/jacoco/`; the
+  frontend reports only under `npm run test:coverage`. No threshold exists, on purpose
+  ([ADR-015](../ADRs/ADR-015-report-coverage-without-a-threshold.md)).
 - **`Actor` is sealed.** The set of things that can cross a tenant boundary is closed and lives
   in one file; `Operator` is the only member that can, and it is a named type rather than an
   implicit privilege.

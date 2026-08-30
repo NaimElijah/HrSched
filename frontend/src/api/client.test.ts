@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api } from './client';
+import { api, identityKey } from './client';
 import type { ActingIdentity } from './client';
 import { ApiError } from './problem';
 
@@ -164,5 +164,45 @@ describe('failures', () => {
     expect(error).toBeInstanceOf(ApiError);
     // Casting it would hand a page an object where it expects an array, and the render would throw.
     expect(error.message).toContain('not JSON');
+  });
+});
+
+/**
+ * The key every page uses to decide when to refetch. Nothing asserted it, and it is the one string
+ * whose staleness would show as data from the wrong organisation rather than as an error.
+ */
+describe('the reload key', () => {
+  it('GivenTheSameIdentity_WhenKeyedTwice_ThenTheKeyIsStable', () => {
+    expect(identityKey(IDENTITY)).toBe(identityKey({ ...IDENTITY }));
+  });
+
+  it.each([
+    ['organisation', { ...IDENTITY, organisation: 'org-2' }],
+    ['user', { ...IDENTITY, user: 'user-2' }],
+    ['role', { ...IDENTITY, role: 'ADMIN' as const }],
+    ['employee', { ...IDENTITY, employee: 'e-1' }],
+  ])('GivenTwoIdentitiesDifferingInOneClaim_WhenKeyed_ThenTheKeysDiffer', (_claim, changed) => {
+    expect(identityKey(changed)).not.toBe(identityKey(IDENTITY));
+  });
+
+  /**
+   * `employee: ''` and `employee: null` produce one key, and that is consistent rather than a bug:
+   * `request` uses a truthiness check, so both suppress `X-Employee` and the two identities really
+   * do make the same request. Changing that check to `!= null` without changing this would give two
+   * different requests one cache key.
+   */
+  it('GivenAnEmptyEmployeeString_WhenKeyed_ThenItMatchesNoEmployeeAtAll', () => {
+    expect(identityKey({ ...IDENTITY, employee: '' })).toBe(
+      identityKey({ ...IDENTITY, employee: null }),
+    );
+  });
+
+  it('GivenAnEmptyEmployeeString_WhenRequesting_ThenNoEmployeeHeaderIsSent', async () => {
+    const stub = respondWith(200, []);
+
+    await api.get({ ...IDENTITY, employee: '' }, '/api/shifts');
+
+    const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
+    expect(headers.get('X-Employee')).toBeNull();
   });
 });

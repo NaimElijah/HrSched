@@ -50,12 +50,12 @@ implemented; the rest are not.
 | F1a | Scheduler | See the shifts needing covering over a span | `SchedulingService`, `SchedulingServiceTest` |
 | F2 | Scheduler | Assign an employee to a shift, and remove that assignment | *not implemented* |
 | F3 | Scheduler | Publish a roster, after it passes the organisation rules | `SchedulingService`, `RosteringHttpTest` |
-| F4 | Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest` |
+| F4 | Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest`. *Partially: `EmployeeResponse` carries neither availability nor a roster, so the HTTP listing does not satisfy this row — only the use case does.* |
 | F5 | Employee | See their own published roster | *not implemented: rosters are readable by Schedulers only* |
 | F6 | Employee | Declare when they cannot work, and state soft preferences | `EmployeeService`, `EmployeeServiceTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)) |
 | F7 | Employee | Request a swap of one of their assignments with another employee | *not implemented* |
-| F8 | Admin | Add employees | `EmployeeService`, `EmployeeServiceTest` |
-| F9 | Admin | Define qualifications, and grant them to employees | `QualificationService`, `EmployeeServiceTest` |
+| F8 | Admin | Add employees | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` |
+| F9 | Admin | Define qualifications, and grant them to employees | `QualificationService`, `QualificationServiceTest`, `QualificationHttpTest`; granting: `EmployeeService`, `EmployeeServiceTest` |
 | F10 | Admin | Configure the organisation's working-time constraint set | `SchedulingService`, `RosteringHttpTest` |
 | F11 | Scheduler | Generate a draft roster covering a period, filling every shift it legally can | `SchedulingService`, `RosteringHttpTest` |
 | F11a | Scheduler | See the rosters their organisation holds | `SchedulingService`, `RosteringHttpTest` |
@@ -103,12 +103,12 @@ a published roster is superseded rather than edited (R6).
 | --- | --- |
 | R1 | A time range must end strictly after it starts. *`TimeRange`, `TimeRangeTest`* |
 | R2 | An employee must have a name that is not blank. *`Employee`, `EmployeeTest`* |
-| R3 | An employee may not hold two overlapping assignments. *`GreedyRosterGenerator`, `MinimumRestBetweenAssignments`* |
-| R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `EmployeeTest`* |
+| R3 | An employee may not hold two overlapping assignments. *`GreedyRosterGeneratorTest`, `WorkingTimeConstraintTest`* |
+| R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `RosterCandidateTest`* |
 | R5 | An employee may only be assigned within their own organisation. *`SchedulingService`, `RosteringHttpTest`* |
 | R6 | A published roster may not be edited; it is superseded by a new version. *`Roster`, `SchedulingService`, `SchedulingServiceTest`* |
 | R7 | An employee may not declare overlapping unavailability. *`Employee`, `EmployeeTest`* |
-| R8 | A shift must require at least one person. *`Shift`, `RosteringHttpTest`* |
+| R8 | A shift must require at least one person. *`Shift`, `ShiftTest`* |
 | R9 | A shift may only require qualifications its own organisation has defined. *`SchedulingService`, `SchedulingServiceTest`* |
 | R10 | A roster assigning a shift that cannot be resolved cannot be published. *`Roster`, `SchedulingServiceTest`* |
 | R11 | Publishing a roster supersedes every published roster of that organisation whose period it overlaps. *`SchedulingService`, `SchedulingServiceTest`* |
