@@ -13,8 +13,11 @@ import io.github.naimelijah.hrsched.workforce.application.port.in.ManageEmployee
 import io.github.naimelijah.hrsched.workforce.application.port.in.RosterableEmployee;
 import io.github.naimelijah.hrsched.workforce.application.port.in.SetContractTermsCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.StatePreferenceCommand;
+import io.github.naimelijah.hrsched.workforce.application.port.out.AuditTrail;
+import io.github.naimelijah.hrsched.workforce.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
+import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChange;
 import io.github.naimelijah.hrsched.workforce.domain.model.ContractTerms;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
 import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
@@ -41,10 +44,13 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
 
   private final EmployeeRepository employees;
   private final QualificationRepository qualifications;
+  private final AuditTrail audit;
 
-  public EmployeeService(EmployeeRepository employees, QualificationRepository qualifications) {
+  public EmployeeService(
+      EmployeeRepository employees, QualificationRepository qualifications, AuditTrail audit) {
     this.employees = Objects.requireNonNull(employees, "employees must not be null");
     this.qualifications = Objects.requireNonNull(qualifications, "qualifications must not be null");
+    this.audit = Objects.requireNonNull(audit, "audit must not be null");
   }
 
   @Override
@@ -52,6 +58,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
     authorise(actor, command.organisation(), MAY_ADMINISTER);
     Employee employee = new Employee(EmployeeId.newId(), command.organisation(), command.name());
     employees.save(employee);
+    recorded(actor, command.organisation(), WorkforceChange.EMPLOYEE_ADDED, employee.id());
     return employee.id();
   }
 
@@ -63,6 +70,8 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
         .orElseThrow(() -> new UnknownQualificationException(command.qualification()));
     Employee employee = load(command.organisation(), command.employee());
     employees.save(employee.holding(command.qualification()));
+    recorded(
+        actor, command.organisation(), WorkforceChange.QUALIFICATION_GRANTED, command.employee());
   }
 
   @Override
@@ -70,6 +79,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
     authorise(actor, command.organisation(), MAY_ADMINISTER);
     Employee employee = load(command.organisation(), command.employee());
     employees.save(employee.contractedTo(new ContractTerms(command.weeklyContractedHours())));
+    recorded(actor, command.organisation(), WorkforceChange.CONTRACT_SET, command.employee());
   }
 
   @Override
@@ -77,6 +87,8 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
     authoriseSelfOrManager(actor, command.organisation(), command.employee());
     Employee employee = load(command.organisation(), command.employee());
     employees.save(employee.unavailableFor(command.period()));
+    recorded(
+        actor, command.organisation(), WorkforceChange.UNAVAILABILITY_DECLARED, command.employee());
   }
 
   @Override
@@ -84,6 +96,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
     authoriseSelfOrManager(actor, command.organisation(), command.employee());
     Employee employee = load(command.organisation(), command.employee());
     employees.save(employee.preferring(new ShiftPreference(command.period(), command.strength())));
+    recorded(actor, command.organisation(), WorkforceChange.PREFERENCE_STATED, command.employee());
   }
 
   /**
@@ -113,6 +126,21 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
 
   private Employee load(OrganisationId organisation, EmployeeId id) {
     return employees.findById(organisation, id).orElseThrow(() -> new UnknownEmployeeException(id));
+  }
+
+  /**
+   * Records a change that has already been saved.
+   *
+   * <p>Called after the repository, never before: an entry for something that then failed to store
+   * is a record of something that did not happen.
+   *
+   * <p>The actor is the acting user, not the employee whose record changed. Those are different
+   * identities on purpose (ADR-012), and conflating them here would lose the case the trail exists
+   * for - somebody editing a record that is not their own.
+   */
+  private void recorded(
+      Actor actor, OrganisationId organisation, WorkforceChange change, EmployeeId subject) {
+    audit.record(new AuditedChange(organisation, actor.id(), change, subject.value()));
   }
 
   private void authorise(Actor actor, OrganisationId organisation, Set<Role> permitted) {

@@ -365,6 +365,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `RosteringHttpTest`, `EmployeeHttpTest`, `QualificationHttpTest` | End to end | All sixteen endpoints through the real hexagon and the real adapters. |
 | `TraceIdHttpTest` | Observability over HTTP | Every response carries a trace id, including the refusals - which are the ones a person has cause to report. |
 | `MetricsHttpTest` | Operations over HTTP | Both probes answer, the meters are published, and `loggers`, `env` and `heapdump` are **not** exposed. |
+| `SchedulingAuditLogTest`, `WorkforceAuditLogTest` | Driven adapters | Every audit field is an identifier and never a name, the message is a constant, and the counter is not tagged by tenant. |
 | `HexagonalArchitectureTest` | Whole codebase | **Six** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, and layer cycles. |
 | `HrSchedApplicationTests` | Spring context | The application starts. |
 
@@ -422,6 +423,9 @@ through `jq` to read it locally.
 | `jvm_*`, `process_*`, `tomcat_*` | Saturation: heap, threads, file descriptors, connections |
 | `hrsched_shifts_required_places` | Places each generation was asked to fill |
 | `hrsched_shifts_uncovered_places` | Places it could not fill without breaking a rule - the product's own success metric, and the ratio of the two is coverage |
+| `hrsched_access_denied_total{kind}` | Refusals, split into `cross_tenant` and `role`. A rise in `cross_tenant` is a security signal, not a usage one - and it is the only way to tell that 404 apart from an ordinary miss |
+| `hrsched_rosters_refused_total{reason}` | Publications refused by the working-time rules, or because the work could not be checked |
+| `hrsched_changes_total{context,change}` | Every recorded state change, by context and kind |
 
 Exposure is an allow list. `loggers`, `env` and `heapdump` are deliberately shut, and
 `MetricsHttpTest` fails the build if one of them opens.
@@ -447,6 +451,7 @@ blocked on the same missing environment.
 | [ADR-014](docs/ADRs/ADR-014-root-task-runner.md) | A Node script orchestrates both builds from the root | The root becomes nominally an npm project; per-project commands are named in two places |
 | [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) | ECS JSON logs everywhere, and a W3C trace id on every response | Local output is JSON and not pleasant to read; one starter brings the whole OpenTelemetry SDK |
 | [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) | Metrics pulled from `/actuator/prometheus`; no monitoring stack committed | The endpoint is unauthenticated, like everything else here; nothing scrapes it yet |
+| [ADR-018](docs/ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md) | Changes and refusals recorded through a port, as log events | The trail is only as durable as the log; every new use case must remember to call the port |
 
 Still open and blocking: **ADR-004** (data storage), **ADR-010** (objectives) and **ADR-011**
 (authentication). See the [ADR index](docs/ADRs/).

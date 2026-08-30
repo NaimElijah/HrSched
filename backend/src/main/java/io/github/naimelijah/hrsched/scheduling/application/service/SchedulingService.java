@@ -6,10 +6,13 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRoste
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ManageShiftsUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
@@ -37,6 +40,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Orchestrates the scheduling use cases.
@@ -72,18 +76,21 @@ public class SchedulingService
   private final ConstraintSetRepository constraintSets;
   private final WorkforceDirectory workforce;
   private final RosterGenerator generator;
+  private final AuditTrail audit;
 
   public SchedulingService(
       ShiftRepository shifts,
       RosterRepository rosters,
       ConstraintSetRepository constraintSets,
       WorkforceDirectory workforce,
-      RosterGenerator generator) {
+      RosterGenerator generator,
+      AuditTrail audit) {
     this.shifts = Objects.requireNonNull(shifts, "shifts must not be null");
     this.rosters = Objects.requireNonNull(rosters, "rosters must not be null");
     this.constraintSets = Objects.requireNonNull(constraintSets, "constraintSets must not be null");
     this.workforce = Objects.requireNonNull(workforce, "workforce must not be null");
     this.generator = Objects.requireNonNull(generator, "generator must not be null");
+    this.audit = Objects.requireNonNull(audit, "audit must not be null");
   }
 
   @Override
@@ -98,6 +105,7 @@ public class SchedulingService
             command.requiredHeadcount(),
             command.requiredQualifications());
     shifts.save(shift);
+    recorded(actor, command.organisation(), SchedulingChange.SHIFT_DEFINED, shift.id().value());
     return shift.id();
   }
 
@@ -113,6 +121,11 @@ public class SchedulingService
     ConstraintSet revised =
         currentOrInitial(command.organisation()).revisedTo(command.constraints());
     constraintSets.save(revised);
+    recorded(
+        actor,
+        command.organisation(),
+        SchedulingChange.CONSTRAINTS_REVISED,
+        command.organisation().value());
     return revised;
   }
 
@@ -135,6 +148,7 @@ public class SchedulingService
         new Roster(RosterId.newId(), command.organisation(), command.period())
             .withAssignments(assignments);
     rosters.save(draft);
+    recorded(actor, command.organisation(), SchedulingChange.ROSTER_GENERATED, draft.id().value());
     return draft;
   }
 
@@ -152,9 +166,10 @@ public class SchedulingService
       throw new RosterNotCompliantException(violations);
     }
 
-    supersedeOverlapping(organisation, draft);
+    supersedeOverlapping(actor, organisation, draft);
     Roster published = draft.publishedUnder(constraints.version());
     rosters.save(published);
+    recorded(actor, organisation, SchedulingChange.ROSTER_PUBLISHED, published.id().value());
     return published;
   }
 
@@ -200,12 +215,30 @@ public class SchedulingService
    * those days two authoritative answers. This is the mechanism that removes the need for an
    * override — see ADR-005 and requirement R6.
    */
-  private void supersedeOverlapping(OrganisationId organisation, Roster replacement) {
+  private void supersedeOverlapping(Actor actor, OrganisationId organisation, Roster replacement) {
     rosters.findByOrganisation(organisation).stream()
         .filter(existing -> existing.status() == RosterStatus.PUBLISHED)
         .filter(existing -> !existing.id().equals(replacement.id()))
         .filter(existing -> existing.period().overlaps(replacement.period()))
-        .forEach(existing -> rosters.save(existing.superseded()));
+        .forEach(
+            existing -> {
+              rosters.save(existing.superseded());
+              // Recorded per roster, not once for the publication that caused it. Nobody asked for
+              // these demotions, so without an entry each a roster appears to demote itself.
+              recorded(
+                  actor, organisation, SchedulingChange.ROSTER_SUPERSEDED, existing.id().value());
+            });
+  }
+
+  /**
+   * Records a change that has already been saved.
+   *
+   * <p>Called after the repository, never before: an entry for something that then failed to store
+   * is worse than no entry, because it is a record of something that did not happen.
+   */
+  private void recorded(
+      Actor actor, OrganisationId organisation, SchedulingChange change, UUID subject) {
+    audit.record(new AuditedChange(organisation, actor.id(), change, subject));
   }
 
   /** Refuses a shift demanding a qualification the organisation has never defined. */

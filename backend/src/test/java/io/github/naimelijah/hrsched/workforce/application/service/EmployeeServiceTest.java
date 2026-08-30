@@ -19,12 +19,17 @@ import io.github.naimelijah.hrsched.workforce.application.port.in.AddEmployeeCom
 import io.github.naimelijah.hrsched.workforce.application.port.in.DeclareUnavailabilityCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.GrantQualificationCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.RosterableEmployee;
+import io.github.naimelijah.hrsched.workforce.application.port.in.SetContractTermsCommand;
+import io.github.naimelijah.hrsched.workforce.application.port.out.AuditTrail;
+import io.github.naimelijah.hrsched.workforce.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
+import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChange;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -50,7 +55,12 @@ class EmployeeServiceTest {
 
   private final StubEmployeeRepository employees = new StubEmployeeRepository();
   private final StubQualificationRepository qualifications = new StubQualificationRepository();
-  private final EmployeeService service = new EmployeeService(employees, qualifications);
+  private final RecordingAuditTrail audit = new RecordingAuditTrail();
+  private final EmployeeService service = new EmployeeService(employees, qualifications, audit);
+
+  private static TenantActor actor(OrganisationId organisation, Role role) {
+    return new TenantActor(UserId.newId(), organisation, role);
+  }
 
   private static TenantActor admin(OrganisationId organisation) {
     return new TenantActor(UserId.newId(), organisation, Role.ADMIN);
@@ -236,6 +246,94 @@ class EmployeeServiceTest {
       return saved.values().stream()
           .filter(qualification -> qualification.organisation().equals(organisation))
           .toList();
+    }
+  }
+
+  @Test
+  void GivenAnAdmin_WhenAddingSomeone_ThenTheChangeIsRecordedAgainstTheActingUser() {
+    TenantActor admin = admin(ACME);
+
+    EmployeeId added = service.addEmployee(admin, new AddEmployeeCommand(ACME, "Ada"));
+
+    assertThat(audit.of(WorkforceChange.EMPLOYEE_ADDED))
+        .containsExactly(
+            new AuditedChange(ACME, admin.id(), WorkforceChange.EMPLOYEE_ADDED, added.value()));
+  }
+
+  /**
+   * The case the trail exists for. An employee editing their own record and a manager editing it
+   * for them are the same change to the same subject, and only the actor tells them apart - which
+   * is why {@link UserId} and {@link EmployeeId} are never conflated (ADR-012).
+   */
+  @Test
+  void
+      GivenSomeoneDeclaringTheirOwnUnavailability_WhenRecorded_ThenTheActorIsThemNotTheirManager() {
+    EmployeeId subject = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor themself =
+        new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(subject));
+
+    service.declareUnavailability(
+        themself, new DeclareUnavailabilityCommand(ACME, subject, MONDAY));
+
+    assertThat(audit.of(WorkforceChange.UNAVAILABILITY_DECLARED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, themself.id(), WorkforceChange.UNAVAILABILITY_DECLARED, subject.value()));
+  }
+
+  @Test
+  void GivenAManagerActingOnSomeoneElse_WhenRecorded_ThenTheSubjectIsTheEmployeeNotTheManager() {
+    EmployeeId subject = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor manager = admin(ACME);
+
+    service.setContractTerms(
+        manager, new SetContractTermsCommand(ACME, subject, Duration.ofHours(20)));
+
+    assertThat(audit.of(WorkforceChange.CONTRACT_SET))
+        .containsExactly(
+            new AuditedChange(ACME, manager.id(), WorkforceChange.CONTRACT_SET, subject.value()));
+  }
+
+  @Test
+  void GivenAnActorOfAnotherOrganisation_WhenTheyAreRefused_ThenNothingIsRecorded() {
+    assertThatThrownBy(() -> service.addEmployee(admin(RIVAL), new AddEmployeeCommand(ACME, "Ada")))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  @Test
+  void GivenAnEmployeeRole_WhenTheyMayNotAdminister_ThenTheRefusalLeavesNoEntry() {
+    assertThatThrownBy(
+            () ->
+                service.addEmployee(
+                    actor(ACME, Role.EMPLOYEE), new AddEmployeeCommand(ACME, "Ada")))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * Records what the service says was changed.
+   *
+   * <p>Hand-written, like every other double here: the audit trail is our own port, and asking it
+   * what it was told is how "was this recorded?" becomes a test rather than a review comment.
+   */
+  private static final class RecordingAuditTrail implements AuditTrail {
+
+    private final List<AuditedChange> recorded = new ArrayList<>();
+
+    @Override
+    public void record(AuditedChange change) {
+      recorded.add(change);
+    }
+
+    List<WorkforceChange> changes() {
+      return recorded.stream().map(AuditedChange::change).toList();
+    }
+
+    List<AuditedChange> of(WorkforceChange change) {
+      return recorded.stream().filter(entry -> entry.change() == change).toList();
     }
   }
 }

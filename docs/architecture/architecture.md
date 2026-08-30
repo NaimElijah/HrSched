@@ -85,6 +85,7 @@ Three rules hold this together, and each fails the build when broken:
 | `scheduling.adapter.out.workforce` | The anti-corruption layer: the **only** class in scheduling permitted to name another context, and only its published port. |
 | `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. |
 | `*.adapter.out.persistence` | In-memory repositories, every read scoped by organisation. Placeholders until ADR-004. |
+| `*.adapter.out.audit` | `SchedulingAuditLog` and `WorkforceAuditLog` - each implements its own context's `AuditTrail` port, turning one recorded change into a structured log event and a counter. Named for their contexts because Spring derives a bean name from the simple class name alone. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
 | `configuration.observability` | Cross-cutting instrumentation that belongs to no context. Today that is `TraceIdResponseFilter`, which puts the request's trace id on the response as `X-Trace-Id`. It reads no request header, so unlike `ActorFromHeaders` it is unaffected by ADR-011. |
 | `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists - it writes the four identity claims and reads back `X-Trace-Id`; `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts` and `workforce.ts` mirror the backend DTOs one module per context. |
@@ -182,6 +183,17 @@ Nothing is persisted beyond process lifetime.
   the log are joinable. Nothing is exported: the OTLP exporters for traces, logs and metrics are all
   switched off until Q19 names somewhere to send them
   ([ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)).
+- **Every change and every refusal is recorded, and no name is.** State-changing use cases call an
+  `AuditTrail` driven port after saving; the two web exception handlers record refusals, because
+  they are the only place that sees every one. An `AuditedChange` carries the organisation, the
+  acting user, the kind of change and a bare `UUID` subject - a name cannot appear because there is
+  nowhere to put one. A cross-tenant attempt, which the requirements call a security incident, is
+  now a `WARN` and a counter while the caller still receives exactly the 404 it always did. Nothing
+  is persisted and nothing is queryable; that is Q20
+  ([ADR-018](../ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md)).
+- **Instrumentation lives outside the hexagon.** No logger, meter or span appears in a domain or
+  application class: the domain keeps to the JDK and the application layer is free of the framework,
+  so anything a use case needs to record it records through a port.
 - **Metrics are pulled, and nothing is pushed.** `/actuator/prometheus` publishes the JVM, process
   and `http.server.requests` meters Micrometer already collected, plus the product's own coverage
   measure. Exposure is an allow list: `loggers`, `env` and `heapdump` are shut, because there is no

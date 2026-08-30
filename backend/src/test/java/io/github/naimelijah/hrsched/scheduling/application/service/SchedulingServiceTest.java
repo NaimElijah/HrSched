@@ -7,10 +7,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
@@ -70,6 +73,7 @@ class SchedulingServiceTest {
   private FakeRosters rosters;
   private FakeConstraintSets constraintSets;
   private FakeWorkforce workforce;
+  private RecordingAuditTrail audit;
   private SchedulingService service;
 
   @BeforeEach
@@ -78,8 +82,10 @@ class SchedulingServiceTest {
     rosters = new FakeRosters();
     constraintSets = new FakeConstraintSets();
     workforce = new FakeWorkforce();
+    audit = new RecordingAuditTrail();
     service =
-        new SchedulingService(shifts, rosters, constraintSets, workforce, new FirstFitGenerator());
+        new SchedulingService(
+            shifts, rosters, constraintSets, workforce, new FirstFitGenerator(), audit);
   }
 
   private static TenantActor scheduler(OrganisationId organisation) {
@@ -364,6 +370,137 @@ class SchedulingServiceTest {
     public Set<QualificationId> definedQualifications(Actor actor, OrganisationId organisation) {
       actor.requireAccessTo(organisation);
       return defined.getOrDefault(organisation, Set.of());
+    }
+  }
+
+  @Test
+  void GivenAScheduler_WhenDefiningAShift_ThenTheChangeIsRecordedAgainstThem() {
+    TenantActor scheduler = scheduler(ACME);
+
+    ShiftId shift =
+        service.defineShift(scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+
+    assertThat(audit.of(SchedulingChange.SHIFT_DEFINED))
+        .containsExactly(
+            new AuditedChange(ACME, scheduler.id(), SchedulingChange.SHIFT_DEFINED, shift.value()));
+  }
+
+  @Test
+  void GivenAnAdmin_WhenRevisingTheRules_ThenTheOrganisationIsTheSubject() {
+    TenantActor admin = admin(ACME);
+
+    service.reviseConstraints(admin, new ReviseConstraintsCommand(ACME, List.of()));
+
+    assertThat(audit.of(SchedulingChange.CONSTRAINTS_REVISED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, admin.id(), SchedulingChange.CONSTRAINTS_REVISED, ACME.value()));
+  }
+
+  @Test
+  void GivenAScheduler_WhenPublishingARoster_ThenGenerationAndPublicationAreBothRecorded() {
+    available(ACME, "Ada");
+    TenantActor scheduler = scheduler(ACME);
+    service.defineShift(scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    Roster draft = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+
+    service.publish(scheduler, ACME, draft.id());
+
+    assertThat(audit.of(SchedulingChange.ROSTER_GENERATED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, scheduler.id(), SchedulingChange.ROSTER_GENERATED, draft.id().value()));
+    assertThat(audit.of(SchedulingChange.ROSTER_PUBLISHED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, scheduler.id(), SchedulingChange.ROSTER_PUBLISHED, draft.id().value()));
+  }
+
+  /**
+   * The demotion nobody asked for. Publishing one roster silently supersedes every published roster
+   * it overlaps, so without an entry each, those rosters appear to have demoted themselves.
+   */
+  @Test
+  void GivenAnEarlierPublishedRoster_WhenItIsSuperseded_ThenThatIsRecordedToo() {
+    available(ACME, "Ada");
+    TenantActor scheduler = scheduler(ACME);
+    service.defineShift(scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    Roster first = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+    service.publish(scheduler, ACME, first.id());
+    Roster second = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+
+    service.publish(scheduler, ACME, second.id());
+
+    assertThat(audit.of(SchedulingChange.ROSTER_SUPERSEDED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, scheduler.id(), SchedulingChange.ROSTER_SUPERSEDED, first.id().value()));
+  }
+
+  @Test
+  void GivenARosterBreakingTheRules_WhenPublicationIsRefused_ThenNothingIsRecordedAsPublished() {
+    available(ACME, "Ada");
+    TenantActor scheduler = scheduler(ACME);
+    service.defineShift(scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    Roster draft = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+    service.reviseConstraints(
+        admin(ACME),
+        new ReviseConstraintsCommand(
+            ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(4)))));
+
+    assertThatThrownBy(() -> service.publish(scheduler, ACME, draft.id()))
+        .isInstanceOf(RosterNotCompliantException.class);
+
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.ROSTER_PUBLISHED);
+  }
+
+  /**
+   * A refused act changed nothing, so it must leave no entry saying it did. An audit trail that
+   * records attempts as though they were changes is worse than none: it is wrong.
+   */
+  @Test
+  void GivenAnActorOfAnotherOrganisation_WhenTheyAreRefused_ThenNothingIsRecorded() {
+    assertThatThrownBy(
+            () ->
+                service.defineShift(
+                    scheduler(RIVAL), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of())))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  @Test
+  void GivenAnAdmin_WhenTheyMayNotSchedule_ThenTheRefusalLeavesNoEntry() {
+    assertThatThrownBy(
+            () ->
+                service.defineShift(
+                    admin(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of())))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * Records what the service says was changed.
+   *
+   * <p>Hand-written, like every other double here: the audit trail is our own port, and asking it
+   * what it was told is how "was this recorded?" becomes a test rather than a review comment.
+   */
+  private static final class RecordingAuditTrail implements AuditTrail {
+
+    private final List<AuditedChange> recorded = new ArrayList<>();
+
+    @Override
+    public void record(AuditedChange change) {
+      recorded.add(change);
+    }
+
+    List<SchedulingChange> changes() {
+      return recorded.stream().map(AuditedChange::change).toList();
+    }
+
+    List<AuditedChange> of(SchedulingChange change) {
+      return recorded.stream().filter(entry -> entry.change() == change).toList();
     }
   }
 }

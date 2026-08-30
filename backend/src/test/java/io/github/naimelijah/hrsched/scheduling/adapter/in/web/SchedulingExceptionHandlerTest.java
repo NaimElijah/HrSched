@@ -23,6 +23,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.Arrays;
@@ -55,7 +56,20 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
  */
 class SchedulingExceptionHandlerTest {
 
-  private final SchedulingExceptionHandler handler = new SchedulingExceptionHandler();
+  private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+  private final SchedulingExceptionHandler handler = new SchedulingExceptionHandler(meters);
+
+  private double denied(String kind) {
+    return meters.find("hrsched.access.denied").tag("kind", kind).counter() == null
+        ? 0.0
+        : meters.find("hrsched.access.denied").tag("kind", kind).counter().count();
+  }
+
+  private double refused(String reason) {
+    return meters.find("hrsched.rosters.refused").tag("reason", reason).counter() == null
+        ? 0.0
+        : meters.find("hrsched.rosters.refused").tag("reason", reason).counter().count();
+  }
 
   /**
    * Spring 7 dropped the message-only constructors, so an unreadable body needs an input message.
@@ -190,6 +204,54 @@ class SchedulingExceptionHandlerTest {
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
     assertThat(problem.getDetail()).isEqualTo("No such resource.");
     assertThat(problem.getDetail()).doesNotContain(theirs.value().toString());
+  }
+
+  /**
+   * The counter that makes a security incident detectable. A cross-tenant attempt is answered with
+   * the same 404 as an ordinary miss, on purpose, so {@code http.server.requests} cannot tell the
+   * two apart - and before this it left no trace anywhere at all.
+   */
+  @Test
+  void GivenACrossTenantAttempt_WhenTranslated_ThenItIsCountedAsOne() {
+    handler.handleUnknown(new CrossTenantAccessException(UserId.newId(), OrganisationId.newId()));
+
+    assertThat(denied("cross_tenant")).isEqualTo(1.0);
+    assertThat(denied("role")).isZero();
+  }
+
+  @Test
+  void GivenAnOrdinaryUnknownRoster_WhenTranslated_ThenNothingIsCountedAsASecurityEvent() {
+    handler.handleUnknown(new UnknownRosterException(RosterId.newId()));
+
+    assertThat(denied("cross_tenant")).isZero();
+  }
+
+  @Test
+  void GivenARoleRefusal_WhenTranslated_ThenItIsCountedSeparatelyFromATenantBreach() {
+    handler.handleNotPermitted(
+        new NotPermittedException(UserId.newId(), Role.ADMIN, Set.of(Role.SCHEDULER)));
+
+    assertThat(denied("role")).isEqualTo(1.0);
+    assertThat(denied("cross_tenant")).isZero();
+  }
+
+  @Test
+  void GivenARosterBreachingTheRules_WhenTranslated_ThenTheRefusalIsCountedByItsReason() {
+    handler.handleNotCompliant(
+        new RosterNotCompliantException(
+            List.of(new ConstraintViolation(EmployeeId.newId(), "a rule", "some detail"))));
+
+    assertThat(refused("not_compliant")).isEqualTo(1.0);
+    assertThat(refused("not_verifiable")).isZero();
+  }
+
+  @Test
+  void GivenARosterThatCannotBeChecked_WhenTranslated_ThenItIsCountedApart() {
+    handler.handleNotVerifiable(
+        new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()));
+
+    assertThat(refused("not_verifiable")).isEqualTo(1.0);
+    assertThat(refused("not_compliant")).isZero();
   }
 
   /**

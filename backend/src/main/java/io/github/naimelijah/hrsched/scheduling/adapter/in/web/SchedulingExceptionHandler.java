@@ -12,7 +12,11 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterExcepti
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -30,12 +34,47 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  *
  * <p>There is no override anywhere here. A roster that breaks the rules is not published, and the
  * remedy is a different roster.
+ *
+ * <p>It is also where refusals are recorded, because it is the only place that sees every one of
+ * them. A cross-tenant attempt in particular used to become a 404 and vanish: the requirements call
+ * that a security incident rather than a bug, and an incident nothing records is an incident nobody
+ * can detect. What the caller is told does not change - still a 404, still "No such resource." -
+ * only what the operator can see. See ADR-018.
  */
 @RestControllerAdvice(assignableTypes = SchedulingController.class)
 public class SchedulingExceptionHandler {
 
+  private static final Logger log = LoggerFactory.getLogger(SchedulingExceptionHandler.class);
+
+  /** Shared with the workforce handler, so one query answers "who was refused" across both. */
+  private static final String DENIED = "hrsched.access.denied";
+
+  private static final String REFUSED = "hrsched.rosters.refused";
+
+  private final MeterRegistry meters;
+
+  /**
+   * @param meters where refusals are counted
+   */
+  public SchedulingExceptionHandler(MeterRegistry meters) {
+    this.meters = meters;
+  }
+
+  private void count(String meter, String tag, String value, String description) {
+    Counter.builder(meter).description(description).tag(tag, value).register(meters).increment();
+  }
+
+  /**
+   * Logged at INFO, not WARN. The rules working is not a fault: a roster that breaks them is
+   * supposed to be refused, and levelling it as a problem would train whoever reads the logs to
+   * ignore the level.
+   */
   @ExceptionHandler(RosterNotCompliantException.class)
   public ProblemDetail handleNotCompliant(RosterNotCompliantException exception) {
+    log.atInfo()
+        .addKeyValue("violations", exception.violations().size())
+        .log("Publication refused by the working-time rules");
+    count(REFUSED, "reason", "not_compliant", "Publications refused, by what refused them");
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Roster breaks the working-time rules");
@@ -79,6 +118,8 @@ public class SchedulingExceptionHandler {
    */
   @ExceptionHandler(RosterNotVerifiableException.class)
   public ProblemDetail handleNotVerifiable(RosterNotVerifiableException exception) {
+    log.warn("Publication refused: the roster names work that cannot be checked");
+    count(REFUSED, "reason", "not_verifiable", "Publications refused, by what refused them");
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Roster cannot be checked against the rules");
@@ -87,6 +128,11 @@ public class SchedulingExceptionHandler {
 
   @ExceptionHandler(NotPermittedException.class)
   public ProblemDetail handleNotPermitted(NotPermittedException exception) {
+    log.atWarn()
+        .addKeyValue("actor", exception.actor().value())
+        .addKeyValue("role", exception.held())
+        .log("Refused: the actor's role does not permit this");
+    count(DENIED, "kind", "role", "Refused attempts, by what refused them");
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your role does not permit this.");
     problem.setTitle("Not permitted");
@@ -96,6 +142,13 @@ public class SchedulingExceptionHandler {
   /** A cross-tenant attempt is a 404, so the response never confirms that the resource exists. */
   @ExceptionHandler({UnknownRosterException.class, CrossTenantAccessException.class})
   public ProblemDetail handleUnknown(RuntimeException exception) {
+    if (exception instanceof CrossTenantAccessException crossTenant) {
+      log.atWarn()
+          .addKeyValue("actor", crossTenant.actor().value())
+          .addKeyValue("organisation", crossTenant.organisation().value())
+          .log("Refused: an actor reached for another organisation's data");
+      count(DENIED, "kind", "cross_tenant", "Refused attempts, by what refused them");
+    }
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
     problem.setDetail("No such resource.");
