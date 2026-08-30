@@ -19,6 +19,14 @@ export const ROLES = ['EMPLOYEE', 'SCHEDULER', 'ADMIN', 'OPERATOR'] as const;
 export type Role = (typeof ROLES)[number];
 
 /**
+ * The header the backend puts the request's trace id on.
+ *
+ * Named here rather than inlined because it is the one header this module reads instead of writes,
+ * and because it is the half of a contract whose other half is `TraceIdResponseFilter`.
+ */
+const TRACE_ID_HEADER = 'X-Trace-Id';
+
+/**
  * The only module in the app that calls fetch, and the only one that knows a header exists.
  *
  * Keeping that in one place is what makes the identity headers deletable in a single edit, and
@@ -42,9 +50,10 @@ async function request<T>(
 
   const response = await fetch(path, { ...init, headers });
   const text = await response.text();
+  const reference = response.headers.get(TRACE_ID_HEADER);
 
   if (!response.ok) {
-    throw toApiError(response.status, parseOrNull(text) ?? { detail: text });
+    throw toApiError(response.status, parseOrNull(text) ?? { detail: text }, reference);
   }
   if (response.status === 204 || text.length === 0) {
     return undefined as T;
@@ -53,7 +62,12 @@ async function request<T>(
   if (body === null) {
     // A 200 carrying something other than JSON is a broken deployment, not a value. Casting it
     // would hand a page an object where it expects an array, and the render would throw.
-    throw new ApiError(response.status, `Expected JSON from ${path} but the body was not JSON.`);
+    throw new ApiError(
+      response.status,
+      `Expected JSON from ${path} but the body was not JSON.`,
+      [],
+      reference,
+    );
   }
   return body as T;
 }

@@ -34,6 +34,16 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
+		<!--
+		  Vendor-neutral instrumentation, which ADR-001 names as a baseline demand. Supplies the
+		  OpenTelemetry API, the Micrometer Tracing bridge over it, and the OTLP exporters, so a
+		  W3C trace id exists on every request and reaches every log line. Apache-2.0, and
+		  version-managed by the Boot BOM. See ADR-016.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-opentelemetry</artifactId>
+		</dependency>
 
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

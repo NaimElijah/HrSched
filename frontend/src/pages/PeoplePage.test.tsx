@@ -32,6 +32,7 @@ function routeTo(
       return Promise.resolve({
         ok: outcome.ok,
         status: outcome.status,
+        headers: new Headers(),
         text: () => Promise.resolve(outcome.body === null ? '' : JSON.stringify(outcome.body)),
       });
     }
@@ -39,6 +40,7 @@ function routeTo(
       return Promise.resolve({
         ok: true,
         status: 200,
+        headers: new Headers(),
         text: () => Promise.resolve(JSON.stringify(QUALIFICATIONS)),
       });
     }
@@ -46,6 +48,7 @@ function routeTo(
     return Promise.resolve({
       ok: people.ok,
       status: people.status,
+      headers: new Headers(),
       text: () => Promise.resolve(JSON.stringify(people.body)),
     });
   });

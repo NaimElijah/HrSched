@@ -115,6 +115,60 @@ describe('the other refusals', () => {
   });
 });
 
+describe('the trace reference', () => {
+  const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
+
+  it('GivenAForbiddenCarryingATraceId_WhenRendering_ThenItIsShownToBeQuoted', () => {
+    render(<Failure error={new ApiError(403, 'Your role does not permit this.', [], TRACE)} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(`Reference: ${TRACE}`);
+  });
+
+  it('GivenANotFoundCarryingATraceId_WhenRendering_ThenItIsShown', () => {
+    render(<Failure error={new ApiError(404, 'No such resource.', [], TRACE)} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(`Reference: ${TRACE}`);
+  });
+
+  it('GivenARuleBreachCarryingATraceId_WhenRendering_ThenItIsShownBesideTheViolations', () => {
+    render(
+      <Failure
+        error={
+          new ApiError(
+            422,
+            'Refused',
+            [{ employee: 'ada', constraint: 'maximum daily working time', detail: 'PT12H' }],
+            TRACE,
+          )
+        }
+      />,
+    );
+
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByRole('alert')).toHaveTextContent(`Reference: ${TRACE}`);
+  });
+
+  it('GivenAnUnexpectedStatusCarryingATraceId_WhenRendering_ThenItIsShown', () => {
+    render(<Failure error={new ApiError(500, 'The server returned 500.', [], TRACE)} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(`Reference: ${TRACE}`);
+  });
+
+  it('GivenAFailureWithoutATraceId_WhenRendering_ThenNoReferenceIsInvented', () => {
+    render(<Failure error={new ApiError(403, 'Your role does not permit this.')} />);
+
+    expect(screen.queryByText(/Reference:/)).not.toBeInTheDocument();
+  });
+
+  /** A render crash never went through the API client, so there is no trace to quote. */
+  it('GivenSomethingThatIsNotAnApiError_WhenRendering_ThenNoReferenceIsShown', () => {
+    render(<Failure error={new Error('the interface broke')} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('the interface broke');
+    expect(screen.queryByText(/Reference:/)).not.toBeInTheDocument();
+  });
+});
+
 describe('the working indicator', () => {
   it('GivenARequestInFlight_WhenRendering_ThenTheIndicatorIsShown', () => {
     render(<Busy busy />);

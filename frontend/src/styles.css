@@ -166,6 +166,15 @@ code {
   padding-left: 1.1rem;
 }
 
+/* Quiet on purpose: it is for quoting in a support message, not for reading. */
+.reference {
+  margin: 0.4rem 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  color: #5f5a52;
+  user-select: all;
+}
+
 .done {
   border-left: 3px solid #2f6d3f;
   background: #eef5ef;

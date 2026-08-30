@@ -40,6 +40,7 @@ function routeTo(handlers: Record<string, { status: number; body: unknown }>) {
     return Promise.resolve({
       ok: match.status < 400,
       status: match.status,
+      headers: new Headers(),
       text: () => Promise.resolve(JSON.stringify(match.body)),
     });
   });

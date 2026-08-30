@@ -168,6 +168,13 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
   shift starts? Selling it to third parties raises the bar.
 - **Deployment** — containerised with externalised configuration; the provider is deliberately
   deferred to its own ADR so the choice does not leak into the design.
+- **Observability** — every request is traced, and the trace id appears in every log line it
+  produces and on the HTTP response, so a report from a person can be joined to what the process
+  recorded. Logs are structured and machine-readable on stdout. Liveness and readiness are exposed
+  as probes. Instrumentation is vendor-neutral (OpenTelemetry), and nothing is exported until there
+  is somewhere to export to - Q19.
+  *Enforced by `TraceIdResponseFilter`, `TraceIdHttpTest`;
+  [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md).*
 - **Compliance** — availability, absence, and qualification records are personal data across
   multiple client organisations. `TODO`: confirm the obligations, including which regime
   applies and whether data location is constrained.
@@ -193,6 +200,7 @@ applicant tracking, and being the HR system of record.
 | Q16 | When a new roster only partly overlaps a published one, should the old one be superseded whole, or only for the days replaced? | NaimElijah | Refining R11; today the whole roster is superseded |
 | Q17 | Which time zone are working-time rules evaluated in? | NaimElijah | Daily and consecutive-day limits currently count days in UTC |
 | Q18 | Should an employee be able to see their own roster (F5), and how is "their own" defined? | NaimElijah | Reading rosters now needs Admin or Scheduler, so an employee sees none at all |
+| Q19 | Which observability backend receives the OpenTelemetry export, and at what sampling rate? | NaimElijah | Turning OTLP export on; sampling below 1.0 |
 
 **Resolved**
 
@@ -210,4 +218,4 @@ applicant tracking, and being the HR system of record.
 | Q8 | What a constraint set is attached to | One per organisation; per-person variation is contract terms, held separately | 2026-08-30 |
 | Q11 | Who approves a swap | A Scheduler; the colleague is informed | 2026-08-30 |
 
-Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18.
+Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19.

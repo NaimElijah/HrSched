@@ -173,6 +173,13 @@ database, no third-party API, and no authentication.
 | `management.endpoint.health.probes.enabled` | Exposes `health/liveness` and `health/readiness` | `true` (set explicitly; Spring defaults it off outside Kubernetes) |
 | `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info` |
 | `server.port` | HTTP port | `8080` (Spring default, not overridden) |
+| `logging.structured.format.console` | Log format on stdout | `ecs` — Elastic Common Schema JSON, always, with no profile that turns it off ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
+| `logging.structured.ecs.service.name` / `.version` | Identify the emitting service in every line | `HrSched` / the Maven project version, filtered in at build time |
+| `logging.structured.ecs.service.environment` | Which environment produced the line | **Deliberately unset.** A committed default would travel to a real environment that forgot to override it |
+| `management.tracing.sampling.probability` | Share of requests given a trace id | `1.0` — free while nothing is exported |
+| `management.tracing.export.otlp.enabled` | Ship spans over OTLP | `false` — nothing listens yet (Q19), and an exporter with nowhere to send logs its own failure forever |
+| `management.logging.export.otlp.enabled` | Ship logs over OTLP | `false`, same reason |
+| `management.otlp.metrics.export.enabled` | Push metrics over OTLP | `false`, same reason. Metrics are pulled instead, from `/actuator/prometheus` |
 
 ## Tech stack
 
@@ -182,6 +189,8 @@ database, no third-party API, and no authentication.
 | Framework | Spring Boot | 4.1.1 | Supplies the HTTP boundary and health endpoints as configuration rather than code |
 | HTTP | `spring-boot-starter-webmvc` | via Boot BOM | Embedded Tomcat. **Boot 4.x renamed this** from `spring-boot-starter-web` |
 | Operations | `spring-boot-starter-actuator` | via Boot BOM | Health and readiness probes, required of every service by the project baseline |
+| Observability | `spring-boot-starter-opentelemetry` | via Boot BOM | OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters, so a W3C trace id reaches every log line and every response. Export is off. [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) |
+| Logging | Boot's built-in structured logging | via Boot BOM | ECS JSON needs no encoder library and no `logback-spring.xml` — one property. [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) |
 | Frontend | React | 19.2.8 | Largest ecosystem for a small SPA; TypeScript makes an API contract drift a compile error. [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) |
 | Frontend build | Vite | 8.2.2 | Dev server proxies `/api`, so no CORS exists anywhere. |
 | Frontend types | TypeScript | 6.0.3 | `strict`, plus the TS 6 defaults `verbatimModuleSyntax` and `noUncheckedIndexedAccess`. |
@@ -353,6 +362,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `SchedulingExceptionHandlerTest`, `WorkforceExceptionHandlerTest` | Driving adapters | Which failure earns which status, the structured 422, and that there is no catch-all. |
 | `GreedyRosterGeneratorTest` | Driven adapter | The placeholder generator never breaks a rule, and leaves a shift short rather than filling it illegally. |
 | `RosteringHttpTest`, `EmployeeHttpTest`, `QualificationHttpTest` | End to end | All sixteen endpoints through the real hexagon and the real adapters. |
+| `TraceIdHttpTest` | Observability over HTTP | Every response carries a trace id, including the refusals - which are the ones a person has cause to report. |
 | `HexagonalArchitectureTest` | Whole codebase | **Six** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, and layer cycles. |
 | `HrSchedApplicationTests` | Spring context | The application starts. |
 
@@ -389,13 +399,20 @@ debt, to be revisited the first time UI/API drift actually bites.
 
 ## Deployment and operations
 
-*Not written yet — blocked on [Q5](docs/requirements/requirements.md#open-questions) (where
-this runs).* The build produces an executable JAR at `target/hrsched-0.0.1-SNAPSHOT.jar` and
-liveness/readiness probes are exposed, so the operational primitives exist even though no
-environment does.
+*Not written yet.* [Q5](docs/requirements/requirements.md#open-questions) answered that this is
+containerised with the provider deferred to its own ADR, so there is a shape but still no
+environment to describe. The operational primitives exist: the build produces an executable JAR at
+`target/hrsched-0.0.1-SNAPSHOT.jar`, liveness and readiness probes are exposed, and every log line
+is machine-readable.
 
-Still owed: structured JSON logging, correlation-ID propagation, and OpenTelemetry
-instrumentation.
+**Logs.** One ECS JSON object per line on stdout, ready for whatever collects the container's
+output. Every line carries `trace_id`, and every HTTP response carries the same value as
+`X-Trace-Id` — which the user interface shows on a refusal, so a report from a person can be joined
+to the log ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)). Pipe it
+through `jq` to read it locally.
+
+Still owed: metrics, and somewhere to export telemetry to
+([Q19](docs/requirements/requirements.md#open-questions)).
 
 ## Design decisions
 
@@ -412,6 +429,7 @@ instrumentation.
 | [ADR-012](docs/ADRs/ADR-012-acting-identity-carries-its-employee-record.md) | The acting identity carries the employee record it is | One more field in the shared kernel, which ADR-008 named as the thing to watch |
 | [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) | React + TypeScript + Vite, with a dev proxy instead of CORS | A second toolchain and CI job; a hand-written client that can drift from the DTOs |
 | [ADR-014](docs/ADRs/ADR-014-root-task-runner.md) | A Node script orchestrates both builds from the root | The root becomes nominally an npm project; per-project commands are named in two places |
+| [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) | ECS JSON logs everywhere, and a W3C trace id on every response | Local output is JSON and not pleasant to read; one starter brings the whole OpenTelemetry SDK |
 
 Still open and blocking: **ADR-004** (data storage), **ADR-010** (objectives) and **ADR-011**
 (authentication). See the [ADR index](docs/ADRs/).

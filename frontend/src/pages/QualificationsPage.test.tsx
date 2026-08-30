@@ -25,6 +25,7 @@ function routeTo(handlers: {
       return Promise.resolve({
         ok: outcome.ok,
         status: outcome.status,
+        headers: new Headers(),
         text: () => Promise.resolve(JSON.stringify(outcome.body)),
       });
     }
@@ -32,6 +33,7 @@ function routeTo(handlers: {
     return Promise.resolve({
       ok: true,
       status: 200,
+      headers: new Headers(),
       text: () => Promise.resolve(JSON.stringify(handlers.list ?? [])),
     });
   });
@@ -81,6 +83,7 @@ describe('listing what the organisation has defined', () => {
       Promise.resolve({
         ok: false,
         status: 403,
+        headers: new Headers(),
         text: () => Promise.resolve(JSON.stringify({ detail: 'Your role does not permit this.' })),
       }),
     );
