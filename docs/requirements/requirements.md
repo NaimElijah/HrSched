@@ -171,10 +171,12 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
 - **Observability** — every request is traced, and the trace id appears in every log line it
   produces and on the HTTP response, so a report from a person can be joined to what the process
   recorded. Logs are structured and machine-readable on stdout. Liveness and readiness are exposed
-  as probes. Instrumentation is vendor-neutral (OpenTelemetry), and nothing is exported until there
-  is somewhere to export to - Q19.
-  *Enforced by `TraceIdResponseFilter`, `TraceIdHttpTest`;
-  [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md).*
+  as probes. Rate, latency, error rate, saturation and the product's own coverage measure are
+  published for a scraper to pull. Instrumentation is vendor-neutral (OpenTelemetry), and nothing is
+  exported until there is somewhere to export to - Q19.
+  *Enforced by `TraceIdResponseFilter`, `TraceIdHttpTest`, `MetricsHttpTest`;
+  [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md),
+  [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md).*
 - **Compliance** — availability, absence, and qualification records are personal data across
   multiple client organisations. `TODO`: confirm the obligations, including which regime
   applies and whether data location is constrained.

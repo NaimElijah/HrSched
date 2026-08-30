@@ -171,7 +171,7 @@ database, no third-party API, and no authentication.
 | --- | --- | --- |
 | `spring.application.name` | Name reported in logs and Actuator | `HrSched` |
 | `management.endpoint.health.probes.enabled` | Exposes `health/liveness` and `health/readiness` | `true` (set explicitly; Spring defaults it off outside Kubernetes) |
-| `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info` |
+| `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info,metrics,prometheus`. An allow list: `loggers`, `env` and `heapdump` are deliberately absent while there is no authentication ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md)) |
 | `server.port` | HTTP port | `8080` (Spring default, not overridden) |
 | `logging.structured.format.console` | Log format on stdout | `ecs` — Elastic Common Schema JSON, always, with no profile that turns it off ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
 | `logging.structured.ecs.service.name` / `.version` | Identify the emitting service in every line | `HrSched` / the Maven project version, filtered in at build time |
@@ -191,6 +191,7 @@ database, no third-party API, and no authentication.
 | Operations | `spring-boot-starter-actuator` | via Boot BOM | Health and readiness probes, required of every service by the project baseline |
 | Observability | `spring-boot-starter-opentelemetry` | via Boot BOM | OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters, so a W3C trace id reaches every log line and every response. Export is off. [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) |
 | Logging | Boot's built-in structured logging | via Boot BOM | ECS JSON needs no encoder library and no `logback-spring.xml` — one property. [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) |
+| Metrics | `micrometer-registry-prometheus` | via Boot BOM | Renders the meters Micrometer already collects for a scraper to pull. Nothing pushes. [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) |
 | Frontend | React | 19.2.8 | Largest ecosystem for a small SPA; TypeScript makes an API contract drift a compile error. [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) |
 | Frontend build | Vite | 8.2.2 | Dev server proxies `/api`, so no CORS exists anywhere. |
 | Frontend types | TypeScript | 6.0.3 | `strict`, plus the TS 6 defaults `verbatimModuleSyntax` and `noUncheckedIndexedAccess`. |
@@ -363,6 +364,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `GreedyRosterGeneratorTest` | Driven adapter | The placeholder generator never breaks a rule, and leaves a shift short rather than filling it illegally. |
 | `RosteringHttpTest`, `EmployeeHttpTest`, `QualificationHttpTest` | End to end | All sixteen endpoints through the real hexagon and the real adapters. |
 | `TraceIdHttpTest` | Observability over HTTP | Every response carries a trace id, including the refusals - which are the ones a person has cause to report. |
+| `MetricsHttpTest` | Operations over HTTP | Both probes answer, the meters are published, and `loggers`, `env` and `heapdump` are **not** exposed. |
 | `HexagonalArchitectureTest` | Whole codebase | **Six** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, and layer cycles. |
 | `HrSchedApplicationTests` | Spring context | The application starts. |
 
@@ -411,8 +413,22 @@ output. Every line carries `trace_id`, and every HTTP response carries the same 
 to the log ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)). Pipe it
 through `jq` to read it locally.
 
-Still owed: metrics, and somewhere to export telemetry to
-([Q19](docs/requirements/requirements.md#open-questions)).
+**Metrics.** Pulled, never pushed: point a scraper at `/actuator/prometheus`
+([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md)).
+
+| Meter | What it answers |
+| --- | --- |
+| `http_server_requests_seconds` | Request rate, latency and error rate, per endpoint and status |
+| `jvm_*`, `process_*`, `tomcat_*` | Saturation: heap, threads, file descriptors, connections |
+| `hrsched_shifts_required_places` | Places each generation was asked to fill |
+| `hrsched_shifts_uncovered_places` | Places it could not fill without breaking a rule - the product's own success metric, and the ratio of the two is coverage |
+
+Exposure is an allow list. `loggers`, `env` and `heapdump` are deliberately shut, and
+`MetricsHttpTest` fails the build if one of them opens.
+
+Still owed: somewhere to export telemetry to
+([Q19](docs/requirements/requirements.md#open-questions)), and a dashboard to read it on - both
+blocked on the same missing environment.
 
 ## Design decisions
 
@@ -430,6 +446,7 @@ Still owed: metrics, and somewhere to export telemetry to
 | [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) | React + TypeScript + Vite, with a dev proxy instead of CORS | A second toolchain and CI job; a hand-written client that can drift from the DTOs |
 | [ADR-014](docs/ADRs/ADR-014-root-task-runner.md) | A Node script orchestrates both builds from the root | The root becomes nominally an npm project; per-project commands are named in two places |
 | [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) | ECS JSON logs everywhere, and a W3C trace id on every response | Local output is JSON and not pleasant to read; one starter brings the whole OpenTelemetry SDK |
+| [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) | Metrics pulled from `/actuator/prometheus`; no monitoring stack committed | The endpoint is unauthenticated, like everything else here; nothing scrapes it yet |
 
 Still open and blocking: **ADR-004** (data storage), **ADR-010** (objectives) and **ADR-011**
 (authentication). See the [ADR index](docs/ADRs/).

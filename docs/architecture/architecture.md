@@ -83,7 +83,7 @@ Three rules hold this together, and each fails the build when broken:
 | `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule`. |
 | `scheduling.application` | Shift definition, constraint configuration, roster generation and publication. Assembles the evidence constraints are judged against. |
 | `scheduling.adapter.out.workforce` | The anti-corruption layer: the **only** class in scheduling permitted to name another context, and only its published port. |
-| `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. |
+| `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. |
 | `*.adapter.out.persistence` | In-memory repositories, every read scoped by organisation. Placeholders until ADR-004. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
 | `configuration.observability` | Cross-cutting instrumentation that belongs to no context. Today that is `TraceIdResponseFilter`, which puts the request's trace id on the response as `X-Trace-Id`. It reads no request header, so unlike `ActorFromHeaders` it is unaffected by ADR-011. |
@@ -146,6 +146,7 @@ Nothing is persisted beyond process lifetime.
 | `spring-boot-starter-webmvc` | HTTP boundary, embedded Tomcat | ADR-001. Boot 4.x renamed this from `spring-boot-starter-web`. |
 | `spring-boot-starter-actuator` | Health and readiness probes | Required of every service by the project baseline. |
 | `spring-boot-starter-opentelemetry` | A W3C trace id per request, in the MDC and on the response | [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md). Supplies the OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters; export is switched off until Q19 is answered. |
+| `micrometer-registry-prometheus` | Rendering the collected meters for a scraper to pull from `/actuator/prometheus` | [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md). Nothing pushes; the pushgateway is off. |
 | `archunit-junit5` | Enforcing the hexagon and the context boundaries | Nothing else can fail a build on a dependency direction. |
 | `spotless-maven-plugin` + `google-java-format` | Format check bound to `validate` | ADR-002. |
 | `jacoco-maven-plugin` | Coverage measurement, reported and never enforced | [ADR-015](../ADRs/ADR-015-report-coverage-without-a-threshold.md). The version is pinned because the Boot 4.1.1 BOM manages none. |
@@ -181,6 +182,13 @@ Nothing is persisted beyond process lifetime.
   the log are joinable. Nothing is exported: the OTLP exporters for traces, logs and metrics are all
   switched off until Q19 names somewhere to send them
   ([ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)).
+- **Metrics are pulled, and nothing is pushed.** `/actuator/prometheus` publishes the JVM, process
+  and `http.server.requests` meters Micrometer already collected, plus the product's own coverage
+  measure. Exposure is an allow list: `loggers`, `env` and `heapdump` are shut, because there is no
+  authentication and two of those disclose state while the third changes behaviour. Actuator shares
+  port 8080 with the API, which is recorded rather than defended in
+  [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md). No monitoring stack is committed;
+  there is no environment yet to describe one for.
 - **Coverage is measured and never enforced.** `./mvnw verify` writes `target/site/jacoco/`; the
   frontend reports only under `npm run test:coverage`. No threshold exists, on purpose
   ([ADR-015](../ADRs/ADR-015-report-coverage-without-a-threshold.md)).
