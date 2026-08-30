@@ -1,0 +1,126 @@
+import { useState } from 'react';
+import { scheduling } from '../api/scheduling';
+import { workforce } from '../api/workforce';
+import { Busy, Failure } from '../components/Feedback';
+import { useAsync } from '../components/useAsync';
+import { identityKey } from '../api/client';
+import { useActingAs } from '../identity/ActingAs';
+
+/** Scheduler: what needs covering, over an explicit span. */
+export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
+  const { identity } = useActingAs();
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  const [headcount, setHeadcount] = useState('1');
+  const [required, setRequired] = useState<string[]>([]);
+  const [failure, setFailure] = useState<unknown>(null);
+
+  const shifts = useAsync(
+    () => scheduling.findShifts(identity, span.from, span.to),
+    `${identityKey(identity)}|${span.from}|${span.to}`,
+  );
+  const qualifications = useAsync(
+    () => workforce.findQualifications(identity),
+    identityKey(identity),
+  );
+
+  async function define(event: React.FormEvent) {
+    event.preventDefault();
+    setFailure(null);
+    try {
+      await scheduling.defineShift(identity, {
+        start: new Date(start).toISOString(),
+        end: new Date(end).toISOString(),
+        requiredHeadcount: Number(headcount),
+        requiredQualifications: required,
+      });
+      shifts.reload();
+    } catch (error) {
+      setFailure(error);
+    }
+  }
+
+  return (
+    <section>
+      <h2>Shifts</h2>
+      <p className="hint">
+        A shift may only require qualifications this organisation has defined. Requiring one it has
+        not is refused, because nobody could ever hold it and the shift would be silently
+        uncoverable forever.
+      </p>
+
+      <form onSubmit={define} className="grid">
+        <label>
+          Starts
+          <input
+            type="datetime-local"
+            value={start}
+            onChange={(event) => setStart(event.target.value)}
+            required
+          />
+        </label>
+        <label>
+          Ends
+          <input
+            type="datetime-local"
+            value={end}
+            onChange={(event) => setEnd(event.target.value)}
+            required
+          />
+        </label>
+        <label>
+          People needed
+          <input
+            type="number"
+            min="1"
+            value={headcount}
+            onChange={(event) => setHeadcount(event.target.value)}
+            required
+          />
+        </label>
+        <label>
+          Required qualifications
+          <select
+            multiple
+            value={required}
+            onChange={(event) =>
+              setRequired(Array.from(event.target.selectedOptions, (option) => option.value))
+            }
+          >
+            {(qualifications.value ?? []).map((qualification) => (
+              <option key={qualification.id} value={qualification.id}>
+                {qualification.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit">Define shift</button>
+      </form>
+
+      <Failure error={failure} />
+      <Failure error={shifts.error} />
+      <Busy busy={shifts.busy} />
+
+      <table>
+        <thead>
+          <tr>
+            <th>Starts</th>
+            <th>Ends</th>
+            <th>Needs</th>
+            <th>Requires</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(shifts.value ?? []).map((shift) => (
+            <tr key={shift.id}>
+              <td>{new Date(shift.start).toLocaleString()}</td>
+              <td>{new Date(shift.end).toLocaleString()}</td>
+              <td>{shift.requiredHeadcount}</td>
+              <td>{shift.requiredQualifications.length}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}

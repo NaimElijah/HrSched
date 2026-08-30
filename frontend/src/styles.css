@@ -1,0 +1,186 @@
+:root {
+  --ink: #1c1c1c;
+  --paper: #fbfbf9;
+  --line: #d8d4cc;
+  --alarm: #8c2f16;
+  --alarm-bg: #fdf0ec;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font:
+    15px/1.5 system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
+.app {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 0.15rem 0 1rem;
+  color: #5f5a52;
+}
+
+/* The acting-as bar is meant to be impossible to mistake for a normal header. */
+.acting-as {
+  border: 2px solid var(--alarm);
+  background: var(--alarm-bg);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.acting-as__warning {
+  margin: 0 0 0.6rem;
+  color: var(--alarm);
+}
+
+.acting-as__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: end;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.82rem;
+  color: #5f5a52;
+}
+
+input,
+select {
+  font: inherit;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  min-width: 12rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: #9a948a;
+}
+
+nav {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.6rem;
+  margin-bottom: 0.9rem;
+}
+
+.tab--current {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.span {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.hint {
+  color: #5f5a52;
+  max-width: 60ch;
+}
+
+.row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: end;
+  flex-wrap: wrap;
+  margin: 0.75rem 0;
+}
+
+.grid {
+  display: flex;
+  gap: 0.75rem;
+  align-items: end;
+  flex-wrap: wrap;
+  margin: 0.75rem 0 1.25rem;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
+th,
+td {
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  padding: 0.45rem 0.6rem;
+  vertical-align: top;
+}
+
+code {
+  font-size: 0.78rem;
+  color: #6b665e;
+}
+
+.failure {
+  border-left: 3px solid var(--alarm);
+  background: var(--alarm-bg);
+  padding: 0.6rem 0.9rem;
+  margin: 0.75rem 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.failure--rules ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.done {
+  border-left: 3px solid #2f6d3f;
+  background: #eef5ef;
+  padding: 0.6rem 0.9rem;
+  border-radius: 0 4px 4px 0;
+}
+
+.busy {
+  color: #5f5a52;
+}
+
+.detail {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.9rem 1.1rem;
+  margin-top: 1.25rem;
+  background: #fff;
+}
