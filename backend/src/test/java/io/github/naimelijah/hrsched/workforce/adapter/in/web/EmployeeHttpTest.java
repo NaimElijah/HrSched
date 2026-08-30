@@ -1,5 +1,8 @@
 package io.github.naimelijah.hrsched.workforce.adapter.in.web;
 
+import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHttpRequests.anOrganisation;
+import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHttpRequests.as;
+import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHttpRequests.asThemself;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -14,9 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * Drives the employee API over HTTP: who may administer people, who may speak for themselves, and
@@ -33,30 +34,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @AutoConfigureMockMvc
 class EmployeeHttpTest {
 
-  /**
-   * A fresh organisation per test. The repositories behind this context are singletons, so a shared
-   * identifier lets one test's data decide another test's assertion.
-   */
-  private static String anOrganisation() {
-    return UUID.randomUUID().toString();
-  }
-
   @Autowired private MockMvc mockMvc;
-
-  private MockHttpServletRequestBuilder as(
-      MockHttpServletRequestBuilder request, String organisation, String role) {
-    return request
-        .header("X-Organisation", organisation)
-        .header("X-User", UUID.randomUUID().toString())
-        .header("X-Role", role)
-        .contentType(MediaType.APPLICATION_JSON);
-  }
-
-  /** As above, but claiming to be the personnel record {@code employee}, which is what F6 needs. */
-  private MockHttpServletRequestBuilder asThemself(
-      MockHttpServletRequestBuilder request, String organisation, String employee) {
-    return as(request, organisation, "EMPLOYEE").header("X-Employee", employee);
-  }
 
   private String addEmployee(String organisation, String name) throws Exception {
     String body =

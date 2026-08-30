@@ -1,12 +1,15 @@
 package io.github.naimelijah.hrsched.workforce.application.port.in;
 
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import io.github.naimelijah.hrsched.workforce.domain.model.ContractTerms;
+import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
+import io.github.naimelijah.hrsched.workforce.domain.model.InvalidContractTermsException;
+import io.github.naimelijah.hrsched.workforce.domain.model.InvalidEmployeeNameException;
 import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import java.time.Duration;
 import java.time.Instant;
@@ -73,12 +76,17 @@ class WorkforceCommandsTest {
 
   @Test
   void GivenABlankName_WhenAddingAnEmployee_ThenTheCommandAcceptsItAndTheDomainRefusesIt() {
-    assertThatCode(() -> new AddEmployeeCommand(ACME, "   ")).doesNotThrowAnyException();
+    AddEmployeeCommand command = new AddEmployeeCommand(ACME, "   ");
+
+    assertThatThrownBy(() -> new Employee(ADA, command.organisation(), command.name()))
+        .isInstanceOf(InvalidEmployeeNameException.class);
   }
 
   @Test
   void GivenANonPositiveDuration_WhenSettingTerms_ThenTheCommandAcceptsItAndTheDomainRefusesIt() {
-    assertThatCode(() -> new SetContractTermsCommand(ACME, ADA, Duration.ZERO))
-        .doesNotThrowAnyException();
+    SetContractTermsCommand command = new SetContractTermsCommand(ACME, ADA, Duration.ZERO);
+
+    assertThatThrownBy(() -> new ContractTerms(command.weeklyContractedHours()))
+        .isInstanceOf(InvalidContractTermsException.class);
   }
 }

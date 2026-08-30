@@ -1,18 +1,17 @@
 package io.github.naimelijah.hrsched.workforce.adapter.in.web;
 
+import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHttpRequests.anOrganisation;
+import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHttpRequests.as;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * Drives the qualification API over HTTP.
@@ -27,21 +26,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @AutoConfigureMockMvc
 class QualificationHttpTest {
 
-  /** A fresh organisation per test; the repositories behind this context are singletons. */
-  private static String anOrganisation() {
-    return UUID.randomUUID().toString();
-  }
-
   @Autowired private MockMvc mockMvc;
-
-  private MockHttpServletRequestBuilder as(
-      MockHttpServletRequestBuilder request, String organisation, String role) {
-    return request
-        .header("X-Organisation", organisation)
-        .header("X-User", UUID.randomUUID().toString())
-        .header("X-Role", role)
-        .contentType(MediaType.APPLICATION_JSON);
-  }
 
   private void define(String organisation, String name) throws Exception {
     mockMvc

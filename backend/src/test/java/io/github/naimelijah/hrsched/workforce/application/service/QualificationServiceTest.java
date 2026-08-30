@@ -97,14 +97,6 @@ class QualificationServiceTest {
   }
 
   @Test
-  void GivenABlankName_WhenDefiningAQualification_ThenItIsRefused() {
-    assertThatThrownBy(
-            () ->
-                service.defineQualification(admin(ACME), new DefineQualificationCommand(ACME, " ")))
-        .isInstanceOf(InvalidQualificationNameException.class);
-  }
-
-  @Test
   void GivenABlankName_WhenDefiningAQualification_ThenNothingIsSaved() {
     assertThatThrownBy(
             () ->

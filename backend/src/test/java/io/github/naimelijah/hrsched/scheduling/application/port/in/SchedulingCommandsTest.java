@@ -1,10 +1,12 @@
 package io.github.naimelijah.hrsched.scheduling.application.port.in;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
+import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.WorkingTimeConstraint;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
@@ -85,7 +87,16 @@ class SchedulingCommandsTest {
 
   @Test
   void GivenAHeadcountBelowOne_WhenDefiningAShift_ThenTheCommandAcceptsItAndTheDomainRefusesIt() {
-    assertThatCode(() -> new DefineShiftCommand(ACME, MONDAY_DAY, 0, Set.of()))
-        .doesNotThrowAnyException();
+    DefineShiftCommand command = new DefineShiftCommand(ACME, MONDAY_DAY, 0, Set.of());
+
+    assertThatThrownBy(
+            () ->
+                new Shift(
+                    ShiftId.newId(),
+                    command.organisation(),
+                    command.period(),
+                    command.requiredHeadcount(),
+                    command.requiredQualifications()))
+        .isInstanceOf(InvalidHeadcountException.class);
   }
 }

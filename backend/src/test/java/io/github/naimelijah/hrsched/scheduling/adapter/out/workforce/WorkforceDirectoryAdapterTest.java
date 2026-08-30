@@ -18,7 +18,6 @@ import io.github.naimelijah.hrsched.workforce.application.port.in.FindRosterable
 import io.github.naimelijah.hrsched.workforce.application.port.in.ManageQualificationsUseCase;
 import io.github.naimelijah.hrsched.workforce.application.port.in.PublishedQualification;
 import io.github.naimelijah.hrsched.workforce.application.port.in.RosterableEmployee;
-import java.lang.reflect.RecordComponent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -76,17 +75,30 @@ class WorkforceDirectoryAdapterTest {
     assertThat(candidate.unavailability()).containsExactly(MONDAY);
   }
 
-  /** The narrowing itself: hours are workforce's business and must not cross into scheduling. */
+  /**
+   * The narrowing itself: hours are workforce's business and must not cross into scheduling. Two
+   * employees identical but for their contract translate to the same candidate, which is only true
+   * while the candidate has nowhere to put the difference.
+   *
+   * <p>The figure is invented; contracted hours are a term of an agreement, not a statute.
+   */
   @Test
-  void GivenContractedHours_WhenTranslated_ThenTheyDoNotCrossIntoScheduling() {
+  void GivenTwoEmployeesDifferingOnlyInContract_WhenTranslated_ThenTheCandidatesAreIdentical() {
+    EmployeeId ada = EmployeeId.newId();
     workforce.publish(
         new RosterableEmployee(
-            EmployeeId.newId(), "Ada", Set.of(), List.of(), Optional.of(Duration.ofMinutes(2400))));
+            ada, "Ada", Set.of(), List.of(), Optional.of(Duration.ofMinutes(2400))));
+    RosterCandidate withContract = adapter.candidatesFor(scheduler(), ACME).getFirst();
 
-    assertThat(RosterCandidate.class.getRecordComponents())
-        .extracting(RecordComponent::getName)
-        .containsExactlyInAnyOrder("id", "name", "qualifications", "unavailability");
-    assertThat(adapter.candidatesFor(scheduler(), ACME)).hasSize(1);
+    FakeWorkforce withoutContract = new FakeWorkforce();
+    withoutContract.publish(
+        new RosterableEmployee(ada, "Ada", Set.of(), List.of(), Optional.empty()));
+    RosterCandidate uncontracted =
+        new WorkforceDirectoryAdapter(withoutContract, qualifications)
+            .candidatesFor(scheduler(), ACME)
+            .getFirst();
+
+    assertThat(withContract).isEqualTo(uncontracted);
   }
 
   /** The caller's own identity is what workforce must authorise against, never a substitute. */
