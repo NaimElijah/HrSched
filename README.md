@@ -246,7 +246,9 @@ flowchart LR
 
 These are not conventions — they are **build failures**. `HexagonalArchitectureTest` runs in
 `./mvnw verify` and fails when the domain imports Spring, when the application reaches into an
-adapter, when one context references another, or when a context's own layers form a cycle.
+adapter, when one context references another, when a context's own layers form a cycle, when
+anything prints to stdout, when a domain class logs, or when a meter or a span appears inward of an
+adapter.
 
 Every rule has been observed failing on a deliberately introduced violation, then reverted —
 including the cross-context rule in both directions, since it *permits* something it used to
@@ -366,7 +368,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `TraceIdHttpTest` | Observability over HTTP | Every response carries a trace id, including the refusals - which are the ones a person has cause to report. |
 | `MetricsHttpTest` | Operations over HTTP | Both probes answer, the meters are published, and `loggers`, `env` and `heapdump` are **not** exposed. |
 | `SchedulingAuditLogTest`, `WorkforceAuditLogTest` | Driven adapters | Every audit field is an identifier and never a name, the message is a constant, and the counter is not tagged by tenant. |
-| `HexagonalArchitectureTest` | Whole codebase | **Six** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, and layer cycles. |
+| `HexagonalArchitectureTest` | Whole codebase | **Nine** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, layer cycles, no printing, no logging in the domain, and no instrumentation inward of an adapter. |
 | `HrSchedApplicationTests` | Spring context | The application starts. |
 
 Naming follows `Given<scenario>_When<action>_Then<result>`. Tests run against the public

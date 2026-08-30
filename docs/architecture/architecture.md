@@ -191,9 +191,13 @@ Nothing is persisted beyond process lifetime.
   now a `WARN` and a counter while the caller still receives exactly the 404 it always did. Nothing
   is persisted and nothing is queryable; that is Q20
   ([ADR-018](../ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md)).
-- **Instrumentation lives outside the hexagon.** No logger, meter or span appears in a domain or
-  application class: the domain keeps to the JDK and the application layer is free of the framework,
-  so anything a use case needs to record it records through a port.
+- **Instrumentation lives outside the hexagon, and that is enforced.** No logger, meter or span
+  appears in a domain or application class, and nothing anywhere prints: three architecture rules
+  forbid `System.out` and `printStackTrace` outright, `org.slf4j`, `ch.qos.logback` and
+  `java.util.logging` inside `..domain..`, and `io.micrometer` and `io.opentelemetry` inside either
+  `..domain..` or `..application..`. Anything a use case needs recorded, it records through a driven
+  port. The consequence worth knowing: Micrometer's `@Timed` and `@Counted` cannot be put on a use
+  case.
 - **Metrics are pulled, and nothing is pushed.** `/actuator/prometheus` publishes the JVM, process
   and `http.server.requests` meters Micrometer already collected, plus the product's own coverage
   measure. Exposure is an allow list: `loggers`, `env` and `heapdump` are shut, because there is no

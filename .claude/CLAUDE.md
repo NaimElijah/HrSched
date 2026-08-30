@@ -139,7 +139,7 @@ Outside `backend/`:
   as a table and hides which row is the one whose failure is a security incident. Nor for rows
   that differ in setup, or whose comment explains *why* — the comment then belongs to no row. If a
   table passes about a dozen rows, split it.
-- **When adding an architecture rule, watch it fail first.** All six rules here have been
+- **When adding an architecture rule, watch it fail first.** All nine rules here have been
   observed failing on a deliberately introduced violation, then reverted. A rule that has only
   ever been green proves nothing — one rule was deleted after it turned out it could no longer
   fail, being fully subsumed by what is now
