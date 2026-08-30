@@ -189,7 +189,7 @@ database, no third-party API, and no authentication.
 | Framework | Spring Boot | 4.1.1 | Supplies the HTTP boundary and health endpoints as configuration rather than code |
 | HTTP | `spring-boot-starter-webmvc` | via Boot BOM | Embedded Tomcat. **Boot 4.x renamed this** from `spring-boot-starter-web` |
 | Operations | `spring-boot-starter-actuator` | via Boot BOM | Health and readiness probes, required of every service by the project baseline |
-| Observability | `spring-boot-starter-opentelemetry` | via Boot BOM | OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters, so a W3C trace id reaches every log line and every response. Export is off. [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) |
+| Observability | `spring-boot-starter-opentelemetry` | via Boot BOM | OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters, so a W3C trace id reaches every response and every log line the request produces. Export is off. [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) |
 | Logging | Boot's built-in structured logging | via Boot BOM | ECS JSON needs no encoder library and no `logback-spring.xml` — one property. [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) |
 | Metrics | `micrometer-registry-prometheus` | via Boot BOM | Renders the meters Micrometer already collects for a scraper to pull. Nothing pushes. [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) |
 | Frontend | React | 19.2.8 | Largest ecosystem for a small SPA; TypeScript makes an API contract drift a compile error. [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) |
@@ -365,7 +365,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `SchedulingExceptionHandlerTest`, `WorkforceExceptionHandlerTest` | Driving adapters | Which failure earns which status, the structured 422, and that there is no catch-all. |
 | `GreedyRosterGeneratorTest` | Driven adapter | The placeholder generator never breaks a rule, and leaves a shift short rather than filling it illegally. |
 | `RosteringHttpTest`, `EmployeeHttpTest`, `QualificationHttpTest` | End to end | All sixteen endpoints through the real hexagon and the real adapters. |
-| `TraceIdHttpTest` | Observability over HTTP | Every response carries a trace id, including the refusals - which are the ones a person has cause to report. |
+| `TraceIdHttpTest` | Observability over HTTP | Every response carries a trace id, including the refusals — which are the ones a person has cause to report. |
 | `MetricsHttpTest` | Operations over HTTP | Both probes answer, the meters are published, and `loggers`, `env` and `heapdump` are **not** exposed. |
 | `SchedulingAuditLogTest`, `WorkforceAuditLogTest` | Driven adapters | Every audit field is an identifier and never a name, the message is a constant, and the counter is not tagged by tenant. |
 | `HexagonalArchitectureTest` | Whole codebase | **Nine** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, layer cycles, no printing, no logging in the domain, and no instrumentation inward of an adapter. |
@@ -411,7 +411,8 @@ environment to describe. The operational primitives exist: the build produces an
 is machine-readable.
 
 **Logs.** One ECS JSON object per line on stdout, ready for whatever collects the container's
-output. Every line carries `trace_id`, and every HTTP response carries the same value as
+output. Every line a request produces carries `trace_id` — startup and shutdown lines have no span
+to belong to and carry none — and every HTTP response carries the same value as
 `X-Trace-Id` — which the user interface shows on a refusal, so a report from a person can be joined
 to the log ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)). Pipe it
 through `jq` to read it locally.
@@ -424,8 +425,8 @@ through `jq` to read it locally.
 | `http_server_requests_seconds` | Request rate, latency and error rate, per endpoint and status |
 | `jvm_*`, `process_*`, `tomcat_*` | Saturation: heap, threads, file descriptors, connections |
 | `hrsched_shifts_required_places` | Places each generation was asked to fill |
-| `hrsched_shifts_uncovered_places` | Places it could not fill without breaking a rule - the product's own success metric, and the ratio of the two is coverage |
-| `hrsched_access_denied_total{kind}` | Refusals, split into `cross_tenant` and `role`. A rise in `cross_tenant` is a security signal, not a usage one - and it is the only way to tell that 404 apart from an ordinary miss |
+| `hrsched_shifts_uncovered_places` | Places it could not fill without breaking a rule — the product's own success metric, and the ratio of the two is coverage |
+| `hrsched_access_denied_total{kind}` | Refusals, split into `cross_tenant` and `role`. A rise in `cross_tenant` is a security signal, not a usage one — and it is the only way to tell that 404 apart from an ordinary miss |
 | `hrsched_rosters_refused_total{reason}` | Publications refused by the working-time rules, or because the work could not be checked |
 | `hrsched_changes_total{context,change}` | Every recorded state change, by context and kind |
 
@@ -433,7 +434,7 @@ Exposure is an allow list. `loggers`, `env` and `heapdump` are deliberately shut
 `MetricsHttpTest` fails the build if one of them opens.
 
 Still owed: somewhere to export telemetry to
-([Q19](docs/requirements/requirements.md#open-questions)), and a dashboard to read it on - both
+([Q19](docs/requirements/requirements.md#open-questions)), and a dashboard to read it on — both
 blocked on the same missing environment.
 
 ## Design decisions

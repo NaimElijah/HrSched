@@ -173,15 +173,15 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
   recorded. Logs are structured and machine-readable on stdout. Liveness and readiness are exposed
   as probes. Rate, latency, error rate, saturation and the product's own coverage measure are
   published for a scraper to pull. Instrumentation is vendor-neutral (OpenTelemetry), and nothing is
-  exported until there is somewhere to export to - Q19.
+  exported until there is somewhere to export to — Q19.
   *Enforced by `TraceIdResponseFilter`, `TraceIdHttpTest`, `MetricsHttpTest`;
   [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md),
   [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md).*
-- **Auditability** - every state change records who made it, in which organisation, and the
+- **Auditability** — every state change records who made it, in which organisation, and the
   identifier of what changed; every refusal, including a cross-tenant attempt, is recorded too. The
   record carries identifiers only and never a name, so the trail says who to ask rather than the
   answer. `TODO`: whether that trail must be durable, readable by an Admin, and for how long it is
-  retained - Q20, blocked on ADR-004 and on the Compliance obligations below.
+  retained — Q20, blocked on ADR-004 and on the Compliance obligations below.
   *Enforced by `SchedulingService`, `EmployeeService`, `QualificationService` and their tests;
   `SchedulingAuditLogTest`, `WorkforceAuditLogTest`, `SchedulingExceptionHandlerTest`,
   `WorkforceExceptionHandlerTest`;

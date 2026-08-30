@@ -14,7 +14,7 @@ public enum SchedulingChange {
 
   /**
    * An organisation's working-time rules were replaced. Revision replaces the whole set, so a rule
-   * omitted is a rule switched off - which makes this the most consequential change here.
+   * omitted is a rule switched off — which makes this the most consequential change here.
    */
   CONSTRAINTS_REVISED,
 

@@ -136,7 +136,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
    *
    * <p>The actor is the acting user, not the employee whose record changed. Those are different
    * identities on purpose (ADR-012), and conflating them here would lose the case the trail exists
-   * for - somebody editing a record that is not their own.
+   * for — somebody editing a record that is not their own.
    */
   private void recorded(
       Actor actor, OrganisationId organisation, WorkforceChange change, EmployeeId subject) {

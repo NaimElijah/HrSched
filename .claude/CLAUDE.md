@@ -160,7 +160,7 @@ Outside `backend/`:
   collision shows up only in `UseCaseConfiguration`, which writes one of them out in full.
 - **Recording happens after the save, and a refused act records nothing.** An entry for something
   that then failed to store is a record of something that did not happen. `publish` records inside
-  the supersede loop as well as for itself - the rosters it demotes did not demote themselves.
+  the supersede loop as well as for itself — the rosters it demotes did not demote themselves.
 - **Two `@Component` classes may not share a simple name.** Spring derives a bean name from it
   alone, so identically-named adapters in two contexts collide, and they collide at startup rather
   than at compile time. Hence `SchedulingAuditLog` and `WorkforceAuditLog`.

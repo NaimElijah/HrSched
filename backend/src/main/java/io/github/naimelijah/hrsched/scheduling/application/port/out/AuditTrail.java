@@ -8,7 +8,7 @@ package io.github.naimelijah.hrsched.scheduling.application.port.out;
  * instead of something a reviewer has to notice.
  *
  * <p>Deliberately not shared with {@code workforce}. The changes worth recording differ per
- * context, so the two ports are different types rather than one duplicated - and anything shared
+ * context, so the two ports are different types rather than one duplicated — and anything shared
  * would have to live in the kernel, which ADR-008 keeps as small as it can be.
  */
 public interface AuditTrail {

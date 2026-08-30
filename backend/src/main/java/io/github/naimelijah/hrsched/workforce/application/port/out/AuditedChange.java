@@ -18,7 +18,7 @@ import java.util.UUID;
  * anything common would have to live in the kernel ADR-008 keeps small.
  *
  * @param organisation whose data changed; every entry belongs to exactly one tenant
- * @param actor who made the change - the acting user, never the employee they acted on
+ * @param actor who made the change — the acting user, never the employee they acted on
  * @param change what kind of change it was
  * @param subject the identifier of the record that changed, which for every change but {@link
  *     WorkforceChange#QUALIFICATION_DEFINED} is an employee

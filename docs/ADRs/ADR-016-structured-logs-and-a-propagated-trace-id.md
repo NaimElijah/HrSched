@@ -42,7 +42,8 @@ disagrees with a production collector is a difference discovered during an incid
 
 **We add `spring-boot-starter-opentelemetry`.** It supplies the OpenTelemetry API, the Micrometer
 Tracing bridge over it, and the OTLP exporters. That gives every request a **W3C trace id**, placed
-in the MDC and therefore published by the ECS format on every line that request produces. This is
+in the MDC and therefore published by the ECS format on every line that request produces. Lines
+emitted outside a request carry none, having no span to belong to. This is
 the vendor-neutral instrumentation ADR-001 asked for, rather than a correlation id of our own
 invention that joins up with nothing.
 
@@ -66,8 +67,9 @@ audit record and from the exceptions themselves — see
 
 **Easier**
 
-- Every line is machine-readable and carries `trace_id`, `service.name` and `service.version`, so a
-  collector needs no parsing rules written for this application in particular.
+- Every line is machine-readable and carries `service.name` and `service.version`, and every line a
+  request produces also carries `trace_id`, so a collector needs no parsing rules written for this
+  application in particular.
 - A user's report is joinable to the log: they quote `X-Trace-Id` and it matches.
 - Turning export on later is configuration, not code — one endpoint and one flag per signal.
 - Nothing was added to the hexagon. The only new class sits in `configuration/observability`, reads

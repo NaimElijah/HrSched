@@ -85,10 +85,10 @@ Three rules hold this together, and each fails the build when broken:
 | `scheduling.adapter.out.workforce` | The anti-corruption layer: the **only** class in scheduling permitted to name another context, and only its published port. |
 | `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. |
 | `*.adapter.out.persistence` | In-memory repositories, every read scoped by organisation. Placeholders until ADR-004. |
-| `*.adapter.out.audit` | `SchedulingAuditLog` and `WorkforceAuditLog` - each implements its own context's `AuditTrail` port, turning one recorded change into a structured log event and a counter. Named for their contexts because Spring derives a bean name from the simple class name alone. |
+| `*.adapter.out.audit` | `SchedulingAuditLog` and `WorkforceAuditLog` — each implements its own context's `AuditTrail` port, turning one recorded change into a structured log event and a counter. Named for their contexts because Spring derives a bean name from the simple class name alone. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
 | `configuration.observability` | Cross-cutting instrumentation that belongs to no context. Today that is `TraceIdResponseFilter`, which puts the request's trace id on the response as `X-Trace-Id`. It reads no request header, so unlike `ActorFromHeaders` it is unaffected by ADR-011. |
-| `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists - it writes the four identity claims and reads back `X-Trace-Id`; `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts` and `workforce.ts` mirror the backend DTOs one module per context. |
+| `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists — it writes the four identity claims and reads back `X-Trace-Id`; `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts` and `workforce.ts` mirror the backend DTOs one module per context. |
 | `frontend/src/identity` | The acting-as context and its warning bar — the placeholder that supplies `X-Organisation`, `X-User`, `X-Role` and `X-Employee`, deleted with the backend placeholder when ADR-011 lands. |
 | `frontend/src/pages` | One screen per capability: People, Qualifications, Rules, Shifts, Rosters, Me. |
 
@@ -186,7 +186,7 @@ Nothing is persisted beyond process lifetime.
 - **Every change and every refusal is recorded, and no name is.** State-changing use cases call an
   `AuditTrail` driven port after saving; the two web exception handlers record refusals, because
   they are the only place that sees every one. An `AuditedChange` carries the organisation, the
-  acting user, the kind of change and a bare `UUID` subject - a name cannot appear because there is
+  acting user, the kind of change and a bare `UUID` subject — a name cannot appear because there is
   nowhere to put one. A cross-tenant attempt, which the requirements call a security incident, is
   now a `WARN` and a counter while the caller still receives exactly the 404 it always did. Nothing
   is persisted and nothing is queryable; that is Q20

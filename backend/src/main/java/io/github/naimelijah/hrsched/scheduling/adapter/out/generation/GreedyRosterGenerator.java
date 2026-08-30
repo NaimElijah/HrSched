@@ -98,7 +98,8 @@ public class GreedyRosterGenerator implements RosterGenerator {
     }
 
     // Recorded even when both are zero: a generation that was asked for nothing is a different
-    // event from no generation at all, and a gauge that only moves on failure cannot show recovery.
+    // event from no generation at all, and a metric that only moves on failure cannot show
+    // recovery.
     required.record(places);
     unfilled.record(gaps);
     return List.copyOf(assignments);

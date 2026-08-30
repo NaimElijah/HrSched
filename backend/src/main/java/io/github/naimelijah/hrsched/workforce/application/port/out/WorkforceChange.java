@@ -7,7 +7,7 @@ package io.github.naimelijah.hrsched.workforce.application.port.out;
  * lists state transitions only: reads are not audited, or the writes would be buried under them.
  *
  * <p>Several of these are changes an employee may make to their own record, which is exactly why
- * they are recorded - the trail has to answer who changed it as well as what changed.
+ * they are recorded — the trail has to answer who changed it as well as what changed.
  */
 public enum WorkforceChange {
 
