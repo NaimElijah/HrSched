@@ -39,8 +39,10 @@ accident — do not.
 
 ## Commands
 
-All commands run **from `backend/`** and go through the committed Maven Wrapper. No global
-Maven install is needed. The repository root builds nothing (ADR-007).
+Two buildable projects: `backend/` (Maven Wrapper, no global Maven needed) and `frontend/`
+(npm). The repository root builds nothing itself but orchestrates both (ADR-014).
+
+From the **root**: `npm run setup` · `npm run dev` · `npm run verify` (runs both gates).
 
 - Build + test + format + architecture (**the whole gate; what CI runs**): `./mvnw verify`
 - Run: `./mvnw spring-boot:run` — serves on `http://localhost:8080`
@@ -48,12 +50,20 @@ Maven install is needed. The repository root builds nothing (ADR-007).
 - Test (single class): `./mvnw test -Dtest=HexagonalArchitectureTest`
 - Format check / fix: `./mvnw spotless:check` / `./mvnw spotless:apply`
 
-On Windows without a POSIX shell, use `mvnw.cmd`. Add `-B` for non-interactive output.
+From `frontend/`:
+
+- Everything CI runs: `npm run verify` — format check, lint, typecheck, tests, production build
+- Dev server: `npm run dev` — serves on 5173 and proxies `/api` to 8080
+- One check at a time: `npm run lint` / `npm run typecheck` / `npm test`
+
+On Windows without a POSIX shell, use `mvnw.cmd`; it is a batch/PowerShell polyglot, so PowerShell
+must be on `PATH`. Add `-B` for non-interactive output.
 
 ## Layout
 
-Repository root: `backend/`, `docs/`, `LICENSE`, `README.md`. `frontend/` will be a sibling of
-`backend/` when a framework is chosen (ADR-007); it does not exist yet.
+Repository root: `backend/`, `frontend/`, `docs/`, `scripts/`, `package.json`, `LICENSE`,
+`README.md`. The two projects build independently (ADR-007); `scripts/run.mjs` only orchestrates
+and must never accumulate build logic (ADR-014).
 
 Inside `backend/src/main/java/io/github/naimelijah/hrsched/`, the package path *is* the
 dependency rule — see ADR-003 and ADR-006. Every context repeats the same shape:
@@ -77,10 +87,20 @@ A context may reference another context's `application.port.in` package and **no
 `scheduling/adapter/out/workforce/WorkforceDirectoryAdapter`, the only class in scheduling that
 names another context.
 
+`frontend/` is a React 19 SPA built by Vite (ADR-013):
+
+- `src/api/` — the typed client. `client.ts` is the **only** module that calls `fetch` or names a
+  header; `problem.ts` validates the error body rather than casting it; `scheduling.ts` and
+  `workforce.ts` mirror the backend DTOs, one module per context.
+- `src/identity/` — the acting-as placeholder, deleted with the backend's when ADR-011 lands.
+- `src/pages/` — one screen per capability. Pages never call `fetch` directly.
+
 Outside `backend/`:
 
 - `docs/requirements/`, `docs/architecture/`, `docs/ADRs/` — what, how, and why.
-- `.github/workflows/ci.yml` — runs `./mvnw verify` in `backend/`, nothing else.
+- `.github/workflows/ci.yml` — two jobs, backend and frontend, each running that project's own
+  verify command. **No path filters:** a wrongly filtered check is skipped silently and still
+  reports green.
 
 ## Conventions
 
@@ -124,6 +144,16 @@ Outside `backend/`:
   never have to check.
 - **The formatter is authoritative.** google-java-format is not configurable — 2-space indent,
   fixed wrapping. Never hand-format; run `./mvnw spotless:apply`.
+- **The UI enforces nothing, and must not pretend to.** Every rule is the backend's. A screen that
+  looks like it satisfies a requirement is not evidence the rule holds, which is why the
+  `Enforced by` column in `requirements.md` names only backend classes and tests.
+- **Never put a suggested working-time number in the UI.** A default in a form field is a legal
+  threshold chosen by a developer, which is the exact thing this codebase refuses to contain.
+- **Frontend versions are ahead of most published guidance.** React 19, Vite 8, TypeScript 6,
+  ESLint 10, Vitest 4. Check the installed package before trusting a recalled API — the same
+  discipline the Spring Boot 4.x renames forced. Already found this way: Vitest 4 moves the `test`
+  key off Vite's config type (import `defineConfig` from `vitest/config`), and
+  `eslint-plugin-react-hooks` 7 exposes flat config under `configs.flat`.
 - **`pom.xml` is indented with tabs** (Spring Initializr's convention) while Java is 2-space.
   `.editorconfig` encodes both; this is deliberate, not drift.
 

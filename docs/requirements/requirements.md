@@ -1,8 +1,13 @@
 # Requirements — HrSched
 
 **Status: specified, partially built.** Every question that blocked modelling is answered. The
-domain is modelled and F1, F3, F5 (read), F8, F9 and F10 work end to end; generation is greedy
-rather than optimised, nothing survives a restart, and there is no authentication.
+domain is modelled, and a React user interface exercises every endpoint the API exposes across all
+three roles. Generation is greedy rather than optimised, nothing survives a restart, and there is
+no authentication.
+
+Nothing in the user interface *enforces* a requirement. The `Enforced by` column below names
+backend classes and tests on purpose: a screen that appears to satisfy a rule is not evidence that
+the rule holds.
 
 This document states **what the system must do**. *How* it is built lives in
 [architecture.md](../architecture/architecture.md); *why* a given solution was chosen lives
@@ -42,6 +47,7 @@ implemented; the rest are not.
 | ID | Role | Requirement | Enforced by |
 | --- | --- | --- | --- |
 | F1 | Scheduler | Define the shifts that need covering, with headcount and qualifications | `SchedulingService`, `RosteringHttpTest` |
+| F1a | Scheduler | See the shifts needing covering over a span | `SchedulingService`, `SchedulingServiceTest` |
 | F2 | Scheduler | Assign an employee to a shift, and remove that assignment | *not implemented* |
 | F3 | Scheduler | Publish a roster, after it passes the organisation rules | `SchedulingService`, `RosteringHttpTest` |
 | F4 | Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest` |
@@ -52,6 +58,7 @@ implemented; the rest are not.
 | F9 | Admin | Define qualifications, and grant them to employees | `QualificationService`, `EmployeeServiceTest` |
 | F10 | Admin | Configure the organisation's working-time constraint set | `SchedulingService`, `RosteringHttpTest` |
 | F11 | Scheduler | Generate a draft roster covering a period, filling every shift it legally can | `SchedulingService`, `RosteringHttpTest` |
+| F11a | Scheduler | See the rosters their organisation holds | `SchedulingService`, `SchedulingServiceTest` |
 | F12 | Scheduler | Publish a draft, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest` |
 | F13 | Operator | Administer organisations across the platform | *partially: an Operator may act across tenants; there is nothing to administer yet* |
 
@@ -177,6 +184,7 @@ applicant tracking, and being the HR system of record.
 | Q15 | What are the non-goals? | NaimElijah | Deferred deliberately |
 | Q16 | When a new roster only partly overlaps a published one, should the old one be superseded whole, or only for the days replaced? | NaimElijah | Refining R11; today the whole roster is superseded |
 | Q17 | Which time zone are working-time rules evaluated in? | NaimElijah | Daily and consecutive-day limits currently count days in UTC |
+| Q18 | Should reading rosters be narrowed to a Scheduler, or to an employee's own roster (F5)? | NaimElijah | Today any member of an organisation can read every roster in it |
 
 **Resolved**
 
@@ -194,4 +202,4 @@ applicant tracking, and being the HR system of record.
 | Q8 | What a constraint set is attached to | One per organisation; per-person variation is contract terms, held separately | 2026-08-30 |
 | Q11 | Who approves a swap | A Scheduler; the colleague is informed | 2026-08-30 |
 
-Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17.
+Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18.
