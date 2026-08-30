@@ -1,0 +1,15 @@
+{
+  "name": "hrsched",
+  "private": true,
+  "description": "Root task runner. The buildable projects are backend/ and frontend/; see ADR-014.",
+  "scripts": {
+    "setup": "npm --prefix frontend ci",
+    "dev": "node scripts/run.mjs dev",
+    "verify": "node scripts/run.mjs verify",
+    "verify:backend": "node scripts/run.mjs backend",
+    "verify:frontend": "node scripts/run.mjs frontend"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

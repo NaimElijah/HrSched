@@ -5,6 +5,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import java.util.List;
 import java.util.Optional;
 
 /** Driving port: producing and publishing rosters. */
@@ -13,7 +14,7 @@ public interface PlanRostersUseCase {
   /**
    * Builds a draft roster covering a period, assigning people to every shift it can.
    *
-   * @param actor whoever is generating it; must be a Scheduler or Admin
+   * @param actor whoever is generating it; must be a Scheduler
    * @param command which organisation and which period
    * @return the draft, which may leave shifts uncovered if nobody eligible is available
    */
@@ -22,7 +23,7 @@ public interface PlanRostersUseCase {
   /**
    * Publishes a draft, after checking it against the organisation current rules.
    *
-   * @param actor whoever is publishing it; must be a Scheduler or Admin
+   * @param actor whoever is publishing it; must be a Scheduler
    * @param organisation whose roster
    * @param roster which draft
    * @return the published roster
@@ -37,4 +38,11 @@ public interface PlanRostersUseCase {
    * @return the roster, or empty if that organisation has no such roster
    */
   Optional<Roster> findRoster(Actor actor, OrganisationId organisation, RosterId roster);
+
+  /**
+   * @param actor whoever is asking; any member of the organisation
+   * @param organisation whose rosters
+   * @return every roster that organisation holds, newest state included
+   */
+  List<Roster> findRosters(Actor actor, OrganisationId organisation);
 }

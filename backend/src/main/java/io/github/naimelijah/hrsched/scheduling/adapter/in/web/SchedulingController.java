@@ -11,7 +11,12 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
+import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
+import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.net.URI;
+import java.time.Instant;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +26,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -53,6 +59,7 @@ public class SchedulingController {
       @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @RequestBody DefineShiftRequest request) {
     Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    Set<QualificationId> required = request.toRequiredQualifications();
     ShiftId id =
         manageShifts.defineShift(
             actor,
@@ -60,11 +67,36 @@ public class SchedulingController {
                 ActorFromHeaders.organisationOf(organisation),
                 request.toPeriod(),
                 request.requiredHeadcount(),
-                request.toRequiredQualifications()));
+                required));
     return ResponseEntity.created(URI.create("/api/shifts/" + id.value()))
         .body(
             new ShiftResponse(
-                id.value(), request.start(), request.end(), request.requiredHeadcount()));
+                id.value(),
+                request.start(),
+                request.end(),
+                request.requiredHeadcount(),
+                required.stream().map(QualificationId::value).toList()));
+  }
+
+  /**
+   * @param from start of the span to look inside, an ISO-8601 instant
+   * @param to end of that span
+   * @return every shift overlapping it
+   */
+  @GetMapping("/shifts")
+  public List<ShiftResponse> findShifts(
+      @RequestHeader("X-Organisation") String organisation,
+      @RequestHeader("X-User") String user,
+      @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @RequestParam Instant from,
+      @RequestParam Instant to) {
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    return manageShifts
+        .findShifts(actor, ActorFromHeaders.organisationOf(organisation), new TimeRange(from, to))
+        .stream()
+        .map(ShiftResponse::from)
+        .toList();
   }
 
   @PutMapping("/constraints")
@@ -110,6 +142,18 @@ public class SchedulingController {
                 ActorFromHeaders.organisationOf(organisation), request.toPeriod()));
     return ResponseEntity.created(URI.create("/api/rosters/" + draft.id().value()))
         .body(RosterResponse.from(draft));
+  }
+
+  @GetMapping("/rosters")
+  public List<RosterResponse> findRosters(
+      @RequestHeader("X-Organisation") String organisation,
+      @RequestHeader("X-User") String user,
+      @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs) {
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    return planRosters.findRosters(actor, ActorFromHeaders.organisationOf(organisation)).stream()
+        .map(RosterResponse::from)
+        .toList();
   }
 
   @PostMapping("/rosters/{id}/publication")

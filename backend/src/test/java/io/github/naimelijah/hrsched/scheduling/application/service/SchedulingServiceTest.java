@@ -228,6 +228,39 @@ class SchedulingServiceTest {
    * a generator returns, including a roster the current rules reject. {@code
    * GreedyRosterGeneratorTest} covers the real one.
    */
+  @Test
+  void GivenShiftsInsideAndOutsideASpan_WhenListingThem_ThenOnlyTheOverlappingOnesComeBack() {
+    service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    TimeRange nextMonth =
+        new TimeRange(Instant.parse("2026-11-09T08:00:00Z"), Instant.parse("2026-11-09T16:00:00Z"));
+    service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, nextMonth, 1, Set.of()));
+
+    assertThat(service.findShifts(scheduler(ACME), ACME, THE_WEEK))
+        .extracting(Shift::period)
+        .containsExactly(MONDAY_DAY);
+  }
+
+  @Test
+  void GivenAnotherOrganisationsShifts_WhenListingThem_ThenNothingLeaks() {
+    service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+
+    assertThatThrownBy(() -> service.findShifts(scheduler(RIVAL), ACME, THE_WEEK))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(service.findShifts(scheduler(RIVAL), RIVAL, THE_WEEK)).isEmpty();
+  }
+
+  @Test
+  void GivenRostersOfTwoOrganisations_WhenListingThem_ThenOnlyTheCallersComeBack() {
+    available(ACME, "Ada");
+    service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    Roster ours = service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+    service.generateDraft(scheduler(RIVAL), new GenerateRosterCommand(RIVAL, THE_WEEK));
+
+    assertThat(service.findRosters(scheduler(ACME), ACME))
+        .extracting(Roster::id)
+        .containsExactly(ours.id());
+  }
+
   private static final class FirstFitGenerator implements RosterGenerator {
     @Override
     public List<Assignment> generate(
