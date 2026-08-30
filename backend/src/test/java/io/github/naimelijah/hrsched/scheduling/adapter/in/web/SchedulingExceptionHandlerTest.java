@@ -209,7 +209,7 @@ class SchedulingExceptionHandlerTest {
   /**
    * The counter that makes a security incident detectable. A cross-tenant attempt is answered with
    * the same 404 as an ordinary miss, on purpose, so {@code http.server.requests} cannot tell the
-   * two apart - and before this it left no trace anywhere at all.
+   * two apart — and before this it left no trace anywhere at all.
    */
   @Test
   void GivenACrossTenantAttempt_WhenTranslated_ThenItIsCountedAsOne() {

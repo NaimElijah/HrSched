@@ -443,6 +443,7 @@ class SchedulingServiceTest {
     TenantActor scheduler = scheduler(ACME);
     service.defineShift(scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
     Roster draft = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+    // Invented: four hours a day, which the eight-hour shift already assigned cannot satisfy.
     service.reviseConstraints(
         admin(ACME),
         new ReviseConstraintsCommand(

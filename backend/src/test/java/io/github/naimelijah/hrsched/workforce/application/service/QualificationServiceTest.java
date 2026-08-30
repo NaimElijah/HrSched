@@ -14,13 +14,11 @@ import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.workforce.application.port.in.DefineQualificationCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.PublishedQualification;
-import io.github.naimelijah.hrsched.workforce.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.workforce.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChange;
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidQualificationNameException;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -220,29 +218,5 @@ class QualificationServiceTest {
         .isInstanceOf(InvalidQualificationNameException.class);
 
     assertThat(audit.changes()).isEmpty();
-  }
-
-  /**
-   * Records what the service says was changed.
-   *
-   * <p>Hand-written, like every other double here: the audit trail is our own port, and asking it
-   * what it was told is how "was this recorded?" becomes a test rather than a review comment.
-   */
-  private static final class RecordingAuditTrail implements AuditTrail {
-
-    private final List<AuditedChange> recorded = new ArrayList<>();
-
-    @Override
-    public void record(AuditedChange change) {
-      recorded.add(change);
-    }
-
-    List<WorkforceChange> changes() {
-      return recorded.stream().map(AuditedChange::change).toList();
-    }
-
-    List<AuditedChange> of(WorkforceChange change) {
-      return recorded.stream().filter(entry -> entry.change() == change).toList();
-    }
   }
 }

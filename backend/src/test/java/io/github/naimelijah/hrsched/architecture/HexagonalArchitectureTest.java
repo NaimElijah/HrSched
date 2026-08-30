@@ -173,7 +173,7 @@ class HexagonalArchitectureTest {
    *
    * <p>Metrics and traces are infrastructure: they need a registry, a backend and a wire format,
    * and none of that belongs inward of a port. The application layer records what it needs recorded
-   * through a driven port instead - see {@code AuditTrail} and ADR-018 - which is also what makes
+   * through a driven port instead — see {@code AuditTrail} and ADR-018 — which is also what makes
    * "was this recorded?" a test rather than a reviewer's observation.
    *
    * <p>The practical consequence is that Micrometer's {@code @Timed} and {@code @Counted}, and any

@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
  * Specification of the adapter that turns one recorded workforce change into a log event and a
  * metric.
  *
- * <p>This is the context where the personal data lives - names, absence, contracted hours - so the
+ * <p>This is the context where the personal data lives — names, absence, contracted hours — so the
  * assertion that matters most here is the negative one: none of it reaches the log. The record it
  * is handed has nowhere to carry a name, and these tests are what stops that changing quietly.
  *

@@ -20,12 +20,13 @@ import io.github.naimelijah.hrsched.workforce.application.port.in.DeclareUnavail
 import io.github.naimelijah.hrsched.workforce.application.port.in.GrantQualificationCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.RosterableEmployee;
 import io.github.naimelijah.hrsched.workforce.application.port.in.SetContractTermsCommand;
-import io.github.naimelijah.hrsched.workforce.application.port.out.AuditTrail;
+import io.github.naimelijah.hrsched.workforce.application.port.in.StatePreferenceCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChange;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
+import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
@@ -262,7 +263,7 @@ class EmployeeServiceTest {
 
   /**
    * The case the trail exists for. An employee editing their own record and a manager editing it
-   * for them are the same change to the same subject, and only the actor tells them apart - which
+   * for them are the same change to the same subject, and only the actor tells them apart — which
    * is why {@link UserId} and {@link EmployeeId} are never conflated (ADR-012).
    */
   @Test
@@ -286,12 +287,64 @@ class EmployeeServiceTest {
     EmployeeId subject = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
     TenantActor manager = admin(ACME);
 
+    // Invented: contracted hours are a term of an individual agreement, never a statutory figure.
     service.setContractTerms(
         manager, new SetContractTermsCommand(ACME, subject, Duration.ofHours(20)));
 
     assertThat(audit.of(WorkforceChange.CONTRACT_SET))
         .containsExactly(
             new AuditedChange(ACME, manager.id(), WorkforceChange.CONTRACT_SET, subject.value()));
+  }
+
+  @Test
+  void GivenAnAdminGrantingAQualification_WhenRecorded_ThenTheSubjectIsTheEmployee() {
+    TenantActor admin = admin(ACME);
+    EmployeeId subject = service.addEmployee(admin, new AddEmployeeCommand(ACME, "Ada"));
+    QualificationId forklift = QualificationId.newId();
+    qualifications.save(new Qualification(forklift, ACME, "Forklift"));
+
+    service.grantQualification(admin, new GrantQualificationCommand(ACME, subject, forklift));
+
+    assertThat(audit.of(WorkforceChange.QUALIFICATION_GRANTED))
+        .describedAs("the employee changed, not the qualification they were granted")
+        .containsExactly(
+            new AuditedChange(
+                ACME, admin.id(), WorkforceChange.QUALIFICATION_GRANTED, subject.value()));
+  }
+
+  /**
+   * A preference is not unavailability — it never blocks an assignment — but stating one still
+   * changes somebody's record, so it is still somebody's act to account for.
+   */
+  @Test
+  void GivenSomeoneStatingAPreference_WhenRecorded_ThenTheActorIsThemAndTheSubjectIsTheirRecord() {
+    EmployeeId subject = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor themself =
+        new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(subject));
+
+    service.statePreference(
+        themself,
+        new StatePreferenceCommand(ACME, subject, MONDAY, PreferenceStrength.PREFERS_NOT));
+
+    assertThat(audit.of(WorkforceChange.PREFERENCE_STATED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, themself.id(), WorkforceChange.PREFERENCE_STATED, subject.value()));
+  }
+
+  @Test
+  void GivenAQualificationOfAnotherTenant_WhenGrantingIsRefused_ThenNothingIsRecorded() {
+    EmployeeId ours = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    QualificationId theirs = QualificationId.newId();
+    qualifications.save(new Qualification(theirs, RIVAL, "Their Ticket"));
+
+    assertThatThrownBy(
+            () ->
+                service.grantQualification(
+                    admin(ACME), new GrantQualificationCommand(ACME, ours, theirs)))
+        .isInstanceOf(UnknownQualificationException.class);
+
+    assertThat(audit.of(WorkforceChange.QUALIFICATION_GRANTED)).isEmpty();
   }
 
   @Test
@@ -311,29 +364,5 @@ class EmployeeServiceTest {
         .isInstanceOf(NotPermittedException.class);
 
     assertThat(audit.changes()).isEmpty();
-  }
-
-  /**
-   * Records what the service says was changed.
-   *
-   * <p>Hand-written, like every other double here: the audit trail is our own port, and asking it
-   * what it was told is how "was this recorded?" becomes a test rather than a review comment.
-   */
-  private static final class RecordingAuditTrail implements AuditTrail {
-
-    private final List<AuditedChange> recorded = new ArrayList<>();
-
-    @Override
-    public void record(AuditedChange change) {
-      recorded.add(change);
-    }
-
-    List<WorkforceChange> changes() {
-      return recorded.stream().map(AuditedChange::change).toList();
-    }
-
-    List<AuditedChange> of(WorkforceChange change) {
-      return recorded.stream().filter(entry -> entry.change() == change).toList();
-    }
   }
 }

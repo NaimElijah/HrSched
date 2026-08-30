@@ -22,7 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * turns that from a review comment into a build failure.
  *
  * <p>{@code @AutoConfigureMetrics} is not decoration. Spring Boot switches metrics exporters off
- * under test - it sets {@code management.defaults.metrics.export.enabled} false - so without it
+ * under test — it sets {@code management.defaults.metrics.export.enabled} false — so without it
  * {@code /actuator/prometheus} answers 404 in a test while existing perfectly well in production,
  * and the assertions below would be measuring the test harness rather than the application. The
  * cost is a second Spring context: unlike every other {@code @SpringBootTest} here, this class
@@ -42,11 +42,13 @@ class MetricsHttpTest {
   }
 
   @Test
-  void GivenAScraper_WhenItReadsTheMetrics_ThenTheProcessAndHttpMetersAreThere() throws Exception {
+  void GivenAScraper_WhenItReadsTheMetrics_ThenTheSaturationMetersAreThere() throws Exception {
     mockMvc
         .perform(get("/actuator/prometheus"))
         .andExpect(status().isOk())
-        .andExpect(content().string(containsString("jvm_memory_used_bytes")));
+        .andExpect(content().string(containsString("jvm_memory_used_bytes")))
+        .andExpect(content().string(containsString("jvm_threads_live_threads")))
+        .andExpect(content().string(containsString("process_uptime_seconds")));
   }
 
   /**
