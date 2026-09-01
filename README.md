@@ -17,10 +17,11 @@
 ---
 
 > [!WARNING]
-> **The domain is real; the product is not finished.** You can define people and shifts,
-> configure working-time rules, generate a roster and publish it — but **generation is greedy,
-> not optimised**, **there is no authentication** (the acting identity comes from a header, so
-> any caller can claim any role), and **nothing survives a restart**.
+> **The domain is real; the product is not finished.** You can onboard an organisation, define
+> people and shifts, configure working-time rules, generate a roster, adjust it by hand, publish
+> it, and swap a shift — but **generation is greedy, not optimised**, **there is no
+> authentication** (the acting identity comes from a header, so any caller can claim any role),
+> and **nothing survives a restart**.
 
 This README is ordered for a **contributor**, not an evaluator: there is not yet anything to
 evaluate, so Quick start comes before Architecture.
@@ -67,12 +68,23 @@ What works today, end to end over HTTP:
 - **Publish a roster**, which is refused if it breaks any rule, and records the constraint
   version that approved it so a later rule change can never make it retroactively illegal.
   Publishing supersedes any published roster it overlaps, so exactly one is ever authoritative.
+- **Assign and unassign by hand.** A Scheduler who disagrees with the generated result can put
+  somebody on a shift or take them off, on a draft only — a published roster is superseded, never
+  edited.
+- **See your own work.** An employee reads the assignments naming them, from published rosters
+  only. Reading a whole roster stays an Admin and Scheduler act, because it says who works when
+  about every colleague.
+- **Swap a shift.** An employee asks for one of their shifts to be covered by a colleague; a
+  Scheduler decides. Approving publishes a replacement roster that supersedes the old one and is
+  refused if it breaks any rule, so a swap cannot become a way around the rules. The colleague is
+  told, in an inbox they can read.
+- **Administer the platform.** An Operator onboards organisations and lists them. An organisation
+  nobody onboarded does not exist: every request naming one is refused.
 - **Multi-tenant throughout.** Every aggregate belongs to an organisation and every query is
   scoped to it.
 
 What does **not** work: generation optimises nothing (see
-[ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)), swaps are unimplemented, and
-there is no authentication.
+[ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)), and there is no authentication.
 
 ## Quick start
 
@@ -366,7 +378,10 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `TimeRangeTest`, `ActorTest`, `IdentityTest` | Shared kernel | The range invariant, which actor may cross an organisation boundary, and every identity record — including that a `UserId` and an `EmployeeId` wrapping one UUID stay unequal ([ADR-012](docs/ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). |
 | `OrganisationTest`, `EmployeeTest`, `QualificationTest`, `ContractTermsTest`, `ShiftPreferenceTest` | Domain (access, workforce) | Constructor invariants and identity equality. No Spring. |
 | `ShiftTest`, `RosterTest`, `ConstraintSetTest`, `WorkingTimeConstraintTest`, `EmployeeScheduleTest`, `SchedulingValueObjectsTest` | Domain (scheduling) | Headcount, the roster lifecycle, rule thresholds at their boundaries, and day arithmetic. |
-| `SchedulingServiceTest`, `EmployeeServiceTest`, `QualificationServiceTest` | Application | Use cases against hand-written stubs of their own ports. No Spring, no mocking framework. |
+| `SchedulingServiceTest`, `SwapServiceTest`, `EmployeeServiceTest`, `QualificationServiceTest`, `OrganisationServiceTest`, `NotificationServiceTest` | Application | Use cases against hand-written stubs of their own ports. No Spring, no mocking framework. `SwapServiceTest` is the exception that proves the rule: it wires a **real** `SchedulingService`, because the claim worth testing is that approving a swap goes through the same publication everything else does. |
+| `SwapHttpTest` | Adapter (HTTP) | The widest path in the system — onboard a tenant, hire people, roster, publish, hand a shift over, and have the colleague read about it. Four contexts in one test. |
+| `KnownOrganisationHttpTest` | Configuration | That a tenant nobody onboarded cannot be used, and that the refusal is the ordinary 404 carrying a trace id. |
+| `NotificationTest` | Domain (notifications) | Among other invariants, that no field of a notification can hold free text — asserted by reflection over the type, because a future field is what would break it. |
 | `SchedulingCommandsTest`, `WorkforceCommandsTest` | Application | Every command rejects a null field, copies what it is handed, and stops short of judging what it carries. |
 | `RosterCandidateTest`, `PublishedLanguageTest` | Published language | What one context tells another, and nothing more. |
 | `WorkforceDirectoryAdapterTest` | Anti-corruption layer | The only class in scheduling permitted to name another context, including that contracted hours do not cross. |
@@ -467,6 +482,10 @@ blocked on the same missing environment.
 | [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) | ECS JSON logs everywhere, and a W3C trace id on every response | Local output is JSON and not pleasant to read; one starter brings the whole OpenTelemetry SDK |
 | [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) | Metrics pulled from `/actuator/prometheus`; no monitoring stack committed | The endpoint is unauthenticated, like everything else here; nothing scrapes it yet |
 | [ADR-018](docs/ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md) | Changes and refusals recorded through a port, as log events | The trail is only as durable as the log; every new use case must remember to call the port |
+| [ADR-019](docs/ADRs/ADR-019-an-application-layer-for-the-access-context.md) | The access context gets an application layer; an organisation is a real record | A register held in memory, which after ADR-020 makes a restart a total outage rather than an empty start |
+| [ADR-020](docs/ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md) | An unknown `X-Organisation` is refused at the boundary, with the ordinary 404 | An oracle for whether an identifier names a real tenant, cheap only because the identifier is a random UUID; and it is still not authentication |
+| [ADR-021](docs/ADRs/ADR-021-notifications-as-a-bounded-context.md) | Notifications are their own context, and hold no words | Delivery is pull-only, so somebody is informed when they next open the app; a lost notification means they were never told while the system believes they were |
+| [ADR-022](docs/ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md) | Approving a swap publishes a replacement roster rather than editing one | A refused approval leaves the replacement behind as a draft; approving is not atomic |
 
 Still open and blocking: **ADR-004** (data storage), **ADR-010** (objectives) and **ADR-011**
 (authentication). See the [ADR index](docs/ADRs/).
@@ -495,8 +514,6 @@ needed before the first persistence adapter, and tenancy raises its stakes.
 
 **Known limitations**
 
-- No roster and no assignment. `Shift` is not yet an aggregate root, because the invariants it
-  would guard are unanswered questions.
 - **Generation optimises nothing.** `GreedyRosterGenerator` fills shifts with the first eligible
   person and ignores fairness, preferences and disruption — the three things that make a roster
   good rather than merely legal. A solver is the next substantial piece of work.
@@ -515,7 +532,16 @@ needed before the first persistence adapter, and tenancy raises its stakes.
 - **Concurrent writes can be lost.** Constraint revision and publication are read-modify-write
   cycles with no locking, which transactional persistence (ADR-004) fixes and a lock around a
   hash map would not.
-- **Nothing survives a restart.** Storage is a `ConcurrentHashMap` until ADR-004.
+- **Nothing survives a restart.** Storage is a `ConcurrentHashMap` until ADR-004. Two places make
+  that sharper than it used to be: the organisation register, because after ADR-020 an empty one
+  means every tenant's every request answers 404 rather than merely finding no data; and the
+  notification inbox, because a lost notification means a person was never told while the system
+  believes they were.
+- **A notification reaches somebody when they next open the application.** There is no email, no
+  push and no unread badge, which for a rota change may be too late — Q21.
+- **Approving a swap is not atomic.** It publishes a roster, saves the request and sends two
+  notifications with no transaction around them, and a refused approval leaves the replacement
+  behind as an unpublished draft. Both are recorded in ADR-022.
 - No authentication. Authorisation is real and tested, but the identity it acts on is claimed in
   a header, so every endpoint is effectively open.
 - Time is modelled as `Instant`; rosters are read in local time across potentially different

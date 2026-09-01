@@ -6,8 +6,9 @@ a plan for something not yet built belongs in an [ADR](../ADRs/) as a *Proposed*
 For *what the system must do*, see [requirements.md](../requirements/requirements.md); for *why*
 these choices were made, see the [ADRs](../ADRs/).
 
-> **Current state:** the domain is modelled and works end to end — define people and shifts,
-> configure rules, generate a roster, publish it — but **generation is greedy, not optimised**
+> **Current state:** the domain is modelled and works end to end — onboard an organisation, define
+> people and shifts, configure rules, generate a roster, adjust it by hand, publish it, and swap a
+> shift — but **generation is greedy, not optimised**
 > (see [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md)), **nothing survives a
 > restart**, and **there is no authentication**: the acting identity comes from request headers
 > and any caller can claim any role.
