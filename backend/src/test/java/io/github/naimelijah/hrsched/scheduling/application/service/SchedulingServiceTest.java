@@ -9,6 +9,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCo
 import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.RosteredShift;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
@@ -23,6 +24,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
+import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
@@ -755,6 +757,158 @@ class SchedulingServiceTest {
     assertThat(audit.changes()).doesNotContain(SchedulingChange.ASSIGNMENT_ADDED);
   }
 
+  private static TenantActor themself(OrganisationId organisation, EmployeeId employee) {
+    return new TenantActor(UserId.newId(), organisation, Role.EMPLOYEE, Optional.of(employee));
+  }
+
+  /** Publishes a roster carrying exactly one assignment, and returns the shift it covers. */
+  private ShiftId publishedWork(OrganisationId organisation, EmployeeId employee, TimeRange when) {
+    Roster draft = emptyDraft(organisation);
+    ShiftId shift =
+        service.defineShift(
+            scheduler(organisation), new DefineShiftCommand(organisation, when, 1, Set.of()));
+    service.assign(
+        scheduler(organisation),
+        new AssignToShiftCommand(organisation, draft.id(), shift, employee));
+    service.publish(scheduler(organisation), organisation, draft.id());
+    return shift;
+  }
+
+  @Test
+  void GivenPublishedWork_WhenTheyReadTheirOwnSchedule_ThenTheySeeItWithItsTimes() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId shift = publishedWork(ACME, ada, MONDAY_DAY);
+
+    List<RosteredShift> mine = service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK);
+
+    assertThat(mine).hasSize(1);
+    assertThat(mine.getFirst().shift()).isEqualTo(shift);
+    assertThat(mine.getFirst().period()).isEqualTo(MONDAY_DAY);
+  }
+
+  /**
+   * The disclosure this capability exists to avoid. Reading a whole roster stays an Admin and
+   * Scheduler act (R12); this answers only for the person asking.
+   */
+  @Test
+  void GivenAColleagueIsAlsoRostered_WhenReadingTheirOwnSchedule_ThenTheColleagueIsNotInIt() {
+    EmployeeId ada = available(ACME, "Ada");
+    EmployeeId grace = available(ACME, "Grace");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    ShiftId other =
+        service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), other, grace));
+    service.publish(scheduler(ACME), ACME, draft.id());
+
+    List<RosteredShift> mine = service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK);
+
+    assertThat(mine).extracting(RosteredShift::shift).containsExactly(shift);
+  }
+
+  /**
+   * A draft binds nobody and may never be published; showing one invites planning around fiction.
+   */
+  @Test
+  void GivenTheirWorkIsOnlyADraft_WhenReadingTheirOwnSchedule_ThenTheyAreShownNothing() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+
+    assertThat(service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK)).isEmpty();
+  }
+
+  /**
+   * Exactly one roster is authoritative for any moment (R11), and it is not the superseded one.
+   *
+   * <p>Publishing the second roster supersedes the first, and generation re-covers the shift the
+   * first one already carried — so that shift is assigned on both rosters. It must still appear
+   * once. Counting the superseded roster would show somebody the same day of work twice and imply
+   * they owe two of them.
+   */
+  @Test
+  void GivenTheirRosterWasSuperseded_WhenReadingTheirOwnSchedule_ThenItIsNotCountedAgain() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId onBothRosters = publishedWork(ACME, ada, MONDAY_DAY);
+    publishedWork(ACME, ada, MONDAY_DAY);
+
+    List<RosteredShift> mine = service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK);
+
+    assertThat(mine).extracting(RosteredShift::shift).doesNotHaveDuplicates();
+    assertThat(mine).extracting(RosteredShift::shift).containsOnlyOnce(onBothRosters);
+    assertThat(mine)
+        .describedAs("every entry comes from the one roster that is still authoritative")
+        .hasSize(2)
+        .extracting(RosteredShift::roster)
+        .containsOnly(mine.getFirst().roster());
+  }
+
+  @Test
+  void GivenWorkOutsideTheSpanAsked_WhenReadingTheirOwnSchedule_ThenItIsNotReturned() {
+    EmployeeId ada = available(ACME, "Ada");
+    publishedWork(ACME, ada, MONDAY_DAY);
+    TimeRange nextMonth =
+        new TimeRange(Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-11-08T00:00:00Z"));
+
+    assertThat(service.findOwnSchedule(themself(ACME, ada), ACME, nextMonth)).isEmpty();
+  }
+
+  @Test
+  void GivenWorkOnSeveralDays_WhenReadingTheirOwnSchedule_ThenItComesBackEarliestFirst() {
+    EmployeeId ada = available(ACME, "Ada");
+    TimeRange wednesday =
+        new TimeRange(Instant.parse("2026-10-07T08:00:00Z"), Instant.parse("2026-10-07T16:00:00Z"));
+    ShiftId later = publishedWork(ACME, ada, wednesday);
+    ShiftId earlier = publishedWork(ACME, ada, MONDAY_DAY);
+
+    List<RosteredShift> mine = service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK);
+
+    assertThat(mine).extracting(RosteredShift::shift).containsExactly(earlier, later);
+  }
+
+  /**
+   * A user is not an employee (ADR-012). Refusing beats an empty list: "you have no personnel
+   * record" and "you are rostered for nothing" are different answers, and only one needs fixing.
+   */
+  @Test
+  void GivenAnActorWithNoPersonnelRecord_WhenReadingTheirOwnSchedule_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.findOwnSchedule(
+                    new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE), ACME, THE_WEEK))
+        .isInstanceOf(NoEmployeeRecordException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingTheirOwnSchedule_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.findOwnSchedule(new Operator(UserId.newId()), ACME, THE_WEEK))
+        .isInstanceOf(NoEmployeeRecordException.class);
+  }
+
+  @Test
+  void GivenAnEmployeeOfAnotherOrganisation_WhenReadingOurSchedules_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    publishedWork(ACME, ada, MONDAY_DAY);
+
+    assertThatThrownBy(() -> service.findOwnSchedule(themself(RIVAL, ada), ACME, THE_WEEK))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenSomebodyReadsTheirOwnSchedule_WhenItIsAnswered_ThenNothingIsRecorded() {
+    EmployeeId ada = available(ACME, "Ada");
+    publishedWork(ACME, ada, MONDAY_DAY);
+    audit.forget();
+
+    service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK);
+
+    assertThat(audit.changes())
+        .describedAs("reads are not audited, or the writes would be buried under them")
+        .isEmpty();
+  }
+
   /**
    * Records what the service says was changed.
    *
@@ -772,6 +926,13 @@ class SchedulingServiceTest {
 
     List<SchedulingChange> changes() {
       return recorded.stream().map(AuditedChange::change).toList();
+    }
+
+    /**
+     * Clears what was recorded, so a test about reads can start after the writes that set it up.
+     */
+    void forget() {
+      recorded.clear();
     }
 
     List<AuditedChange> of(SchedulingChange change) {

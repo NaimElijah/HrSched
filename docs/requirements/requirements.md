@@ -51,7 +51,7 @@ implemented; the rest are not.
 | F2 | Scheduler | Assign an employee to a shift, and remove that assignment | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *Drafts only: a published roster is superseded, never edited (R6).* |
 | F3 | Scheduler | Publish a roster, after it passes the organisation rules | `SchedulingService`, `RosteringHttpTest` |
 | F4 | Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest`. *Partially: `EmployeeResponse` carries neither availability nor a roster, so the HTTP listing does not satisfy this row — only the use case does.* |
-| F5 | Employee | See their own published roster | *not implemented: rosters are readable by Schedulers only* |
+| F5 | Employee | See their own published roster | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *The assignments naming them, from published rosters only — the whole roster stays Admin and Scheduler (R12).* |
 | F6 | Employee | Declare when they cannot work, and state soft preferences | `EmployeeService`, `EmployeeServiceTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)) |
 | F7 | Employee | Request a swap of one of their assignments with another employee | *not implemented* |
 | F8 | Admin | Add employees | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` |
@@ -122,8 +122,10 @@ set and cannot define shifts, generate or publish — F1/F3/F11/F12 against F8/F
 
 **Unavailability and rosters are personal data.** Listing the people in an organisation, and
 reading any roster, are both restricted to Admins and Schedulers; an Employee cannot read a
-colleague's. F5 — an employee seeing *their own* roster — is a narrower capability that does not
-exist, which is what Q18 asks about.
+colleague's. F5 — an employee seeing *their own* work — is a narrower capability beside that one
+rather than a widening of it: it answers only for the personnel record the caller carries, so it
+discloses nothing about anybody else. An actor with no personnel record is refused rather than
+shown an empty week.
 
 **Revising the rules replaces the whole set.** There is no partial update: a caller sends the rules
 that should apply from now on, and any rule omitted is switched off. `GET /api/constraints`
@@ -214,7 +216,6 @@ applicant tracking, and being the HR system of record.
 | Q15 | What are the non-goals? | NaimElijah | Deferred deliberately |
 | Q16 | When a new roster only partly overlaps a published one, should the old one be superseded whole, or only for the days replaced? | NaimElijah | Refining R11; today the whole roster is superseded |
 | Q17 | Which time zone are working-time rules evaluated in? | NaimElijah | Daily and consecutive-day limits currently count days in UTC |
-| Q18 | Should an employee be able to see their own roster (F5), and how is "their own" defined? | NaimElijah | Reading rosters now needs Admin or Scheduler, so an employee sees none at all |
 | Q19 | Which observability backend receives the OpenTelemetry export, and at what sampling rate? | NaimElijah | Turning OTLP export on; sampling below 1.0 |
 | Q20 | Should an Admin be able to read their organisation's audit trail, and under what retention and erasure obligations? | NaimElijah | An `audit` bounded context; ADR-018's revisit trigger; part of the Compliance TODO |
 
@@ -233,5 +234,6 @@ applicant tracking, and being the HR system of record.
 | Q10 | Emergency cover without an override | Supersede with a new compliant roster | 2026-08-30 |
 | Q8 | What a constraint set is attached to | One per organisation; per-person variation is contract terms, held separately | 2026-08-30 |
 | Q11 | Who approves a swap | A Scheduler; the colleague is informed | 2026-08-30 |
+| Q18 | Whether an employee sees their own roster, and what "their own" means | Yes: the assignments naming them, from published rosters only. A narrower capability beside R12, not a widening of it | 2026-09-01 |
 
 Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20.

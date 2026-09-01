@@ -8,6 +8,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.ManageShiftsU
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.ViewOwnScheduleUseCase;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
@@ -45,14 +46,17 @@ public class SchedulingController {
   private final ManageShiftsUseCase manageShifts;
   private final ConfigureConstraintsUseCase configureConstraints;
   private final PlanRostersUseCase planRosters;
+  private final ViewOwnScheduleUseCase viewOwnSchedule;
 
   public SchedulingController(
       ManageShiftsUseCase manageShifts,
       ConfigureConstraintsUseCase configureConstraints,
-      PlanRostersUseCase planRosters) {
+      PlanRostersUseCase planRosters,
+      ViewOwnScheduleUseCase viewOwnSchedule) {
     this.manageShifts = manageShifts;
     this.configureConstraints = configureConstraints;
     this.planRosters = planRosters;
+    this.viewOwnSchedule = viewOwnSchedule;
   }
 
   @PostMapping("/shifts")
@@ -157,6 +161,33 @@ public class SchedulingController {
     Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     return planRosters.findRosters(actor, ActorFromHeaders.organisationOf(organisation)).stream()
         .map(RosterResponse::from)
+        .toList();
+  }
+
+  /**
+   * The work the caller themself is rostered for (requirement F5).
+   *
+   * <p>Needs no role: it answers only for the personnel record the caller carries, so it discloses
+   * nothing about a colleague. Reading a whole roster still needs Admin or Scheduler (R12).
+   *
+   * @param from start of the span to look inside, an ISO-8601 instant
+   * @param to end of that span
+   * @return their published work overlapping it, earliest first
+   */
+  @GetMapping("/me/schedule")
+  public List<RosteredShiftResponse> findOwnSchedule(
+      @RequestHeader("X-Organisation") String organisation,
+      @RequestHeader("X-User") String user,
+      @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @RequestParam Instant from,
+      @RequestParam Instant to) {
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    return viewOwnSchedule
+        .findOwnSchedule(
+            actor, ActorFromHeaders.organisationOf(organisation), new TimeRange(from, to))
+        .stream()
+        .map(RosteredShiftResponse::from)
         .toList();
   }
 

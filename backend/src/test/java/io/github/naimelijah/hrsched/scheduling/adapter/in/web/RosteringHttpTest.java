@@ -123,6 +123,77 @@ class RosteringHttpTest {
   }
 
   @Test
+  void GivenPublishedWork_WhenAnEmployeeReadsTheirOwnSchedule_ThenTheySeeIt() throws Exception {
+    String organisation = anOrganisation();
+    String ada = addEmployee(organisation, "Ada");
+    String shift = defineShift(organisation, "2026-11-09T08:00:00Z", "2026-11-09T16:00:00Z", 1);
+    String roster = generateRoster(organisation, "2026-11-09T00:00:00Z", "2026-11-10T00:00:00Z");
+    mockMvc
+        .perform(as(post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            as(get("/api/me/schedule"), organisation, "EMPLOYEE")
+                .header("X-Employee", ada)
+                .param("from", "2026-11-09T00:00:00Z")
+                .param("to", "2026-11-10T00:00:00Z"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].shift").value(shift))
+        .andExpect(jsonPath("$[0].roster").value(roster));
+  }
+
+  /** A draft binds nobody, so it is not somebody's schedule. */
+  @Test
+  void GivenTheirWorkIsOnlyADraft_WhenReadingTheirOwnSchedule_ThenTheyAreShownNothing()
+      throws Exception {
+    String organisation = anOrganisation();
+    String ada = addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-11-10T08:00:00Z", "2026-11-10T16:00:00Z", 1);
+    generateRoster(organisation, "2026-11-10T00:00:00Z", "2026-11-11T00:00:00Z");
+
+    mockMvc
+        .perform(
+            as(get("/api/me/schedule"), organisation, "EMPLOYEE")
+                .header("X-Employee", ada)
+                .param("from", "2026-11-10T00:00:00Z")
+                .param("to", "2026-11-11T00:00:00Z"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
+  }
+
+  @Test
+  void GivenNoPersonnelRecordIsClaimed_WhenReadingTheirOwnSchedule_ThenItIsForbidden()
+      throws Exception {
+    String organisation = anOrganisation();
+
+    mockMvc
+        .perform(
+            as(get("/api/me/schedule"), organisation, "EMPLOYEE")
+                .param("from", "2026-11-09T00:00:00Z")
+                .param("to", "2026-11-10T00:00:00Z"))
+        .andExpect(status().isForbidden());
+  }
+
+  /**
+   * An employee still cannot read the roster itself (R12): it names every colleague, and the narrow
+   * capability beside it exists precisely so that the wide one does not have to be opened.
+   */
+  @Test
+  void GivenAnEmployeeRole_WhenReadingTheWholeRoster_ThenItIsStillForbidden() throws Exception {
+    String organisation = anOrganisation();
+    String ada = addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-11-11T08:00:00Z", "2026-11-11T16:00:00Z", 1);
+    String roster = generateRoster(organisation, "2026-11-11T00:00:00Z", "2026-11-12T00:00:00Z");
+
+    mockMvc
+        .perform(
+            as(get("/api/rosters/" + roster), organisation, "EMPLOYEE").header("X-Employee", ada))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
   void GivenADraftAndAShift_WhenASchedulerAssignsByHand_ThenTheRosterCarriesIt() throws Exception {
     String organisation = anOrganisation();
     String ada = addEmployee(organisation, "Ada");

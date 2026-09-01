@@ -269,6 +269,13 @@ Nothing is persisted beyond process lifetime.
   that actually fall in it rather than whatever span it happens to be displaying.
 - **Reading a roster requires Admin or Scheduler**, on the same reasoning as listing people: a
   roster says who works when.
+- **An employee reads their own work through a separate, narrower port.** `ViewOwnScheduleUseCase`
+  answers only for the personnel record the caller carries — the link `TenantActor` holds
+  ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)), never a `UserId`
+  compared with an `EmployeeId` — and only from **published** rosters, because a draft binds nobody
+  and a superseded one is no longer authoritative. It exists so that R12 does not have to be relaxed
+  to satisfy F5. An actor with no personnel record is refused rather than shown an empty week: "you
+  have no record" and "you are rostered for nothing" are different answers.
 - **The header-based actor is insecure by design** and must be deleted when authentication
   arrives. It exists so the use cases can be exercised, not as a step towards a real one.
   `X-Organisation` names the organisation being acted *on* and is always required; `X-Role:

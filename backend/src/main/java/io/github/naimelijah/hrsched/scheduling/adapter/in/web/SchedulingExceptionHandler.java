@@ -5,6 +5,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
@@ -127,6 +128,24 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Roster cannot be checked against the rules");
+    return problem;
+  }
+
+  /**
+   * Asking for "my schedule" without being somebody who can be rostered. A 403 rather than an empty
+   * list, because "you have no personnel record" and "you are rostered for nothing" are different
+   * answers and only one of them is a configuration problem.
+   */
+  @ExceptionHandler(NoEmployeeRecordException.class)
+  public ProblemDetail handleNoEmployeeRecord(NoEmployeeRecordException exception) {
+    log.atWarn()
+        .addKeyValue("actor", exception.actor().value())
+        .log("Refused: an actor without a personnel record asked for their own schedule");
+    count(DENIED, "kind", "no_employee_record", "Refused attempts, by what refused them");
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.FORBIDDEN, "You have no personnel record, so you have no schedule.");
+    problem.setTitle("Not permitted");
     return problem;
   }
 
