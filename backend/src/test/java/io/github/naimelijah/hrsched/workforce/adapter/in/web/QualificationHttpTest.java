@@ -38,7 +38,7 @@ class QualificationHttpTest {
 
   @Test
   void GivenAnAdmin_WhenDefiningAQualification_ThenItIsCreatedAndListed() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
 
     mockMvc
         .perform(
@@ -59,7 +59,7 @@ class QualificationHttpTest {
   void GivenASchedulerRole_WhenDefiningAQualification_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/qualifications"), anOrganisation(), "SCHEDULER")
+            as(post("/api/qualifications"), anOrganisation(mockMvc), "SCHEDULER")
                 .content("{\"name\":\"Forklift\"}"))
         .andExpect(status().isForbidden());
   }
@@ -68,14 +68,14 @@ class QualificationHttpTest {
   void GivenAnEmployeeRole_WhenDefiningAQualification_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/qualifications"), anOrganisation(), "EMPLOYEE")
+            as(post("/api/qualifications"), anOrganisation(mockMvc), "EMPLOYEE")
                 .content("{\"name\":\"Forklift\"}"))
         .andExpect(status().isForbidden());
   }
 
   @Test
   void GivenAnEmployeeRole_WhenListingQualifications_ThenTheyAreReturned() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     define(organisation, "Forklift");
 
     mockMvc
@@ -87,9 +87,9 @@ class QualificationHttpTest {
   @Test
   void GivenQualificationsOfAnotherOrganisation_WhenListing_ThenOnlyOurOwnAreReturned()
       throws Exception {
-    String ours = anOrganisation();
+    String ours = anOrganisation(mockMvc);
     define(ours, "Forklift");
-    define(anOrganisation(), "Their Qualification");
+    define(anOrganisation(mockMvc), "Their Qualification");
 
     mockMvc
         .perform(as(get("/api/qualifications"), ours, "ADMIN"))
@@ -100,7 +100,7 @@ class QualificationHttpTest {
 
   @Test
   void GivenSeveralQualifications_WhenListing_ThenTheyComeBackSortedByName() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     define(organisation, "Welding");
     define(organisation, "Forklift");
 
@@ -113,7 +113,7 @@ class QualificationHttpTest {
 
   @Test
   void GivenAnOperator_WhenListingAnotherOrganisation_ThenItIsPermitted() throws Exception {
-    String theirs = anOrganisation();
+    String theirs = anOrganisation(mockMvc);
     define(theirs, "Forklift");
 
     mockMvc
@@ -126,14 +126,15 @@ class QualificationHttpTest {
   void GivenABlankName_WhenDefiningAQualification_ThenItIsRejected() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/qualifications"), anOrganisation(), "ADMIN").content("{\"name\":\"  \"}"))
+            as(post("/api/qualifications"), anOrganisation(mockMvc), "ADMIN")
+                .content("{\"name\":\"  \"}"))
         .andExpect(status().isBadRequest());
   }
 
   @Test
   void GivenNoName_WhenDefiningAQualification_ThenItIsRejected() throws Exception {
     mockMvc
-        .perform(as(post("/api/qualifications"), anOrganisation(), "ADMIN").content("{}"))
+        .perform(as(post("/api/qualifications"), anOrganisation(mockMvc), "ADMIN").content("{}"))
         .andExpect(status().isBadRequest());
   }
 
@@ -141,7 +142,7 @@ class QualificationHttpTest {
   void GivenAnUnknownRole_WhenDefiningAQualification_ThenItIsRejected() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/qualifications"), anOrganisation(), "SUPERVISOR")
+            as(post("/api/qualifications"), anOrganisation(mockMvc), "SUPERVISOR")
                 .content("{\"name\":\"Forklift\"}"))
         .andExpect(status().isBadRequest());
   }

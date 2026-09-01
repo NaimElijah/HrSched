@@ -4,29 +4,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.naimelijah.hrsched.scheduling.application.port.in.AssignToShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.RosteredShift;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
+import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
+import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
@@ -40,11 +47,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -267,112 +270,6 @@ class SchedulingServiceTest {
         .containsExactly(ours.id());
   }
 
-  private static final class FirstFitGenerator implements RosterGenerator {
-    @Override
-    public List<Assignment> generate(
-        List<Shift> shifts, List<RosterCandidate> candidates, ConstraintSet constraints) {
-      List<Assignment> assignments = new ArrayList<>();
-      for (Shift shift : shifts) {
-        candidates.stream()
-            .filter(
-                candidate -> candidate.couldCover(shift.period(), shift.requiredQualifications()))
-            .limit(shift.requiredHeadcount())
-            .forEach(candidate -> assignments.add(new Assignment(shift.id(), candidate.id())));
-      }
-      return List.copyOf(assignments);
-    }
-  }
-
-  private static final class FakeShifts implements ShiftRepository {
-    private final Map<ShiftId, Shift> stored = new LinkedHashMap<>();
-
-    @Override
-    public void save(Shift shift) {
-      stored.put(shift.id(), shift);
-    }
-
-    @Override
-    public Optional<Shift> findById(OrganisationId organisation, ShiftId id) {
-      return Optional.ofNullable(stored.get(id))
-          .filter(shift -> shift.organisation().equals(organisation));
-    }
-
-    @Override
-    public List<Shift> findWithin(OrganisationId organisation, TimeRange within) {
-      return stored.values().stream()
-          .filter(shift -> shift.organisation().equals(organisation))
-          .filter(shift -> shift.period().overlaps(within))
-          .toList();
-    }
-  }
-
-  private static final class FakeRosters implements RosterRepository {
-    private final Map<RosterId, Roster> stored = new LinkedHashMap<>();
-
-    @Override
-    public void save(Roster roster) {
-      stored.put(roster.id(), roster);
-    }
-
-    @Override
-    public Optional<Roster> findById(OrganisationId organisation, RosterId id) {
-      return Optional.ofNullable(stored.get(id))
-          .filter(roster -> roster.organisation().equals(organisation));
-    }
-
-    @Override
-    public List<Roster> findByOrganisation(OrganisationId organisation) {
-      return stored.values().stream()
-          .filter(roster -> roster.organisation().equals(organisation))
-          .toList();
-    }
-
-    Roster byId(RosterId id) {
-      return stored.get(id);
-    }
-  }
-
-  private static final class FakeConstraintSets implements ConstraintSetRepository {
-    private final Map<OrganisationId, ConstraintSet> stored = new HashMap<>();
-
-    @Override
-    public void save(ConstraintSet constraintSet) {
-      stored.put(constraintSet.organisation(), constraintSet);
-    }
-
-    @Override
-    public Optional<ConstraintSet> findCurrent(OrganisationId organisation) {
-      return Optional.ofNullable(stored.get(organisation));
-    }
-  }
-
-  private static final class FakeWorkforce implements WorkforceDirectory {
-    private final Map<OrganisationId, List<RosterCandidate>> people = new HashMap<>();
-    private final Map<OrganisationId, Set<QualificationId>> defined = new HashMap<>();
-
-    void add(OrganisationId organisation, RosterCandidate candidate) {
-      people.computeIfAbsent(organisation, key -> new ArrayList<>()).add(candidate);
-    }
-
-    void define(OrganisationId organisation, QualificationId qualification) {
-      defined
-          .computeIfAbsent(organisation, key -> new java.util.LinkedHashSet<>())
-          .add(qualification);
-    }
-
-    @Override
-    public List<RosterCandidate> candidatesFor(Actor actor, OrganisationId organisation) {
-      actor.requireAccessTo(organisation);
-      return people.getOrDefault(organisation, List.of());
-    }
-
-    @Override
-    public Set<QualificationId> definedQualifications(Actor actor, OrganisationId organisation) {
-      actor.requireAccessTo(organisation);
-      return defined.getOrDefault(organisation, Set.of());
-    }
-  }
-
   @Test
   void GivenAScheduler_WhenDefiningAShift_ThenTheChangeIsRecordedAgainstThem() {
     TenantActor scheduler = scheduler(ACME);
@@ -482,26 +379,479 @@ class SchedulingServiceTest {
   }
 
   /**
-   * Records what the service says was changed.
-   *
-   * <p>Hand-written, like every other double here: the audit trail is our own port, and asking it
-   * what it was told is how "was this recorded?" becomes a test rather than a review comment.
+   * An empty draft: generation runs before any shift exists, so there is nothing for it to fill and
+   * whatever the draft carries afterwards was put there by hand.
    */
-  private static final class RecordingAuditTrail implements AuditTrail {
+  private Roster emptyDraft(OrganisationId organisation) {
+    return service.generateDraft(
+        scheduler(organisation), new GenerateRosterCommand(organisation, THE_WEEK));
+  }
 
-    private final List<AuditedChange> recorded = new ArrayList<>();
+  private EmployeeId qualified(
+      OrganisationId organisation, String name, Set<QualificationId> holds) {
+    EmployeeId id = EmployeeId.newId();
+    workforce.add(organisation, new RosterCandidate(id, name, holds, List.of()));
+    return id;
+  }
 
-    @Override
-    public void record(AuditedChange change) {
-      recorded.add(change);
-    }
+  private ShiftId aShift(OrganisationId organisation, Set<QualificationId> required) {
+    return service.defineShift(
+        scheduler(organisation), new DefineShiftCommand(organisation, MONDAY_DAY, 1, required));
+  }
 
-    List<SchedulingChange> changes() {
-      return recorded.stream().map(AuditedChange::change).toList();
-    }
+  @Test
+  void GivenADraftAndAShift_WhenASchedulerAssignsSomeone_ThenTheDraftCarriesThatAssignment() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
 
-    List<AuditedChange> of(SchedulingChange change) {
-      return recorded.stream().filter(entry -> entry.change() == change).toList();
-    }
+    Roster amended =
+        service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+
+    assertThat(amended.assignments()).containsExactly(new Assignment(shift, ada));
+    assertThat(rosters.findById(ACME, draft.id()))
+        .describedAs("the amended draft is stored, not only returned")
+        .get()
+        .extracting(Roster::assignments)
+        .isEqualTo(List.of(new Assignment(shift, ada)));
+  }
+
+  @Test
+  void GivenAnAssignment_WhenASchedulerRemovesIt_ThenTheDraftNoLongerCarriesIt() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+
+    Roster amended =
+        service.unassign(
+            scheduler(ACME), new RemoveAssignmentCommand(ACME, draft.id(), shift, ada));
+
+    assertThat(amended.assignments()).isEmpty();
+  }
+
+  @Test
+  void GivenAnAdminRole_WhenAssigning_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+
+    assertThatThrownBy(
+            () ->
+                service.assign(admin(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenAnEmployeeRole_WhenAssigning_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE),
+                    new AssignToShiftCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenASchedulerOfAnotherOrganisation_WhenAssigning_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(RIVAL), new AssignToShiftCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenNoSuchRoster_WhenAssigning_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId shift = aShift(ACME, Set.of());
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, RosterId.newId(), shift, ada)))
+        .isInstanceOf(UnknownRosterException.class);
+  }
+
+  @Test
+  void GivenNoSuchShift_WhenAssigning_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(ACME),
+                    new AssignToShiftCommand(ACME, draft.id(), ShiftId.newId(), ada)))
+        .isInstanceOf(UnknownShiftException.class);
+  }
+
+  /**
+   * Rule R5 on the manual path. Scheduling knows a person exists only because the published port
+   * returned them, so somebody who does not come back is not assignable — and assigning them anyway
+   * would put work on a roster whose eligibility nobody established.
+   */
+  @Test
+  void GivenSomebodyFromAnotherOrganisation_WhenAssigningThem_ThenItIsRefused() {
+    EmployeeId theirs = available(RIVAL, "Their Employee");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, theirs)))
+        .isInstanceOf(UnknownAssigneeException.class);
+  }
+
+  /** Rule R4 on the manual path. */
+  @Test
+  void GivenAShiftDemandingAQualificationTheyLack_WhenAssigningThem_ThenItIsRefused() {
+    QualificationId forklift = QualificationId.newId();
+    workforce.define(ACME, forklift);
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of(forklift));
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(AssigneeNotQualifiedException.class);
+  }
+
+  @Test
+  void GivenAShiftDemandingAQualificationTheyHold_WhenAssigningThem_ThenItIsPermitted() {
+    QualificationId forklift = QualificationId.newId();
+    workforce.define(ACME, forklift);
+    EmployeeId ada = qualified(ACME, "Ada", Set.of(forklift));
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of(forklift));
+
+    assertThatCode(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada)))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void GivenSomebodyAlreadyOnTheShift_WhenAssigningThemAgain_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(DuplicateAssignmentException.class);
+  }
+
+  /** Rule R6: a published roster is superseded, never edited. */
+  @Test
+  void GivenAPublishedRoster_WhenAssigningToIt_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    Roster published = service.publish(scheduler(ACME), ACME, draft.id());
+    ShiftId shift = aShift(ACME, Set.of());
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, published.id(), shift, ada)))
+        .isInstanceOf(RosterNotEditableException.class);
+  }
+
+  @Test
+  void GivenAnAssignmentThatWasNeverMade_WhenRemovingIt_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+
+    assertThatThrownBy(
+            () ->
+                service.unassign(
+                    scheduler(ACME), new RemoveAssignmentCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(UnknownAssignmentException.class);
+  }
+
+  /**
+   * The reason assignment does not check working-time rules itself. They judge a whole schedule, so
+   * the honest place to enforce them is publication — which cannot be bypassed, and which refuses
+   * hand-made work exactly as it refuses generated work.
+   */
+  @Test
+  void GivenHandAssignedWorkBreakingADailyLimit_WhenPublishing_ThenItIsStillRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+    // Invented: four hours a day, which the eight-hour shift just assigned by hand cannot satisfy.
+    service.reviseConstraints(
+        admin(ACME),
+        new ReviseConstraintsCommand(
+            ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(4)))));
+
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, draft.id()))
+        .isInstanceOf(RosterNotCompliantException.class);
+  }
+
+  /**
+   * The hole the review found. Generation filters candidates through {@code
+   * RosterCandidate.couldCover}, which tests availability as well as qualifications, so it refuses
+   * to roster somebody through their declared absence. Assigning by hand used to accept it, and
+   * publication could not catch it afterwards: unavailability is not a working-time constraint, so
+   * an empty constraint set checks nothing at all and the roster publishes with somebody working a
+   * day they said they could not.
+   */
+  @Test
+  void GivenSomebodyWhoDeclaredTheyCannotWorkThen_WhenAssigningThem_ThenItIsRefused() {
+    EmployeeId busy = EmployeeId.newId();
+    workforce.add(ACME, new RosterCandidate(busy, "Ada", Set.of(), List.of(MONDAY_DAY)));
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, busy)))
+        .isInstanceOf(AssigneeUnavailableException.class);
+  }
+
+  @Test
+  void GivenAbsenceThatDoesNotTouchTheShift_WhenAssigningThem_ThenItIsPermitted() {
+    TimeRange elsewhere =
+        new TimeRange(Instant.parse("2026-10-09T08:00:00Z"), Instant.parse("2026-10-09T16:00:00Z"));
+    EmployeeId ada = EmployeeId.newId();
+    workforce.add(ACME, new RosterCandidate(ada, "Ada", Set.of(), List.of(elsewhere)));
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+
+    assertThatCode(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada)))
+        .doesNotThrowAnyException();
+  }
+
+  /**
+   * R11 depends on a roster's period describing the work it carries. Generation can only assign
+   * shifts it found inside that period; assigning by hand could put a December shift on an October
+   * roster, and then the roster that genuinely covers December would not supersede it — two
+   * published rosters authoritative for one moment, which is what R11 exists to prevent.
+   */
+  @Test
+  void GivenAShiftOutsideTheRostersPeriod_WhenAssigningIt_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    TimeRange december =
+        new TimeRange(Instant.parse("2026-12-07T08:00:00Z"), Instant.parse("2026-12-07T16:00:00Z"));
+    ShiftId elsewhere =
+        service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, december, 1, Set.of()));
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), elsewhere, ada)))
+        .isInstanceOf(ShiftOutsideRosterPeriodException.class);
+  }
+
+  @Test
+  void GivenAScheduler_WhenAssigningAndRemoving_ThenBothAreRecordedAgainstThem() {
+    EmployeeId ada = available(ACME, "Ada");
+    TenantActor scheduler = scheduler(ACME);
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+
+    service.assign(scheduler, new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+    service.unassign(scheduler, new RemoveAssignmentCommand(ACME, draft.id(), shift, ada));
+
+    assertThat(audit.of(SchedulingChange.ASSIGNMENT_ADDED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, scheduler.id(), SchedulingChange.ASSIGNMENT_ADDED, draft.id().value()));
+    assertThat(audit.of(SchedulingChange.ASSIGNMENT_REMOVED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, scheduler.id(), SchedulingChange.ASSIGNMENT_REMOVED, draft.id().value()));
+  }
+
+  @Test
+  void GivenAnUnqualifiedAssignee_WhenTheAssignmentIsRefused_ThenNothingIsRecorded() {
+    QualificationId forklift = QualificationId.newId();
+    workforce.define(ACME, forklift);
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of(forklift));
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(AssigneeNotQualifiedException.class);
+
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.ASSIGNMENT_ADDED);
+  }
+
+  private static TenantActor themself(OrganisationId organisation, EmployeeId employee) {
+    return new TenantActor(UserId.newId(), organisation, Role.EMPLOYEE, Optional.of(employee));
+  }
+
+  /** Publishes a roster carrying exactly one assignment, and returns the shift it covers. */
+  private ShiftId publishedWork(OrganisationId organisation, EmployeeId employee, TimeRange when) {
+    Roster draft = emptyDraft(organisation);
+    ShiftId shift =
+        service.defineShift(
+            scheduler(organisation), new DefineShiftCommand(organisation, when, 1, Set.of()));
+    service.assign(
+        scheduler(organisation),
+        new AssignToShiftCommand(organisation, draft.id(), shift, employee));
+    service.publish(scheduler(organisation), organisation, draft.id());
+    return shift;
+  }
+
+  @Test
+  void GivenPublishedWork_WhenTheyReadTheirOwnSchedule_ThenTheySeeItWithItsTimes() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId shift = publishedWork(ACME, ada, MONDAY_DAY);
+
+    List<RosteredShift> mine = service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK);
+
+    assertThat(mine).hasSize(1);
+    assertThat(mine.getFirst().shift()).isEqualTo(shift);
+    assertThat(mine.getFirst().period()).isEqualTo(MONDAY_DAY);
+  }
+
+  /**
+   * The disclosure this capability exists to avoid. Reading a whole roster stays an Admin and
+   * Scheduler act (R12); this answers only for the person asking.
+   */
+  @Test
+  void GivenAColleagueIsAlsoRostered_WhenReadingTheirOwnSchedule_ThenTheColleagueIsNotInIt() {
+    EmployeeId ada = available(ACME, "Ada");
+    EmployeeId grace = available(ACME, "Grace");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    ShiftId other =
+        service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), other, grace));
+    service.publish(scheduler(ACME), ACME, draft.id());
+
+    List<RosteredShift> mine = service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK);
+
+    assertThat(mine).extracting(RosteredShift::shift).containsExactly(shift);
+  }
+
+  /**
+   * A draft binds nobody and may never be published; showing one invites planning around fiction.
+   */
+  @Test
+  void GivenTheirWorkIsOnlyADraft_WhenReadingTheirOwnSchedule_ThenTheyAreShownNothing() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+
+    assertThat(service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK)).isEmpty();
+  }
+
+  /**
+   * Exactly one roster is authoritative for any moment (R11), and it is not the superseded one.
+   *
+   * <p>Publishing the second roster supersedes the first, and generation re-covers the shift the
+   * first one already carried — so that shift is assigned on both rosters. It must still appear
+   * once. Counting the superseded roster would show somebody the same day of work twice and imply
+   * they owe two of them.
+   */
+  @Test
+  void GivenTheirRosterWasSuperseded_WhenReadingTheirOwnSchedule_ThenItIsNotCountedAgain() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId onBothRosters = publishedWork(ACME, ada, MONDAY_DAY);
+    publishedWork(ACME, ada, MONDAY_DAY);
+
+    List<RosteredShift> mine = service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK);
+
+    assertThat(mine).extracting(RosteredShift::shift).doesNotHaveDuplicates();
+    assertThat(mine).extracting(RosteredShift::shift).containsOnlyOnce(onBothRosters);
+    assertThat(mine)
+        .describedAs("every entry comes from the one roster that is still authoritative")
+        .hasSize(2)
+        .extracting(RosteredShift::roster)
+        .containsOnly(mine.getFirst().roster());
+  }
+
+  @Test
+  void GivenWorkOutsideTheSpanAsked_WhenReadingTheirOwnSchedule_ThenItIsNotReturned() {
+    EmployeeId ada = available(ACME, "Ada");
+    publishedWork(ACME, ada, MONDAY_DAY);
+    TimeRange nextMonth =
+        new TimeRange(Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-11-08T00:00:00Z"));
+
+    assertThat(service.findOwnSchedule(themself(ACME, ada), ACME, nextMonth)).isEmpty();
+  }
+
+  @Test
+  void GivenWorkOnSeveralDays_WhenReadingTheirOwnSchedule_ThenItComesBackEarliestFirst() {
+    EmployeeId ada = available(ACME, "Ada");
+    TimeRange wednesday =
+        new TimeRange(Instant.parse("2026-10-07T08:00:00Z"), Instant.parse("2026-10-07T16:00:00Z"));
+    ShiftId later = publishedWork(ACME, ada, wednesday);
+    ShiftId earlier = publishedWork(ACME, ada, MONDAY_DAY);
+
+    List<RosteredShift> mine = service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK);
+
+    assertThat(mine).extracting(RosteredShift::shift).containsExactly(earlier, later);
+  }
+
+  /**
+   * A user is not an employee (ADR-012). Refusing beats an empty list: "you have no personnel
+   * record" and "you are rostered for nothing" are different answers, and only one needs fixing.
+   */
+  @Test
+  void GivenAnActorWithNoPersonnelRecord_WhenReadingTheirOwnSchedule_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.findOwnSchedule(
+                    new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE), ACME, THE_WEEK))
+        .isInstanceOf(NoEmployeeRecordException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingTheirOwnSchedule_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.findOwnSchedule(new Operator(UserId.newId()), ACME, THE_WEEK))
+        .isInstanceOf(NoEmployeeRecordException.class);
+  }
+
+  @Test
+  void GivenAnEmployeeOfAnotherOrganisation_WhenReadingOurSchedules_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    publishedWork(ACME, ada, MONDAY_DAY);
+
+    assertThatThrownBy(() -> service.findOwnSchedule(themself(RIVAL, ada), ACME, THE_WEEK))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenSomebodyReadsTheirOwnSchedule_WhenItIsAnswered_ThenNothingIsRecorded() {
+    EmployeeId ada = available(ACME, "Ada");
+    publishedWork(ACME, ada, MONDAY_DAY);
+    audit.forget();
+
+    service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK);
+
+    assertThat(audit.changes())
+        .describedAs("reads are not audited, or the writes would be buried under them")
+        .isEmpty();
   }
 }

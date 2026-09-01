@@ -7,6 +7,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -29,9 +31,21 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *
  * <p>It reads no request header and knows nothing about who is calling, so unlike {@code
  * ActorFromHeaders} it survives the arrival of authentication untouched.
+ *
+ * <p>Ordered explicitly, and the number is load-bearing in both directions. It must run
+ * <em>after</em> Boot's observation filter, which opens the span this reads and which {@code
+ * WebMvcObservationAutoConfiguration} registers at {@code HIGHEST_PRECEDENCE + 1}: ordered any
+ * earlier, {@code currentSpan()} is null and the header silently disappears — which is exactly what
+ * happened when this was first ordered, and what {@code TraceIdHttpTest} caught. It must run
+ * <em>before</em> {@code KnownOrganisationFilter}, so a request refused there still carries the id
+ * the person who was refused has to quote.
  */
 @Component
+@Order(TraceIdResponseFilter.ORDER)
 public class TraceIdResponseFilter extends OncePerRequestFilter {
+
+  /** Immediately after the observation filter that opens the span. See the class comment. */
+  public static final int ORDER = Ordered.HIGHEST_PRECEDENCE + 2;
 
   /**
    * Chosen over W3C {@code traceresponse}, which is still a draft. Switching is one constant and

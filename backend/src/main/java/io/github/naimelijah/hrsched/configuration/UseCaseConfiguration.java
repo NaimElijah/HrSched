@@ -1,16 +1,25 @@
 package io.github.naimelijah.hrsched.configuration;
 
+import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
+import io.github.naimelijah.hrsched.access.application.service.OrganisationService;
+import io.github.naimelijah.hrsched.notifications.application.port.out.NotificationRepository;
+import io.github.naimelijah.hrsched.notifications.application.service.NotificationService;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.Notifier;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
 import io.github.naimelijah.hrsched.scheduling.application.service.SchedulingService;
+import io.github.naimelijah.hrsched.scheduling.application.service.SwapService;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
 import io.github.naimelijah.hrsched.workforce.application.service.EmployeeService;
 import io.github.naimelijah.hrsched.workforce.application.service.QualificationService;
+import java.time.Clock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -26,12 +35,39 @@ import org.springframework.context.annotation.Configuration;
  * architecture rules exempt classes annotated {@code @Configuration} and nothing else.
  *
  * <p>That privilege has a cost visible below: each context owns an {@code AuditTrail} port of its
- * own, so the two share a simple name that only collides here. The workforce one is written out in
+ * own, so all four share a simple name that only collides here. Three of them are written out in
  * full rather than renamed, because inside its own context {@code AuditTrail} is the right name and
- * seeing both at once is this class's job, not theirs.
+ * seeing all four at once is this class's job, not theirs.
  */
 @Configuration
 public class UseCaseConfiguration {
+
+  @Bean
+  OrganisationService organisationService(
+      OrganisationRepository organisations,
+      io.github.naimelijah.hrsched.access.application.port.out.AuditTrail audit) {
+    return new OrganisationService(organisations, audit);
+  }
+
+  /**
+   * The clock the application layer reads time from.
+   *
+   * <p>A bean rather than a call to {@code Instant.now()} inside a use case, so that when something
+   * happened is an input a test supplies rather than an ambient fact it has to tolerate. {@code
+   * java.time.Clock} is the JDK, so injecting it keeps the hexagon framework-free.
+   */
+  @Bean
+  Clock clock() {
+    return Clock.systemUTC();
+  }
+
+  @Bean
+  NotificationService notificationService(
+      NotificationRepository notifications,
+      io.github.naimelijah.hrsched.notifications.application.port.out.AuditTrail audit,
+      Clock clock) {
+    return new NotificationService(notifications, audit, clock);
+  }
 
   @Bean
   SchedulingService schedulingService(
@@ -42,6 +78,24 @@ public class UseCaseConfiguration {
       RosterGenerator generator,
       AuditTrail audit) {
     return new SchedulingService(shifts, rosters, constraintSets, workforce, generator, audit);
+  }
+
+  /**
+   * Swapping composes publication rather than repeating it, so this bean depends on the driving
+   * port the scheduling service implements. Spring resolves that against the {@code
+   * schedulingService} bean above; there is no cycle, because nothing in scheduling depends on
+   * swaps.
+   */
+  @Bean
+  SwapService swapService(
+      SwapRequestRepository swaps,
+      RosterRepository rosters,
+      ShiftRepository shifts,
+      WorkforceDirectory workforce,
+      PlanRostersUseCase planRosters,
+      Notifier notifier,
+      AuditTrail audit) {
+    return new SwapService(swaps, rosters, shifts, workforce, planRosters, notifier, audit);
   }
 
   @Bean

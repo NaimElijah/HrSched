@@ -1,7 +1,10 @@
+import { useEffect, useRef, useState } from 'react';
+import { access } from '../api/access';
 import { ROLES } from '../api/client';
 import type { Role } from '../api/client';
+import { ApiError } from '../api/problem';
 import type { Employee } from '../api/workforce';
-import { randomUuid, useActingAs } from './ActingAs';
+import { useActingAs } from './ActingAs';
 
 /**
  * The identity switcher, styled as a warning and impossible to dismiss.
@@ -10,9 +13,46 @@ import { randomUuid, useActingAs } from './ActingAs';
  * looked like a normal signed-in application would be lying about that. Switching role here turns
  * writes into 403s and switching organisation turns reads into 404s, so the isolation the backend
  * enforces is demonstrable rather than merely documented.
+ *
+ * Creating an organisation really creates one. It used to mint a random identifier locally, which
+ * worked only because the backend believed any identifier it was sent; since ADR-020 an organisation
+ * nobody onboarded does not exist, and every request naming one is refused. So this posts to the
+ * register as the platform operator and switches to what came back.
  */
 export function ActingAsBar({ employees }: { employees: readonly Employee[] }) {
   const { identity, setOrganisation, setUser, setRole, setEmployee } = useActingAs();
+  const [onboarding, setOnboarding] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  async function onboard() {
+    setOnboarding(true);
+    setFailure(null);
+    try {
+      // Onboarding is the operator's act, whoever the bar is currently acting as. The organisation
+      // on this identity is ignored by the backend for this one request, which is what makes
+      // bootstrapping possible at all.
+      const organisation = await access.onboardOrganisation(
+        { ...identity, role: 'OPERATOR', employee: null },
+        `Organisation ${new Date().toISOString()}`,
+      );
+      setOrganisation(organisation.id);
+    } catch (error) {
+      setFailure(error instanceof ApiError ? error.message : 'Could not create an organisation.');
+    } finally {
+      setOnboarding(false);
+    }
+  }
+
+  // A first visit has no organisation, and nothing works without one. Onboarding here rather than
+  // in the provider keeps the request beside the error state and the disabled button that already
+  // handle it. The ref stops React's development double-invoke from creating two organisations.
+  const onboarded = useRef(false);
+  useEffect(() => {
+    if (identity.organisation === '' && !onboarded.current) {
+      onboarded.current = true;
+      void onboard();
+    }
+  });
 
   return (
     <aside className="acting-as" aria-label="Acting identity">
@@ -29,8 +69,8 @@ export function ActingAsBar({ employees }: { employees: readonly Employee[] }) {
             spellCheck={false}
           />
         </label>
-        <button type="button" onClick={() => setOrganisation(randomUuid())}>
-          New organisation
+        <button type="button" onClick={() => void onboard()} disabled={onboarding}>
+          {onboarding ? 'Creating…' : 'New organisation'}
         </button>
 
         <label>
@@ -76,6 +116,11 @@ export function ActingAsBar({ employees }: { employees: readonly Employee[] }) {
           </select>
         </label>
       </div>
+      {failure === null ? null : (
+        <p className="acting-as__warning" role="alert">
+          {failure}
+        </p>
+      )}
     </aside>
   );
 }

@@ -33,14 +33,20 @@ export function App() {
   // read it — that one refusal is expected and is answered with an empty list. Every other failure
   // is surfaced, because silently showing an empty picker during an outage is indistinguishable
   // from an organisation with no staff.
+  // Nothing is fetched until there is an organisation to fetch it for. On a first visit the bar is
+  // still onboarding one, and asking now would send an empty X-Organisation and earn a wall of 400s.
+  const ready = identity.organisation !== '';
+
   const people = useAsync(
     () =>
-      workforce.findEmployees(identity).catch((error: unknown) => {
-        if (error instanceof ApiError && error.isForbidden) {
-          return [];
-        }
-        throw error;
-      }),
+      !ready
+        ? Promise.resolve([])
+        : workforce.findEmployees(identity).catch((error: unknown) => {
+            if (error instanceof ApiError && error.isForbidden) {
+              return [];
+            }
+            throw error;
+          }),
     identityKey(identity),
   );
 
@@ -93,12 +99,13 @@ export function App() {
       </label>
 
       <main>
-        {tab === 'People' ? <PeoplePage /> : null}
-        {tab === 'Qualifications' ? <QualificationsPage /> : null}
-        {tab === 'Rules' ? <RulesPage /> : null}
-        {tab === 'Shifts' ? <ShiftsPage span={span} /> : null}
-        {tab === 'Rosters' ? <RostersPage span={span} /> : null}
-        {tab === 'Me' ? <MePage /> : null}
+        {!ready ? <p>Setting up an organisation…</p> : null}
+        {ready && tab === 'People' ? <PeoplePage /> : null}
+        {ready && tab === 'Qualifications' ? <QualificationsPage /> : null}
+        {ready && tab === 'Rules' ? <RulesPage /> : null}
+        {ready && tab === 'Shifts' ? <ShiftsPage span={span} /> : null}
+        {ready && tab === 'Rosters' ? <RostersPage span={span} /> : null}
+        {ready && tab === 'Me' ? <MePage /> : null}
       </main>
     </div>
   );

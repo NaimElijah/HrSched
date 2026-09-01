@@ -21,8 +21,30 @@ public enum SchedulingChange {
   /** A draft roster was produced. It binds nobody until it is published. */
   ROSTER_GENERATED,
 
+  /**
+   * Somebody was put on a shift by hand rather than by the generator. Recorded separately from
+   * generation because it is a person's judgement rather than the machine's, and the trail should
+   * say which.
+   */
+  ASSIGNMENT_ADDED,
+
+  /** Somebody was taken off a shift by hand. */
+  ASSIGNMENT_REMOVED,
+
   /** A roster became the authoritative answer to who works when. */
   ROSTER_PUBLISHED,
+
+  /** Somebody asked for one of their shifts to be covered by a named colleague. */
+  SWAP_REQUESTED,
+
+  /**
+   * A Scheduler agreed to a swap. It appears beside the ROSTER_PUBLISHED and ROSTER_SUPERSEDED
+   * entries the replacement produced, because those say a roster changed and this says why.
+   */
+  SWAP_APPROVED,
+
+  /** A Scheduler declined a swap. Nothing about any roster changed. */
+  SWAP_REJECTED,
 
   /**
    * A published roster stopped being authoritative because a newer one overlapped it. Recorded

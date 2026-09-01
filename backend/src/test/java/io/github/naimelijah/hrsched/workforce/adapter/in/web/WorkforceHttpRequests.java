@@ -1,7 +1,12 @@
 package io.github.naimelijah.hrsched.workforce.adapter.in.web;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.jayway.jsonpath.JsonPath;
 import java.util.UUID;
 import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
@@ -23,10 +28,28 @@ final class WorkforceHttpRequests {
    * A fresh organisation per test. The repositories behind the shared Spring context are
    * singletons, so a shared identifier would let one test's data decide another test's assertion.
    *
-   * @return an organisation identifier nothing else in the suite is using
+   * <p>It is really onboarded rather than invented. Since ADR-020 an organisation nobody onboarded
+   * does not exist, and every request naming one is refused with a 404 before it reaches a
+   * controller — so a random UUID here would fail every test that used it, for the right reason.
+   *
+   * @param mockMvc the client to onboard through
+   * @return the identifier of an organisation nothing else in the suite is using
+   * @throws Exception if onboarding fails, which would make every assertion after it meaningless
    */
-  static String anOrganisation() {
-    return UUID.randomUUID().toString();
+  static String anOrganisation(MockMvc mockMvc) throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                post("/api/organisations")
+                    .header("X-User", UUID.randomUUID().toString())
+                    .header("X-Role", "OPERATOR")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"Organisation %s\"}".formatted(UUID.randomUUID())))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return JsonPath.read(body, "$.id");
   }
 
   /**

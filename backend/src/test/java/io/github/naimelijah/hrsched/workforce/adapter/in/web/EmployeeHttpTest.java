@@ -62,9 +62,66 @@ class EmployeeHttpTest {
     return JsonPath.read(body, "$.id");
   }
 
+  /**
+   * Requirement F4. Until the listing carried these, only the use case satisfied that row and the
+   * HTTP surface quietly did not — a Scheduler could see who worked there but not when they could
+   * not work, which is the half of it that decides a roster.
+   */
+  @Test
+  void GivenSomebodyWithAbsenceAndAContract_WhenListed_ThenTheirAvailabilityIsCarriedToo()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada =
+        JsonPath.read(
+            mockMvc
+                .perform(
+                    as(post("/api/employees"), organisation, "ADMIN")
+                        .content("{\"name\":\"Ada Lovelace\"}"))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(),
+            "$.id");
+    mockMvc
+        .perform(
+            as(post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+                .content("{\"start\":\"2026-10-07T00:00:00Z\",\"end\":\"2026-10-08T00:00:00Z\"}"))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            as(put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
+                .content("{\"weeklyContractedMinutes\":2100}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(as(get("/api/employees"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].unavailability.length()").value(1))
+        .andExpect(jsonPath("$[0].unavailability[0].start").value("2026-10-07T00:00:00Z"))
+        .andExpect(jsonPath("$[0].unavailability[0].end").value("2026-10-08T00:00:00Z"))
+        .andExpect(jsonPath("$[0].weeklyContractedMinutes").value(2100));
+  }
+
+  @Test
+  void GivenSomebodyJustAdded_WhenListed_ThenTheyHaveNoAbsenceAndNoContract() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    mockMvc
+        .perform(
+            as(post("/api/employees"), organisation, "ADMIN")
+                .content("{\"name\":\"Ada Lovelace\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.unavailability.length()").value(0))
+        .andExpect(jsonPath("$.weeklyContractedMinutes").doesNotExist());
+
+    mockMvc
+        .perform(as(get("/api/employees"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].unavailability.length()").value(0));
+  }
+
   @Test
   void GivenAnAdmin_WhenAddingAnEmployee_ThenTheyAreCreatedAndListed() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
 
     mockMvc
         .perform(as(post("/api/employees"), organisation, "ADMIN").content("{\"name\":\"Ada\"}"))
@@ -83,20 +140,21 @@ class EmployeeHttpTest {
   void GivenASchedulerRole_WhenAddingAnEmployee_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/employees"), anOrganisation(), "SCHEDULER").content("{\"name\":\"Ada\"}"))
+            as(post("/api/employees"), anOrganisation(mockMvc), "SCHEDULER")
+                .content("{\"name\":\"Ada\"}"))
         .andExpect(status().isForbidden());
   }
 
   @Test
   void GivenAnEmployeeRole_WhenListingColleagues_ThenItIsForbidden() throws Exception {
     mockMvc
-        .perform(as(get("/api/employees"), anOrganisation(), "EMPLOYEE"))
+        .perform(as(get("/api/employees"), anOrganisation(mockMvc), "EMPLOYEE"))
         .andExpect(status().isForbidden());
   }
 
   @Test
   void GivenAScheduler_WhenListingEmployees_ThenTheyAreReturned() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     addEmployee(organisation, "Ada");
 
     mockMvc
@@ -107,9 +165,9 @@ class EmployeeHttpTest {
 
   @Test
   void GivenPeopleInAnotherOrganisation_WhenListing_ThenOnlyOurOwnAreReturned() throws Exception {
-    String ours = anOrganisation();
+    String ours = anOrganisation(mockMvc);
     addEmployee(ours, "Ada");
-    addEmployee(anOrganisation(), "Their Employee");
+    addEmployee(anOrganisation(mockMvc), "Their Employee");
 
     mockMvc
         .perform(as(get("/api/employees"), ours, "ADMIN"))
@@ -120,7 +178,7 @@ class EmployeeHttpTest {
 
   @Test
   void GivenAnOperator_WhenListingAnotherOrganisation_ThenItIsPermitted() throws Exception {
-    String theirs = anOrganisation();
+    String theirs = anOrganisation(mockMvc);
     addEmployee(theirs, "Ada");
 
     mockMvc
@@ -131,7 +189,7 @@ class EmployeeHttpTest {
 
   @Test
   void GivenAnAdmin_WhenGrantingAQualification_ThenTheEmployeeHoldsIt() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
     String forklift = defineQualification(organisation, "Forklift");
 
@@ -150,9 +208,9 @@ class EmployeeHttpTest {
   @Test
   void GivenAnEmployeeOfAnotherOrganisation_WhenGrantingAQualification_ThenItIsNotFound()
       throws Exception {
-    String theirs = anOrganisation();
+    String theirs = anOrganisation(mockMvc);
     String theirEmployee = addEmployee(theirs, "Their Employee");
-    String ours = anOrganisation();
+    String ours = anOrganisation(mockMvc);
     String forklift = defineQualification(ours, "Forklift");
 
     mockMvc
@@ -166,9 +224,9 @@ class EmployeeHttpTest {
 
   @Test
   void GivenAQualificationOfAnotherOrganisation_WhenGrantingIt_ThenItIsNotFound() throws Exception {
-    String ours = anOrganisation();
+    String ours = anOrganisation(mockMvc);
     String ada = addEmployee(ours, "Ada");
-    String theirQualification = defineQualification(anOrganisation(), "Forklift");
+    String theirQualification = defineQualification(anOrganisation(mockMvc), "Forklift");
 
     mockMvc
         .perform(
@@ -181,7 +239,7 @@ class EmployeeHttpTest {
 
   @Test
   void GivenAnUnknownEmployee_WhenGrantingAQualification_ThenItIsNotFound() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String forklift = defineQualification(organisation, "Forklift");
 
     mockMvc
@@ -195,7 +253,7 @@ class EmployeeHttpTest {
 
   @Test
   void GivenAnAdmin_WhenSettingContractTerms_ThenItIsAccepted() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
 
     mockMvc
@@ -207,7 +265,7 @@ class EmployeeHttpTest {
 
   @Test
   void GivenZeroContractedMinutes_WhenSettingContractTerms_ThenItIsRejected() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
 
     mockMvc
@@ -228,7 +286,7 @@ class EmployeeHttpTest {
   @Test
   void GivenNoContractedMinutes_WhenSettingContractTerms_ThenTheBodyIsReportedAsIncomplete()
       throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
 
     mockMvc
@@ -242,7 +300,7 @@ class EmployeeHttpTest {
   @Test
   void GivenZeroContractedMinutesExplicitly_WhenSettingContractTerms_ThenItIsReportedAsInvalid()
       throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
 
     mockMvc
@@ -255,7 +313,7 @@ class EmployeeHttpTest {
 
   @Test
   void GivenTheEmployeeThemself_WhenDeclaringUnavailability_ThenItIsAccepted() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
 
     mockMvc
@@ -268,7 +326,7 @@ class EmployeeHttpTest {
   @Test
   void GivenAColleague_WhenDeclaringSomebodyElsesUnavailability_ThenItIsForbidden()
       throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
     String grace = addEmployee(organisation, "Grace");
 
@@ -281,7 +339,7 @@ class EmployeeHttpTest {
 
   @Test
   void GivenAnOverlappingSpan_WhenDeclaringUnavailability_ThenItIsRejected() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
     mockMvc
         .perform(
@@ -298,7 +356,7 @@ class EmployeeHttpTest {
 
   @Test
   void GivenAnEndBeforeItsStart_WhenDeclaringUnavailability_ThenItIsRejected() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
 
     mockMvc
@@ -310,7 +368,7 @@ class EmployeeHttpTest {
 
   @Test
   void GivenNoEnd_WhenDeclaringUnavailability_ThenItIsRejected() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
 
     mockMvc
@@ -322,7 +380,7 @@ class EmployeeHttpTest {
 
   @Test
   void GivenTheEmployeeThemself_WhenStatingAPreference_ThenItIsAccepted() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
 
     mockMvc
@@ -336,7 +394,7 @@ class EmployeeHttpTest {
 
   @Test
   void GivenNoStrength_WhenStatingAPreference_ThenItIsRejected() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
 
     mockMvc
@@ -349,21 +407,23 @@ class EmployeeHttpTest {
   @Test
   void GivenNoName_WhenAddingAnEmployee_ThenItIsRejected() throws Exception {
     mockMvc
-        .perform(as(post("/api/employees"), anOrganisation(), "ADMIN").content("{}"))
+        .perform(as(post("/api/employees"), anOrganisation(mockMvc), "ADMIN").content("{}"))
         .andExpect(status().isBadRequest());
   }
 
   @Test
   void GivenABlankName_WhenAddingAnEmployee_ThenItIsRejected() throws Exception {
     mockMvc
-        .perform(as(post("/api/employees"), anOrganisation(), "ADMIN").content("{\"name\":\"  \"}"))
+        .perform(
+            as(post("/api/employees"), anOrganisation(mockMvc), "ADMIN")
+                .content("{\"name\":\"  \"}"))
         .andExpect(status().isBadRequest());
   }
 
   @Test
   void GivenAMalformedBody_WhenAddingAnEmployee_ThenItIsRejected() throws Exception {
     mockMvc
-        .perform(as(post("/api/employees"), anOrganisation(), "ADMIN").content("{\"name\":"))
+        .perform(as(post("/api/employees"), anOrganisation(mockMvc), "ADMIN").content("{\"name\":"))
         .andExpect(status().isBadRequest());
   }
 
@@ -371,7 +431,7 @@ class EmployeeHttpTest {
   void GivenAnUnknownRole_WhenAddingAnEmployee_ThenItIsRejected() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/employees"), anOrganisation(), "SUPERVISOR")
+            as(post("/api/employees"), anOrganisation(mockMvc), "SUPERVISOR")
                 .content("{\"name\":\"Ada\"}"))
         .andExpect(status().isBadRequest());
   }
