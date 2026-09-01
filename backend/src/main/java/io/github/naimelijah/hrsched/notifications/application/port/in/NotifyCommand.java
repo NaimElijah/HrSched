@@ -1,6 +1,5 @@
 package io.github.naimelijah.hrsched.notifications.application.port.in;
 
-import io.github.naimelijah.hrsched.notifications.domain.model.NotificationKind;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.Objects;
@@ -13,7 +12,7 @@ import java.util.UUID;
  * @param subject the identifier of the thing it happened to
  */
 public record NotifyCommand(
-    OrganisationId organisation, EmployeeId recipient, NotificationKind kind, UUID subject) {
+    OrganisationId organisation, EmployeeId recipient, NotifiableEvent kind, UUID subject) {
 
   public NotifyCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");

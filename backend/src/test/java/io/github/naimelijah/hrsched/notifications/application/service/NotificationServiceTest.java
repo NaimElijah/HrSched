@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.notifications.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.naimelijah.hrsched.notifications.application.port.in.NotifiableEvent;
 import io.github.naimelijah.hrsched.notifications.application.port.in.NotifyCommand;
 import io.github.naimelijah.hrsched.notifications.application.port.in.PublishedNotification;
 import io.github.naimelijah.hrsched.notifications.application.port.out.AuditTrail;
@@ -12,7 +13,6 @@ import io.github.naimelijah.hrsched.notifications.application.port.out.Notificat
 import io.github.naimelijah.hrsched.notifications.domain.model.NotAddressableException;
 import io.github.naimelijah.hrsched.notifications.domain.model.Notification;
 import io.github.naimelijah.hrsched.notifications.domain.model.NotificationId;
-import io.github.naimelijah.hrsched.notifications.domain.model.NotificationKind;
 import io.github.naimelijah.hrsched.notifications.domain.model.UnknownNotificationException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
@@ -62,7 +62,7 @@ class NotificationServiceTest {
   private NotificationId notifyAda(UUID subject) {
     return service.notify(
         themself(ACME, GRACE),
-        new NotifyCommand(ACME, ADA, NotificationKind.SWAP_REQUESTED, subject));
+        new NotifyCommand(ACME, ADA, NotifiableEvent.SWAP_REQUESTED, subject));
   }
 
   @Test
@@ -74,7 +74,7 @@ class NotificationServiceTest {
     assertThat(service.findMine(themself(ACME, ADA), ACME))
         .containsExactly(
             new PublishedNotification(
-                raised, NotificationKind.SWAP_REQUESTED, subject, NOON, false));
+                raised, NotifiableEvent.SWAP_REQUESTED, subject, NOON, false));
   }
 
   /** The clock is injected, so this is a fact the test states rather than one it tolerates. */
@@ -103,7 +103,7 @@ class NotificationServiceTest {
   void GivenANotificationInAnotherOrganisation_WhenReadingOurs_ThenItIsNotThere() {
     service.notify(
         themself(RIVAL, GRACE),
-        new NotifyCommand(RIVAL, ADA, NotificationKind.SWAP_REQUESTED, UUID.randomUUID()));
+        new NotifyCommand(RIVAL, ADA, NotifiableEvent.SWAP_REQUESTED, UUID.randomUUID()));
 
     assertThat(service.findMine(themself(ACME, ADA), ACME)).isEmpty();
   }
@@ -123,7 +123,7 @@ class NotificationServiceTest {
                 service.notify(
                     themself(RIVAL, GRACE),
                     new NotifyCommand(
-                        ACME, ADA, NotificationKind.SWAP_REQUESTED, UUID.randomUUID())))
+                        ACME, ADA, NotifiableEvent.SWAP_REQUESTED, UUID.randomUUID())))
         .isInstanceOf(CrossTenantAccessException.class);
   }
 
@@ -187,8 +187,7 @@ class NotificationServiceTest {
 
     NotificationId raised =
         service.notify(
-            grace,
-            new NotifyCommand(ACME, ADA, NotificationKind.SWAP_REQUESTED, UUID.randomUUID()));
+            grace, new NotifyCommand(ACME, ADA, NotifiableEvent.SWAP_REQUESTED, UUID.randomUUID()));
 
     assertThat(audit.of(NotificationChange.NOTIFICATION_RAISED))
         .containsExactly(

@@ -10,15 +10,9 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRoste
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosteredShift;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
@@ -51,11 +45,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -276,112 +266,6 @@ class SchedulingServiceTest {
     assertThat(service.findRosters(scheduler(ACME), ACME))
         .extracting(Roster::id)
         .containsExactly(ours.id());
-  }
-
-  private static final class FirstFitGenerator implements RosterGenerator {
-    @Override
-    public List<Assignment> generate(
-        List<Shift> shifts, List<RosterCandidate> candidates, ConstraintSet constraints) {
-      List<Assignment> assignments = new ArrayList<>();
-      for (Shift shift : shifts) {
-        candidates.stream()
-            .filter(
-                candidate -> candidate.couldCover(shift.period(), shift.requiredQualifications()))
-            .limit(shift.requiredHeadcount())
-            .forEach(candidate -> assignments.add(new Assignment(shift.id(), candidate.id())));
-      }
-      return List.copyOf(assignments);
-    }
-  }
-
-  private static final class FakeShifts implements ShiftRepository {
-    private final Map<ShiftId, Shift> stored = new LinkedHashMap<>();
-
-    @Override
-    public void save(Shift shift) {
-      stored.put(shift.id(), shift);
-    }
-
-    @Override
-    public Optional<Shift> findById(OrganisationId organisation, ShiftId id) {
-      return Optional.ofNullable(stored.get(id))
-          .filter(shift -> shift.organisation().equals(organisation));
-    }
-
-    @Override
-    public List<Shift> findWithin(OrganisationId organisation, TimeRange within) {
-      return stored.values().stream()
-          .filter(shift -> shift.organisation().equals(organisation))
-          .filter(shift -> shift.period().overlaps(within))
-          .toList();
-    }
-  }
-
-  private static final class FakeRosters implements RosterRepository {
-    private final Map<RosterId, Roster> stored = new LinkedHashMap<>();
-
-    @Override
-    public void save(Roster roster) {
-      stored.put(roster.id(), roster);
-    }
-
-    @Override
-    public Optional<Roster> findById(OrganisationId organisation, RosterId id) {
-      return Optional.ofNullable(stored.get(id))
-          .filter(roster -> roster.organisation().equals(organisation));
-    }
-
-    @Override
-    public List<Roster> findByOrganisation(OrganisationId organisation) {
-      return stored.values().stream()
-          .filter(roster -> roster.organisation().equals(organisation))
-          .toList();
-    }
-
-    Roster byId(RosterId id) {
-      return stored.get(id);
-    }
-  }
-
-  private static final class FakeConstraintSets implements ConstraintSetRepository {
-    private final Map<OrganisationId, ConstraintSet> stored = new HashMap<>();
-
-    @Override
-    public void save(ConstraintSet constraintSet) {
-      stored.put(constraintSet.organisation(), constraintSet);
-    }
-
-    @Override
-    public Optional<ConstraintSet> findCurrent(OrganisationId organisation) {
-      return Optional.ofNullable(stored.get(organisation));
-    }
-  }
-
-  private static final class FakeWorkforce implements WorkforceDirectory {
-    private final Map<OrganisationId, List<RosterCandidate>> people = new HashMap<>();
-    private final Map<OrganisationId, Set<QualificationId>> defined = new HashMap<>();
-
-    void add(OrganisationId organisation, RosterCandidate candidate) {
-      people.computeIfAbsent(organisation, key -> new ArrayList<>()).add(candidate);
-    }
-
-    void define(OrganisationId organisation, QualificationId qualification) {
-      defined
-          .computeIfAbsent(organisation, key -> new java.util.LinkedHashSet<>())
-          .add(qualification);
-    }
-
-    @Override
-    public List<RosterCandidate> candidatesFor(Actor actor, OrganisationId organisation) {
-      actor.requireAccessTo(organisation);
-      return people.getOrDefault(organisation, List.of());
-    }
-
-    @Override
-    public Set<QualificationId> definedQualifications(Actor actor, OrganisationId organisation) {
-      actor.requireAccessTo(organisation);
-      return defined.getOrDefault(organisation, Set.of());
-    }
   }
 
   @Test
@@ -907,36 +791,5 @@ class SchedulingServiceTest {
     assertThat(audit.changes())
         .describedAs("reads are not audited, or the writes would be buried under them")
         .isEmpty();
-  }
-
-  /**
-   * Records what the service says was changed.
-   *
-   * <p>Hand-written, like every other double here: the audit trail is our own port, and asking it
-   * what it was told is how "was this recorded?" becomes a test rather than a review comment.
-   */
-  private static final class RecordingAuditTrail implements AuditTrail {
-
-    private final List<AuditedChange> recorded = new ArrayList<>();
-
-    @Override
-    public void record(AuditedChange change) {
-      recorded.add(change);
-    }
-
-    List<SchedulingChange> changes() {
-      return recorded.stream().map(AuditedChange::change).toList();
-    }
-
-    /**
-     * Clears what was recorded, so a test about reads can start after the writes that set it up.
-     */
-    void forget() {
-      recorded.clear();
-    }
-
-    List<AuditedChange> of(SchedulingChange change) {
-      return recorded.stream().filter(entry -> entry.change() == change).toList();
-    }
   }
 }

@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.notifications.application.service;
 
+import io.github.naimelijah.hrsched.notifications.application.port.in.NotifiableEvent;
 import io.github.naimelijah.hrsched.notifications.application.port.in.NotifyCommand;
 import io.github.naimelijah.hrsched.notifications.application.port.in.NotifyUseCase;
 import io.github.naimelijah.hrsched.notifications.application.port.in.PublishedNotification;
@@ -11,6 +12,7 @@ import io.github.naimelijah.hrsched.notifications.application.port.out.Notificat
 import io.github.naimelijah.hrsched.notifications.domain.model.NotAddressableException;
 import io.github.naimelijah.hrsched.notifications.domain.model.Notification;
 import io.github.naimelijah.hrsched.notifications.domain.model.NotificationId;
+import io.github.naimelijah.hrsched.notifications.domain.model.NotificationKind;
 import io.github.naimelijah.hrsched.notifications.domain.model.UnknownNotificationException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
@@ -56,7 +58,7 @@ public class NotificationService implements NotifyUseCase, ReadNotificationsUseC
             NotificationId.newId(),
             command.organisation(),
             command.recipient(),
-            command.kind(),
+            kindOf(command.kind()),
             command.subject(),
             clock.instant());
     notifications.save(notification);
@@ -106,10 +108,32 @@ public class NotificationService implements NotifyUseCase, ReadNotificationsUseC
     audit.record(new AuditedChange(organisation, actor.id(), change, subject.value()));
   }
 
+  /**
+   * Translates the published vocabulary into the domain's own, and back.
+   *
+   * <p>Two enums that agree exactly today, kept apart so that changing one is not automatically a
+   * change to every other context. See {@link NotifiableEvent}.
+   */
+  private static NotificationKind kindOf(NotifiableEvent event) {
+    return switch (event) {
+      case SWAP_REQUESTED -> NotificationKind.SWAP_REQUESTED;
+      case SWAP_APPROVED -> NotificationKind.SWAP_APPROVED;
+      case SWAP_REJECTED -> NotificationKind.SWAP_REJECTED;
+    };
+  }
+
+  private static NotifiableEvent eventOf(NotificationKind kind) {
+    return switch (kind) {
+      case SWAP_REQUESTED -> NotifiableEvent.SWAP_REQUESTED;
+      case SWAP_APPROVED -> NotifiableEvent.SWAP_APPROVED;
+      case SWAP_REJECTED -> NotifiableEvent.SWAP_REJECTED;
+    };
+  }
+
   private static PublishedNotification publish(Notification notification) {
     return new PublishedNotification(
         notification.id(),
-        notification.kind(),
+        eventOf(notification.kind()),
         notification.subject(),
         notification.occurredAt(),
         notification.isRead());

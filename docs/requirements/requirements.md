@@ -53,7 +53,7 @@ implemented; the rest are not.
 | F4 | Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest`. *Partially: `EmployeeResponse` carries neither availability nor a roster, so the HTTP listing does not satisfy this row — only the use case does.* |
 | F5 | Employee | See their own published roster | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *The assignments naming them, from published rosters only — the whole roster stays Admin and Scheduler (R12).* |
 | F6 | Employee | Declare when they cannot work, and state soft preferences | `EmployeeService`, `EmployeeServiceTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)) |
-| F7 | Employee | Request a swap of one of their assignments with another employee | *not implemented* |
+| F7 | Employee | Request a swap of one of their assignments with another employee | `SwapService`, `SwapServiceTest`, `SwapHttpTest` ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)). *Modelled as a transfer rather than a two-way exchange — Q22.* |
 | F8 | Admin | Add employees | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` |
 | F9 | Admin | Define qualifications, and grant them to employees | `QualificationService`, `QualificationServiceTest`, `QualificationHttpTest`; granting: `EmployeeService`, `EmployeeServiceTest` |
 | F10 | Admin | Configure the organisation's working-time constraint set | `SchedulingService`, `RosteringHttpTest` |
@@ -62,8 +62,12 @@ implemented; the rest are not.
 | F12 | Scheduler | Publish a draft, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest` |
 | F13 | Operator | Administer organisations across the platform | `OrganisationService`, `OrganisationServiceTest`, `OrganisationHttpTest` ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)). *Onboard, list and read; there is no rename and no closure.* |
 
-**Swaps (F7)** are approved by a **Scheduler**; the other employee is informed rather than
-asked. Not yet implemented.
+**Swaps (F7)** are approved by a **Scheduler**; the other employee is informed rather than asked,
+and being informed means a notification they can go and read. Approving does not edit the published
+roster — R6 forbids that — it publishes a replacement that supersedes it, through the same
+publication every other roster goes through, so a swap breaking a working-time rule is refused with
+no override. Whether the colleague may actually cover the shift is decided when a Scheduler answers
+rather than when an Employee asks, because deciding it means reading colleagues' unavailability.
 
 **Roster generation is automatic** — that is the point of the product. A Scheduler states what
 needs covering and the system produces a legal roster. Today it does so greedily and optimises
@@ -218,6 +222,7 @@ applicant tracking, and being the HR system of record.
 | Q17 | Which time zone are working-time rules evaluated in? | NaimElijah | Daily and consecutive-day limits currently count days in UTC |
 | Q19 | Which observability backend receives the OpenTelemetry export, and at what sampling rate? | NaimElijah | Turning OTLP export on; sampling below 1.0 |
 | Q20 | Should an Admin be able to read their organisation's audit trail, and under what retention and erasure obligations? | NaimElijah | An `audit` bounded context; ADR-018's revisit trigger; part of the Compliance TODO |
+| Q22 | Is a swap a transfer of one shift, or a two-way exchange of two? | NaimElijah | Whether `SwapRequest` gains a second shift; today it is a transfer ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)) |
 | Q21 | By what channel is a colleague actually informed, and how quickly must that happen? | NaimElijah | Anything beyond the in-app inbox: email, push, an unread badge. Today somebody is informed when they next open the application, which for a rota change may be too late ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)) |
 
 **Resolved**
@@ -237,4 +242,4 @@ applicant tracking, and being the HR system of record.
 | Q11 | Who approves a swap | A Scheduler; the colleague is informed | 2026-08-30 |
 | Q18 | Whether an employee sees their own roster, and what "their own" means | Yes: the assignments naming them, from published rosters only. A narrower capability beside R12, not a widening of it | 2026-09-01 |
 
-Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21.
+Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21, and building swaps raised Q22.

@@ -100,7 +100,8 @@ Three rules hold this together, and each fails the build when broken:
 | `workforce.application` | Employee and qualification use cases. `FindRosterableEmployeesUseCase` is this context's **published API**, returning `RosterableEmployee` rather than the aggregate. |
 | `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule`. |
 | `scheduling.application` | Shift definition, constraint configuration, roster generation and publication. Assembles the evidence constraints are judged against. |
-| `scheduling.adapter.out.workforce` | The anti-corruption layer: the **only** class in scheduling permitted to name another context, and only its published port. |
+| `scheduling.adapter.out.workforce` | An anti-corruption layer: one of **two** classes in scheduling permitted to name another context, and only its published port. |
+| `scheduling.adapter.out.notification` | The other one. Translates "a swap was approved" into the word the `notifications` context uses for it, so nothing inward of the `Notifier` port knows that context exists ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. |
 | `*.adapter.out.persistence` | In-memory repositories, every read scoped by organisation. Placeholders until ADR-004. |
 | `*.adapter.out.audit` | `SchedulingAuditLog` and `WorkforceAuditLog` — each implements its own context's `AuditTrail` port, turning one recorded change into a structured log event and a counter. Named for their contexts because Spring derives a bean name from the simple class name alone. |
@@ -298,6 +299,17 @@ Nothing is persisted beyond process lifetime.
 - **The constraint store keeps only the current version**, while a published roster records the
   version that approved it. Historical versions must be retrievable before that record means
   anything — owed alongside ADR-004.
+- **Approving a swap publishes a replacement; it never edits.** `SwapService` builds the roster that
+  would have been published had the swap been in it, and then calls `PlanRostersUseCase.publish` -
+  the same door generation and manual assignment go through. So the constraint check, the
+  supersession and both audit entries are not merely also applied to swaps, they are the same code,
+  and a swap cannot become a way round rules generation cannot get round
+  ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)). The cost is that a
+  refused approval leaves the replacement behind as a draft.
+- **Whether a colleague may cover a swapped shift is decided at approval, not at request.** Deciding
+  it means listing colleagues, which discloses their unavailability, and an Employee may not. So a
+  request may name somebody who cannot cover the shift, and the Scheduler answering it is where that
+  is found out.
 - **Publishing supersedes, so exactly one roster is authoritative.** `publish` marks every
   published roster of that organisation whose period overlaps as `SUPERSEDED`. Overlap rather than
   equality decides it, because a partly-overlapping published roster would otherwise still govern

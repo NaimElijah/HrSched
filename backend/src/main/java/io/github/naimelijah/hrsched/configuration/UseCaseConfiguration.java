@@ -4,13 +4,17 @@ import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepo
 import io.github.naimelijah.hrsched.access.application.service.OrganisationService;
 import io.github.naimelijah.hrsched.notifications.application.port.out.NotificationRepository;
 import io.github.naimelijah.hrsched.notifications.application.service.NotificationService;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.Notifier;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
 import io.github.naimelijah.hrsched.scheduling.application.service.SchedulingService;
+import io.github.naimelijah.hrsched.scheduling.application.service.SwapService;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
 import io.github.naimelijah.hrsched.workforce.application.service.EmployeeService;
@@ -74,6 +78,24 @@ public class UseCaseConfiguration {
       RosterGenerator generator,
       AuditTrail audit) {
     return new SchedulingService(shifts, rosters, constraintSets, workforce, generator, audit);
+  }
+
+  /**
+   * Swapping composes publication rather than repeating it, so this bean depends on the driving
+   * port the scheduling service implements. Spring resolves that against the {@code
+   * schedulingService} bean above; there is no cycle, because nothing in scheduling depends on
+   * swaps.
+   */
+  @Bean
+  SwapService swapService(
+      SwapRequestRepository swaps,
+      RosterRepository rosters,
+      ShiftRepository shifts,
+      WorkforceDirectory workforce,
+      PlanRostersUseCase planRosters,
+      Notifier notifier,
+      AuditTrail audit) {
+    return new SwapService(swaps, rosters, shifts, workforce, planRosters, notifier, audit);
   }
 
   @Bean

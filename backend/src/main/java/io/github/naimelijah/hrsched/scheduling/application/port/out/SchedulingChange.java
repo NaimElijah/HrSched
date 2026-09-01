@@ -34,6 +34,18 @@ public enum SchedulingChange {
   /** A roster became the authoritative answer to who works when. */
   ROSTER_PUBLISHED,
 
+  /** Somebody asked for one of their shifts to be covered by a named colleague. */
+  SWAP_REQUESTED,
+
+  /**
+   * A Scheduler agreed to a swap. It appears beside the ROSTER_PUBLISHED and ROSTER_SUPERSEDED
+   * entries the replacement produced, because those say a roster changed and this says why.
+   */
+  SWAP_APPROVED,
+
+  /** A Scheduler declined a swap. Nothing about any roster changed. */
+  SWAP_REJECTED,
+
   /**
    * A published roster stopped being authoritative because a newer one overlapped it. Recorded
    * separately because nobody asked for it: it is a consequence of publishing something else, and

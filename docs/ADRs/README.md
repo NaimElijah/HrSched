@@ -27,6 +27,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-019](ADR-019-an-application-layer-for-the-access-context.md) | Give the access context an application layer, and make the organisation a real record | Accepted | 2026-09-01 |
 | [ADR-020](ADR-020-refuse-a-request-naming-an-unknown-organisation.md) | Refuse a request naming an organisation nobody onboarded, at the boundary | Accepted | 2026-09-01 |
 | [ADR-021](ADR-021-notifications-as-a-bounded-context.md) | Make notifications a bounded context, and let it hold no words | Accepted | 2026-09-01 |
+| [ADR-022](ADR-022-approving-a-swap-publishes-a-replacement-roster.md) | Approve a swap by publishing a replacement roster, never by editing one | Accepted | 2026-09-01 |
 
 ## Decisions waiting to be recorded
 

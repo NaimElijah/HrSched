@@ -1,7 +1,6 @@
 package io.github.naimelijah.hrsched.notifications.application.port.in;
 
 import io.github.naimelijah.hrsched.notifications.domain.model.NotificationId;
-import io.github.naimelijah.hrsched.notifications.domain.model.NotificationKind;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
@@ -19,7 +18,7 @@ import java.util.UUID;
  * @param read whether they have already seen it
  */
 public record PublishedNotification(
-    NotificationId id, NotificationKind kind, UUID subject, Instant occurredAt, boolean read) {
+    NotificationId id, NotifiableEvent kind, UUID subject, Instant occurredAt, boolean read) {
 
   public PublishedNotification {
     Objects.requireNonNull(id, "id must not be null");

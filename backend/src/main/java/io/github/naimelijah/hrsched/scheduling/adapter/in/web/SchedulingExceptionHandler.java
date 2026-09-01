@@ -9,11 +9,14 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordExce
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownSwapRequestException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
@@ -46,7 +49,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * can detect. What the caller is told does not change - still a 404, still "No such resource." -
  * only what the operator can see. See ADR-018.
  */
-@RestControllerAdvice(assignableTypes = SchedulingController.class)
+@RestControllerAdvice(assignableTypes = {SchedulingController.class, SwapController.class})
 public class SchedulingExceptionHandler {
 
   private static final Logger log = LoggerFactory.getLogger(SchedulingExceptionHandler.class);
@@ -98,6 +101,7 @@ public class SchedulingExceptionHandler {
     DuplicateAssignmentException.class,
     RosterNotEditableException.class,
     UnknownRequiredQualificationException.class,
+    SwapWithThemselfException.class,
     MalformedRequestException.class
   })
   public ProblemDetail handleInvalidInput(RuntimeException exception) {
@@ -176,11 +180,25 @@ public class SchedulingExceptionHandler {
     return problem;
   }
 
+  /**
+   * A swap decided twice. Two Schedulers with the same request open is the ordinary way this
+   * happens, so it is a conflict rather than a bad request: nothing about what the second one sent
+   * was wrong, it just arrived after somebody else had answered.
+   */
+  @ExceptionHandler(SwapNotPendingException.class)
+  public ProblemDetail handleAlreadyDecided(SwapNotPendingException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    problem.setTitle("Already decided");
+    return problem;
+  }
+
   @ExceptionHandler({
     UnknownRosterException.class,
     UnknownShiftException.class,
     UnknownAssigneeException.class,
     UnknownAssignmentException.class,
+    UnknownSwapRequestException.class,
     CrossTenantAccessException.class
   })
   public ProblemDetail handleUnknown(RuntimeException exception) {
