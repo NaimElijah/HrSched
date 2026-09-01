@@ -103,6 +103,10 @@ class OrganisationHttpTest {
         .andExpect(status().isNotFound());
   }
 
+  /**
+   * Onboarding is exempt from the boundary check (ADR-020), so this reaches the use case and is
+   * refused for the right reason even though the organisation claimed is not a real one.
+   */
   @Test
   void GivenAnAdminRole_WhenOnboardingAnOrganisation_ThenItIsForbidden() throws Exception {
     mockMvc
@@ -115,14 +119,14 @@ class OrganisationHttpTest {
   @Test
   void GivenASchedulerRole_WhenListingOrganisations_ThenItIsForbidden() throws Exception {
     mockMvc
-        .perform(as(get("/api/organisations"), UUID.randomUUID().toString(), "SCHEDULER"))
+        .perform(as(get("/api/organisations"), onboard("Acme"), "SCHEDULER"))
         .andExpect(status().isForbidden());
   }
 
   @Test
   void GivenAnEmployeeRole_WhenListingOrganisations_ThenItIsForbidden() throws Exception {
     mockMvc
-        .perform(as(get("/api/organisations"), UUID.randomUUID().toString(), "EMPLOYEE"))
+        .perform(as(get("/api/organisations"), onboard("Acme"), "EMPLOYEE"))
         .andExpect(status().isForbidden());
   }
 

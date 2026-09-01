@@ -129,8 +129,18 @@ Every request carries the acting identity in headers. **This is a placeholder an
 any caller can claim any role. It exists so the API can be exercised before an identity provider
 is chosen.
 
+The organisation must be onboarded first. Inventing one with `uuidgen` used to work, which was the
+bug [ADR-020](docs/ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md) closed: an
+organisation nobody onboarded does not exist, and every request naming one is refused with 404.
+
 ```bash
-ORG=$(uuidgen); ME=$(uuidgen)
+ME=$(uuidgen)
+
+# 0. Onboard the organisation (Operator — belongs to no organisation, so sends no X-Organisation)
+ORG=$(curl -s -X POST localhost:8080/api/organisations \
+  -H "X-User: $ME" -H 'X-Role: OPERATOR' -H 'Content-Type: application/json' \
+  -d '{"name":"Acme"}' | jq -r .id)
+
 H=(-H "X-Organisation: $ORG" -H "X-User: $ME" -H "Content-Type: application/json")
 
 # 1. Add someone (Admin)

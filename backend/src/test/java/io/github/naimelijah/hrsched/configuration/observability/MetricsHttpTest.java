@@ -2,15 +2,18 @@ package io.github.naimelijah.hrsched.configuration.observability;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -69,10 +72,23 @@ class MetricsHttpTest {
   @Test
   void GivenARequestHasBeenServed_WhenScraping_ThenItsLatencyAndStatusWereRecorded()
       throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                post("/api/organisations")
+                    .header("X-User", UUID.randomUUID().toString())
+                    .header("X-Role", "OPERATOR")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"Organisation %s\"}".formatted(UUID.randomUUID())))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
     mockMvc
         .perform(
             get("/api/qualifications")
-                .header("X-Organisation", UUID.randomUUID().toString())
+                .header("X-Organisation", JsonPath.read(body, "$.id").toString())
                 .header("X-User", UUID.randomUUID().toString())
                 .header("X-Role", "ADMIN"))
         .andExpect(status().isOk());

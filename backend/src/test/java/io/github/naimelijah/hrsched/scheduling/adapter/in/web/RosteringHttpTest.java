@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,15 +31,31 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @AutoConfigureMockMvc
 class RosteringHttpTest {
 
+  @Autowired private MockMvc mockMvc;
+
   /**
    * A fresh organisation per test. The repositories behind this context are singletons, so a shared
    * identifier lets one test's data decide another test's assertion.
+   *
+   * <p>It is really onboarded rather than invented. Since ADR-020 an organisation nobody onboarded
+   * does not exist, and every request naming one is refused with a 404 before it reaches a
+   * controller — so a random UUID here would fail every test that used it, for the right reason.
    */
-  private static String anOrganisation() {
-    return UUID.randomUUID().toString();
+  private String anOrganisation() throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                post("/api/organisations")
+                    .header("X-User", UUID.randomUUID().toString())
+                    .header("X-Role", "OPERATOR")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"Organisation %s\"}".formatted(UUID.randomUUID())))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return JsonPath.read(body, "$.id");
   }
-
-  @Autowired private MockMvc mockMvc;
 
   private MockHttpServletRequestBuilder as(
       MockHttpServletRequestBuilder request, String organisation, String role) {
@@ -94,7 +111,7 @@ class RosteringHttpTest {
   @Test
   void GivenAvailableStaffAndNoRules_WhenGeneratingARoster_ThenTheShiftIsCovered()
       throws Exception {
-    String organisation = UUID.randomUUID().toString();
+    String organisation = anOrganisation();
     addEmployee(organisation, "Ada");
     defineShift(organisation, "2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1);
 
@@ -109,7 +126,7 @@ class RosteringHttpTest {
 
   @Test
   void GivenACompliantDraft_WhenPublished_ThenItRecordsTheConstraintVersion() throws Exception {
-    String organisation = UUID.randomUUID().toString();
+    String organisation = anOrganisation();
     addEmployee(organisation, "Ada");
     defineShift(organisation, "2026-10-06T08:00:00Z", "2026-10-06T16:00:00Z", 1);
     mockMvc
@@ -130,7 +147,7 @@ class RosteringHttpTest {
 
   @Test
   void GivenUnavailableStaff_WhenGeneratingARoster_ThenTheShiftIsLeftUncovered() throws Exception {
-    String organisation = UUID.randomUUID().toString();
+    String organisation = anOrganisation();
     String ada = addEmployee(organisation, "Ada");
     mockMvc
         .perform(
@@ -164,7 +181,7 @@ class RosteringHttpTest {
 
   @Test
   void GivenARosterOfAnotherOrganisation_WhenReadingIt_ThenItIsNotFound() throws Exception {
-    String organisation = UUID.randomUUID().toString();
+    String organisation = anOrganisation();
     addEmployee(organisation, "Ada");
     defineShift(organisation, "2026-10-09T08:00:00Z", "2026-10-09T16:00:00Z", 1);
     String roster = generateRoster(organisation, "2026-10-09T00:00:00Z", "2026-10-10T00:00:00Z");
@@ -199,7 +216,7 @@ class RosteringHttpTest {
   @Test
   void GivenNoConstraintsConfigured_WhenReadingThem_ThenAnEmptyFirstVersionIsReturned()
       throws Exception {
-    String organisation = UUID.randomUUID().toString();
+    String organisation = anOrganisation();
 
     mockMvc
         .perform(as(get("/api/constraints"), organisation, "ADMIN"))
@@ -211,7 +228,7 @@ class RosteringHttpTest {
   @Test
   void GivenAConstraintThatCannotBeSatisfied_WhenGenerating_ThenNothingIsAssigned()
       throws Exception {
-    String organisation = UUID.randomUUID().toString();
+    String organisation = anOrganisation();
     addEmployee(organisation, "Ada");
     mockMvc
         .perform(
@@ -249,7 +266,7 @@ class RosteringHttpTest {
 
   @Test
   void GivenAPublishedRoster_WhenPublishedAgain_ThenItIsRejected() throws Exception {
-    String organisation = UUID.randomUUID().toString();
+    String organisation = anOrganisation();
     addEmployee(organisation, "Ada");
     defineShift(organisation, "2026-10-13T08:00:00Z", "2026-10-13T16:00:00Z", 1);
     String roster = generateRoster(organisation, "2026-10-13T00:00:00Z", "2026-10-14T00:00:00Z");
@@ -264,8 +281,8 @@ class RosteringHttpTest {
 
   @Test
   void GivenTwoOrganisations_WhenEachConfiguresRules_ThenNeitherSeesTheOther() throws Exception {
-    String first = UUID.randomUUID().toString();
-    String second = UUID.randomUUID().toString();
+    String first = anOrganisation();
+    String second = anOrganisation();
     mockMvc
         .perform(
             as(put("/api/constraints"), first, "ADMIN").content("{\"maximumConsecutiveDays\":3}"))

@@ -180,6 +180,20 @@ Nothing is persisted beyond process lifetime.
   filtering by organisation and returning nothing, which surfaces as an unknown-record 404.
   `CrossTenantAccessException` still guards every direct caller, and every exception handler still
   translates it. Worth knowing before anyone concludes the guard is dead code and deletes it.
+- **An organisation must exist before anything can be done in its name.** `KnownOrganisationFilter`
+  checks `X-Organisation` against the register on every `/api/**` request and answers the ordinary
+  404 when it names an organisation nobody onboarded. Before it, a caller could invent a tenant with
+  `uuidgen` and get a working private corner of the system that no operator could see. Onboarding is
+  exempt, or the platform could never be bootstrapped; a missing or malformed header passes through
+  to the 400 it already earned. It is a filter in `configuration` rather than three copies in the web
+  adapters, and it outlives ADR-011 — whether a tenant exists is a different question from who the
+  caller is. It is **not** authentication: anyone who learns a real identifier can still claim any
+  role inside it ([ADR-020](../ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md)).
+- **The two servlet filters are explicitly ordered, and the numbers matter.**
+  `TraceIdResponseFilter` must run after Boot's observation filter (registered at
+  `HIGHEST_PRECEDENCE + 1`), which opens the span it reads — ordered any earlier, `currentSpan()` is
+  null and `X-Trace-Id` silently disappears from every response. `KnownOrganisationFilter` runs
+  immediately after it, so a request it refuses still carries an id the caller can quote.
 - **There is now one endpoint where that guard genuinely fires over HTTP.** On `GET
   /api/organisations/{id}` the acting identity comes from `X-Organisation` and the target comes from
   the path, so unlike every other route the two can differ, and a tenant naming somebody else's

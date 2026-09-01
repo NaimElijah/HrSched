@@ -159,7 +159,11 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
 - **Tenant isolation** — the deployment is shared by independent organisations that must never
   see one another's data. Every aggregate belongs to exactly one organisation, and every query
   is scoped to it. A cross-tenant read is a security incident, not a bug, and isolation must be
-  covered by its own tests rather than assumed.
+  covered by its own tests rather than assumed. An organisation must also *exist*: a request naming
+  one nobody onboarded is refused at the boundary with the same 404 an unknown record produces, so
+  a tenant can no longer be conjured by inventing an identifier.
+  *Enforced by `KnownOrganisationFilter`, `KnownOrganisationHttpTest`;
+  [ADR-020](../ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md).*
 - **Persistence guarantees** — `TODO`: what must survive a crash, whether roster history is
   append-only, and the retention period. Blocked on ADR-004.
 - **Performance and scale** — `TODO`: state as measurable numbers per organisation (employees,
