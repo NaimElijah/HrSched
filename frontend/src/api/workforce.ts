@@ -1,10 +1,26 @@
 import { api, type ActingIdentity } from './client';
 
-/** Mirrors EmployeeResponse. */
+/** A span of time, as the API renders one. */
+export interface Period {
+  readonly start: string;
+  readonly end: string;
+}
+
+/**
+ * Mirrors EmployeeResponse.
+ *
+ * Unavailability and contracted hours are here because requirement F4 asks a Scheduler to see them.
+ * They are personal data, and the backend is what keeps them from a colleague: listing employees
+ * needs Admin or Scheduler. Nothing in this file enforces that, and nothing here should look as
+ * though it does.
+ */
 export interface Employee {
   readonly id: string;
   readonly name: string;
   readonly qualifications: readonly string[];
+  readonly unavailability: readonly Period[];
+  /** Contracted minutes per week, or null when none are set. Minutes, as the API sends them. */
+  readonly weeklyContractedMinutes: number | null;
 }
 
 /** Mirrors QualificationResponse. */

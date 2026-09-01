@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Employee } from '../api/workforce';
 import { ActingAsProvider } from './ActingAs';
 import { ActingAsBar } from './ActingAsBar';
@@ -18,8 +18,20 @@ import { ActingAsBar } from './ActingAsBar';
 const EMPLOYEE = '11111111-1111-4111-8111-111111111111';
 
 const COLLEAGUES: Employee[] = [
-  { id: EMPLOYEE, name: 'Ada', qualifications: [] },
-  { id: '44444444-4444-4444-8444-444444444444', name: 'Grace', qualifications: [] },
+  {
+    id: EMPLOYEE,
+    name: 'Ada',
+    qualifications: [],
+    unavailability: [],
+    weeklyContractedMinutes: null,
+  },
+  {
+    id: '44444444-4444-4444-8444-444444444444',
+    name: 'Grace',
+    qualifications: [],
+    unavailability: [],
+    weeklyContractedMinutes: null,
+  },
 ];
 
 function actingAs(role: string, employee: string | null) {
@@ -156,14 +168,75 @@ describe('switching role', () => {
   });
 });
 
+/**
+ * Creating an organisation is a real request, not a local mint.
+ *
+ * It used to be a mint, and that worked only because the backend believed any identifier it was
+ * sent. Since ADR-020 an organisation nobody onboarded does not exist, so a locally invented one
+ * would leave every subsequent request answering 404 while the bar showed a perfectly normal
+ * identifier.
+ */
 describe('switching organisation', () => {
-  it('GivenNewOrganisationClicked_WhenPressed_ThenAFreshIdentifierIsMinted', async () => {
+  const ONBOARDED = '99999999-9999-4999-8999-999999999999';
+
+  function onboardingReturns(outcome: { ok: boolean; status: number; body: unknown }) {
+    const stub = vi.fn((path: string, init?: RequestInit) =>
+      Promise.resolve({
+        ok: outcome.ok,
+        status: outcome.status,
+        headers: new Headers(),
+        text: () =>
+          Promise.resolve(
+            outcome.body === null
+              ? `${init?.method ?? 'GET'} ${path}`
+              : JSON.stringify(outcome.body),
+          ),
+      }),
+    );
+    vi.stubGlobal('fetch', stub);
+    return stub;
+  }
+
+  it('GivenNewOrganisationClicked_WhenItIsOnboarded_ThenTheBarAdoptsTheIdentifierItWasGiven', async () => {
+    onboardingReturns({ ok: true, status: 201, body: { id: ONBOARDED, name: 'Acme' } });
+    actingAs('ADMIN', null);
+    show([]);
+
+    await userEvent.click(screen.getByRole('button', { name: 'New organisation' }));
+
+    expect((screen.getByLabelText('Organisation') as HTMLInputElement).value).toBe(ONBOARDED);
+  });
+
+  it('GivenNewOrganisationClicked_WhenItIsOnboarded_ThenItIsAskedForAsTheOperator', async () => {
+    const stub = onboardingReturns({
+      ok: true,
+      status: 201,
+      body: { id: ONBOARDED, name: 'Acme' },
+    });
+    actingAs('ADMIN', null);
+    show([]);
+
+    await userEvent.click(screen.getByRole('button', { name: 'New organisation' }));
+
+    const [path, init] = stub.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/api/organisations');
+    expect(init.method).toBe('POST');
+    expect(new Headers(init.headers).get('X-Role')).toBe('OPERATOR');
+  });
+
+  it('GivenOnboardingFails_WhenItIsRefused_ThenTheBarSaysSoAndKeepsTheOldIdentifier', async () => {
+    onboardingReturns({
+      ok: false,
+      status: 403,
+      body: { title: 'Not permitted', detail: 'Only the platform operator may do this.' },
+    });
     actingAs('ADMIN', null);
     show([]);
     const before = (screen.getByLabelText('Organisation') as HTMLInputElement).value;
 
     await userEvent.click(screen.getByRole('button', { name: 'New organisation' }));
 
-    expect((screen.getByLabelText('Organisation') as HTMLInputElement).value).not.toBe(before);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Only the platform operator');
+    expect((screen.getByLabelText('Organisation') as HTMLInputElement).value).toBe(before);
   });
 });
