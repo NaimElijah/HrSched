@@ -9,6 +9,10 @@ import io.github.naimelijah.hrsched.workforce.domain.model.InvalidQualificationN
 import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -24,9 +28,35 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * <p>Note what a cross-tenant attempt returns: 404, not 403. A 403 would confirm that the resource
  * exists in some other organisation, which is itself a small leak. The caller is told only that
  * there is nothing here for them.
+ *
+ * <p>It is also where refusals are recorded, because it is the only place that sees every one of
+ * them. The caller is told exactly what it was told before; only the operator gains anything. See
+ * ADR-018.
  */
 @RestControllerAdvice(assignableTypes = {EmployeeController.class, QualificationController.class})
 public class WorkforceExceptionHandler {
+
+  private static final Logger log = LoggerFactory.getLogger(WorkforceExceptionHandler.class);
+
+  /** Shared with the scheduling handler, so one query answers "who was refused" across both. */
+  private static final String DENIED = "hrsched.access.denied";
+
+  private final MeterRegistry meters;
+
+  /**
+   * @param meters where refusals are counted
+   */
+  public WorkforceExceptionHandler(MeterRegistry meters) {
+    this.meters = meters;
+  }
+
+  private void denied(String kind) {
+    Counter.builder(DENIED)
+        .description("Refused attempts, by what refused them")
+        .tag("kind", kind)
+        .register(meters)
+        .increment();
+  }
 
   @ExceptionHandler({
     InvalidEmployeeNameException.class,
@@ -54,6 +84,11 @@ public class WorkforceExceptionHandler {
 
   @ExceptionHandler(NotPermittedException.class)
   public ProblemDetail handleNotPermitted(NotPermittedException exception) {
+    log.atWarn()
+        .addKeyValue("actor", exception.actor().value())
+        .addKeyValue("role", exception.held())
+        .log("Refused: the actor's role does not permit this");
+    denied("role");
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your role does not permit this.");
     problem.setTitle("Not permitted");
@@ -68,8 +103,18 @@ public class WorkforceExceptionHandler {
     return problem;
   }
 
+  /**
+   * The refusal the requirements call a security incident rather than a bug. It used to become a
+   * 404 and leave no trace at all, which made the incident undetectable; what the caller is told is
+   * unchanged.
+   */
   @ExceptionHandler(CrossTenantAccessException.class)
   public ProblemDetail handleCrossTenant(CrossTenantAccessException exception) {
+    log.atWarn()
+        .addKeyValue("actor", exception.actor().value())
+        .addKeyValue("organisation", exception.organisation().value())
+        .log("Refused: an actor reached for another organisation's data");
+    denied("cross_tenant");
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
     problem.setDetail("No such resource.");

@@ -17,10 +17,11 @@
 ---
 
 > [!WARNING]
-> **The domain is real; the product is not finished.** You can define people and shifts,
-> configure working-time rules, generate a roster and publish it — but **generation is greedy,
-> not optimised**, **there is no authentication** (the acting identity comes from a header, so
-> any caller can claim any role), and **nothing survives a restart**.
+> **The domain is real; the product is not finished.** You can onboard an organisation, define
+> people and shifts, configure working-time rules, generate a roster, adjust it by hand, publish
+> it, and swap a shift — but **generation is greedy, not optimised**, **there is no
+> authentication** (the acting identity comes from a header, so any caller can claim any role),
+> and **nothing survives a restart**.
 
 This README is ordered for a **contributor**, not an evaluator: there is not yet anything to
 evaluate, so Quick start comes before Architecture.
@@ -67,12 +68,23 @@ What works today, end to end over HTTP:
 - **Publish a roster**, which is refused if it breaks any rule, and records the constraint
   version that approved it so a later rule change can never make it retroactively illegal.
   Publishing supersedes any published roster it overlaps, so exactly one is ever authoritative.
+- **Assign and unassign by hand.** A Scheduler who disagrees with the generated result can put
+  somebody on a shift or take them off, on a draft only — a published roster is superseded, never
+  edited.
+- **See your own work.** An employee reads the assignments naming them, from published rosters
+  only. Reading a whole roster stays an Admin and Scheduler act, because it says who works when
+  about every colleague.
+- **Swap a shift.** An employee asks for one of their shifts to be covered by a colleague; a
+  Scheduler decides. Approving publishes a replacement roster that supersedes the old one and is
+  refused if it breaks any rule, so a swap cannot become a way around the rules. The colleague is
+  told, in an inbox they can read.
+- **Administer the platform.** An Operator onboards organisations and lists them. An organisation
+  nobody onboarded does not exist: every request naming one is refused.
 - **Multi-tenant throughout.** Every aggregate belongs to an organisation and every query is
   scoped to it.
 
 What does **not** work: generation optimises nothing (see
-[ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)), swaps are unimplemented, and
-there is no authentication.
+[ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)), and there is no authentication.
 
 ## Quick start
 
@@ -129,8 +141,18 @@ Every request carries the acting identity in headers. **This is a placeholder an
 any caller can claim any role. It exists so the API can be exercised before an identity provider
 is chosen.
 
+The organisation must be onboarded first. Inventing one with `uuidgen` used to work, which was the
+bug [ADR-020](docs/ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md) closed: an
+organisation nobody onboarded does not exist, and every request naming one is refused with 404.
+
 ```bash
-ORG=$(uuidgen); ME=$(uuidgen)
+ME=$(uuidgen)
+
+# 0. Onboard the organisation (Operator — belongs to no organisation, so sends no X-Organisation)
+ORG=$(curl -s -X POST localhost:8080/api/organisations \
+  -H "X-User: $ME" -H 'X-Role: OPERATOR' -H 'Content-Type: application/json' \
+  -d '{"name":"Acme"}' | jq -r .id)
+
 H=(-H "X-Organisation: $ORG" -H "X-User: $ME" -H "Content-Type: application/json")
 
 # 1. Add someone (Admin)
@@ -171,8 +193,15 @@ database, no third-party API, and no authentication.
 | --- | --- | --- |
 | `spring.application.name` | Name reported in logs and Actuator | `HrSched` |
 | `management.endpoint.health.probes.enabled` | Exposes `health/liveness` and `health/readiness` | `true` (set explicitly; Spring defaults it off outside Kubernetes) |
-| `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info` |
+| `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info,metrics,prometheus`. An allow list: `loggers`, `env` and `heapdump` are deliberately absent while there is no authentication ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md)) |
 | `server.port` | HTTP port | `8080` (Spring default, not overridden) |
+| `logging.structured.format.console` | Log format on stdout | `ecs` — Elastic Common Schema JSON, always, with no profile that turns it off ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
+| `logging.structured.ecs.service.name` / `.version` | Identify the emitting service in every line | `HrSched` / the Maven project version, filtered in at build time |
+| `logging.structured.ecs.service.environment` | Which environment produced the line | **Deliberately unset.** A committed default would travel to a real environment that forgot to override it |
+| `management.tracing.sampling.probability` | Share of requests given a trace id | `1.0` — free while nothing is exported |
+| `management.tracing.export.otlp.enabled` | Ship spans over OTLP | `false` — nothing listens yet (Q19), and an exporter with nowhere to send logs its own failure forever |
+| `management.logging.export.otlp.enabled` | Ship logs over OTLP | `false`, same reason |
+| `management.otlp.metrics.export.enabled` | Push metrics over OTLP | `false`, same reason. Metrics are pulled instead, from `/actuator/prometheus` |
 
 ## Tech stack
 
@@ -182,14 +211,19 @@ database, no third-party API, and no authentication.
 | Framework | Spring Boot | 4.1.1 | Supplies the HTTP boundary and health endpoints as configuration rather than code |
 | HTTP | `spring-boot-starter-webmvc` | via Boot BOM | Embedded Tomcat. **Boot 4.x renamed this** from `spring-boot-starter-web` |
 | Operations | `spring-boot-starter-actuator` | via Boot BOM | Health and readiness probes, required of every service by the project baseline |
+| Observability | `spring-boot-starter-opentelemetry` | via Boot BOM | OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters, so a W3C trace id reaches every response and every log line the request produces. Export is off. [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) |
+| Logging | Boot's built-in structured logging | via Boot BOM | ECS JSON needs no encoder library and no `logback-spring.xml` — one property. [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) |
+| Metrics | `micrometer-registry-prometheus` | via Boot BOM | Renders the meters Micrometer already collects for a scraper to pull. Nothing pushes. [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) |
 | Frontend | React | 19.2.8 | Largest ecosystem for a small SPA; TypeScript makes an API contract drift a compile error. [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) |
 | Frontend build | Vite | 8.2.2 | Dev server proxies `/api`, so no CORS exists anywhere. |
 | Frontend types | TypeScript | 6.0.3 | `strict`, plus the TS 6 defaults `verbatimModuleSyntax` and `noUncheckedIndexedAccess`. |
 | Frontend tests | Vitest | 4.1.11 | `fetch` is stubbed directly; the HTTP API is our own port. |
+| Frontend coverage | `@vitest/coverage-v8` | 4.1.11 | Pinned to Vitest by peer dependency; reported, never enforced (ADR-015) |
 | Architecture | ArchUnit | 1.5.0 | Fails the build on a broken dependency rule, a cross-context reference, or a kernel that learns about a context. [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md), [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md), [ADR-008](docs/ADRs/ADR-008-context-integration.md) |
 | Build | Maven Wrapper | 3.9.16 | Toolchain pinned in the repo; no global Maven install needed |
 | Format | Spotless + google-java-format | 3.10.0 / 1.27.0 | Bound to `validate`, so formatting is checked by the same command that builds |
 | Test | JUnit 5, AssertJ, MockMvc | via Boot BOM | Boot 4.x splits the old `spring-boot-starter-test` into per-concern starters |
+| Backend coverage | JaCoCo | 0.8.13 | Pinned explicitly: the Boot 4.1.1 BOM manages no JaCoCo version. Reported, never enforced (ADR-015) |
 
 ## Architecture
 
@@ -234,7 +268,9 @@ flowchart LR
 
 These are not conventions — they are **build failures**. `HexagonalArchitectureTest` runs in
 `./mvnw verify` and fails when the domain imports Spring, when the application reaches into an
-adapter, when one context references another, or when a context's own layers form a cycle.
+adapter, when one context references another, when a context's own layers form a cycle, when
+anything prints to stdout, when a domain class logs, or when a meter or a span appears inward of an
+adapter.
 
 Every rule has been observed failing on a deliberately introduced violation, then reverted —
 including the cross-context rule in both directions, since it *permits* something it used to
@@ -333,34 +369,98 @@ From `backend/`:
 ./mvnw test -Dtest=HexagonalArchitectureTest   # just the architecture rules
 ```
 
+`./mvnw verify` also writes a coverage report to `target/site/jacoco/index.html`. It is reported
+and never enforced — there is no threshold and nothing fails a build on it ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)).
+`./mvnw test` alone does not produce one; the report goal runs at `verify`.
+
 | Test | Layer | What it covers |
 | --- | --- | --- |
-| `ShiftPeriodTest` | Domain | The one invariant that exists, plus null and boundary cases. No Spring. |
-| `ShiftServiceTest` | Application | Use cases against a hand-written stub of their own port. No Spring, no mocking framework. |
-| `ShiftHttpTest` | End to end | Drives the full hexagon over HTTP — controller, port, service, in-memory adapter. |
-| `EmployeeTest` | Domain (workforce) | Name and identity invariants, one scenario per test. No Spring. |
-| `HexagonalArchitectureTest` | Whole codebase | Five ArchUnit rules: dependency direction, context independence, layer cycles. |
+| `TimeRangeTest`, `ActorTest`, `IdentityTest` | Shared kernel | The range invariant, which actor may cross an organisation boundary, and every identity record — including that a `UserId` and an `EmployeeId` wrapping one UUID stay unequal ([ADR-012](docs/ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). |
+| `OrganisationTest`, `EmployeeTest`, `QualificationTest`, `ContractTermsTest`, `ShiftPreferenceTest` | Domain (access, workforce) | Constructor invariants and identity equality. No Spring. |
+| `ShiftTest`, `RosterTest`, `ConstraintSetTest`, `WorkingTimeConstraintTest`, `EmployeeScheduleTest`, `SchedulingValueObjectsTest` | Domain (scheduling) | Headcount, the roster lifecycle, rule thresholds at their boundaries, and day arithmetic. |
+| `SchedulingServiceTest`, `SwapServiceTest`, `EmployeeServiceTest`, `QualificationServiceTest`, `OrganisationServiceTest`, `NotificationServiceTest` | Application | Use cases against hand-written stubs of their own ports. No Spring, no mocking framework. `SwapServiceTest` is the exception that proves the rule: it wires a **real** `SchedulingService`, because the claim worth testing is that approving a swap goes through the same publication everything else does. |
+| `SwapHttpTest` | Adapter (HTTP) | The widest path in the system — onboard a tenant, hire people, roster, publish, hand a shift over, and have the colleague read about it. Four contexts in one test. |
+| `KnownOrganisationHttpTest` | Configuration | That a tenant nobody onboarded cannot be used, and that the refusal is the ordinary 404 carrying a trace id. |
+| `NotificationTest` | Domain (notifications) | Among other invariants, that no field of a notification can hold free text — asserted by reflection over the type, because a future field is what would break it. |
+| `SchedulingCommandsTest`, `WorkforceCommandsTest` | Application | Every command rejects a null field, copies what it is handed, and stops short of judging what it carries. |
+| `RosterCandidateTest`, `PublishedLanguageTest` | Published language | What one context tells another, and nothing more. |
+| `WorkforceDirectoryAdapterTest` | Anti-corruption layer | The only class in scheduling permitted to name another context, including that contracted hours do not cross. |
+| `InMemory*RepositoryTest` (×5) | Driven adapters | Every read filters by organisation before returning anything, plus the ordering each one promises. |
+| `ActorFromHeadersTest` (×2) | Driving adapters | The header placeholder in both contexts, including every malformed header. |
+| `SchedulingExceptionHandlerTest`, `WorkforceExceptionHandlerTest` | Driving adapters | Which failure earns which status, the structured 422, and that there is no catch-all. |
+| `GreedyRosterGeneratorTest` | Driven adapter | The placeholder generator never breaks a rule, and leaves a shift short rather than filling it illegally. |
+| `RosteringHttpTest`, `EmployeeHttpTest`, `QualificationHttpTest` | End to end | All sixteen endpoints through the real hexagon and the real adapters. |
+| `TraceIdHttpTest` | Observability over HTTP | Every response carries a trace id, including the refusals — which are the ones a person has cause to report. |
+| `MetricsHttpTest` | Operations over HTTP | Both probes answer, the meters are published, and `loggers`, `env` and `heapdump` are **not** exposed. |
+| `SchedulingAuditLogTest`, `WorkforceAuditLogTest` | Driven adapters | Every audit field is an identifier and never a name, the message is a constant, and the counter is not tagged by tenant. |
+| `HexagonalArchitectureTest` | Whole codebase | **Nine** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, layer cycles, no printing, no logging in the domain, and no instrumentation inward of an adapter. |
 | `HrSchedApplicationTests` | Spring context | The application starts. |
 
 Naming follows `Given<scenario>_When<action>_Then<result>`. Tests run against the public
 boundary, never internals, and are deterministic: no `sleep`, no real network, no ordering
-dependence.
+dependence. There is no `Clock` and `.now()` is never called in `backend/src` — every time value
+enters through a `TimeRange` the caller supplies.
 
-**CI** runs `./mvnw verify` on every push and pull request
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). That single command is the merge gate.
+From `frontend/`:
 
-*Not yet:* coverage reporting, and integration tests against real dependencies in containers —
-there is nothing to connect to until ADR-004.
+```bash
+npm run verify         # format, lint, types, tests, build — no coverage
+npm run test:coverage  # the same tests, plus coverage/index.html
+```
+
+| Test | What it covers |
+| --- | --- |
+| `api/client.test.ts` | The one module that calls `fetch`: the claim headers, the failure shapes, and the reload key. |
+| `api/problem.test.ts` | The error boundary: a body that is not the shape we expect is validated, never cast. |
+| `components/useAsync.test.tsx` | The state machine: a stale answer never reaches the screen, `busy` is derived, reload works after a failure. |
+| `components/localDates.test.ts` | The local-day round trip and the documented timezone hazard, asserted relatively so it holds in any zone. |
+| `components/Feedback.test.tsx` | All four refusal branches, including the 404 that may also mean another tenant owns it. |
+| `components/ErrorBoundary.test.tsx` | One broken render does not become a blank page, and "Try again" recovers. |
+| `identity/ActingAs.test.tsx`, `identity/ActingAsBar.test.tsx` | The acting-as placeholder: persistence, validation, the synthetic option, and the operator rule that clears the employee link. |
+| `pages/*.test.tsx` (×6) | One per screen: what is sent, what is refused before sending, and what the user is told. |
+| `App.test.tsx` | Tab navigation, and the one 403 the shell deliberately swallows — with the proof that nothing else is. |
+
+**CI** runs `./mvnw verify` and `npm run verify` on every push and pull request
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Those two commands are the merge gate.
+
+*Not yet:* integration tests against real dependencies in containers — there is nothing to connect
+to until ADR-004. No contract test and no browser test either; ADR-013 records that as accepted
+debt, to be revisited the first time UI/API drift actually bites.
 
 ## Deployment and operations
 
-*Not written yet — blocked on [Q5](docs/requirements/requirements.md#open-questions) (where
-this runs).* The build produces an executable JAR at `target/hrsched-0.0.1-SNAPSHOT.jar` and
-liveness/readiness probes are exposed, so the operational primitives exist even though no
-environment does.
+*Not written yet.* [Q5](docs/requirements/requirements.md#open-questions) answered that this is
+containerised with the provider deferred to its own ADR, so there is a shape but still no
+environment to describe. The operational primitives exist: the build produces an executable JAR at
+`target/hrsched-0.0.1-SNAPSHOT.jar`, liveness and readiness probes are exposed, and every log line
+is machine-readable.
 
-Still owed: structured JSON logging, correlation-ID propagation, and OpenTelemetry
-instrumentation.
+**Logs.** One ECS JSON object per line on stdout, ready for whatever collects the container's
+output. Every line a request produces carries `trace_id` — startup and shutdown lines have no span
+to belong to and carry none — and every HTTP response carries the same value as
+`X-Trace-Id` — which the user interface shows on a refusal, so a report from a person can be joined
+to the log ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)). Pipe it
+through `jq` to read it locally.
+
+**Metrics.** Pulled, never pushed: point a scraper at `/actuator/prometheus`
+([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md)).
+
+| Meter | What it answers |
+| --- | --- |
+| `http_server_requests_seconds` | Request rate, latency and error rate, per endpoint and status |
+| `jvm_*`, `process_*`, `tomcat_*` | Saturation: heap, threads, file descriptors, connections |
+| `hrsched_shifts_required_places` | Places each generation was asked to fill |
+| `hrsched_shifts_uncovered_places` | Places it could not fill without breaking a rule — the product's own success metric, and the ratio of the two is coverage |
+| `hrsched_access_denied_total{kind}` | Refusals, split into `cross_tenant` and `role`. A rise in `cross_tenant` is a security signal, not a usage one — and it is the only way to tell that 404 apart from an ordinary miss |
+| `hrsched_rosters_refused_total{reason}` | Publications refused by the working-time rules, or because the work could not be checked |
+| `hrsched_changes_total{context,change}` | Every recorded state change, by context and kind |
+
+Exposure is an allow list. `loggers`, `env` and `heapdump` are deliberately shut, and
+`MetricsHttpTest` fails the build if one of them opens.
+
+Still owed: somewhere to export telemetry to
+([Q19](docs/requirements/requirements.md#open-questions)), and a dashboard to read it on — both
+blocked on the same missing environment.
 
 ## Design decisions
 
@@ -369,6 +469,7 @@ instrumentation.
 | [ADR-001](docs/ADRs/ADR-001-java-spring-boot-maven.md) | Java 21, Spring Boot 4.1.1, Maven Wrapper | Boot 4.x is recent, so most existing tutorials name things that no longer exist |
 | [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md) | `./mvnw verify` as the single gate, Spotless for format | google-java-format is not configurable; formatting fails the build before tests run |
 | [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md) | Hexagon in one module, enforced by ArchUnit | Many more classes per use case; hand-wiring; enforcement is a test, not the compiler |
+| [ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md) | Generation behind a port, greedy for now | The product does not yet do the thing it exists to do; a greedy result is a poor solver baseline |
 | [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md) | Organise packages by bounded context | A layer is no longer one place; `workforce` precedes its requirements |
 | [ADR-007](docs/ADRs/ADR-007-monorepo-backend-and-frontend.md) | Monorepo: `backend/` + `frontend/` siblings | Every backend command grows a `cd`; CI and Dependabot need explicit paths |
 
@@ -377,6 +478,14 @@ instrumentation.
 | [ADR-012](docs/ADRs/ADR-012-acting-identity-carries-its-employee-record.md) | The acting identity carries the employee record it is | One more field in the shared kernel, which ADR-008 named as the thing to watch |
 | [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) | React + TypeScript + Vite, with a dev proxy instead of CORS | A second toolchain and CI job; a hand-written client that can drift from the DTOs |
 | [ADR-014](docs/ADRs/ADR-014-root-task-runner.md) | A Node script orchestrates both builds from the root | The root becomes nominally an npm project; per-project commands are named in two places |
+| [ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md) | Coverage measured on both projects, never enforced | A number nothing gates on is a number that can quietly fall |
+| [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) | ECS JSON logs everywhere, and a W3C trace id on every response | Local output is JSON and not pleasant to read; one starter brings the whole OpenTelemetry SDK |
+| [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) | Metrics pulled from `/actuator/prometheus`; no monitoring stack committed | The endpoint is unauthenticated, like everything else here; nothing scrapes it yet |
+| [ADR-018](docs/ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md) | Changes and refusals recorded through a port, as log events | The trail is only as durable as the log; every new use case must remember to call the port |
+| [ADR-019](docs/ADRs/ADR-019-an-application-layer-for-the-access-context.md) | The access context gets an application layer; an organisation is a real record | A register held in memory, which after ADR-020 makes a restart a total outage rather than an empty start |
+| [ADR-020](docs/ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md) | An unknown `X-Organisation` is refused at the boundary, with the ordinary 404 | An oracle for whether an identifier names a real tenant, cheap only because the identifier is a random UUID; and it is still not authentication |
+| [ADR-021](docs/ADRs/ADR-021-notifications-as-a-bounded-context.md) | Notifications are their own context, and hold no words | Delivery is pull-only, so somebody is informed when they next open the app; a lost notification means they were never told while the system believes they were |
+| [ADR-022](docs/ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md) | Approving a swap publishes a replacement roster rather than editing one | A refused approval leaves the replacement behind as a draft; approving is not atomic |
 
 Still open and blocking: **ADR-004** (data storage), **ADR-010** (objectives) and **ADR-011**
 (authentication). See the [ADR index](docs/ADRs/).
@@ -405,8 +514,6 @@ needed before the first persistence adapter, and tenancy raises its stakes.
 
 **Known limitations**
 
-- No roster and no assignment. `Shift` is not yet an aggregate root, because the invariants it
-  would guard are unanswered questions.
 - **Generation optimises nothing.** `GreedyRosterGenerator` fills shifts with the first eligible
   person and ignores fairness, preferences and disruption — the three things that make a roster
   good rather than merely legal. A solver is the next substantial piece of work.
@@ -425,7 +532,16 @@ needed before the first persistence adapter, and tenancy raises its stakes.
 - **Concurrent writes can be lost.** Constraint revision and publication are read-modify-write
   cycles with no locking, which transactional persistence (ADR-004) fixes and a lock around a
   hash map would not.
-- **Nothing survives a restart.** Storage is a `ConcurrentHashMap` until ADR-004.
+- **Nothing survives a restart.** Storage is a `ConcurrentHashMap` until ADR-004. Two places make
+  that sharper than it used to be: the organisation register, because after ADR-020 an empty one
+  means every tenant's every request answers 404 rather than merely finding no data; and the
+  notification inbox, because a lost notification means a person was never told while the system
+  believes they were.
+- **A notification reaches somebody when they next open the application.** There is no email, no
+  push and no unread badge, which for a rota change may be too late — Q21.
+- **Approving a swap is not atomic.** It publishes a roster, saves the request and sends two
+  notifications with no transaction around them, and a refused approval leaves the replacement
+  behind as an unpublished draft. Both are recorded in ADR-022.
 - No authentication. Authorisation is real and tested, but the identity it acts on is claimed in
   a header, so every endpoint is effectively open.
 - Time is modelled as `Instant`; rosters are read in local time across potentially different

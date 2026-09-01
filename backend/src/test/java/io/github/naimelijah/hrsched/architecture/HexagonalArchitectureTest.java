@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.architecture;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
+import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 import com.tngtech.archunit.core.domain.Dependency;
@@ -131,6 +132,62 @@ class HexagonalArchitectureTest {
           .dependOnClassesThat()
           .resideInAnyPackage("..scheduling..", "..workforce..", "..access..", "..configuration..")
           .because("a kernel that knows about a context couples every context to that context");
+
+  /**
+   * Nothing prints.
+   *
+   * <p>Logs are structured JSON on stdout (ADR-016), and a {@code System.out.println} or a stray
+   * {@code printStackTrace} writes a line into that stream that no encoder produced and no log
+   * store can parse. It is also how a debugging aid becomes permanent: a print is invisible in
+   * review and harmless in a test, and the repository's own conventions ban it in both languages.
+   *
+   * <p>ArchUnit's own rule, which additionally catches {@code Throwable.printStackTrace}.
+   */
+  @ArchTest
+  static final ArchRule nothing_writes_to_the_standard_streams =
+      NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
+
+  /**
+   * The domain does not log.
+   *
+   * <p>{@link #domain_depends_on_nothing_but_the_jdk} does not cover this, and that is not an
+   * oversight to leave alone: SLF4J is not Spring, so a domain logger passes it, and {@code
+   * java.util.logging} genuinely <em>is</em> the JDK. A domain class that logs is a domain class
+   * with a side effect, which is the property that makes the rest of it worth testing without a
+   * framework.
+   *
+   * <p>What the domain has to say, it says by returning a value or throwing.
+   */
+  @ArchTest
+  static final ArchRule the_domain_does_not_log =
+      noClasses()
+          .that()
+          .resideInAPackage("..domain..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage("org.slf4j..", "ch.qos.logback..", "java.util.logging..")
+          .because("a domain class that logs is a domain class with a side effect");
+
+  /**
+   * Instrumentation stays in the adapters.
+   *
+   * <p>Metrics and traces are infrastructure: they need a registry, a backend and a wire format,
+   * and none of that belongs inward of a port. The application layer records what it needs recorded
+   * through a driven port instead — see {@code AuditTrail} and ADR-018 — which is also what makes
+   * "was this recorded?" a test rather than a reviewer's observation.
+   *
+   * <p>The practical consequence is that Micrometer's {@code @Timed} and {@code @Counted}, and any
+   * OpenTelemetry annotation, cannot be put on a use case. That is deliberate.
+   */
+  @ArchTest
+  static final ArchRule instrumentation_stays_in_the_adapters =
+      noClasses()
+          .that()
+          .resideInAnyPackage("..domain..", "..application..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage("io.micrometer..", "io.opentelemetry..")
+          .because("a meter or a span needs a backend, and the hexagon may not know it has one");
 
   /**
    * Cycles are checked one level below the context, between a context's own layers.

@@ -1,18 +1,32 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
+import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownSwapRequestException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -30,12 +44,47 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  *
  * <p>There is no override anywhere here. A roster that breaks the rules is not published, and the
  * remedy is a different roster.
+ *
+ * <p>It is also where refusals are recorded, because it is the only place that sees every one of
+ * them. A cross-tenant attempt in particular used to become a 404 and vanish: the requirements call
+ * that a security incident rather than a bug, and an incident nothing records is an incident nobody
+ * can detect. What the caller is told does not change - still a 404, still "No such resource." -
+ * only what the operator can see. See ADR-018.
  */
-@RestControllerAdvice(assignableTypes = SchedulingController.class)
+@RestControllerAdvice(assignableTypes = {SchedulingController.class, SwapController.class})
 public class SchedulingExceptionHandler {
 
+  private static final Logger log = LoggerFactory.getLogger(SchedulingExceptionHandler.class);
+
+  /** Shared with the workforce handler, so one query answers "who was refused" across both. */
+  private static final String DENIED = "hrsched.access.denied";
+
+  private static final String REFUSED = "hrsched.rosters.refused";
+
+  private final MeterRegistry meters;
+
+  /**
+   * @param meters where refusals are counted
+   */
+  public SchedulingExceptionHandler(MeterRegistry meters) {
+    this.meters = meters;
+  }
+
+  private void count(String meter, String tag, String value, String description) {
+    Counter.builder(meter).description(description).tag(tag, value).register(meters).increment();
+  }
+
+  /**
+   * Logged at INFO, not WARN. The rules working is not a fault: a roster that breaks them is
+   * supposed to be refused, and levelling it as a problem would train whoever reads the logs to
+   * ignore the level.
+   */
   @ExceptionHandler(RosterNotCompliantException.class)
   public ProblemDetail handleNotCompliant(RosterNotCompliantException exception) {
+    log.atInfo()
+        .addKeyValue("violations", exception.violations().size())
+        .log("Publication refused by the working-time rules");
+    count(REFUSED, "reason", "not_compliant", "Publications refused, by what refused them");
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Roster breaks the working-time rules");
@@ -54,6 +103,7 @@ public class SchedulingExceptionHandler {
     DuplicateAssignmentException.class,
     RosterNotEditableException.class,
     UnknownRequiredQualificationException.class,
+    SwapWithThemselfException.class,
     MalformedRequestException.class
   })
   public ProblemDetail handleInvalidInput(RuntimeException exception) {
@@ -79,23 +129,97 @@ public class SchedulingExceptionHandler {
    */
   @ExceptionHandler(RosterNotVerifiableException.class)
   public ProblemDetail handleNotVerifiable(RosterNotVerifiableException exception) {
+    log.warn("Publication refused: the roster names work that cannot be checked");
+    count(REFUSED, "reason", "not_verifiable", "Publications refused, by what refused them");
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Roster cannot be checked against the rules");
     return problem;
   }
 
+  /**
+   * Asking for "my schedule" without being somebody who can be rostered. A 403 rather than an empty
+   * list, because "you have no personnel record" and "you are rostered for nothing" are different
+   * answers and only one of them is a configuration problem.
+   */
+  @ExceptionHandler(NoEmployeeRecordException.class)
+  public ProblemDetail handleNoEmployeeRecord(NoEmployeeRecordException exception) {
+    log.atWarn()
+        .addKeyValue("actor", exception.actor().value())
+        .log("Refused: an actor without a personnel record asked for their own schedule");
+    count(DENIED, "kind", "no_employee_record", "Refused attempts, by what refused them");
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.FORBIDDEN, "You have no personnel record, so you have no schedule.");
+    problem.setTitle("Not permitted");
+    return problem;
+  }
+
   @ExceptionHandler(NotPermittedException.class)
   public ProblemDetail handleNotPermitted(NotPermittedException exception) {
+    log.atWarn()
+        .addKeyValue("actor", exception.actor().value())
+        .addKeyValue("role", exception.held())
+        .log("Refused: the actor's role does not permit this");
+    count(DENIED, "kind", "role", "Refused attempts, by what refused them");
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your role does not permit this.");
     problem.setTitle("Not permitted");
     return problem;
   }
 
-  /** A cross-tenant attempt is a 404, so the response never confirms that the resource exists. */
-  @ExceptionHandler({UnknownRosterException.class, CrossTenantAccessException.class})
+  /**
+   * Assigning work that the domain forbids: somebody who lacks a qualification the shift demands
+   * (R4), somebody who said they cannot work when it runs (F6), or a shift the roster's own period
+   * does not cover (R11). All three earn a 422 for the same reason a non-compliant roster does: the
+   * caller named real things and asked for something the domain forbids, which is neither a
+   * malformed request nor a missing one.
+   */
+  @ExceptionHandler({
+    AssigneeNotQualifiedException.class,
+    AssigneeUnavailableException.class,
+    ShiftOutsideRosterPeriodException.class
+  })
+  public ProblemDetail handleAssignmentRefused(RuntimeException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
+    problem.setTitle("Assignment refused");
+    return problem;
+  }
+
+  /**
+   * A swap decided twice. Two Schedulers with the same request open is the ordinary way this
+   * happens, so it is a conflict rather than a bad request: nothing about what the second one sent
+   * was wrong, it just arrived after somebody else had answered.
+   */
+  @ExceptionHandler(SwapNotPendingException.class)
+  public ProblemDetail handleAlreadyDecided(SwapNotPendingException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    problem.setTitle("Already decided");
+    return problem;
+  }
+
+  /**
+   * Everything reported as absence, including a cross-tenant attempt: the response must never
+   * confirm that a resource exists in an organisation the caller may not see.
+   */
+  @ExceptionHandler({
+    UnknownRosterException.class,
+    UnknownShiftException.class,
+    UnknownAssigneeException.class,
+    UnknownAssignmentException.class,
+    UnknownSwapRequestException.class,
+    CrossTenantAccessException.class
+  })
   public ProblemDetail handleUnknown(RuntimeException exception) {
+    if (exception instanceof CrossTenantAccessException crossTenant) {
+      log.atWarn()
+          .addKeyValue("actor", crossTenant.actor().value())
+          .addKeyValue("organisation", crossTenant.organisation().value())
+          .log("Refused: an actor reached for another organisation's data");
+      count(DENIED, "kind", "cross_tenant", "Refused attempts, by what refused them");
+    }
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
     problem.setDetail("No such resource.");

@@ -12,6 +12,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -31,7 +33,12 @@ import org.junit.jupiter.api.Test;
 class GreedyRosterGeneratorTest {
 
   private static final OrganisationId ACME = OrganisationId.newId();
-  private final GreedyRosterGenerator generator = new GreedyRosterGenerator();
+  private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+  private final GreedyRosterGenerator generator = new GreedyRosterGenerator(meters);
+
+  private DistributionSummary summary(String name) {
+    return meters.get(name).summary();
+  }
 
   private static Shift shift(String start, String end, int headcount, Set<QualificationId> needed) {
     return new Shift(
@@ -98,5 +105,50 @@ class GreedyRosterGeneratorTest {
 
     assertThat(assignments).hasSize(2);
     assertThat(assignments.stream().map(Assignment::employee).distinct()).hasSize(2);
+  }
+
+  @Test
+  void GivenAShiftNobodyCanCover_WhenGenerating_ThenTheGapIsMeasuredRatherThanOnlyLeft() {
+    generator.generate(
+        List.of(shift("2026-10-05T09:00:00Z", "2026-10-05T17:00:00Z", 3, Set.of())),
+        List.of(),
+        ConstraintSet.initial(ACME));
+
+    assertThat(summary("hrsched.shifts.required").totalAmount()).isEqualTo(3.0);
+    assertThat(summary("hrsched.shifts.uncovered").totalAmount()).isEqualTo(3.0);
+  }
+
+  @Test
+  void GivenAFullyCoveredShift_WhenGenerating_ThenNoGapIsRecorded() {
+    generator.generate(
+        List.of(shift("2026-10-05T09:00:00Z", "2026-10-05T17:00:00Z", 1, Set.of())),
+        List.of(anyone("Ada")),
+        ConstraintSet.initial(ACME));
+
+    assertThat(summary("hrsched.shifts.required").totalAmount()).isEqualTo(1.0);
+    assertThat(summary("hrsched.shifts.uncovered").totalAmount()).isZero();
+  }
+
+  @Test
+  void GivenAPartlyCoveredShift_WhenGenerating_ThenOnlyTheUnfilledPlacesCount() {
+    generator.generate(
+        List.of(shift("2026-10-05T09:00:00Z", "2026-10-05T17:00:00Z", 3, Set.of())),
+        List.of(anyone("Ada")),
+        ConstraintSet.initial(ACME));
+
+    assertThat(summary("hrsched.shifts.required").totalAmount()).isEqualTo(3.0);
+    assertThat(summary("hrsched.shifts.uncovered").totalAmount()).isEqualTo(2.0);
+  }
+
+  /**
+   * A generation asked for nothing is a different event from no generation at all, and a metric
+   * that only appears on failure cannot show a recovery.
+   */
+  @Test
+  void GivenNoShiftsAtAll_WhenGenerating_ThenTheGenerationIsStillCounted() {
+    generator.generate(List.of(), List.of(anyone("Ada")), ConstraintSet.initial(ACME));
+
+    assertThat(summary("hrsched.shifts.required").count()).isEqualTo(1L);
+    assertThat(summary("hrsched.shifts.uncovered").count()).isEqualTo(1L);
   }
 }
