@@ -56,7 +56,7 @@ public class EmployeeController {
     EmployeeId id =
         manageEmployees.addEmployee(actor, new AddEmployeeCommand(org, request.requiredName()));
     return ResponseEntity.created(URI.create("/api/employees/" + id.value()))
-        .body(new EmployeeResponse(id.value(), request.requiredName(), List.of()));
+        .body(EmployeeResponse.justAdded(id.value(), request.requiredName()));
   }
 
   @GetMapping
@@ -69,12 +69,7 @@ public class EmployeeController {
     return findEmployees
         .findRosterable(actor, ActorFromHeaders.organisationOf(organisation))
         .stream()
-        .map(
-            employee ->
-                new EmployeeResponse(
-                    employee.id().value(),
-                    employee.name(),
-                    employee.qualifications().stream().map(QualificationId::value).toList()))
+        .map(EmployeeResponse::from)
         .toList();
   }
 

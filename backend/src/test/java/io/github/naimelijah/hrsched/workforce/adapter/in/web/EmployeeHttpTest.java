@@ -62,6 +62,63 @@ class EmployeeHttpTest {
     return JsonPath.read(body, "$.id");
   }
 
+  /**
+   * Requirement F4. Until the listing carried these, only the use case satisfied that row and the
+   * HTTP surface quietly did not — a Scheduler could see who worked there but not when they could
+   * not work, which is the half of it that decides a roster.
+   */
+  @Test
+  void GivenSomebodyWithAbsenceAndAContract_WhenListed_ThenTheirAvailabilityIsCarriedToo()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada =
+        JsonPath.read(
+            mockMvc
+                .perform(
+                    as(post("/api/employees"), organisation, "ADMIN")
+                        .content("{\"name\":\"Ada Lovelace\"}"))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(),
+            "$.id");
+    mockMvc
+        .perform(
+            as(post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+                .content("{\"start\":\"2026-10-07T00:00:00Z\",\"end\":\"2026-10-08T00:00:00Z\"}"))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            as(put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
+                .content("{\"weeklyContractedMinutes\":2100}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(as(get("/api/employees"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].unavailability.length()").value(1))
+        .andExpect(jsonPath("$[0].unavailability[0].start").value("2026-10-07T00:00:00Z"))
+        .andExpect(jsonPath("$[0].unavailability[0].end").value("2026-10-08T00:00:00Z"))
+        .andExpect(jsonPath("$[0].weeklyContractedMinutes").value(2100));
+  }
+
+  @Test
+  void GivenSomebodyJustAdded_WhenListed_ThenTheyHaveNoAbsenceAndNoContract() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    mockMvc
+        .perform(
+            as(post("/api/employees"), organisation, "ADMIN")
+                .content("{\"name\":\"Ada Lovelace\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.unavailability.length()").value(0))
+        .andExpect(jsonPath("$.weeklyContractedMinutes").doesNotExist());
+
+    mockMvc
+        .perform(as(get("/api/employees"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].unavailability.length()").value(0));
+  }
+
   @Test
   void GivenAnAdmin_WhenAddingAnEmployee_ThenTheyAreCreatedAndListed() throws Exception {
     String organisation = anOrganisation(mockMvc);
