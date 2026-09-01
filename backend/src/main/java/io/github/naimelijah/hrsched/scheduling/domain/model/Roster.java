@@ -73,6 +73,23 @@ public final class Roster {
   }
 
   /**
+   * @param assignment the assignment to take off this draft
+   * @return a draft without it
+   * @throws RosterNotEditableException if this roster is no longer a draft
+   * @throws UnknownAssignmentException if it does not carry that assignment
+   */
+  public Roster without(Assignment assignment) {
+    Objects.requireNonNull(assignment, "assignment must not be null");
+    requireDraft();
+    if (!assignments.contains(assignment)) {
+      throw new UnknownAssignmentException(id, assignment);
+    }
+    List<Assignment> remaining = new ArrayList<>(assignments);
+    remaining.remove(assignment);
+    return new Roster(id, organisation, period, status, remaining, null);
+  }
+
+  /**
    * @param replacement the assignments this draft should carry instead
    * @return a draft with exactly those assignments
    * @throws RosterNotEditableException if this roster is no longer a draft

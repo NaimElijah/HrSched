@@ -48,7 +48,7 @@ implemented; the rest are not.
 | --- | --- | --- | --- |
 | F1 | Scheduler | Define the shifts that need covering, with headcount and qualifications | `SchedulingService`, `RosteringHttpTest` |
 | F1a | Scheduler | See the shifts needing covering over a span | `SchedulingService`, `SchedulingServiceTest` |
-| F2 | Scheduler | Assign an employee to a shift, and remove that assignment | *not implemented* |
+| F2 | Scheduler | Assign an employee to a shift, and remove that assignment | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *Drafts only: a published roster is superseded, never edited (R6).* |
 | F3 | Scheduler | Publish a roster, after it passes the organisation rules | `SchedulingService`, `RosteringHttpTest` |
 | F4 | Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest`. *Partially: `EmployeeResponse` carries neither availability nor a roster, so the HTTP listing does not satisfy this row — only the use case does.* |
 | F5 | Employee | See their own published roster | *not implemented: rosters are readable by Schedulers only* |
@@ -104,8 +104,8 @@ a published roster is superseded rather than edited (R6).
 | R1 | A time range must end strictly after it starts. *`TimeRange`, `TimeRangeTest`* |
 | R2 | An employee must have a name that is not blank. *`Employee`, `EmployeeTest`* |
 | R3 | An employee may not hold two overlapping assignments. *`GreedyRosterGeneratorTest`, `WorkingTimeConstraintTest`* |
-| R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `RosterCandidateTest`* |
-| R5 | An employee may only be assigned within their own organisation. *`SchedulingService`, `RosteringHttpTest`* |
+| R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `RosterCandidateTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`* |
+| R5 | An employee may only be assigned within their own organisation. *`SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`* |
 | R6 | A published roster may not be edited; it is superseded by a new version. *`Roster`, `SchedulingService`, `SchedulingServiceTest`* |
 | R7 | An employee may not declare overlapping unavailability. *`Employee`, `EmployeeTest`* |
 | R8 | A shift must require at least one person. *`Shift`, `ShiftTest`* |

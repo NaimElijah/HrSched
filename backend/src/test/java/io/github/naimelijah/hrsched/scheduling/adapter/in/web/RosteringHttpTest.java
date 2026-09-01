@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -95,6 +96,19 @@ class RosteringHttpTest {
     return body.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
   }
 
+  private String defineQualification(String organisation, String name) throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                as(post("/api/qualifications"), organisation, "ADMIN")
+                    .content("{\"name\":\"%s\"}".formatted(name)))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return body.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
+  }
+
   private String generateRoster(String organisation, String start, String end) throws Exception {
     String body =
         mockMvc
@@ -106,6 +120,103 @@ class RosteringHttpTest {
             .getResponse()
             .getContentAsString();
     return body.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
+  }
+
+  @Test
+  void GivenADraftAndAShift_WhenASchedulerAssignsByHand_ThenTheRosterCarriesIt() throws Exception {
+    String organisation = anOrganisation();
+    String ada = addEmployee(organisation, "Ada");
+    String roster = generateRoster(organisation, "2026-11-02T00:00:00Z", "2026-11-03T00:00:00Z");
+    String shift = defineShift(organisation, "2026-11-02T08:00:00Z", "2026-11-02T16:00:00Z", 1);
+
+    mockMvc
+        .perform(
+            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, ada)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.assignments.length()").value(1))
+        .andExpect(jsonPath("$.assignments[0].employee").value(ada));
+
+    mockMvc
+        .perform(
+            as(
+                delete("/api/rosters/%s/assignments/%s/%s".formatted(roster, shift, ada)),
+                organisation,
+                "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.assignments.length()").value(0));
+  }
+
+  @Test
+  void GivenAnAdminRole_WhenAssigningByHand_ThenItIsForbidden() throws Exception {
+    String organisation = anOrganisation();
+    String ada = addEmployee(organisation, "Ada");
+    String roster = generateRoster(organisation, "2026-11-03T00:00:00Z", "2026-11-04T00:00:00Z");
+    String shift = defineShift(organisation, "2026-11-03T08:00:00Z", "2026-11-03T16:00:00Z", 1);
+
+    mockMvc
+        .perform(
+            as(post("/api/rosters/" + roster + "/assignments"), organisation, "ADMIN")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, ada)))
+        .andExpect(status().isForbidden());
+  }
+
+  /**
+   * Rule R4 broken is a 422, not a 400: the caller named real things and asked for the forbidden.
+   */
+  @Test
+  void GivenAShiftDemandingAQualificationTheyLack_WhenAssigning_ThenItIsUnprocessable()
+      throws Exception {
+    String organisation = anOrganisation();
+    String ada = addEmployee(organisation, "Ada");
+    String forklift = defineQualification(organisation, "Forklift");
+    String roster = generateRoster(organisation, "2026-11-04T00:00:00Z", "2026-11-05T00:00:00Z");
+    String shift =
+        mockMvc
+            .perform(
+                as(post("/api/shifts"), organisation, "SCHEDULER")
+                    .content(
+                        ("{\"start\":\"2026-11-04T08:00:00Z\",\"end\":\"2026-11-04T16:00:00Z\","
+                                + "\"requiredHeadcount\":1,\"requiredQualifications\":[\"%s\"]}")
+                            .formatted(forklift)))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString()
+            .replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
+
+    mockMvc
+        .perform(
+            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, ada)))
+        .andExpect(status().isUnprocessableEntity());
+  }
+
+  @Test
+  void GivenSomebodyNotInTheOrganisation_WhenAssigningThem_ThenItIsNotFound() throws Exception {
+    String organisation = anOrganisation();
+    String stranger = addEmployee(anOrganisation(), "Their Employee");
+    String roster = generateRoster(organisation, "2026-11-05T00:00:00Z", "2026-11-06T00:00:00Z");
+    String shift = defineShift(organisation, "2026-11-05T08:00:00Z", "2026-11-05T16:00:00Z", 1);
+
+    mockMvc
+        .perform(
+            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, stranger)))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void GivenNoEmployeeInTheBody_WhenAssigning_ThenItIsABadRequest() throws Exception {
+    String organisation = anOrganisation();
+    String roster = generateRoster(organisation, "2026-11-06T00:00:00Z", "2026-11-07T00:00:00Z");
+    String shift = defineShift(organisation, "2026-11-06T08:00:00Z", "2026-11-06T16:00:00Z", 1);
+
+    mockMvc
+        .perform(
+            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+                .content("{\"shift\":\"%s\"}".formatted(shift)))
+        .andExpect(status().isBadRequest());
   }
 
   @Test

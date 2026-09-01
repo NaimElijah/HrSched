@@ -1,16 +1,19 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
+import io.github.naimelijah.hrsched.scheduling.application.port.in.AssignToShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ConfigureConstraintsUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ManageShiftsUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
+import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.net.URI;
@@ -19,6 +22,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -154,6 +158,45 @@ public class SchedulingController {
     return planRosters.findRosters(actor, ActorFromHeaders.organisationOf(organisation)).stream()
         .map(RosterResponse::from)
         .toList();
+  }
+
+  @PostMapping("/rosters/{id}/assignments")
+  public RosterResponse assign(
+      @RequestHeader("X-Organisation") String organisation,
+      @RequestHeader("X-User") String user,
+      @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @PathVariable UUID id,
+      @RequestBody AssignmentRequest request) {
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    return RosterResponse.from(
+        planRosters.assign(
+            actor,
+            new AssignToShiftCommand(
+                ActorFromHeaders.organisationOf(organisation),
+                new RosterId(id),
+                request.requiredShift(),
+                request.requiredEmployee())));
+  }
+
+  @DeleteMapping("/rosters/{id}/assignments/{shift}/{employee}")
+  public RosterResponse unassign(
+      @RequestHeader("X-Organisation") String organisation,
+      @RequestHeader("X-User") String user,
+      @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @PathVariable UUID id,
+      @PathVariable UUID shift,
+      @PathVariable UUID employee) {
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    return RosterResponse.from(
+        planRosters.unassign(
+            actor,
+            new RemoveAssignmentCommand(
+                ActorFromHeaders.organisationOf(organisation),
+                new RosterId(id),
+                new ShiftId(shift),
+                new EmployeeId(employee))));
   }
 
   @PostMapping("/rosters/{id}/publication")

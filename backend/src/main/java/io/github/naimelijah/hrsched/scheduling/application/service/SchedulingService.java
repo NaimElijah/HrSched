@@ -1,10 +1,12 @@
 package io.github.naimelijah.hrsched.scheduling.application.service;
 
+import io.github.naimelijah.hrsched.scheduling.application.port.in.AssignToShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ConfigureConstraintsUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ManageShiftsUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
@@ -15,6 +17,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterReposi
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
+import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
@@ -25,9 +28,12 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableE
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
+import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
@@ -150,6 +156,68 @@ public class SchedulingService
     rosters.save(draft);
     recorded(actor, command.organisation(), SchedulingChange.ROSTER_GENERATED, draft.id().value());
     return draft;
+  }
+
+  @Override
+  public Roster assign(Actor actor, AssignToShiftCommand command) {
+    authorise(actor, command.organisation(), MAY_SCHEDULE);
+    Roster draft = draftOrUnknown(command.organisation(), command.roster());
+    Shift shift =
+        shifts
+            .findById(command.organisation(), command.shift())
+            .orElseThrow(() -> new UnknownShiftException(command.shift()));
+    requireEligible(actor, command.organisation(), command.employee(), shift);
+
+    Roster amended = draft.with(new Assignment(command.shift(), command.employee()));
+    rosters.save(amended);
+    recorded(
+        actor, command.organisation(), SchedulingChange.ASSIGNMENT_ADDED, amended.id().value());
+    return amended;
+  }
+
+  @Override
+  public Roster unassign(Actor actor, RemoveAssignmentCommand command) {
+    authorise(actor, command.organisation(), MAY_SCHEDULE);
+    Roster draft = draftOrUnknown(command.organisation(), command.roster());
+
+    Roster amended = draft.without(new Assignment(command.shift(), command.employee()));
+    rosters.save(amended);
+    recorded(
+        actor, command.organisation(), SchedulingChange.ASSIGNMENT_REMOVED, amended.id().value());
+    return amended;
+  }
+
+  private Roster draftOrUnknown(OrganisationId organisation, RosterId rosterId) {
+    return rosters
+        .findById(organisation, rosterId)
+        .orElseThrow(() -> new UnknownRosterException(rosterId));
+  }
+
+  /**
+   * Checks the two rules that are about the assignment itself: R5, that the person is one of this
+   * organisation's own, and R4, that they hold everything the shift demands.
+   *
+   * <p>Eligibility is decided from what the workforce directory returns, carrying the actor,
+   * because that is the only sense in which scheduling knows a person exists at all. If they do not
+   * come back through the published port, they are not assignable — refusing is the honest answer,
+   * and skipping the check would put someone on a roster whose eligibility nobody established.
+   *
+   * <p>Availability is deliberately not consulted. It shapes what the generator proposes, but the
+   * requirements make it an input rather than an invariant, and a Scheduler assigning someone who
+   * declared a preference-shaped absence is a judgement this code is not entitled to overrule.
+   */
+  private void requireEligible(
+      Actor actor, OrganisationId organisation, EmployeeId employee, Shift shift) {
+    RosterCandidate candidate =
+        workforce.candidatesFor(actor, organisation).stream()
+            .filter(person -> person.id().equals(employee))
+            .findFirst()
+            .orElseThrow(() -> new UnknownAssigneeException(employee));
+    Set<QualificationId> missing = new LinkedHashSet<>(shift.requiredQualifications());
+    missing.removeAll(candidate.qualifications());
+    if (!missing.isEmpty()) {
+      throw new AssigneeNotQualifiedException(employee, shift.id(), missing);
+    }
   }
 
   @Override

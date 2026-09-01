@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
+import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
@@ -7,8 +8,11 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountExce
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
@@ -140,7 +144,26 @@ public class SchedulingExceptionHandler {
   }
 
   /** A cross-tenant attempt is a 404, so the response never confirms that the resource exists. */
-  @ExceptionHandler({UnknownRosterException.class, CrossTenantAccessException.class})
+  /**
+   * Assigning someone who does not hold what the shift demands breaks rule R4. It earns a 422 for
+   * the same reason a non-compliant roster does: the caller named real things and asked for
+   * something the domain forbids, which is neither a malformed request nor a missing one.
+   */
+  @ExceptionHandler(AssigneeNotQualifiedException.class)
+  public ProblemDetail handleNotQualified(AssigneeNotQualifiedException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
+    problem.setTitle("Assignment refused");
+    return problem;
+  }
+
+  @ExceptionHandler({
+    UnknownRosterException.class,
+    UnknownShiftException.class,
+    UnknownAssigneeException.class,
+    UnknownAssignmentException.class,
+    CrossTenantAccessException.class
+  })
   public ProblemDetail handleUnknown(RuntimeException exception) {
     if (exception instanceof CrossTenantAccessException crossTenant) {
       log.atWarn()

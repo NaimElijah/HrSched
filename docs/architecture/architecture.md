@@ -94,6 +94,7 @@ Three rules hold this together, and each fails the build when broken:
 | `*.adapter.out.audit` | `SchedulingAuditLog` and `WorkforceAuditLog` — each implements its own context's `AuditTrail` port, turning one recorded change into a structured log event and a counter. Named for their contexts because Spring derives a bean name from the simple class name alone. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
 | `configuration.observability` | Cross-cutting instrumentation that belongs to no context. Today that is `TraceIdResponseFilter`, which puts the request's trace id on the response as `X-Trace-Id`. It reads no request header, so unlike `ActorFromHeaders` it is unaffected by ADR-011. |
+| `configuration.tenancy` | `KnownOrganisationFilter` — checks the claimed `X-Organisation` against the register before any handler runs, and answers the ordinary 404 when nobody onboarded it. Cross-cutting rather than per context, and it outlives ADR-011 ([ADR-020](../ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md)). |
 | `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists — it writes the four identity claims and reads back `X-Trace-Id`; `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts` and `workforce.ts` mirror the backend DTOs one module per context. |
 | `frontend/src/identity` | The acting-as context and its warning bar — the placeholder that supplies `X-Organisation`, `X-User`, `X-Role` and `X-Employee`, deleted with the backend placeholder when ADR-011 lands. |
 | `frontend/src/pages` | One screen per capability: People, Qualifications, Rules, Shifts, Rosters, Me. |
@@ -282,6 +283,12 @@ Nothing is persisted beyond process lifetime.
   published roster of that organisation whose period overlaps as `SUPERSEDED`. Overlap rather than
   equality decides it, because a partly-overlapping published roster would otherwise still govern
   the days it shares. Whether a partial replacement should supersede the old roster whole is Q16.
+- **Assigning by hand checks eligibility, never working time.** `assign` enforces the two rules that
+  are about one assignment — the person belongs to the organisation (R5) and holds what the shift
+  demands (R4) — and deliberately leaves the working-time rules to publication, exactly as generation
+  does. Those rules judge a whole schedule rather than a single assignment, so the honest place to
+  enforce them is the step that cannot be bypassed. A hand-made roster breaking a daily limit is
+  refused at publication just as a generated one is.
 - **Work that cannot be checked refuses publication.** If an assignment names a shift the
   repository cannot return, publication fails with `RosterNotVerifiableException` rather than
   quietly omitting that work from the constraint check. Omission would publish hours nobody

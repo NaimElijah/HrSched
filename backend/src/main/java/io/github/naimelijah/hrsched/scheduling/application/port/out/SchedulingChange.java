@@ -21,6 +21,16 @@ public enum SchedulingChange {
   /** A draft roster was produced. It binds nobody until it is published. */
   ROSTER_GENERATED,
 
+  /**
+   * Somebody was put on a shift by hand rather than by the generator. Recorded separately from
+   * generation because it is a person's judgement rather than the machine's, and the trail should
+   * say which.
+   */
+  ASSIGNMENT_ADDED,
+
+  /** Somebody was taken off a shift by hand. */
+  ASSIGNMENT_REMOVED,
+
   /** A roster became the authoritative answer to who works when. */
   ROSTER_PUBLISHED,
 

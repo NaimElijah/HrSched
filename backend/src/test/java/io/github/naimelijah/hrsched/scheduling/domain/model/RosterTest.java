@@ -35,6 +35,47 @@ class RosterTest {
   }
 
   @Test
+  void GivenAnAssignedDraft_WhenTheAssignmentIsRemoved_ThenItIsGone() {
+    ShiftId shift = ShiftId.newId();
+
+    Roster roster = draft().with(new Assignment(shift, ADA)).without(new Assignment(shift, ADA));
+
+    assertThat(roster.assignments()).isEmpty();
+  }
+
+  @Test
+  void GivenTwoAssignments_WhenOneIsRemoved_ThenOnlyTheOtherRemains() {
+    ShiftId monday = ShiftId.newId();
+    ShiftId tuesday = ShiftId.newId();
+
+    Roster roster =
+        draft()
+            .with(new Assignment(monday, ADA))
+            .with(new Assignment(tuesday, ADA))
+            .without(new Assignment(monday, ADA));
+
+    assertThat(roster.assignments()).containsExactly(new Assignment(tuesday, ADA));
+  }
+
+  /** A no-op would tell a Scheduler a change happened which did not. */
+  @Test
+  void GivenAnAssignmentThatWasNeverMade_WhenRemovingIt_ThenItIsRefused() {
+    ShiftId shift = ShiftId.newId();
+
+    assertThatThrownBy(() -> draft().without(new Assignment(shift, ADA)))
+        .isInstanceOf(UnknownAssignmentException.class);
+  }
+
+  @Test
+  void GivenAPublishedRoster_WhenRemovingAnAssignment_ThenItIsRefused() {
+    ShiftId shift = ShiftId.newId();
+    Roster published = draft().with(new Assignment(shift, ADA)).publishedUnder(1);
+
+    assertThatThrownBy(() -> published.without(new Assignment(shift, ADA)))
+        .isInstanceOf(RosterNotEditableException.class);
+  }
+
+  @Test
   void GivenADraft_WhenAssigningSomeone_ThenTheAssignmentIsHeld() {
     ShiftId shift = ShiftId.newId();
 
