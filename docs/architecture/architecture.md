@@ -47,6 +47,12 @@ flowchart TB
         wfDom["domain.model<br/>Employee, Qualification"]
     end
 
+    subgraph notifications [notifications context]
+        ntfWeb["adapter.in.web<br/>NotificationController"]
+        ntfPub["application.port.in<br/>NotifyUseCase"]
+        ntfDom["domain.model<br/>Notification"]
+    end
+
     subgraph access [access context]
         accWeb["adapter.in.web<br/>OrganisationController"]
         accApp["application<br/>OrganisationService"]
@@ -58,6 +64,10 @@ flowchart TB
     client --> schedWeb
     client --> wfWeb
     client --> accWeb
+    client --> ntfWeb
+    ntfWeb --> ntfPub
+    ntfPub --> ntfDom
+    notifications --> kernel
     accWeb --> accApp
     accApp --> accDom
     schedWeb --> schedApp
@@ -84,6 +94,8 @@ Three rules hold this together, and each fails the build when broken:
 | `shared.domain.model` | The kernel: `OrganisationId`, `UserId`, `EmployeeId`, `QualificationId`, `Role`, `TimeRange`, and the sealed `Actor` (`TenantActor`, `Operator`). Identities and pure values that cross contexts, with no behaviour of their own. A `TenantActor` also carries the `EmployeeId` it is, when it is one ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). |
 | `access.domain.model` | `Organisation` — the tenant itself. Deliberately small: the tenancy *types* live in the kernel because every context needs them. |
 | `access.application` | Onboarding, listing and reading organisations (F13), and the register they live in. Onboarding and listing are the platform `Operator`'s alone — the guard is the inverse of every other one here, asking whether the actor belongs to a tenant rather than which role they hold in it. `KnownOrganisationsUseCase` is this context's **published API**: one question, whether an organisation exists, asked by the boundary check below. See [ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md). |
+| `notifications.domain.model` | `Notification` — something one person has been told, and whether they have seen it. It carries identifiers, a kind, a time and a flag, and **there is nowhere in it to put a sentence or a name** ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
+| `notifications.application` | Raising and reading notifications. `NotifyUseCase` is this context's **published API** and is deliberately not on a controller; `ReadNotificationsUseCase` is strictly self-service, and whose inbox is read comes from the acting identity rather than from any parameter. Takes a `Clock`, so when something happened is an input rather than an ambient fact. |
 | `workforce.domain.model` | `Employee` (aggregate root: qualifications, unavailability, preferences, contract terms), `Qualification`, `ShiftPreference`, `ContractTerms`. |
 | `workforce.application` | Employee and qualification use cases. `FindRosterableEmployeesUseCase` is this context's **published API**, returning `RosterableEmployee` rather than the aggregate. |
 | `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule`. |

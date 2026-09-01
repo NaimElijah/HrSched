@@ -2,6 +2,8 @@ package io.github.naimelijah.hrsched.configuration;
 
 import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
 import io.github.naimelijah.hrsched.access.application.service.OrganisationService;
+import io.github.naimelijah.hrsched.notifications.application.port.out.NotificationRepository;
+import io.github.naimelijah.hrsched.notifications.application.service.NotificationService;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
@@ -13,6 +15,7 @@ import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepos
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
 import io.github.naimelijah.hrsched.workforce.application.service.EmployeeService;
 import io.github.naimelijah.hrsched.workforce.application.service.QualificationService;
+import java.time.Clock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -28,9 +31,9 @@ import org.springframework.context.annotation.Configuration;
  * architecture rules exempt classes annotated {@code @Configuration} and nothing else.
  *
  * <p>That privilege has a cost visible below: each context owns an {@code AuditTrail} port of its
- * own, so all three share a simple name that only collides here. Two of them are written out in
+ * own, so all four share a simple name that only collides here. Three of them are written out in
  * full rather than renamed, because inside its own context {@code AuditTrail} is the right name and
- * seeing all three at once is this class's job, not theirs.
+ * seeing all four at once is this class's job, not theirs.
  */
 @Configuration
 public class UseCaseConfiguration {
@@ -40,6 +43,26 @@ public class UseCaseConfiguration {
       OrganisationRepository organisations,
       io.github.naimelijah.hrsched.access.application.port.out.AuditTrail audit) {
     return new OrganisationService(organisations, audit);
+  }
+
+  /**
+   * The clock the application layer reads time from.
+   *
+   * <p>A bean rather than a call to {@code Instant.now()} inside a use case, so that when something
+   * happened is an input a test supplies rather than an ambient fact it has to tolerate. {@code
+   * java.time.Clock} is the JDK, so injecting it keeps the hexagon framework-free.
+   */
+  @Bean
+  Clock clock() {
+    return Clock.systemUTC();
+  }
+
+  @Bean
+  NotificationService notificationService(
+      NotificationRepository notifications,
+      io.github.naimelijah.hrsched.notifications.application.port.out.AuditTrail audit,
+      Clock clock) {
+    return new NotificationService(notifications, audit, clock);
   }
 
   @Bean
