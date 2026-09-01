@@ -1,5 +1,7 @@
 package io.github.naimelijah.hrsched.configuration;
 
+import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
+import io.github.naimelijah.hrsched.access.application.service.OrganisationService;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
@@ -26,12 +28,19 @@ import org.springframework.context.annotation.Configuration;
  * architecture rules exempt classes annotated {@code @Configuration} and nothing else.
  *
  * <p>That privilege has a cost visible below: each context owns an {@code AuditTrail} port of its
- * own, so the two share a simple name that only collides here. The workforce one is written out in
+ * own, so all three share a simple name that only collides here. Two of them are written out in
  * full rather than renamed, because inside its own context {@code AuditTrail} is the right name and
- * seeing both at once is this class's job, not theirs.
+ * seeing all three at once is this class's job, not theirs.
  */
 @Configuration
 public class UseCaseConfiguration {
+
+  @Bean
+  OrganisationService organisationService(
+      OrganisationRepository organisations,
+      io.github.naimelijah.hrsched.access.application.port.out.AuditTrail audit) {
+    return new OrganisationService(organisations, audit);
+  }
 
   @Bean
   SchedulingService schedulingService(

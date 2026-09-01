@@ -48,6 +48,8 @@ flowchart TB
     end
 
     subgraph access [access context]
+        accWeb["adapter.in.web<br/>OrganisationController"]
+        accApp["application<br/>OrganisationService"]
         accDom["domain.model<br/>Organisation"]
     end
 
@@ -55,6 +57,9 @@ flowchart TB
 
     client --> schedWeb
     client --> wfWeb
+    client --> accWeb
+    accWeb --> accApp
+    accApp --> accDom
     schedWeb --> schedApp
     schedApp --> schedDom
     schedApp -.via port.-> acl
@@ -78,6 +83,7 @@ Three rules hold this together, and each fails the build when broken:
 | --- | --- |
 | `shared.domain.model` | The kernel: `OrganisationId`, `UserId`, `EmployeeId`, `QualificationId`, `Role`, `TimeRange`, and the sealed `Actor` (`TenantActor`, `Operator`). Identities and pure values that cross contexts, with no behaviour of their own. A `TenantActor` also carries the `EmployeeId` it is, when it is one ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). |
 | `access.domain.model` | `Organisation` — the tenant itself. Deliberately small: the tenancy *types* live in the kernel because every context needs them. |
+| `access.application` | Onboarding, listing and reading organisations (F13), and the register they live in. Onboarding and listing are the platform `Operator`'s alone — the guard is the inverse of every other one here, asking whether the actor belongs to a tenant rather than which role they hold in it. `KnownOrganisationsUseCase` is this context's **published API**: one question, whether an organisation exists, asked by the boundary check below. See [ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md). |
 | `workforce.domain.model` | `Employee` (aggregate root: qualifications, unavailability, preferences, contract terms), `Qualification`, `ShiftPreference`, `ContractTerms`. |
 | `workforce.application` | Employee and qualification use cases. `FindRosterableEmployeesUseCase` is this context's **published API**, returning `RosterableEmployee` rather than the aggregate. |
 | `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule`. |
@@ -172,10 +178,14 @@ Nothing is persisted beyond process lifetime.
   the operation targets, so `Actor.requireAccessTo` compares an organisation with itself and can
   never fail for a caller arriving over HTTP. Isolation there comes from every repository read
   filtering by organisation and returning nothing, which surfaces as an unknown-record 404.
-  `CrossTenantAccessException` still guards every direct caller and would guard a second adapter,
-  and both exception handlers still translate it — but that branch is reachable only from a unit
-  test, which is where it is covered. Worth knowing before anyone concludes the guard is dead code
-  and deletes it.
+  `CrossTenantAccessException` still guards every direct caller, and every exception handler still
+  translates it. Worth knowing before anyone concludes the guard is dead code and deletes it.
+- **There is now one endpoint where that guard genuinely fires over HTTP.** On `GET
+  /api/organisations/{id}` the acting identity comes from `X-Organisation` and the target comes from
+  the path, so unlike every other route the two can differ, and a tenant naming somebody else's
+  organisation is refused by the guard rather than by an empty repository read. It is the only place
+  the branch is exercised outside a unit test
+  ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)).
 - **Every log line is ECS JSON, in every environment including a laptop.** There is no profile that
   turns it off, because a format only production emits is one nobody reads until it matters. Each
   line carries the `trace_id` of the request that produced it, and the same value leaves on the

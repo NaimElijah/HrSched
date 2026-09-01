@@ -60,7 +60,7 @@ implemented; the rest are not.
 | F11 | Scheduler | Generate a draft roster covering a period, filling every shift it legally can | `SchedulingService`, `RosteringHttpTest` |
 | F11a | Scheduler | See the rosters their organisation holds | `SchedulingService`, `RosteringHttpTest` |
 | F12 | Scheduler | Publish a draft, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest` |
-| F13 | Operator | Administer organisations across the platform | *partially: an Operator may act across tenants; there is nothing to administer yet* |
+| F13 | Operator | Administer organisations across the platform | `OrganisationService`, `OrganisationServiceTest`, `OrganisationHttpTest` ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)). *Onboard, list and read; there is no rename and no closure.* |
 
 **Swaps (F7)** are approved by a **Scheduler**; the other employee is informed rather than
 asked. Not yet implemented.

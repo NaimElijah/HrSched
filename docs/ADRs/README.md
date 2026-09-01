@@ -24,6 +24,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-016](ADR-016-structured-logs-and-a-propagated-trace-id.md) | Emit structured JSON logs everywhere, and propagate a W3C trace id | Accepted | 2026-08-30 |
 | [ADR-017](ADR-017-expose-metrics-to-be-scraped.md) | Expose metrics for a scraper to pull, and ship no monitoring stack | Accepted | 2026-08-30 |
 | [ADR-018](ADR-018-audit-through-a-port-not-a-queryable-trail.md) | Record every change and refusal through a driven port, and build no queryable trail | Accepted | 2026-08-30 |
+| [ADR-019](ADR-019-an-application-layer-for-the-access-context.md) | Give the access context an application layer, and make the organisation a real record | Accepted | 2026-09-01 |
 
 ## Decisions waiting to be recorded
 
