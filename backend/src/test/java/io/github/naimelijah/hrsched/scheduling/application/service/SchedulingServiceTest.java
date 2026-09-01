@@ -14,6 +14,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChang
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
@@ -27,6 +28,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableE
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
@@ -602,6 +604,66 @@ class SchedulingServiceTest {
 
     assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, draft.id()))
         .isInstanceOf(RosterNotCompliantException.class);
+  }
+
+  /**
+   * The hole the review found. Generation filters candidates through {@code
+   * RosterCandidate.couldCover}, which tests availability as well as qualifications, so it refuses
+   * to roster somebody through their declared absence. Assigning by hand used to accept it, and
+   * publication could not catch it afterwards: unavailability is not a working-time constraint, so
+   * an empty constraint set checks nothing at all and the roster publishes with somebody working a
+   * day they said they could not.
+   */
+  @Test
+  void GivenSomebodyWhoDeclaredTheyCannotWorkThen_WhenAssigningThem_ThenItIsRefused() {
+    EmployeeId busy = EmployeeId.newId();
+    workforce.add(ACME, new RosterCandidate(busy, "Ada", Set.of(), List.of(MONDAY_DAY)));
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, busy)))
+        .isInstanceOf(AssigneeUnavailableException.class);
+  }
+
+  @Test
+  void GivenAbsenceThatDoesNotTouchTheShift_WhenAssigningThem_ThenItIsPermitted() {
+    TimeRange elsewhere =
+        new TimeRange(Instant.parse("2026-10-09T08:00:00Z"), Instant.parse("2026-10-09T16:00:00Z"));
+    EmployeeId ada = EmployeeId.newId();
+    workforce.add(ACME, new RosterCandidate(ada, "Ada", Set.of(), List.of(elsewhere)));
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+
+    assertThatCode(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada)))
+        .doesNotThrowAnyException();
+  }
+
+  /**
+   * R11 depends on a roster's period describing the work it carries. Generation can only assign
+   * shifts it found inside that period; assigning by hand could put a December shift on an October
+   * roster, and then the roster that genuinely covers December would not supersede it — two
+   * published rosters authoritative for one moment, which is what R11 exists to prevent.
+   */
+  @Test
+  void GivenAShiftOutsideTheRostersPeriod_WhenAssigningIt_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    TimeRange december =
+        new TimeRange(Instant.parse("2026-12-07T08:00:00Z"), Instant.parse("2026-12-07T16:00:00Z"));
+    ShiftId elsewhere =
+        service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, december, 1, Set.of()));
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), elsewhere, ada)))
+        .isInstanceOf(ShiftOutsideRosterPeriodException.class);
   }
 
   @Test

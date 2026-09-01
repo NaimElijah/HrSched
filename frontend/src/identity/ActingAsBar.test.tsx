@@ -197,6 +197,37 @@ describe('switching organisation', () => {
     return stub;
   }
 
+  /**
+   * A first visit has no organisation, and nothing works without one. Minting a random identifier
+   * here — which is what this used to do — produces a wall of 404s on every page, because since
+   * ADR-020 an organisation nobody onboarded does not exist.
+   */
+  it('GivenNoOrganisationYet_WhenTheBarMounts_ThenOneIsOnboardedWithoutBeingAsked', async () => {
+    onboardingReturns({ ok: true, status: 201, body: { id: ONBOARDED, name: 'Acme' } });
+    show([]);
+
+    expect(await screen.findByDisplayValue(ONBOARDED)).toBeInTheDocument();
+  });
+
+  /**
+   * A personnel record belongs to one tenant. Carrying it across makes "my schedule" answer for
+   * somebody who does not exist in the new one, and an empty week reads as "you are rostered for
+   * nothing" — the falsehood the backend refuses to tell.
+   */
+  it('GivenAnEmployeeLink_WhenTheOrganisationChanges_ThenTheLinkIsCleared', async () => {
+    onboardingReturns({ ok: true, status: 201, body: { id: ONBOARDED, name: 'Acme' } });
+    actingAs('EMPLOYEE', EMPLOYEE);
+    show(COLLEAGUES);
+
+    await userEvent.click(screen.getByRole('button', { name: 'New organisation' }));
+
+    expect(await screen.findByDisplayValue(ONBOARDED)).toBeInTheDocument();
+    const stored = JSON.parse(window.localStorage.getItem('hrsched.acting-as') as string) as {
+      employee: unknown;
+    };
+    expect(stored.employee).toBeNull();
+  });
+
   it('GivenNewOrganisationClicked_WhenItIsOnboarded_ThenTheBarAdoptsTheIdentifierItWasGiven', async () => {
     onboardingReturns({ ok: true, status: 201, body: { id: ONBOARDED, name: 'Acme' } });
     actingAs('ADMIN', null);

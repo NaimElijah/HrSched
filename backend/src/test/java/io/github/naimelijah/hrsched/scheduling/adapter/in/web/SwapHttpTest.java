@@ -1,17 +1,18 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
+import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.anOrganisation;
+import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.as;
+import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.asThemself;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -40,31 +41,6 @@ class SwapHttpTest {
         .andReturn()
         .getResponse()
         .getContentAsString();
-  }
-
-  private static MockHttpServletRequestBuilder as(
-      MockHttpServletRequestBuilder request, String organisation, String role) {
-    return request
-        .header("X-Organisation", organisation)
-        .header("X-User", UUID.randomUUID().toString())
-        .header("X-Role", role)
-        .contentType(MediaType.APPLICATION_JSON);
-  }
-
-  private static MockHttpServletRequestBuilder asThemself(
-      MockHttpServletRequestBuilder request, String organisation, String employee) {
-    return as(request, organisation, "EMPLOYEE").header("X-Employee", employee);
-  }
-
-  private String anOrganisation() throws Exception {
-    return JsonPath.read(
-        created(
-            post("/api/organisations")
-                .header("X-User", UUID.randomUUID().toString())
-                .header("X-Role", "OPERATOR")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"Organisation %s\"}".formatted(UUID.randomUUID()))),
-        "$.id");
   }
 
   private String addEmployee(String organisation, String name) throws Exception {
@@ -117,7 +93,7 @@ class SwapHttpTest {
   @Test
   void GivenPublishedWork_WhenASwapIsRequestedAndApproved_ThenTheRosterAndBothInboxesFollow()
       throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada Lovelace");
     String grace = addEmployee(organisation, "Grace Hopper");
     Rostered rostered = publishedFor(organisation, ada);
@@ -184,7 +160,7 @@ class SwapHttpTest {
   @Test
   void GivenASwapIsRejected_WhenTheDecisionIsMade_ThenNoRosterChangesAndTheRequesterIsTold()
       throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada Lovelace");
     String grace = addEmployee(organisation, "Grace Hopper");
     Rostered rostered = publishedFor(organisation, ada);
@@ -214,7 +190,7 @@ class SwapHttpTest {
 
   @Test
   void GivenADecidedSwap_WhenItIsDecidedAgain_ThenItIsAConflict() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada Lovelace");
     String grace = addEmployee(organisation, "Grace Hopper");
     Rostered rostered = publishedFor(organisation, ada);
@@ -239,7 +215,7 @@ class SwapHttpTest {
 
   @Test
   void GivenAnEmployeeRole_WhenApprovingASwap_ThenItIsForbidden() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada Lovelace");
     String grace = addEmployee(organisation, "Grace Hopper");
     Rostered rostered = publishedFor(organisation, ada);
@@ -261,7 +237,7 @@ class SwapHttpTest {
 
   @Test
   void GivenAColleaguesShift_WhenAnEmployeeAsksToSwapIt_ThenItIsForbidden() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada Lovelace");
     String grace = addEmployee(organisation, "Grace Hopper");
     Rostered rostered = publishedFor(organisation, ada);
@@ -279,7 +255,7 @@ class SwapHttpTest {
 
   @Test
   void GivenNoCounterpartyInTheBody_WhenAskingForASwap_ThenItIsABadRequest() throws Exception {
-    String organisation = anOrganisation();
+    String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada Lovelace");
     Rostered rostered = publishedFor(organisation, ada);
     String shift = rostered.shift();

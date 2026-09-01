@@ -65,8 +65,16 @@ function parseIdentity(raw: string): ActingIdentity | null {
   };
 }
 
+/**
+ * A first-time identity, with **no organisation**.
+ *
+ * It used to mint a random one, which worked only because the backend believed any identifier it
+ * was sent. Since ADR-020 an organisation nobody onboarded does not exist, so an invented one would
+ * make every request on every page answer 404 while the bar showed a perfectly normal identifier.
+ * Empty is the honest state, and the bar onboards a real one before anything else runs.
+ */
 function freshIdentity(): ActingIdentity {
-  return { organisation: randomUuid(), user: randomUuid(), role: 'ADMIN', employee: null };
+  return { organisation: '', user: randomUuid(), role: 'ADMIN', employee: null };
 }
 
 function store(identity: ActingIdentity): void {
@@ -111,7 +119,11 @@ export function ActingAsProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ActingAsContextValue>(
     () => ({
       identity,
-      setOrganisation: (organisation) => update({ ...identity, organisation }),
+      // Changing organisation invalidates the employee link, for the same reason changing role to
+      // OPERATOR does: a personnel record belongs to one tenant, so carrying it across makes
+      // "my schedule" answer for somebody who does not exist there — an empty week reading as
+      // "you are rostered for nothing", which is the falsehood the backend refuses to tell.
+      setOrganisation: (organisation) => update({ ...identity, organisation, employee: null }),
       setUser: (user) => update({ ...identity, user }),
       // A role change can invalidate the employee link, but never silently: an operator belongs to
       // no organisation and is emphatically not an employee.

@@ -16,6 +16,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenera
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestRepository;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
@@ -441,20 +442,55 @@ class SwapServiceTest {
   }
 
   @Test
-  void GivenAPendingSwap_WhenRejected_ThenNoRosterChangesAndTheRequesterIsTold() {
+  void GivenAPendingSwap_WhenRejected_ThenItIsRecordedAndNoRosterChanges() {
     ShiftId shift = aShift(Set.of());
     Roster original = publishedWith(ada, shift);
     SwapRequestId request =
         service.requestSwap(
             themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
-    notifier.told.clear();
 
     service.rejectSwap(scheduler(ACME), ACME, request);
 
     assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REJECTED);
-    assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
-    assertThat(notifier.told).containsExactly(new Told("REJECTED", ada, request));
+    assertThat(rosters.byId(original.id()).status())
+        .describedAs("rejecting decides a request and changes no roster at all")
+        .isEqualTo(RosterStatus.PUBLISHED);
     assertThat(audit.of(SchedulingChange.SWAP_REJECTED)).hasSize(1);
+  }
+
+  /** The same hole as manual assignment, on the path that publishes without anybody re-checking. */
+  @Test
+  void GivenAColleagueWhoCannotWorkThen_WhenApprovingTheSwap_ThenItIsRefused() {
+    EmployeeId busy = EmployeeId.newId();
+    workforce.add(ACME, new RosterCandidate(busy, "Busy", Set.of(), List.of(MONDAY_DAY)));
+    ShiftId shift = aShift(Set.of());
+    Roster published = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, published.id(), shift, ada, busy));
+
+    assertThatThrownBy(() -> service.approveSwap(scheduler(ACME), ACME, request))
+        .isInstanceOf(AssigneeUnavailableException.class);
+  }
+
+  /**
+   * The colleague was told they were being asked; telling only the requester when it is refused
+   * leaves them holding an open question nobody ever answers.
+   */
+  @Test
+  void GivenARejectedSwap_WhenTheDecisionIsMade_ThenBothPartiesAreTold() {
+    ShiftId shift = aShift(Set.of());
+    Roster published = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, published.id(), shift, ada, grace));
+    notifier.told.clear();
+
+    service.rejectSwap(scheduler(ACME), ACME, request);
+
+    assertThat(notifier.told)
+        .containsExactlyInAnyOrder(
+            new Told("REJECTED", ada, request), new Told("REJECTED", grace, request));
   }
 
   @Test

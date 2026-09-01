@@ -8,12 +8,12 @@ import java.util.UUID;
 /**
  * One access change, and who made it.
  *
- * <p>The third record of this name, one per context, and deliberately not shared with the other
- * two: they carry different change vocabularies, so they are different types rather than
+ * <p>One of four records of this name, one per context, and deliberately not shared with the
+ * others: they carry different change vocabularies, so they are different types rather than
  * duplication, and anything common would have to live in the kernel ADR-008 keeps small. The
  * collision is visible only in {@code UseCaseConfiguration}, which is that class's job.
  *
- * <p>The subject is a bare {@link UUID} on purpose, as in the other two — an organisation's name is
+ * <p>The subject is a bare {@link UUID} on purpose, as in its siblings — an organisation's name is
  * not personal data, but the record has nowhere to put a name and does not acquire one by
  * exception.
  *

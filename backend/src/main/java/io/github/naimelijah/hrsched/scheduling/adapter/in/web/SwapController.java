@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RequestSwapCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RequestSwapsUseCase;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import java.net.URI;
 import java.util.List;
@@ -61,7 +62,7 @@ public class SwapController {
                 request.requiredShift().value(),
                 request.requiredRequester().value(),
                 request.requiredCounterparty().value(),
-                "REQUESTED"));
+                SwapRequestStatus.REQUESTED.name()));
   }
 
   @GetMapping

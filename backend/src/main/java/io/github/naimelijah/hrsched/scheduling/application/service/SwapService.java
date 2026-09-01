@@ -173,7 +173,10 @@ public class SwapService implements RequestSwapsUseCase {
 
     swaps.save(request.rejected());
     recorded(actor, organisation, SchedulingChange.SWAP_REJECTED, request.id().value());
+    // Both parties, as on approval. The colleague was told they were being asked to cover a shift;
+    // telling only the requester leaves them holding an open question nobody ever answers.
     notifier.swapRejected(actor, organisation, request.requester(), request.id());
+    notifier.swapRejected(actor, organisation, request.counterparty(), request.id());
   }
 
   /** The roster the replacement should carry: the same work, with one assignment handed over. */

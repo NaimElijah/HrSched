@@ -20,7 +20,10 @@ public interface SwapRequestRepository {
 
   /**
    * @param organisation whose requests
-   * @return every swap request that organisation holds, newest first
+   * @return every swap request that organisation holds, oldest first — the order they were raised,
+   *     which is the order a Scheduler works through them. Not "newest first", which this said
+   *     while its only implementation did the opposite; a swap request carries no time of its own,
+   *     so any other ordering would need one adding to the aggregate first
    */
   List<SwapRequest> findByOrganisation(OrganisationId organisation);
 }

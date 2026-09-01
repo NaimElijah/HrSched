@@ -30,6 +30,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableE
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
@@ -175,6 +176,11 @@ public class SchedulingService
         shifts
             .findById(command.organisation(), command.shift())
             .orElseThrow(() -> new UnknownShiftException(command.shift()));
+    // Generation can only ever assign shifts it found inside the roster's period; assigning by hand
+    // has to be held to the same thing, or supersession stops meaning anything. See R11.
+    if (!shift.period().overlaps(draft.period())) {
+      throw new ShiftOutsideRosterPeriodException(draft.id(), shift.id());
+    }
     AssignmentEligibility.require(
         workforce, actor, command.organisation(), command.employee(), shift);
 

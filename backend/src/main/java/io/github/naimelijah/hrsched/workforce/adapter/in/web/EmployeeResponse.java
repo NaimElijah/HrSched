@@ -22,8 +22,9 @@ import java.util.UUID;
  * @param name their name
  * @param qualifications the qualifications they hold
  * @param unavailability the spans they have declared they cannot work
- * @param weeklyContractedHours their contracted hours as an ISO-8601 duration, absent if none are
- *     set
+ * @param weeklyContractedMinutes their contracted minutes per week, absent if none are set. Minutes
+ *     rather than a duration string, matching {@code ContractRequest} so the wire format carries no
+ *     duration parsing in either direction
  */
 public record EmployeeResponse(
     UUID id,

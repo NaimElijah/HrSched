@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
@@ -9,6 +10,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordExce
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
@@ -166,14 +168,19 @@ public class SchedulingExceptionHandler {
     return problem;
   }
 
-  /** A cross-tenant attempt is a 404, so the response never confirms that the resource exists. */
   /**
-   * Assigning someone who does not hold what the shift demands breaks rule R4. It earns a 422 for
-   * the same reason a non-compliant roster does: the caller named real things and asked for
-   * something the domain forbids, which is neither a malformed request nor a missing one.
+   * Assigning work that the domain forbids: somebody who lacks a qualification the shift demands
+   * (R4), somebody who said they cannot work when it runs (F6), or a shift the roster's own period
+   * does not cover (R11). All three earn a 422 for the same reason a non-compliant roster does: the
+   * caller named real things and asked for something the domain forbids, which is neither a
+   * malformed request nor a missing one.
    */
-  @ExceptionHandler(AssigneeNotQualifiedException.class)
-  public ProblemDetail handleNotQualified(AssigneeNotQualifiedException exception) {
+  @ExceptionHandler({
+    AssigneeNotQualifiedException.class,
+    AssigneeUnavailableException.class,
+    ShiftOutsideRosterPeriodException.class
+  })
+  public ProblemDetail handleAssignmentRefused(RuntimeException exception) {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Assignment refused");
@@ -193,6 +200,10 @@ public class SchedulingExceptionHandler {
     return problem;
   }
 
+  /**
+   * Everything reported as absence, including a cross-tenant attempt: the response must never
+   * confirm that a resource exists in an organisation the caller may not see.
+   */
   @ExceptionHandler({
     UnknownRosterException.class,
     UnknownShiftException.class,

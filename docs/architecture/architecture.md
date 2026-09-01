@@ -105,7 +105,7 @@ Three rules hold this together, and each fails the build when broken:
 | `scheduling.adapter.out.notification` | The other one. Translates "a swap was approved" into the word the `notifications` context uses for it, so nothing inward of the `Notifier` port knows that context exists ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. |
 | `*.adapter.out.persistence` | In-memory repositories, every read scoped by organisation. Placeholders until ADR-004. |
-| `*.adapter.out.audit` | `SchedulingAuditLog` and `WorkforceAuditLog` — each implements its own context's `AuditTrail` port, turning one recorded change into a structured log event and a counter. Named for their contexts because Spring derives a bean name from the simple class name alone. |
+| `*.adapter.out.audit` | `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog` and `NotificationAuditLog` — one per context, each implementing its own context's `AuditTrail` port and turning one recorded change into a structured log event and a counter. All four are named for their contexts because Spring derives a bean name from the simple class name alone, so four classes called `AuditLog` would collide at startup rather than at compile time. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
 | `configuration.observability` | Cross-cutting instrumentation that belongs to no context. Today that is `TraceIdResponseFilter`, which puts the request's trace id on the response as `X-Trace-Id`. It reads no request header, so unlike `ActorFromHeaders` it is unaffected by ADR-011. |
 | `configuration.tenancy` | `KnownOrganisationFilter` — checks the claimed `X-Organisation` against the register before any handler runs, and answers the ordinary 404 when nobody onboarded it. Cross-cutting rather than per context, and it outlives ADR-011 ([ADR-020](../ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md)). |
@@ -309,18 +309,27 @@ Nothing is persisted beyond process lifetime.
   refused approval leaves the replacement behind as a draft.
 - **Whether a colleague may cover a swapped shift is decided at approval, not at request.** Deciding
   it means listing colleagues, which discloses their unavailability, and an Employee may not. So a
-  request may name somebody who cannot cover the shift, and the Scheduler answering it is where that
-  is found out.
+  request may name somebody who cannot cover the shift — because they lack a qualification, or
+  because they are already unavailable — and the Scheduler answering it is where that is found out,
+  through the same `AssignmentEligibility` the manual path uses.
 - **Publishing supersedes, so exactly one roster is authoritative.** `publish` marks every
   published roster of that organisation whose period overlaps as `SUPERSEDED`. Overlap rather than
   equality decides it, because a partly-overlapping published roster would otherwise still govern
   the days it shares. Whether a partial replacement should supersede the old roster whole is Q16.
-- **Assigning by hand checks eligibility, never working time.** `assign` enforces the two rules that
-  are about one assignment — the person belongs to the organisation (R5) and holds what the shift
-  demands (R4) — and deliberately leaves the working-time rules to publication, exactly as generation
-  does. Those rules judge a whole schedule rather than a single assignment, so the honest place to
-  enforce them is the step that cannot be bypassed. A hand-made roster breaking a daily limit is
-  refused at publication just as a generated one is.
+- **Assigning by hand asks the same questions generation asks, and no more.** `assign` enforces the
+  three rules that are about one assignment — the person belongs to the organisation (R5), holds
+  what the shift demands (R4), and has not declared they cannot work when it runs (F6) — plus that
+  the shift falls inside the roster's own period, which generation cannot violate because it only
+  ever assigns shifts it found there. It deliberately leaves the working-time rules to publication,
+  exactly as generation does: those judge a whole schedule rather than a single assignment, so the
+  honest place for them is the step that cannot be bypassed, and a hand-made roster breaking a daily
+  limit is refused at publication just as a generated one is.
+  The availability half of that was missing at first, and the asymmetry was the point: generation
+  filters candidates through `RosterCandidate.couldCover`, which tests availability, so it refused to
+  roster somebody through their declared absence while assigning by hand accepted it — and
+  publication could not catch it afterwards, because unavailability is not a `WorkingTimeConstraint`.
+  `AssignmentEligibility` is one helper for exactly this reason: a rule enforced on one of two paths
+  is not enforced.
 - **Work that cannot be checked refuses publication.** If an assignment names a shift the
   repository cannot return, publication fails with `RosterNotVerifiableException` rather than
   quietly omitting that work from the constraint check. Omission would publish hours nobody

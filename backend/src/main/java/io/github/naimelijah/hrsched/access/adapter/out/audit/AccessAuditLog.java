@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  * not among them: the record it is given has nowhere to carry one.
  *
  * <p>Named for its context rather than for what it does, because Spring derives a bean name from
- * the simple class name alone, and it would otherwise collide with its two siblings at startup.
+ * the simple class name alone, and it would otherwise collide with its three siblings at startup.
  *
  * <p>Nothing is persisted; see ADR-018.
  */

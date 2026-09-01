@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { access } from '../api/access';
 import { ROLES } from '../api/client';
 import type { Role } from '../api/client';
@@ -42,6 +42,17 @@ export function ActingAsBar({ employees }: { employees: readonly Employee[] }) {
       setOnboarding(false);
     }
   }
+
+  // A first visit has no organisation, and nothing works without one. Onboarding here rather than
+  // in the provider keeps the request beside the error state and the disabled button that already
+  // handle it. The ref stops React's development double-invoke from creating two organisations.
+  const onboarded = useRef(false);
+  useEffect(() => {
+    if (identity.organisation === '' && !onboarded.current) {
+      onboarded.current = true;
+      void onboard();
+    }
+  });
 
   return (
     <aside className="acting-as" aria-label="Acting identity">

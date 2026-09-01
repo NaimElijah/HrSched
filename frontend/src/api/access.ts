@@ -9,15 +9,16 @@ export interface Organisation {
 /**
  * The organisation register.
  *
- * Both calls are the platform operator's alone, which is why each takes an identity claiming that
- * role rather than the one the rest of the app is acting as. Onboarding is also the one request the
+ * Onboarding is the platform operator's act, which is why the caller passes an identity claiming
+ * that role rather than the one the rest of the app is acting as. It is also the one request the
  * backend does not check `X-Organisation` on, because requiring an organisation to create the first
  * organisation would leave the platform unbootstrappable (ADR-020).
+ *
+ * There is deliberately no `findOrganisations` here. Nothing lists them, and an unused export of a
+ * path the boundary check does *not* exempt is a trap: its first caller would send whatever
+ * organisation the app is currently acting as and get a 404 rather than the listing they expected.
  */
 export const access = {
   onboardOrganisation: (identity: ActingIdentity, name: string): Promise<Organisation> =>
     api.post<Organisation>(identity, '/api/organisations', { name }),
-
-  findOrganisations: (identity: ActingIdentity): Promise<Organisation[]> =>
-    api.get<Organisation[]>(identity, '/api/organisations'),
 };

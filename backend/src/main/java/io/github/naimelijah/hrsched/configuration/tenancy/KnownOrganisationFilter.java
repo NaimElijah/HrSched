@@ -21,6 +21,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.UrlPathHelper;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -84,6 +85,17 @@ public class KnownOrganisationFilter extends OncePerRequestFilter {
   /** Shared with the three exception handlers, so one query answers "who was refused". */
   private static final String DENIED = "hrsched.access.denied";
 
+  /**
+   * Resolves the path the way Spring MVC resolves it: decoded, and relative to the context path.
+   *
+   * <p>Not {@code getRequestURI()}, which was the first version and was wrong in two ways that both
+   * fail <em>open</em>. It returns the raw, undecoded URI, so {@code /%61pi/employees} does not
+   * start with {@code /api/} and skips this check — while the decoded path still routes to the
+   * controller, re-opening the hole this class exists to close. It also includes the context path,
+   * so deploying under anything but the root would disable the check for every request at once.
+   */
+  private static final UrlPathHelper PATHS = UrlPathHelper.defaultInstance;
+
   private static final Logger log = LoggerFactory.getLogger(KnownOrganisationFilter.class);
 
   private final KnownOrganisationsUseCase organisations;
@@ -120,7 +132,7 @@ public class KnownOrganisationFilter extends OncePerRequestFilter {
    *     there is nothing here for this filter to decide
    */
   private static UUID organisationClaimedBy(HttpServletRequest request) {
-    String path = request.getRequestURI();
+    String path = PATHS.getPathWithinApplication(request);
     if (!path.startsWith(API) || isOnboarding(request, path)) {
       return null;
     }

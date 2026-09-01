@@ -222,8 +222,8 @@ applicant tracking, and being the HR system of record.
 | Q17 | Which time zone are working-time rules evaluated in? | NaimElijah | Daily and consecutive-day limits currently count days in UTC |
 | Q19 | Which observability backend receives the OpenTelemetry export, and at what sampling rate? | NaimElijah | Turning OTLP export on; sampling below 1.0 |
 | Q20 | Should an Admin be able to read their organisation's audit trail, and under what retention and erasure obligations? | NaimElijah | An `audit` bounded context; ADR-018's revisit trigger; part of the Compliance TODO |
-| Q22 | Is a swap a transfer of one shift, or a two-way exchange of two? | NaimElijah | Whether `SwapRequest` gains a second shift; today it is a transfer ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)) |
 | Q21 | By what channel is a colleague actually informed, and how quickly must that happen? | NaimElijah | Anything beyond the in-app inbox: email, push, an unread badge. Today somebody is informed when they next open the application, which for a rota change may be too late ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)) |
+| Q22 | Is a swap a transfer of one shift, or a two-way exchange of two? | NaimElijah | Whether `SwapRequest` gains a second shift; today it is a transfer ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)) |
 
 **Resolved**
 
