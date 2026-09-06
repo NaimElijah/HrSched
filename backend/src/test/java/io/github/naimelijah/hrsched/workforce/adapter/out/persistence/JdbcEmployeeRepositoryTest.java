@@ -1,0 +1,212 @@
+package io.github.naimelijah.hrsched.workforce.adapter.out.persistence;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
+import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import io.github.naimelijah.hrsched.workforce.domain.model.ContractTerms;
+import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
+import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
+import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
+import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
+import java.time.Duration;
+import java.time.Instant;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+/**
+ * The tenant predicate, the ordering, and everything an employee owns.
+ *
+ * <p>The port deliberately has no {@code findById(EmployeeId)} overload, so the only way to read an
+ * employee is to say whose employee you think they are. These tests are what proves the adapter
+ * honours that rather than merely accepting the argument.
+ *
+ * <p>The owned collections get their own tests here because they are the part a hand-written mapper
+ * gets wrong: an employee is stored across four tables, and a save has to leave the other three
+ * agreeing with the first.
+ *
+ * <p>Every duration below is invented to make a case pass or fail. None is taken from any
+ * jurisdiction.
+ */
+class JdbcEmployeeRepositoryTest {
+
+  private static final OrganisationId ACME = OrganisationId.newId();
+  private static final OrganisationId RIVAL = OrganisationId.newId();
+  private static final TimeRange A_FORTNIGHT_OFF =
+      new TimeRange(Instant.parse("2026-08-01T00:00:00Z"), Instant.parse("2026-08-15T00:00:00Z"));
+  private static final TimeRange A_WEEK_OFF =
+      new TimeRange(Instant.parse("2026-12-20T00:00:00Z"), Instant.parse("2026-12-27T00:00:00Z"));
+  private static final TimeRange MONDAY_DAY =
+      new TimeRange(Instant.parse("2026-09-07T08:00:00Z"), Instant.parse("2026-09-07T16:00:00Z"));
+
+  private final JdbcEmployeeRepository repository =
+      new JdbcEmployeeRepository(PostgresDatabase.jdbcClient());
+  private final JdbcQualificationRepository qualifications =
+      new JdbcQualificationRepository(PostgresDatabase.jdbcClient());
+
+  @BeforeEach
+  void emptyTheDatabase() {
+    PostgresDatabase.empty();
+    PostgresDatabase.given(ACME, RIVAL);
+  }
+
+  private static Employee employee(OrganisationId organisation, String name) {
+    return new Employee(EmployeeId.newId(), organisation, name);
+  }
+
+  /** A qualification has to exist before somebody can hold it: the join is a real foreign key. */
+  private QualificationId aQualification(OrganisationId organisation, String name) {
+    Qualification qualification = new Qualification(QualificationId.newId(), organisation, name);
+    qualifications.save(qualification);
+    return qualification.id();
+  }
+
+  @Test
+  void GivenAnEmployee_WhenReadBackByTheirOwnOrganisation_ThenTheyAreFound() {
+    Employee ada = employee(ACME, "Ada");
+    repository.save(ada);
+
+    assertThat(repository.findById(ACME, ada.id())).contains(ada);
+  }
+
+  @Test
+  void GivenAnEmployeeOfAnotherOrganisation_WhenReadBackByUs_ThenTheyAreNotFound() {
+    Employee theirs = employee(RIVAL, "Their Employee");
+    repository.save(theirs);
+
+    assertThat(repository.findById(ACME, theirs.id())).isEmpty();
+  }
+
+  @Test
+  void GivenNoSuchEmployee_WhenReadingThem_ThenNothingIsFound() {
+    assertThat(repository.findById(ACME, EmployeeId.newId())).isEmpty();
+  }
+
+  @Test
+  void GivenTwoOrganisations_WhenListingOne_ThenOnlyItsOwnPeopleComeBack() {
+    repository.save(employee(ACME, "Ada"));
+    repository.save(employee(RIVAL, "Their Employee"));
+
+    assertThat(repository.findByOrganisation(ACME))
+        .extracting(Employee::name)
+        .containsExactly("Ada");
+  }
+
+  @Test
+  void GivenSeveralEmployees_WhenListingThem_ThenTheyComeBackInNameOrder() {
+    repository.save(employee(ACME, "Grace"));
+    repository.save(employee(ACME, "Ada"));
+    repository.save(employee(ACME, "Marie"));
+
+    assertThat(repository.findByOrganisation(ACME))
+        .extracting(Employee::name)
+        .containsExactly("Ada", "Grace", "Marie");
+  }
+
+  @Test
+  void GivenTheSameEmployeeSavedTwice_WhenReadBack_ThenTheLaterVersionWins() {
+    Employee original = employee(ACME, "Ada");
+    repository.save(original);
+    repository.save(new Employee(original.id(), ACME, "Ada Lovelace"));
+
+    assertThat(repository.findByOrganisation(ACME))
+        .extracting(Employee::name)
+        .containsExactly("Ada Lovelace");
+  }
+
+  @Test
+  void GivenAnEmptyStore_WhenListing_ThenTheListIsEmptyRatherThanNull() {
+    assertThat(repository.findByOrganisation(ACME)).isNotNull().isEmpty();
+  }
+
+  @Test
+  void GivenSomebodyWithNoContract_WhenReadBack_ThenTheyStillHaveNone() {
+    Employee casual = employee(ACME, "Ada");
+    repository.save(casual);
+
+    assertThat(repository.findById(ACME, casual.id()))
+        .get()
+        .extracting(Employee::contractTerms)
+        .satisfies(terms -> assertThat(terms).isEqualTo(java.util.Optional.empty()));
+  }
+
+  @Test
+  void GivenContractedHours_WhenReadBack_ThenTheyComeBackExactly() {
+    Employee ada = employee(ACME, "Ada").contractedTo(new ContractTerms(Duration.ofHours(21)));
+    repository.save(ada);
+
+    assertThat(repository.findById(ACME, ada.id()))
+        .get()
+        .extracting(employee -> employee.contractTerms().orElseThrow().weeklyContractedHours())
+        .isEqualTo(Duration.ofHours(21));
+  }
+
+  @Test
+  void GivenQualificationsTheyHold_WhenReadBack_ThenAllOfThemComeBack() {
+    QualificationId forklift = aQualification(ACME, "Forklift");
+    QualificationId crane = aQualification(ACME, "Crane");
+    Employee ada = employee(ACME, "Ada").holding(forklift).holding(crane);
+    repository.save(ada);
+
+    assertThat(repository.findById(ACME, ada.id()))
+        .get()
+        .extracting(Employee::qualifications)
+        .isEqualTo(java.util.Set.of(forklift, crane));
+  }
+
+  @Test
+  void GivenUnavailability_WhenReadBack_ThenEveryPeriodComesBack() {
+    Employee ada = employee(ACME, "Ada").unavailableFor(A_FORTNIGHT_OFF).unavailableFor(A_WEEK_OFF);
+    repository.save(ada);
+
+    assertThat(repository.findById(ACME, ada.id()))
+        .get()
+        .extracting(Employee::unavailability)
+        .isEqualTo(java.util.List.of(A_FORTNIGHT_OFF, A_WEEK_OFF));
+  }
+
+  @Test
+  void GivenPreferences_WhenReadBack_ThenEachKeepsItsStrength() {
+    ShiftPreference wants = new ShiftPreference(MONDAY_DAY, PreferenceStrength.PREFERS);
+    ShiftPreference wouldRather = new ShiftPreference(A_WEEK_OFF, PreferenceStrength.PREFERS_NOT);
+    Employee ada = employee(ACME, "Ada").preferring(wants).preferring(wouldRather);
+    repository.save(ada);
+
+    assertThat(repository.findById(ACME, ada.id()))
+        .get()
+        .extracting(Employee::preferences)
+        .isEqualTo(java.util.List.of(wants, wouldRather));
+  }
+
+  /**
+   * The save that matters most: an employee is four tables, and re-saving has to leave the other
+   * three agreeing with the first rather than accumulating what was there before.
+   */
+  @Test
+  void GivenAnEmployeeWhoseUnavailabilityWasStored_WhenTheyAreSavedAgain_ThenNothingIsDuplicated() {
+    Employee ada = employee(ACME, "Ada").unavailableFor(A_FORTNIGHT_OFF);
+    repository.save(ada);
+
+    repository.save(ada.unavailableFor(A_WEEK_OFF));
+
+    assertThat(repository.findById(ACME, ada.id()))
+        .get()
+        .extracting(Employee::unavailability)
+        .isEqualTo(java.util.List.of(A_FORTNIGHT_OFF, A_WEEK_OFF));
+  }
+
+  @Test
+  void GivenTwoEmployeesWithOwnedRows_WhenListed_ThenNeitherGetsTheOthers() {
+    Employee ada = employee(ACME, "Ada").unavailableFor(A_FORTNIGHT_OFF);
+    Employee grace = employee(ACME, "Grace").unavailableFor(A_WEEK_OFF);
+    repository.save(ada);
+    repository.save(grace);
+
+    assertThat(repository.findByOrganisation(ACME))
+        .extracting(Employee::unavailability)
+        .containsExactly(java.util.List.of(A_FORTNIGHT_OFF), java.util.List.of(A_WEEK_OFF));
+  }
+}

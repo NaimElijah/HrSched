@@ -7,10 +7,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -22,6 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
  *
  * <p>Annotated identically to the other HTTP tests so all three share one Spring context.
  */
+@Import(PostgresBackedApplication.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 class QualificationHttpTest {

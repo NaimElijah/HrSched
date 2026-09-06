@@ -1,0 +1,27 @@
+# The database the backend runs against locally.
+#
+# Started and stopped for you by spring-boot-docker-compose on `./mvnw spring-boot:run`, which is
+# why `npm run dev` needs no change and scripts/run.mjs stays free of build logic (ADR-014). It
+# lives beside the backend rather than at the repository root because Boot looks in the working
+# directory, and because the database belongs to the backend and to nothing else.
+#
+# The tests do NOT use this file. They start their own container through Testcontainers, so a
+# stale local database can never make a test pass or fail. See ADR-004.
+#
+# These credentials are local-only and deliberately committed: this database holds nothing, is
+# reachable from nowhere, and a developer should not have to invent a password to run the app.
+# A deployed instance gets SPRING_DATASOURCE_* from the environment instead — see .env.example.
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: hrsched
+      POSTGRES_USER: hrsched
+      POSTGRES_PASSWORD: local-development-only
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U hrsched -d hrsched']
+      interval: 2s
+      timeout: 3s
+      retries: 15
