@@ -2,8 +2,8 @@
 
 **Status: specified, partially built.** Every question that blocked modelling is answered. The
 domain is modelled, and a React user interface exercises every endpoint the API exposes across all
-three roles. Generation is greedy rather than optimised, nothing survives a restart, and there is
-no authentication.
+three roles, over a PostgreSQL that survives a restart. Generation is greedy rather than optimised,
+and there is no authentication.
 
 Nothing in the user interface *enforces* a requirement. The `Enforced by` column below names
 backend classes and tests on purpose: a screen that appears to satisfy a rule is not evidence that
@@ -170,8 +170,15 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
   a tenant can no longer be conjured by inventing an identifier.
   *Enforced by `KnownOrganisationFilter`, `KnownOrganisationHttpTest`;
   [ADR-020](../ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md).*
-- **Persistence guarantees** — `TODO`: what must survive a crash, whether roster history is
-  append-only, and the retention period. Blocked on ADR-004.
+- **Persistence guarantees** — every accepted write is durable: once a request answers 2xx the
+  change has committed and survives a crash or a restart. **A use case is one transaction**, so a
+  request refused part-way leaves nothing behind — including the replacement roster a refused swap
+  approval used to strand. Every aggregate lives in PostgreSQL, and the schema is changed only by a
+  versioned migration. Roster history is kept but is **not** append-only: superseding a roster
+  changes its status in place — Q24. Nothing is purged and no retention period is set — Q23.
+  *Enforced by `Jdbc*Repository` (×9) and their adapter tests, `TransactionalUseCases`,
+  `SwapHttpTest`; [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md),
+  [ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md).*
 - **Performance and scale** — `TODO`: state as measurable numbers per organisation (employees,
   shifts per planning period, concurrent schedulers), plus expected number of organisations.
 - **Availability** — `TODO`: is this business-hours tooling, or must it be up when a 04:00
@@ -191,7 +198,8 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
   identifier of what changed; every refusal, including a cross-tenant attempt, is recorded too. The
   record carries identifiers only and never a name, so the trail says who to ask rather than the
   answer. `TODO`: whether that trail must be durable, readable by an Admin, and for how long it is
-  retained — Q20, blocked on ADR-004 and on the Compliance obligations below.
+  retained — Q20. ADR-004 no longer blocks it: there is now somewhere durable to put a trail, and
+  what stays open is whether one should exist and under what obligations.
   *Enforced by `SchedulingService`, `EmployeeService`, `QualificationService` and their tests;
   `SchedulingAuditLogTest`, `WorkforceAuditLogTest`, `SchedulingExceptionHandlerTest`,
   `WorkforceExceptionHandlerTest`;
@@ -224,6 +232,8 @@ applicant tracking, and being the HR system of record.
 | Q20 | Should an Admin be able to read their organisation's audit trail, and under what retention and erasure obligations? | NaimElijah | An `audit` bounded context; ADR-018's revisit trigger; part of the Compliance TODO |
 | Q21 | By what channel is a colleague actually informed, and how quickly must that happen? | NaimElijah | Anything beyond the in-app inbox: email, push, an unread badge. Today somebody is informed when they next open the application, which for a rota change may be too late ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)) |
 | Q22 | Is a swap a transfer of one shift, or a two-way exchange of two? | NaimElijah | Whether `SwapRequest` gains a second shift; today it is a transfer ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)) |
+| Q23 | How long is each kind of record kept, and what is erased on request? | NaimElijah | A retention policy and a purge; part of the Compliance TODO, and it constrains Q20 |
+| Q24 | Must roster history be append-only, so that what was authoritative at a past moment can be reconstructed? | NaimElijah | Whether superseding writes a new row rather than changing a status ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) |
 
 **Resolved**
 
@@ -242,4 +252,4 @@ applicant tracking, and being the HR system of record.
 | Q11 | Who approves a swap | A Scheduler; the colleague is informed | 2026-08-30 |
 | Q18 | Whether an employee sees their own roster, and what "their own" means | Yes: the assignments naming them, from published rosters only. A narrower capability beside R12, not a widening of it | 2026-09-01 |
 
-Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21, and building swaps raised Q22.
+Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21; building swaps raised Q22, and giving the system a database raised Q23 and Q24.

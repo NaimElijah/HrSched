@@ -18,8 +18,12 @@ services:
       POSTGRES_DB: hrsched
       POSTGRES_USER: hrsched
       POSTGRES_PASSWORD: local-development-only
+    # Published on a non-default host port on purpose. Postgres's own 5432 is the first port any
+    # other project on the machine will have taken, and the failure when it has is a container that
+    # will not start rather than anything that names this file. Boot reads the mapping from Docker,
+    # so nothing in the application depends on the number.
     ports:
-      - '5432:5432'
+      - '55432:5432'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U hrsched -d hrsched']
       interval: 2s
