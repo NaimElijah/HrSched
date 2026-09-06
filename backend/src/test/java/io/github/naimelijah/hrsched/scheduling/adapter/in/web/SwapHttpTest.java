@@ -3,13 +3,16 @@ package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.anOrganisation;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.as;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.asThemself;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -91,6 +94,91 @@ class SwapHttpTest {
         .perform(as(post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
         .andExpect(status().isOk());
     return new Rostered(roster, shift);
+  }
+
+  /**
+   * The atomicity ADR-022 recorded as owed, and ADR-023 pays.
+   *
+   * <p>Approving a swap saves a replacement roster and then publishes it, and publication is what
+   * refuses a roster that breaks a rule. Without a transaction the refusal happens after the
+   * replacement has already been stored, leaving a draft nobody asked for and nobody will finish.
+   * With one, the whole use case is a unit of work and the refusal takes the draft with it.
+   *
+   * <p>Counting rosters is the assertion, because the orphan is invisible from every other angle:
+   * the request is still pending and the original still published either way.
+   */
+  @Test
+  void GivenASwapThatBreaksARule_WhenApprovalIsRefused_ThenNoReplacementDraftIsLeftBehind()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada Lovelace");
+    String grace = addEmployee(organisation, "Grace Hopper");
+    Rostered rostered = publishedForBoth(organisation, ada, grace);
+    String swap =
+        JsonPath.read(
+            created(
+                asThemself(post("/api/swaps"), organisation, ada)
+                    .content(
+                        "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
+                            .formatted(rostered.roster(), rostered.shift(), ada, grace))),
+            "$.id");
+    // Invented: ten hours a day, which Grace covering both eight-hour shifts cannot satisfy.
+    mockMvc
+        .perform(
+            as(put("/api/constraints"), organisation, "ADMIN")
+                .content("{\"maximumDailyMinutes\":600}"))
+        .andExpect(status().isOk());
+    int before = rosterCount(organisation);
+
+    mockMvc
+        .perform(as(post("/api/swaps/" + swap + "/approval"), organisation, "SCHEDULER"))
+        .andExpect(status().isUnprocessableEntity());
+
+    assertThat(rosterCount(organisation))
+        .describedAs("a refused approval leaves no half-built roster behind")
+        .isEqualTo(before);
+  }
+
+  private int rosterCount(String organisation) throws Exception {
+    List<Object> rosters =
+        JsonPath.read(
+            mockMvc
+                .perform(as(get("/api/rosters"), organisation, "SCHEDULER"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(),
+            "$");
+    return rosters.size();
+  }
+
+  /** A published roster carrying both people, each on their own shift on the same day. */
+  private Rostered publishedForBoth(String organisation, String first, String second)
+      throws Exception {
+    String roster =
+        JsonPath.read(
+            created(
+                as(post("/api/rosters"), organisation, "SCHEDULER")
+                    .content(
+                        "{\"start\":\"2026-12-07T00:00:00Z\",\"end\":\"2026-12-08T00:00:00Z\"}")),
+            "$.id");
+    String morning = defineShift(organisation, "2026-12-07T00:00:00Z", "2026-12-07T08:00:00Z");
+    String afternoon = defineShift(organisation, "2026-12-07T08:00:00Z", "2026-12-07T16:00:00Z");
+    assign(organisation, roster, morning, first);
+    assign(organisation, roster, afternoon, second);
+    mockMvc
+        .perform(as(post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk());
+    return new Rostered(roster, morning);
+  }
+
+  private void assign(String organisation, String roster, String shift, String employee)
+      throws Exception {
+    mockMvc
+        .perform(
+            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, employee)))
+        .andExpect(status().isOk());
   }
 
   @Test

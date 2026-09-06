@@ -1,5 +1,7 @@
 package io.github.naimelijah.hrsched.configuration;
 
+import static io.github.naimelijah.hrsched.configuration.persistence.TransactionalUseCases.transactional;
+
 import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
 import io.github.naimelijah.hrsched.access.application.service.OrganisationService;
 import io.github.naimelijah.hrsched.notifications.application.port.out.NotificationRepository;
@@ -22,6 +24,7 @@ import io.github.naimelijah.hrsched.workforce.application.service.QualificationS
 import java.time.Clock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * Wires the application layer into Spring.
@@ -38,6 +41,12 @@ import org.springframework.context.annotation.Configuration;
  * own, so all four share a simple name that only collides here. Three of them are written out in
  * full rather than renamed, because inside its own context {@code AuditTrail} is the right name and
  * seeing all four at once is this class's job, not theirs.
+ *
+ * <p><strong>Every use case below is transactional, and nothing about the services says
+ * so.</strong> {@code transactional(...)} wraps each one, because the architecture test forbids
+ * Spring inside the application layer and so {@code @Transactional} cannot go where a reader would
+ * look for it. A transaction begins when a driving port method is called and ends when it returns;
+ * a nested use case joins its caller's. See ADR-023.
  */
 @Configuration
 public class UseCaseConfiguration {
@@ -45,8 +54,9 @@ public class UseCaseConfiguration {
   @Bean
   OrganisationService organisationService(
       OrganisationRepository organisations,
-      io.github.naimelijah.hrsched.access.application.port.out.AuditTrail audit) {
-    return new OrganisationService(organisations, audit);
+      io.github.naimelijah.hrsched.access.application.port.out.AuditTrail audit,
+      PlatformTransactionManager transactions) {
+    return transactional(new OrganisationService(organisations, audit), transactions);
   }
 
   /**
@@ -65,8 +75,9 @@ public class UseCaseConfiguration {
   NotificationService notificationService(
       NotificationRepository notifications,
       io.github.naimelijah.hrsched.notifications.application.port.out.AuditTrail audit,
-      Clock clock) {
-    return new NotificationService(notifications, audit, clock);
+      Clock clock,
+      PlatformTransactionManager transactions) {
+    return transactional(new NotificationService(notifications, audit, clock), transactions);
   }
 
   @Bean
@@ -76,8 +87,11 @@ public class UseCaseConfiguration {
       ConstraintSetRepository constraintSets,
       WorkforceDirectory workforce,
       RosterGenerator generator,
-      AuditTrail audit) {
-    return new SchedulingService(shifts, rosters, constraintSets, workforce, generator, audit);
+      AuditTrail audit,
+      PlatformTransactionManager transactions) {
+    return transactional(
+        new SchedulingService(shifts, rosters, constraintSets, workforce, generator, audit),
+        transactions);
   }
 
   /**
@@ -95,22 +109,27 @@ public class UseCaseConfiguration {
       PlanRostersUseCase planRosters,
       Notifier notifier,
       AuditTrail audit,
-      Clock clock) {
-    return new SwapService(swaps, rosters, shifts, workforce, planRosters, notifier, audit, clock);
+      Clock clock,
+      PlatformTransactionManager transactions) {
+    return transactional(
+        new SwapService(swaps, rosters, shifts, workforce, planRosters, notifier, audit, clock),
+        transactions);
   }
 
   @Bean
   EmployeeService employeeService(
       EmployeeRepository employees,
       QualificationRepository qualifications,
-      io.github.naimelijah.hrsched.workforce.application.port.out.AuditTrail audit) {
-    return new EmployeeService(employees, qualifications, audit);
+      io.github.naimelijah.hrsched.workforce.application.port.out.AuditTrail audit,
+      PlatformTransactionManager transactions) {
+    return transactional(new EmployeeService(employees, qualifications, audit), transactions);
   }
 
   @Bean
   QualificationService qualificationService(
       QualificationRepository qualifications,
-      io.github.naimelijah.hrsched.workforce.application.port.out.AuditTrail audit) {
-    return new QualificationService(qualifications, audit);
+      io.github.naimelijah.hrsched.workforce.application.port.out.AuditTrail audit,
+      PlatformTransactionManager transactions) {
+    return transactional(new QualificationService(qualifications, audit), transactions);
   }
 }
