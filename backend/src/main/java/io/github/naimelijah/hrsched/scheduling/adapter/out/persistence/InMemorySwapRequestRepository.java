@@ -4,11 +4,11 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestR
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
-import java.util.Collections;
-import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -16,20 +16,14 @@ import org.springframework.stereotype.Repository;
  *
  * <p>PLACEHOLDER until ADR-004, scoped by organisation on every read.
  *
- * <p>Requests come back in the order they were raised, which is what the port promises and what a
- * Scheduler working through a queue wants. A swap request carries no time of its own, so any other
- * ordering would mean inventing a field the domain has not been asked for.
+ * <p>Requests come back oldest first, which is what the port promises and what a Scheduler working
+ * through a queue wants. Sorted on {@code requestedAt}, with the identity as a tie-break so two
+ * requests raised in the same instant still come back in a stable order.
  */
 @Repository
 public class InMemorySwapRequestRepository implements SwapRequestRepository {
 
-  /**
-   * A synchronised {@link LinkedHashMap} rather than a {@code ConcurrentHashMap}, which is what the
-   * sibling repositories use: those either sort on a field or promise no order, and this one has no
-   * field to sort on, so the insertion order the map keeps <em>is</em> the contract.
-   */
-  private final Map<SwapRequestId, SwapRequest> byId =
-      Collections.synchronizedMap(new LinkedHashMap<>());
+  private final Map<SwapRequestId, SwapRequest> byId = new ConcurrentHashMap<>();
 
   @Override
   public void save(SwapRequest request) {
@@ -44,10 +38,11 @@ public class InMemorySwapRequestRepository implements SwapRequestRepository {
 
   @Override
   public List<SwapRequest> findByOrganisation(OrganisationId organisation) {
-    synchronized (byId) {
-      return byId.values().stream()
-          .filter(request -> request.organisation().equals(organisation))
-          .toList();
-    }
+    return byId.values().stream()
+        .filter(request -> request.organisation().equals(organisation))
+        .sorted(
+            Comparator.comparing(SwapRequest::requestedAt)
+                .thenComparing(request -> request.id().value()))
+        .toList();
   }
 }

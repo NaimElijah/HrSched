@@ -94,8 +94,9 @@ public class UseCaseConfiguration {
       WorkforceDirectory workforce,
       PlanRostersUseCase planRosters,
       Notifier notifier,
-      AuditTrail audit) {
-    return new SwapService(swaps, rosters, shifts, workforce, planRosters, notifier, audit);
+      AuditTrail audit,
+      Clock clock) {
+    return new SwapService(swaps, rosters, shifts, workforce, planRosters, notifier, audit, clock);
   }
 
   @Bean
