@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
+import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -14,12 +16,19 @@ import org.junit.jupiter.api.Test;
  * only demand a qualification its own organisation defined, so a leak here would let one tenant's
  * roster depend on another tenant's vocabulary.
  */
-class InMemoryQualificationRepositoryTest {
+class JdbcQualificationRepositoryTest {
 
   private static final OrganisationId ACME = OrganisationId.newId();
   private static final OrganisationId RIVAL = OrganisationId.newId();
 
-  private final InMemoryQualificationRepository repository = new InMemoryQualificationRepository();
+  private final JdbcQualificationRepository repository =
+      new JdbcQualificationRepository(PostgresDatabase.jdbcClient());
+
+  @BeforeEach
+  void emptyTheDatabase() {
+    PostgresDatabase.empty();
+    PostgresDatabase.given(ACME, RIVAL);
+  }
 
   private static Qualification qualification(OrganisationId organisation, String name) {
     return new Qualification(QualificationId.newId(), organisation, name);
@@ -48,39 +57,49 @@ class InMemoryQualificationRepositoryTest {
 
   @Test
   void GivenTwoOrganisations_WhenListingOne_ThenOnlyItsOwnVocabularyComesBack() {
-    repository.save(qualification(ACME, "Forklift"));
+    Qualification ours = qualification(ACME, "Forklift");
+    repository.save(ours);
     repository.save(qualification(RIVAL, "Their Qualification"));
 
-    assertThat(repository.findByOrganisation(ACME))
-        .extracting(Qualification::name)
-        .containsExactly("Forklift");
+    assertThat(repository.findByOrganisation(ACME)).containsExactly(ours);
   }
 
   @Test
   void GivenSeveralQualifications_WhenListingThem_ThenTheyComeBackInNameOrder() {
-    repository.save(qualification(ACME, "Welding"));
     repository.save(qualification(ACME, "Forklift"));
-    repository.save(qualification(ACME, "Nursing"));
+    repository.save(qualification(ACME, "Crane"));
+    repository.save(qualification(ACME, "Rigging"));
 
     assertThat(repository.findByOrganisation(ACME))
         .extracting(Qualification::name)
-        .containsExactly("Forklift", "Nursing", "Welding");
+        .containsExactly("Crane", "Forklift", "Rigging");
   }
 
   @Test
   void GivenTheSameQualificationSavedTwice_WhenReadBack_ThenTheLaterVersionWins() {
     Qualification original = qualification(ACME, "Forklift");
-    Qualification renamed = new Qualification(original.id(), ACME, "Forklift Licence");
     repository.save(original);
-    repository.save(renamed);
+    repository.save(new Qualification(original.id(), ACME, "Forklift (counterbalance)"));
 
     assertThat(repository.findByOrganisation(ACME))
         .extracting(Qualification::name)
-        .containsExactly("Forklift Licence");
+        .containsExactly("Forklift (counterbalance)");
   }
 
   @Test
   void GivenAnEmptyStore_WhenListing_ThenTheListIsEmptyRatherThanNull() {
     assertThat(repository.findByOrganisation(ACME)).isNotNull().isEmpty();
+  }
+
+  /**
+   * Nothing in the domain refuses a repeated name, so nothing in the store may either — a unique
+   * index here would be a new domain rule introduced as a storage detail.
+   */
+  @Test
+  void GivenTwoQualificationsSharingAName_WhenSaved_ThenBothAreKept() {
+    repository.save(qualification(ACME, "Forklift"));
+    repository.save(qualification(ACME, "Forklift"));
+
+    assertThat(repository.findByOrganisation(ACME)).hasSize(2);
   }
 }

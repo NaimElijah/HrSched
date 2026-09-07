@@ -7,8 +7,10 @@ import io.github.naimelijah.hrsched.notifications.domain.model.NotificationId;
 import io.github.naimelijah.hrsched.notifications.domain.model.NotificationKind;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.time.Instant;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -18,14 +20,21 @@ import org.junit.jupiter.api.Test;
  * recipient — because an inbox handed to the wrong colleague is a disclosure even inside the right
  * tenant. The tests whose failure would be a security incident are the two isolation ones.
  */
-class InMemoryNotificationRepositoryTest {
+class JdbcNotificationRepositoryTest {
 
   private static final OrganisationId ACME = OrganisationId.newId();
   private static final OrganisationId RIVAL = OrganisationId.newId();
   private static final EmployeeId ADA = EmployeeId.newId();
   private static final EmployeeId GRACE = EmployeeId.newId();
 
-  private final InMemoryNotificationRepository notifications = new InMemoryNotificationRepository();
+  private final JdbcNotificationRepository notifications =
+      new JdbcNotificationRepository(PostgresDatabase.jdbcClient());
+
+  @BeforeEach
+  void emptyTheDatabase() {
+    PostgresDatabase.empty();
+    PostgresDatabase.given(ACME, RIVAL);
+  }
 
   private static Notification at(
       OrganisationId organisation, EmployeeId recipient, Instant occurredAt) {
@@ -95,5 +104,29 @@ class InMemoryNotificationRepositoryTest {
   @Test
   void GivenNothingSaved_WhenListed_ThenNothingIsReturned() {
     assertThat(notifications.findFor(ACME, ADA)).isEmpty();
+  }
+
+  /** The time is the caller's, so the store must hand back exactly what it was given. */
+  @Test
+  void GivenANotification_WhenReadBack_ThenItKeepsTheInstantItWasGiven() {
+    Instant told = Instant.parse("2026-10-05T12:00:00Z");
+    Notification saved = at(ACME, ADA, told);
+    notifications.save(saved);
+
+    assertThat(notifications.findFor(ACME, ADA))
+        .singleElement()
+        .extracting(Notification::occurredAt)
+        .isEqualTo(told);
+  }
+
+  @Test
+  void GivenAnUnreadNotification_WhenReadBack_ThenItIsStillUnread() {
+    Notification saved = at(ACME, ADA, Instant.parse("2026-10-05T12:00:00Z"));
+    notifications.save(saved);
+
+    assertThat(notifications.findFor(ACME, ADA))
+        .singleElement()
+        .extracting(Notification::isRead)
+        .isEqualTo(false);
   }
 }

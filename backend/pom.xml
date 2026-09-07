@@ -22,6 +22,7 @@
 		<google-java-format.version>1.27.0</google-java-format.version>
 		<archunit.version>1.5.0</archunit.version>
 		<jacoco.version>0.8.13</jacoco.version>
+		<testcontainers.version>2.0.5</testcontainers.version>
 	</properties>
 
 	<dependencies>
@@ -54,6 +55,46 @@
 			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
 
+		<!--
+		  Storage. JdbcClient and a DataSource, with no ORM: the domain may not carry
+		  jakarta.persistence annotations (the architecture test fails on them), so an ORM would need
+		  a parallel annotated model anyway and would contribute only behaviour the adapter must not
+		  leak. Apache-2.0, version-managed by the Boot BOM. See ADR-004.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-jdbc</artifactId>
+		</dependency>
+		<!--
+		  Versioned schema migrations as plain SQL, applied on startup. Chosen over Liquibase because
+		  the migrations are SQL and Flyway lets them stay SQL. Apache-2.0, BOM-managed. See ADR-004.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-flyway</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+		</dependency>
+		<!-- The driver. Runtime only: nothing compiles against it. BSD-2-Clause, BOM-managed. -->
+		<dependency>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<!--
+		  Starts the Postgres in compose.yaml when the application is run locally, and stops it after.
+		  Optional, so it never reaches a deployed artifact; Boot skips it under test, where
+		  Testcontainers supplies the database instead. Keeps scripts/run.mjs free of build logic,
+		  which ADR-014 requires of it. Apache-2.0, BOM-managed.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-docker-compose</artifactId>
+			<optional>true</optional>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
@@ -75,7 +116,36 @@
 			<version>${archunit.version}</version>
 			<scope>test</scope>
 		</dependency>
+		<!--
+		  The tests run against a real PostgreSQL in a container, so Docker is required to build.
+		  There is deliberately no in-memory fallback and no skip-when-Docker-is-absent: a check that
+		  quietly does not run still reports green, which is what ci.yml already refuses for path
+		  filters. MIT, and pinned here because the Boot BOM does not manage the Testcontainers
+		  modules. See ADR-004.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>testcontainers-bom</artifactId>
+				<version>${testcontainers.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 
 	<build>
 		<plugins>

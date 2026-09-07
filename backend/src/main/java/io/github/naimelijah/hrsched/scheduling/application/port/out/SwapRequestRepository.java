@@ -21,9 +21,9 @@ public interface SwapRequestRepository {
   /**
    * @param organisation whose requests
    * @return every swap request that organisation holds, oldest first — the order they were raised,
-   *     which is the order a Scheduler works through them. Not "newest first", which this said
-   *     while its only implementation did the opposite; a swap request carries no time of its own,
-   *     so any other ordering would need one adding to the aggregate first
+   *     which is the order a Scheduler works through them. Ordered by {@code requestedAt}, which
+   *     the aggregate gained for this reason: the promise used to rest on a store that happened to
+   *     keep insertion order, and no store owes anybody that (ADR-004)
    */
   List<SwapRequest> findByOrganisation(OrganisationId organisation);
 }

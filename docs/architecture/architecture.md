@@ -8,10 +8,10 @@ these choices were made, see the [ADRs](../ADRs/).
 
 > **Current state:** the domain is modelled and works end to end — onboard an organisation, define
 > people and shifts, configure rules, generate a roster, adjust it by hand, publish it, and swap a
-> shift — but **generation is greedy, not optimised**
-> (see [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md)), **nothing survives a
-> restart**, and **there is no authentication**: the acting identity comes from request headers
-> and any caller can claim any role.
+> shift — and it is all stored in PostgreSQL, so it survives a restart. But **generation is greedy,
+> not optimised** (see [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md)) and **there is
+> no authentication**: the acting identity comes from request headers and any caller can claim any
+> role.
 
 ---
 
@@ -40,12 +40,14 @@ flowchart TB
         schedDom["domain.model<br/>Shift, Roster, ConstraintSet"]
         acl["adapter.out.workforce<br/>WorkforceDirectoryAdapter"]
         gen["adapter.out.generation<br/>GreedyRosterGenerator"]
+        schedStore["adapter.out.persistence<br/>JdbcRosterRepository, JdbcShiftRepository"]
     end
 
     subgraph workforce [workforce context]
         wfWeb["adapter.in.web<br/>EmployeeController"]
         wfPub["application.port.in<br/>FindRosterableEmployeesUseCase"]
         wfDom["domain.model<br/>Employee, Qualification"]
+        wfStore["adapter.out.persistence<br/>JdbcEmployeeRepository"]
     end
 
     subgraph notifications [notifications context]
@@ -61,6 +63,7 @@ flowchart TB
     end
 
     kernel["shared.domain.model<br/>OrganisationId, Actor, TimeRange, EmployeeId"]
+    db[("PostgreSQL<br/>one schema, organisation_id on every root")]
 
     client --> schedWeb
     client --> wfWeb
@@ -80,6 +83,10 @@ flowchart TB
     scheduling --> kernel
     workforce --> kernel
     access --> kernel
+    schedApp -.via port.-> schedStore
+    wfPub -.via port.-> wfStore
+    schedStore --> db
+    wfStore --> db
 ```
 
 Three rules hold this together, and each fails the build when broken:
@@ -104,7 +111,7 @@ Three rules hold this together, and each fails the build when broken:
 | `scheduling.adapter.out.workforce` | An anti-corruption layer: one of **two** classes in scheduling permitted to name another context, and only its published port. |
 | `scheduling.adapter.out.notification` | The other one. Translates "a swap was approved" into the word the `notifications` context uses for it, so nothing inward of the `Notifier` port knows that context exists ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. |
-| `*.adapter.out.persistence` | In-memory repositories, every read scoped by organisation. Placeholders until ADR-004. |
+| `*.adapter.out.persistence` | `Jdbc*Repository` — hand-written SQL through `JdbcClient`, one per driven port, every read carrying its organisation in the `WHERE` clause. No ORM: the domain may not be annotated, so mapping is explicit ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). |
 | `*.adapter.out.audit` | `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog` and `NotificationAuditLog` — one per context, each implementing its own context's `AuditTrail` port and turning one recorded change into a structured log event and a counter. All four are named for their contexts because Spring derives a bean name from the simple class name alone, so four classes called `AuditLog` would collide at startup rather than at compile time. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
 | `configuration.observability` | Cross-cutting instrumentation that belongs to no context. Today that is `TraceIdResponseFilter`, which puts the request's trace id on the response as `X-Trace-Id`. It reads no request header, so unlike `ActorFromHeaders` it is unaffected by ADR-011. |
@@ -157,16 +164,25 @@ sequenceDiagram
     end
 ```
 
-Nothing is persisted beyond process lifetime.
+Everything is persisted, and the whole exchange above is one transaction: the boundary is the use
+case, so a refusal at any point leaves nothing behind ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)).
 
 ## External dependencies and integration points
 
-**At runtime: none.** No database, broker, or third-party API.
+**At runtime: PostgreSQL, and nothing else.** No broker and no third-party API. The schema is
+created and changed only by the Flyway migrations in `backend/src/main/resources/db/migration`,
+applied on startup. Locally `backend/compose.yaml` supplies the database and Boot starts it; a
+deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 
 | Dependency | Used for | Justification |
 | --- | --- | --- |
 | `spring-boot-starter-webmvc` | HTTP boundary, embedded Tomcat | ADR-001. Boot 4.x renamed this from `spring-boot-starter-web`. |
-| `spring-boot-starter-actuator` | Health and readiness probes | Required of every service by the project baseline. |
+| `spring-boot-starter-actuator` | Health and readiness probes | Required of every service by the project baseline. A `db` health contributor now appears with the datasource. |
+| `spring-boot-starter-jdbc` | `JdbcClient`, the connection pool, and the transaction manager | [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md). Chosen over JPA because the domain may not carry `jakarta.persistence` annotations. |
+| `spring-boot-starter-flyway` + `flyway-database-postgresql` | Versioned schema migrations, applied on startup | ADR-004. New in Boot 4.x; 3.x had no Flyway starter. |
+| `postgresql` | The JDBC driver | ADR-004. Runtime scope; nothing compiles against it. |
+| `spring-boot-docker-compose` | Starting the local database on `./mvnw spring-boot:run` | ADR-004, and it keeps `scripts/run.mjs` free of build logic as [ADR-014](../ADRs/ADR-014-root-task-runner.md) requires. Optional scope, so it never reaches a deployed artifact. |
+| `testcontainers-postgresql`, `testcontainers-junit-jupiter`, `spring-boot-testcontainers` | The real database the tests run against | ADR-004. Docker is required to build; there is deliberately no skip-when-absent. Pinned by the Testcontainers BOM, which the Boot BOM does not manage. |
 | `spring-boot-starter-opentelemetry` | A W3C trace id per request, in the MDC and on the response | [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md). Supplies the OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters; export is switched off until Q19 is answered. |
 | `micrometer-registry-prometheus` | Rendering the collected meters for a scraper to pull from `/actuator/prometheus` | [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md). Nothing pushes; the pushgateway is off. |
 | `archunit-junit5` | Enforcing the hexagon and the context boundaries | Nothing else can fail a build on a dependency direction. |
@@ -297,9 +313,11 @@ Nothing is persisted beyond process lifetime.
   is reachable over HTTP at all rather than only from unit tests. `X-Employee` supplies the
   employee link. Every header is validated at the boundary, so a malformed one is a 400 and never
   a 500.
-- **The constraint store keeps only the current version**, while a published roster records the
-  version that approved it. Historical versions must be retrievable before that record means
-  anything — owed alongside ADR-004.
+- **Every constraint version is stored, but only the current one can be read back.** The table is
+  keyed `(organisation_id, version)`, so revising no longer discards what came before — which is
+  what makes a published roster's record of the version that approved it worth anything. The port
+  still offers only `findCurrent`; reading a historical version needs a method nobody has asked for
+  yet.
 - **Approving a swap publishes a replacement; it never edits.** `SwapService` builds the roster that
   would have been published had the swap been in it, and then calls `PlanRostersUseCase.publish` -
   the same door generation and manual assignment go through. So the constraint check, the
@@ -337,7 +355,23 @@ Nothing is persisted beyond process lifetime.
 - **Reading the people of an organisation is restricted to Admins and Schedulers**, because
   unavailability is personal data. Generation reaches the same data through the anti-corruption
   layer carrying the Scheduler's own identity, so the restriction holds there too.
-- **Constraint revision and publication are read-modify-write cycles with no locking.** Two
-  concurrent admins can lose a constraint revision; two concurrent publishes of one draft can both
-  succeed. The remedy is transactional persistence, which is ADR-004 — a lock around an in-memory
-  map would be discarded with it — so this is recorded rather than patched.
+- **Every use case is one transaction, and no use case says so.** `UseCaseConfiguration` wraps each
+  service in a transactional proxy, because the architecture test forbids Spring inside the
+  application layer and so `@Transactional` cannot go where a reader would look for it
+  ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)). A nested use case joins
+  its caller's transaction, which is what makes approving a swap atomic.
+- **Read-modify-write is now atomic, but still not optimistic.** Two concurrent publishes of one
+  draft serialise rather than interleaving, so neither is lost half-way; but there is no version
+  column, so the later one still wins outright rather than being rejected. Adding one would change
+  port signatures, which is a decision of its own.
+- **Three reads were written for a hash map and have not been revisited.** `supersedeOverlapping`
+  and `findOwnSchedule` call `RosterRepository.findByOrganisation`, which now loads every roster the
+  tenant has ever had together with all of their assignments, to find the few that overlap one week;
+  `violations()` fetches each assignment's shift one at a time, an N+1 inside the publish
+  transaction; and every owned collection is written one `INSERT` per row. All three were free
+  against a map and are not against a database. Fixing the first two means new port methods that
+  push the predicate into SQL, which is a change inward of the ports and so a decision of its own;
+  the performance requirement that would size it is still `TODO`.
+- **An audit entry cannot be rolled back.** The trail is a log stream (ADR-018) and a transaction
+  that fails after a service has recorded a change leaves a record of something that did not
+  happen. This is newly true because the transaction is, and it is Q20's problem to solve.
