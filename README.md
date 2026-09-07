@@ -19,9 +19,9 @@
 > [!WARNING]
 > **The domain is real; the product is not finished.** You can onboard an organisation, define
 > people and shifts, configure working-time rules, generate a roster, adjust it by hand, publish
-> it, and swap a shift — but **generation is greedy, not optimised**, **there is no
-> authentication** (the acting identity comes from a header, so any caller can claim any role),
-> and **nothing survives a restart**.
+> it, and swap a shift, and all of it is stored in PostgreSQL — but **generation is greedy, not
+> optimised**, and **there is no authentication** (the acting identity comes from a header, so any
+> caller can claim any role).
 
 This README is ordered for a **contributor**, not an evaluator: there is not yet anything to
 evaluate, so Quick start comes before Architecture.
@@ -109,8 +109,13 @@ cd HrSched/backend
 All backend commands run from `backend/`. On Windows without a POSIX shell, use
 `mvnw.cmd` in place of `./mvnw`.
 
-There is no seed data and there are no credentials, because there is no database and no
-authentication yet.
+**Docker must be running.** `spring-boot:run` starts the PostgreSQL in `backend/compose.yaml` for
+you and stops it afterwards, and `verify` starts its own throwaway database through Testcontainers.
+There is deliberately no in-memory fallback and no skip-when-Docker-is-absent: a check that quietly
+does not run still reports green ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)).
+
+There is no seed data, and no credentials are needed locally: the database in `compose.yaml` has
+throwaway ones, and there is no authentication yet.
 
 To run the user interface as well, from the repository root:
 
@@ -185,9 +190,10 @@ leaving the shift uncovered so the gap is visible.
 
 ## Configuration
 
-All configuration lives in `backend/src/main/resources/application.properties`. There are no
-environment variables and no `.env.example` yet, because nothing needs a secret — there is no
-database, no third-party API, and no authentication.
+Most configuration lives in `backend/src/main/resources/application.properties`. The database is
+the exception, and it is deliberately not in there: locally `backend/compose.yaml` supplies it, and
+a deployment supplies the three variables in [`.env.example`](.env.example). A committed URL would
+be a default that travels somewhere it is wrong.
 
 | Property | Purpose | Default |
 | --- | --- | --- |
@@ -195,6 +201,7 @@ database, no third-party API, and no authentication.
 | `management.endpoint.health.probes.enabled` | Exposes `health/liveness` and `health/readiness` | `true` (set explicitly; Spring defaults it off outside Kubernetes) |
 | `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info,metrics,prometheus`. An allow list: `loggers`, `env` and `heapdump` are deliberately absent while there is no authentication ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md)) |
 | `server.port` | HTTP port | `8080` (Spring default, not overridden) |
+| `SPRING_DATASOURCE_URL` / `_USERNAME` / `_PASSWORD` | Where the database is, and who connects to it | **Deliberately unset.** Supplied by `compose.yaml` locally and by the environment in a deployment; see [`.env.example`](.env.example) |
 | `logging.structured.format.console` | Log format on stdout | `ecs` — Elastic Common Schema JSON, always, with no profile that turns it off ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
 | `logging.structured.ecs.service.name` / `.version` | Identify the emitting service in every line | `HrSched` / the Maven project version, filtered in at build time |
 | `logging.structured.ecs.service.environment` | Which environment produced the line | **Deliberately unset.** A committed default would travel to a real environment that forgot to override it |
@@ -242,7 +249,7 @@ flowchart LR
         direction LR
         subgraph adapters [Adapters]
             web["adapter.in.web<br/>ShiftController"]
-            store["adapter.out.persistence<br/>InMemoryShiftRepository"]
+            store["adapter.out.persistence<br/>JdbcShiftRepository"]
         end
         subgraph hexagon [Hexagon - framework-free]
             portIn["application.port.in<br/>use cases"]
@@ -385,7 +392,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `SchedulingCommandsTest`, `WorkforceCommandsTest` | Application | Every command rejects a null field, copies what it is handed, and stops short of judging what it carries. |
 | `RosterCandidateTest`, `PublishedLanguageTest` | Published language | What one context tells another, and nothing more. |
 | `WorkforceDirectoryAdapterTest` | Anti-corruption layer | The only class in scheduling permitted to name another context, including that contracted hours do not cross. |
-| `InMemory*RepositoryTest` (×5) | Driven adapters | Every read filters by organisation before returning anything, plus the ordering each one promises. |
+| `Jdbc*RepositoryTest` (×8) | Driven adapters | Every read filters by organisation in the query before returning anything, the ordering each one promises, and that a save leaves the owned rows agreeing with the aggregate rather than accumulating. Run against a real PostgreSQL. |
 | `ActorFromHeadersTest` (×2) | Driving adapters | The header placeholder in both contexts, including every malformed header. |
 | `SchedulingExceptionHandlerTest`, `WorkforceExceptionHandlerTest` | Driving adapters | Which failure earns which status, the structured 422, and that there is no catch-all. |
 | `GreedyRosterGeneratorTest` | Driven adapter | The placeholder generator never breaks a rule, and leaves a shift short rather than filling it illegally. |
@@ -423,9 +430,12 @@ npm run test:coverage  # the same tests, plus coverage/index.html
 **CI** runs `./mvnw verify` and `npm run verify` on every push and pull request
 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Those two commands are the merge gate.
 
-*Not yet:* integration tests against real dependencies in containers — there is nothing to connect
-to until ADR-004. No contract test and no browser test either; ADR-013 records that as accepted
-debt, to be revisited the first time UI/API drift actually bites.
+Since [ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md) the whole suite runs
+against a real PostgreSQL in a container — one container, started once and shared — so every HTTP
+test exercises real SQL rather than a hash map. Docker is therefore required to build.
+
+*Not yet:* no contract test between the UI and the API, and no browser test; ADR-013 records that
+as accepted debt, to be revisited the first time UI/API drift actually bites.
 
 ## Deployment and operations
 
@@ -469,6 +479,7 @@ blocked on the same missing environment.
 | [ADR-001](docs/ADRs/ADR-001-java-spring-boot-maven.md) | Java 21, Spring Boot 4.1.1, Maven Wrapper | Boot 4.x is recent, so most existing tutorials name things that no longer exist |
 | [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md) | `./mvnw verify` as the single gate, Spotless for format | google-java-format is not configurable; formatting fails the build before tests run |
 | [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md) | Hexagon in one module, enforced by ArchUnit | Many more classes per use case; hand-wiring; enforcement is a test, not the compiler |
+| [ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md) | PostgreSQL behind the driven ports, hand-written SQL, Flyway migrations | Docker is required to build; eight adapters of explicit mapping where an ORM would have generated it; last writer still wins |
 | [ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md) | Generation behind a port, greedy for now | The product does not yet do the thing it exists to do; a greedy result is a poor solver baseline |
 | [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md) | Organise packages by bounded context | A layer is no longer one place; `workforce` precedes its requirements |
 | [ADR-007](docs/ADRs/ADR-007-monorepo-backend-and-frontend.md) | Monorepo: `backend/` + `frontend/` siblings | Every backend command grows a `cd`; CI and Dependabot need explicit paths |
@@ -485,10 +496,11 @@ blocked on the same missing environment.
 | [ADR-019](docs/ADRs/ADR-019-an-application-layer-for-the-access-context.md) | The access context gets an application layer; an organisation is a real record | A register held in memory, which after ADR-020 makes a restart a total outage rather than an empty start |
 | [ADR-020](docs/ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md) | An unknown `X-Organisation` is refused at the boundary, with the ordinary 404 | An oracle for whether an identifier names a real tenant, cheap only because the identifier is a random UUID; and it is still not authentication |
 | [ADR-021](docs/ADRs/ADR-021-notifications-as-a-bounded-context.md) | Notifications are their own context, and hold no words | Delivery is pull-only, so somebody is informed when they next open the app; a lost notification means they were never told while the system believes they were |
-| [ADR-022](docs/ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md) | Approving a swap publishes a replacement roster rather than editing one | A refused approval leaves the replacement behind as a draft; approving is not atomic |
+| [ADR-022](docs/ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md) | Approving a swap publishes a replacement roster rather than editing one | A refused approval left the replacement behind as a draft, which ADR-023 fixed |
+| [ADR-023](docs/ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md) | A use case is one transaction, applied at the composition root | A proxy nothing in the service hints at; an audit entry can now outlive the change it records |
 
-Still open and blocking: **ADR-004** (data storage), **ADR-010** (objectives) and **ADR-011**
-(authentication). See the [ADR index](docs/ADRs/).
+Still open and blocking: **ADR-010** (objectives) and **ADR-011** (authentication). See the
+[ADR index](docs/ADRs/).
 
 ## Documentation
 
@@ -509,8 +521,8 @@ a two-endpoint walking skeleton, health probes, and the decisions behind them.
 
 **Next:** Q2 (roles), Q3 (tenancy) and Q4 (working-time rules) are answered, so the real
 domain can now be modelled — multi-tenant, three roles, and working-time rules as a
-*configured constraint set* rather than any country's law hardcoded. ADR-004 (storage) is
-needed before the first persistence adapter, and tenancy raises its stakes.
+*configured constraint set* rather than any country's law hardcoded. Storage is settled
+(ADR-004), so what remains blocking is ADR-010 (objectives) and ADR-011 (authentication).
 
 **Known limitations**
 
@@ -520,28 +532,29 @@ needed before the first persistence adapter, and tenancy raises its stakes.
 - **No authentication.** The acting identity comes from request headers, so any caller can claim
   any role in any organisation. Authorisation logic is real; the identity behind it is not.
 - **Objectives are not modelled**, so there is nothing for a solver to optimise against yet.
-- **The constraint store keeps only the current version**, while published rosters reference the
-  version that approved them. Historical versions must be retrievable before that record means
-  anything.
+- **Constraint versions are stored but cannot be read back.** Every revision is kept now, keyed by
+  version, so the record a published roster holds is no longer worthless — but the port offers only
+  `findCurrent`, so reading a historical version still needs a method nobody has asked for.
 - **Time is UTC-only.** `TimeRange` carries no zone. Periods are split correctly at midnight, so
   the arithmetic is right, but the *day* is a UTC day — for an organisation whose local midnight
   is not UTC midnight, work is counted against the wrong one.
 - **Nothing automated proves the UI and the API agree.** The typed client is written by hand from
   the Java records, so a DTO change can drift silently. There is no contract test and no browser
   test — see ADR-013 for the trigger to add one.
-- **Concurrent writes can be lost.** Constraint revision and publication are read-modify-write
-  cycles with no locking, which transactional persistence (ADR-004) fixes and a lock around a
-  hash map would not.
-- **Nothing survives a restart.** Storage is a `ConcurrentHashMap` until ADR-004. Two places make
-  that sharper than it used to be: the organisation register, because after ADR-020 an empty one
-  means every tenant's every request answers 404 rather than merely finding no data; and the
-  notification inbox, because a lost notification means a person was never told while the system
-  believes they were.
+- **A concurrent write is atomic but not optimistic.** Every use case is one transaction
+  (ADR-023), so two concurrent publishes of one draft serialise rather than interleaving and
+  neither is left half-done. There is still no version column, so the later one wins outright
+  rather than being rejected — adding one would change port signatures.
+- **Three reads still assume a hash map.** Superseding on publish and viewing one's own schedule
+  both load every roster a tenant ever had; checking constraints fetches each assignment's shift
+  one at a time; and every child row is written with its own `INSERT`. Free against a map, not
+  against a database, and unbounded as a tenant accumulates history. The fix needs new port
+  methods, and the performance requirement that would size it is still `TODO`.
+- **An audit entry can outlive the change it records.** The trail is a log stream (ADR-018) and a
+  log line cannot be rolled back, so a use case that records a change and then fails to commit
+  leaves a record of something that did not happen. Newly true because the transaction is; Q20.
 - **A notification reaches somebody when they next open the application.** There is no email, no
   push and no unread badge, which for a rota change may be too late — Q21.
-- **Approving a swap is not atomic.** It publishes a roster, saves the request and sends two
-  notifications with no transaction around them, and a refused approval leaves the replacement
-  behind as an unpublished draft. Both are recorded in ADR-022.
 - No authentication. Authorisation is real and tested, but the identity it acts on is claimed in
   a header, so every endpoint is effectively open.
 - Time is modelled as `Instant`; rosters are read in local time across potentially different

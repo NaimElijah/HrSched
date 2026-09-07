@@ -10,11 +10,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -27,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * <p>The constraint values used here are invented. They are chosen to make a specific case pass or
  * fail, and say nothing about any jurisdiction.
  */
+@Import(PostgresBackedApplication.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 class RosteringHttpTest {

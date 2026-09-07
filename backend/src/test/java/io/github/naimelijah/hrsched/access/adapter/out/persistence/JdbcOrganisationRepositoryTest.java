@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.naimelijah.hrsched.access.domain.model.Organisation;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -13,9 +15,15 @@ import org.junit.jupiter.api.Test;
  * tenants. What it does promise is ordering — by name, so the operator's listing is stable — and
  * that saving under an existing identity replaces rather than duplicates.
  */
-class InMemoryOrganisationRepositoryTest {
+class JdbcOrganisationRepositoryTest {
 
-  private final InMemoryOrganisationRepository organisations = new InMemoryOrganisationRepository();
+  private final JdbcOrganisationRepository organisations =
+      new JdbcOrganisationRepository(PostgresDatabase.jdbcClient());
+
+  @BeforeEach
+  void emptyTheDatabase() {
+    PostgresDatabase.empty();
+  }
 
   @Test
   void GivenAnOrganisation_WhenSaved_ThenItIsFoundByItsIdentity() {
@@ -63,5 +71,14 @@ class InMemoryOrganisationRepositoryTest {
     assertThat(organisations.findAll())
         .extracting(Organisation::name)
         .containsExactly("Acme Holdings");
+  }
+
+  /** Two organisations sharing a name are still different customers, so the store must allow it. */
+  @Test
+  void GivenTwoOrganisationsWithOneName_WhenSaved_ThenBothAreKept() {
+    organisations.save(new Organisation(OrganisationId.newId(), "Acme"));
+    organisations.save(new Organisation(OrganisationId.newId(), "Acme"));
+
+    assertThat(organisations.findAll()).hasSize(2);
   }
 }

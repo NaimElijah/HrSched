@@ -5,25 +5,37 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.time.Instant;
 import java.util.Set;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * The tenant predicate and the ordering this adapter promises.
+ * The tenant predicate, the overlap semantics, and the ordering this adapter promises.
  *
- * <p>The organisation filter is the reason these tests exist. It is applied after the map lookup,
- * so a shift is reachable by its identifier from anywhere in the process; only the filter stops one
- * organisation reading another's. A real store will push that predicate into the query, and these
- * tests are what the replacement has to keep satisfying.
+ * <p>The organisation filter is the reason these tests exist: only it stops one organisation
+ * reading another's shifts. It is now a predicate in the query rather than a filter after a map
+ * lookup, and these are the tests the replacement had to keep satisfying.
+ *
+ * <p>{@code findWithin} asks for overlap, half-open at both ends. The three boundary cases below
+ * are what pin that, because they are the ones a hand-written {@code WHERE} clause gets wrong.
  */
-class InMemoryShiftRepositoryTest {
+class JdbcShiftRepositoryTest {
 
   private static final OrganisationId ACME = OrganisationId.newId();
   private static final OrganisationId RIVAL = OrganisationId.newId();
 
-  private final InMemoryShiftRepository repository = new InMemoryShiftRepository();
+  private final JdbcShiftRepository repository =
+      new JdbcShiftRepository(PostgresDatabase.jdbcClient());
+
+  @BeforeEach
+  void emptyTheDatabase() {
+    PostgresDatabase.empty();
+    PostgresDatabase.given(ACME, RIVAL);
+  }
 
   private static TimeRange between(String start, String end) {
     return new TimeRange(Instant.parse(start), Instant.parse(end));
@@ -31,6 +43,10 @@ class InMemoryShiftRepositoryTest {
 
   private static Shift shift(OrganisationId organisation, String start, String end) {
     return new Shift(ShiftId.newId(), organisation, between(start, end), 1, Set.of());
+  }
+
+  private static TimeRange theDay() {
+    return between("2026-09-07T00:00:00Z", "2026-09-08T00:00:00Z");
   }
 
   @Test
@@ -60,16 +76,14 @@ class InMemoryShiftRepositoryTest {
     repository.save(ours);
     repository.save(shift(RIVAL, "2026-09-07T08:00:00Z", "2026-09-07T16:00:00Z"));
 
-    assertThat(repository.findWithin(ACME, between("2026-09-07T00:00:00Z", "2026-09-08T00:00:00Z")))
-        .containsExactly(ours);
+    assertThat(repository.findWithin(ACME, theDay())).containsExactly(ours);
   }
 
   @Test
   void GivenAShiftOutsideTheSpan_WhenFindingWithin_ThenItIsNotReturned() {
     repository.save(shift(ACME, "2026-09-10T08:00:00Z", "2026-09-10T16:00:00Z"));
 
-    assertThat(repository.findWithin(ACME, between("2026-09-07T00:00:00Z", "2026-09-08T00:00:00Z")))
-        .isEmpty();
+    assertThat(repository.findWithin(ACME, theDay())).isEmpty();
   }
 
   @Test
@@ -77,16 +91,21 @@ class InMemoryShiftRepositoryTest {
     Shift overnight = shift(ACME, "2026-09-07T22:00:00Z", "2026-09-08T06:00:00Z");
     repository.save(overnight);
 
-    assertThat(repository.findWithin(ACME, between("2026-09-07T00:00:00Z", "2026-09-08T00:00:00Z")))
-        .containsExactly(overnight);
+    assertThat(repository.findWithin(ACME, theDay())).containsExactly(overnight);
   }
 
   @Test
   void GivenAShiftEndingExactlyWhenTheSpanBegins_WhenFindingWithin_ThenItIsNotReturned() {
     repository.save(shift(ACME, "2026-09-06T16:00:00Z", "2026-09-07T00:00:00Z"));
 
-    assertThat(repository.findWithin(ACME, between("2026-09-07T00:00:00Z", "2026-09-08T00:00:00Z")))
-        .isEmpty();
+    assertThat(repository.findWithin(ACME, theDay())).isEmpty();
+  }
+
+  @Test
+  void GivenAShiftStartingExactlyWhenTheSpanEnds_WhenFindingWithin_ThenItIsNotReturned() {
+    repository.save(shift(ACME, "2026-09-08T00:00:00Z", "2026-09-08T08:00:00Z"));
+
+    assertThat(repository.findWithin(ACME, theDay())).isEmpty();
   }
 
   @Test
@@ -96,8 +115,7 @@ class InMemoryShiftRepositoryTest {
     repository.save(evening);
     repository.save(morning);
 
-    assertThat(repository.findWithin(ACME, between("2026-09-07T00:00:00Z", "2026-09-08T00:00:00Z")))
-        .containsExactly(morning, evening);
+    assertThat(repository.findWithin(ACME, theDay())).containsExactly(morning, evening);
   }
 
   @Test
@@ -115,7 +133,7 @@ class InMemoryShiftRepositoryTest {
 
     // Shift compares by identity, so asserting on the element itself would pass whichever
     // version were held. A distinguishing field is the only thing that can tell them apart.
-    assertThat(repository.findWithin(ACME, between("2026-09-07T00:00:00Z", "2026-09-08T00:00:00Z")))
+    assertThat(repository.findWithin(ACME, theDay()))
         .singleElement()
         .extracting(Shift::requiredHeadcount)
         .isEqualTo(2);
@@ -123,7 +141,42 @@ class InMemoryShiftRepositoryTest {
 
   @Test
   void GivenNothingSaved_WhenFindingWithinASpan_ThenNothingIsReturned() {
-    assertThat(repository.findWithin(ACME, between("2026-09-07T00:00:00Z", "2026-09-08T00:00:00Z")))
-        .isEmpty();
+    assertThat(repository.findWithin(ACME, theDay())).isEmpty();
+  }
+
+  @Test
+  void GivenRequiredQualifications_WhenReadBack_ThenAllOfThemComeBack() {
+    QualificationId forklift = QualificationId.newId();
+    QualificationId crane = QualificationId.newId();
+    Shift morning =
+        new Shift(
+            ShiftId.newId(),
+            ACME,
+            between("2026-09-07T08:00:00Z", "2026-09-07T16:00:00Z"),
+            1,
+            Set.of(forklift, crane));
+    repository.save(morning);
+
+    assertThat(repository.findById(ACME, morning.id()))
+        .get()
+        .extracting(Shift::requiredQualifications)
+        .isEqualTo(Set.of(forklift, crane));
+  }
+
+  /** Re-saving must leave the child table agreeing with the shift, not accumulating rows. */
+  @Test
+  void GivenAShiftWhoseRequirementsChange_WhenSavedAgain_ThenTheOldOnesAreGone() {
+    QualificationId forklift = QualificationId.newId();
+    QualificationId crane = QualificationId.newId();
+    ShiftId id = ShiftId.newId();
+    TimeRange period = between("2026-09-07T08:00:00Z", "2026-09-07T16:00:00Z");
+    repository.save(new Shift(id, ACME, period, 1, Set.of(forklift)));
+
+    repository.save(new Shift(id, ACME, period, 1, Set.of(crane)));
+
+    assertThat(repository.findById(ACME, id))
+        .get()
+        .extracting(Shift::requiredQualifications)
+        .isEqualTo(Set.of(crane));
   }
 }

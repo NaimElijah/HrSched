@@ -2,6 +2,7 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
 
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -20,6 +21,12 @@ import java.util.Objects;
  * <p>It names a roster and a shift rather than an {@code Assignment}, because the assignment it
  * refers to has to still be there when a Scheduler answers — and whether it is is a question for
  * the application layer, which can read the roster, rather than for this record, which cannot.
+ *
+ * <p>It carries {@code requestedAt} because the repository promises requests in the order they were
+ * raised, which is the order a Scheduler works through them. A store that happened to keep
+ * insertion order could honour that without the field; a store that does not, cannot. Making the
+ * time a fact about the request rather than an accident of the map it sat in is what lets the
+ * promise be kept by anything (ADR-004).
  */
 public final class SwapRequest {
 
@@ -30,6 +37,7 @@ public final class SwapRequest {
   private final EmployeeId requester;
   private final EmployeeId counterparty;
   private final SwapRequestStatus status;
+  private final Instant requestedAt;
 
   /**
    * Creates a request waiting on a Scheduler.
@@ -40,6 +48,7 @@ public final class SwapRequest {
    * @param shift the shift being handed over
    * @param requester whoever currently covers it
    * @param counterparty whoever is being asked to take it
+   * @param requestedAt when it was raised, from the caller's clock rather than a store's
    * @throws NullPointerException if any argument is null
    * @throws SwapWithThemselfException if the two are the same person
    */
@@ -49,8 +58,17 @@ public final class SwapRequest {
       RosterId roster,
       ShiftId shift,
       EmployeeId requester,
-      EmployeeId counterparty) {
-    this(id, organisation, roster, shift, requester, counterparty, SwapRequestStatus.REQUESTED);
+      EmployeeId counterparty,
+      Instant requestedAt) {
+    this(
+        id,
+        organisation,
+        roster,
+        shift,
+        requester,
+        counterparty,
+        SwapRequestStatus.REQUESTED,
+        requestedAt);
   }
 
   private SwapRequest(
@@ -60,7 +78,8 @@ public final class SwapRequest {
       ShiftId shift,
       EmployeeId requester,
       EmployeeId counterparty,
-      SwapRequestStatus status) {
+      SwapRequestStatus status,
+      Instant requestedAt) {
     this.id = Objects.requireNonNull(id, "id must not be null");
     this.organisation = Objects.requireNonNull(organisation, "organisation must not be null");
     this.roster = Objects.requireNonNull(roster, "roster must not be null");
@@ -71,6 +90,7 @@ public final class SwapRequest {
       throw new SwapWithThemselfException(requester);
     }
     this.status = Objects.requireNonNull(status, "status must not be null");
+    this.requestedAt = Objects.requireNonNull(requestedAt, "requestedAt must not be null");
   }
 
   /**
@@ -93,7 +113,8 @@ public final class SwapRequest {
     if (status != SwapRequestStatus.REQUESTED) {
       throw new SwapNotPendingException(id, status);
     }
-    return new SwapRequest(id, organisation, roster, shift, requester, counterparty, outcome);
+    return new SwapRequest(
+        id, organisation, roster, shift, requester, counterparty, outcome, requestedAt);
   }
 
   /**
@@ -145,6 +166,13 @@ public final class SwapRequest {
 
   public SwapRequestStatus status() {
     return status;
+  }
+
+  /**
+   * @return when the request was raised; unchanged by deciding it
+   */
+  public Instant requestedAt() {
+    return requestedAt;
   }
 
   @Override

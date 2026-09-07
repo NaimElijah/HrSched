@@ -44,8 +44,10 @@ import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -79,6 +81,9 @@ class SwapServiceTest {
   private static final TimeRange THE_WEEK =
       new TimeRange(Instant.parse("2026-10-05T00:00:00Z"), Instant.parse("2026-10-12T00:00:00Z"));
 
+  /** Fixed, so the time a request records is something these tests state rather than tolerate. */
+  private static final Instant RAISED_AT = Instant.parse("2026-10-01T09:30:00Z");
+
   private FakeShifts shifts;
   private FakeRosters rosters;
   private FakeConstraintSets constraintSets;
@@ -104,7 +109,16 @@ class SwapServiceTest {
     scheduling =
         new SchedulingService(
             shifts, rosters, constraintSets, workforce, new AssignsNobody(), audit);
-    service = new SwapService(swaps, rosters, shifts, workforce, scheduling, notifier, audit);
+    service =
+        new SwapService(
+            swaps,
+            rosters,
+            shifts,
+            workforce,
+            scheduling,
+            notifier,
+            audit,
+            Clock.fixed(RAISED_AT, ZoneOffset.UTC));
     ada = available(ACME, "Ada", Set.of());
     grace = available(ACME, "Grace", Set.of());
   }
@@ -163,6 +177,35 @@ class SwapServiceTest {
               assertThat(published2.requester()).isEqualTo(ada);
               assertThat(published2.counterparty()).isEqualTo(grace);
             });
+  }
+
+  /**
+   * The time is what a Scheduler's queue is ordered by, so it has to be the clock's rather than
+   * whatever order the store happened to keep (ADR-004).
+   */
+  @Test
+  void GivenASwapIsRaised_WhenItIsStored_ThenItCarriesTheTimeFromTheClock() {
+    ShiftId shift = aShift(Set.of());
+    Roster published = publishedWith(ada, shift);
+
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, published.id(), shift, ada, grace));
+
+    assertThat(swaps.byId(request).requestedAt()).isEqualTo(RAISED_AT);
+  }
+
+  @Test
+  void GivenAPendingSwap_WhenASchedulerDecidesIt_ThenTheTimeItWasRaisedIsUnchanged() {
+    ShiftId shift = aShift(Set.of());
+    Roster published = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, published.id(), shift, ada, grace));
+
+    service.rejectSwap(scheduler(ACME), ACME, request);
+
+    assertThat(swaps.byId(request).requestedAt()).isEqualTo(RAISED_AT);
   }
 
   /** Q11: the colleague is informed rather than asked, and being informed is a real thing here. */

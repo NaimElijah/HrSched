@@ -9,14 +9,13 @@ rules, generate a roster, publish it. Three contexts — `scheduling`, `workforc
 plus a `shared` kernel, with the hexagon and the context boundaries enforced by build-failing
 tests.
 
-Four things are **not** what they look like:
+Three things are **not** what they look like:
 
 - **Generation is greedy, not optimised.** Automatic generation is the point of the product and
   a real implementation is a solver; `GreedyRosterGenerator` exists to prove the port (ADR-005).
   It ignores fairness, preferences and disruption entirely.
 - **There is no authentication.** The acting identity comes from request headers, so any caller
   can claim any role in any organisation. It is a placeholder to be deleted, not extended.
-- **Nothing survives a restart.** Every repository is in memory until ADR-004.
 - **The audit trail is a log stream, not a trail.** Every change and refusal is recorded through
   an `AuditTrail` driven port, but nothing is stored and nothing is queryable: the record lives
   only wherever stdout is collected. Whether an Admin may read it, and for how long it is kept,
@@ -38,8 +37,22 @@ Three consequences bind everything written from now on:
 - **Constraints are invariants.** A roster violating its constraint set cannot be published,
   and there is no override.
 
-Before adding persistence, ADR-004 needs writing. Adding a JPA starter would make ADR-004 by
-accident — do not.
+Persistence is settled (ADR-004): PostgreSQL, hand-written SQL through `JdbcClient`, Flyway
+migrations, one schema with `organisation_id` on every aggregate root (child tables are reached
+only through their root). **Do not add an ORM.** The domain may
+not carry `jakarta.persistence` annotations — the architecture test fails on them — so JPA would
+need a parallel annotated model and would buy only behaviour a hexagonal adapter must not leak.
+
+**Docker must be running to build.** The tests use a real PostgreSQL through Testcontainers, one
+container shared by the suite. There is no in-memory fallback and no skip-when-Docker-is-absent, on
+purpose: a check that quietly does not run still reports green.
+
+**Every use case is one transaction**, wrapped in `UseCaseConfiguration` rather than annotated,
+because the architecture test forbids Spring in the application layer (ADR-023). A new use case gets
+that for free by being registered there — which is already mandatory.
+
+**No number from any statute belongs in a migration either.** The schema stores a working-time
+limit as a value; it never defaults one.
 
 ## Commands
 
@@ -83,7 +96,10 @@ dependency rule — see ADR-003 and ADR-006. Every context repeats the same shap
 - `<context>/application/port/out/` — driven ports (what the application needs outside).
 - `<context>/application/service/` — use case implementations. **No Spring annotations.**
 - `<context>/adapter/in/web/` — controllers, DTOs, exception translation. May use Spring.
-- `<context>/adapter/out/persistence/` — driven port implementations. May use Spring.
+- `<context>/adapter/out/persistence/` — driven port implementations. May use Spring. Each
+  `Jdbc*Repository` owns its own SQL; there is deliberately no shared helper package, because
+  `ContextPackages` would treat a new top-level package as a bounded context and every context
+  touching it would fail the cross-context rule.
 
 Contexts today: `scheduling` (shifts, rosters, constraints, generation), `workforce` (employees,
 qualifications, availability), `access` (organisations). At the root beside them sit
@@ -101,6 +117,10 @@ names another context.
   `workforce.ts` mirror the backend DTOs, one module per context.
 - `src/identity/` — the acting-as placeholder, deleted with the backend's when ADR-011 lands.
 - `src/pages/` — one screen per capability. Pages never call `fetch` directly.
+
+Also inside `backend/`: `src/main/resources/db/migration/` holds the Flyway migrations — the only
+way the schema changes — and `compose.yaml` holds the local database, beside the backend rather
+than at the root because Boot looks in the working directory.
 
 Outside `backend/`:
 

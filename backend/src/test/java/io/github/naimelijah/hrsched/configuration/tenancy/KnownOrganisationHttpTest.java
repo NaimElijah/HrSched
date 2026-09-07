@@ -8,11 +8,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.configuration.observability.TraceIdResponseFilter;
+import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -28,6 +30,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  *
  * <p>Annotated identically to the other HTTP tests so they all share one Spring context.
  */
+@Import(PostgresBackedApplication.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 class KnownOrganisationHttpTest {

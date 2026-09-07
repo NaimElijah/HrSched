@@ -31,6 +31,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -51,6 +52,10 @@ import java.util.UUID;
  * something publication already does. Calling it means the guarantee "a roster that breaks a rule
  * cannot be published, and there is no override" is not merely also true here; it is literally the
  * same code. A second implementation would be a second thing to keep honest.
+ *
+ * <p>Takes a {@link Clock} rather than calling {@code Instant.now()}, so when a request was raised
+ * is an input a test supplies. It matters more here than it looks: that time is what the repository
+ * orders a Scheduler's queue by.
  */
 public class SwapService implements RequestSwapsUseCase {
 
@@ -67,6 +72,7 @@ public class SwapService implements RequestSwapsUseCase {
   private final PlanRostersUseCase planRosters;
   private final Notifier notifier;
   private final AuditTrail audit;
+  private final Clock clock;
 
   public SwapService(
       SwapRequestRepository swaps,
@@ -75,7 +81,8 @@ public class SwapService implements RequestSwapsUseCase {
       WorkforceDirectory workforce,
       PlanRostersUseCase planRosters,
       Notifier notifier,
-      AuditTrail audit) {
+      AuditTrail audit,
+      Clock clock) {
     this.swaps = Objects.requireNonNull(swaps, "swaps must not be null");
     this.rosters = Objects.requireNonNull(rosters, "rosters must not be null");
     this.shifts = Objects.requireNonNull(shifts, "shifts must not be null");
@@ -83,6 +90,7 @@ public class SwapService implements RequestSwapsUseCase {
     this.planRosters = Objects.requireNonNull(planRosters, "planRosters must not be null");
     this.notifier = Objects.requireNonNull(notifier, "notifier must not be null");
     this.audit = Objects.requireNonNull(audit, "audit must not be null");
+    this.clock = Objects.requireNonNull(clock, "clock must not be null");
   }
 
   @Override
@@ -105,7 +113,8 @@ public class SwapService implements RequestSwapsUseCase {
             command.roster(),
             command.shift(),
             command.requester(),
-            command.counterparty());
+            command.counterparty(),
+            clock.instant());
     swaps.save(request);
     recorded(actor, command.organisation(), SchedulingChange.SWAP_REQUESTED, request.id().value());
     notifier.swapRequested(actor, command.organisation(), command.counterparty(), request.id());

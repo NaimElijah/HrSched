@@ -36,7 +36,7 @@ import org.junit.jupiter.api.Test;
  * normally.
  *
  * <p>Ordering is deliberately not asserted here. Sorting is the persistence adapter's promise, and
- * is asserted against the real adapter in {@code InMemoryOrganisationRepositoryTest}; a stub that
+ * is asserted against the real adapter in {@code JdbcOrganisationRepositoryTest}; a stub that
  * sorted would only prove the stub sorts.
  */
 class OrganisationServiceTest {
