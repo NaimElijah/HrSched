@@ -41,29 +41,31 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
 
   @Override
   public void save(SwapRequest request) {
-    jdbc.sql(
-            """
+    int stored =
+        jdbc.sql(
+                """
             INSERT INTO swap_request (id, organisation_id, roster_id, shift_id, requester_id,
                                       counterparty_id, status, requested_at)
             VALUES (:id, :organisation, :roster, :shift, :requester, :counterparty, :status,
                     :requestedAt)
-            ON CONFLICT (id) DO UPDATE SET organisation_id = EXCLUDED.organisation_id,
-                                           roster_id = EXCLUDED.roster_id,
+            ON CONFLICT (id) DO UPDATE SET roster_id = EXCLUDED.roster_id,
                                            shift_id = EXCLUDED.shift_id,
                                            requester_id = EXCLUDED.requester_id,
                                            counterparty_id = EXCLUDED.counterparty_id,
                                            status = EXCLUDED.status,
                                            requested_at = EXCLUDED.requested_at
+            WHERE swap_request.organisation_id = EXCLUDED.organisation_id
             """)
-        .param("id", request.id().value())
-        .param("organisation", request.organisation().value())
-        .param("roster", request.roster().value())
-        .param("shift", request.shift().value())
-        .param("requester", request.requester().value())
-        .param("counterparty", request.counterparty().value())
-        .param("status", request.status().name())
-        .param("requestedAt", request.requestedAt().atOffset(ZoneOffset.UTC))
-        .update();
+            .param("id", request.id().value())
+            .param("organisation", request.organisation().value())
+            .param("roster", request.roster().value())
+            .param("shift", request.shift().value())
+            .param("requester", request.requester().value())
+            .param("counterparty", request.counterparty().value())
+            .param("status", request.status().name())
+            .param("requestedAt", request.requestedAt().atOffset(ZoneOffset.UTC))
+            .update();
+    requireStored(stored, request.id().value());
   }
 
   @Override
@@ -113,5 +115,19 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
       case APPROVED -> pending.approved();
       case REJECTED -> pending.rejected();
     };
+  }
+
+  /**
+   * A save carries no {@code OrganisationId}, so the upsert's {@code WHERE} is the only thing
+   * standing between a re-used identity and another tenant's row. It makes the mismatched case
+   * affect nothing rather than overwrite; this turns that silence into a refusal, because a write
+   * that quietly did nothing is the worse of the two failures.
+   */
+  private static void requireStored(int rows, UUID id) {
+    if (rows == 0) {
+      throw new IllegalStateException(
+          "Refused to store %s: that identity already belongs to another organisation"
+              .formatted(id));
+    }
   }
 }

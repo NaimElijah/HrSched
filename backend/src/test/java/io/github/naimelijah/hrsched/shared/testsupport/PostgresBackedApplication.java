@@ -14,11 +14,16 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  *
  * <p>It hands back the container {@link PostgresDatabase} already started rather than declaring one
  * of its own, so the whole suite pays for a single container once.
+ *
+ * <p>{@code destroyMethod = ""} is load-bearing. Boot treats a container bean as something it owns
+ * and closes it when the context is destroyed, which for a container shared with every plain
+ * adapter test would stop the database out from under them on the first context eviction. This bean
+ * is a reference to something it did not start, so it must not stop it either.
  */
 @TestConfiguration(proxyBeanMethods = false)
 public class PostgresBackedApplication {
 
-  @Bean
+  @Bean(destroyMethod = "")
   @ServiceConnection
   PostgreSQLContainer postgres() {
     return PostgresDatabase.container();

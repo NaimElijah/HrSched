@@ -49,12 +49,20 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
   }
 
+  /**
+   * Stores a revision.
+   *
+   * <p>A plain {@code INSERT}: revising always mints the next version, so a conflict here means two
+   * Admins computed the same next version from the same current one, and exactly one of them is
+   * about to lose their revision. Silencing that with {@code ON CONFLICT DO NOTHING} would let the
+   * second overwrite the first's constraints while its audit line claimed success — so the unique
+   * violation is allowed to surface and take its transaction with it (ADR-023).
+   */
   @Override
   public void save(ConstraintSet constraintSet) {
     jdbc.sql(
             """
             INSERT INTO constraint_set (organisation_id, version) VALUES (:organisation, :version)
-            ON CONFLICT (organisation_id, version) DO NOTHING
             """)
         .param("organisation", constraintSet.organisation().value())
         .param("version", constraintSet.version())

@@ -32,17 +32,19 @@ public class JdbcQualificationRepository implements QualificationRepository {
 
   @Override
   public void save(Qualification qualification) {
-    jdbc.sql(
-            """
+    int stored =
+        jdbc.sql(
+                """
             INSERT INTO qualification (id, organisation_id, name)
             VALUES (:id, :organisation, :name)
-            ON CONFLICT (id) DO UPDATE SET organisation_id = EXCLUDED.organisation_id,
-                                           name = EXCLUDED.name
+            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+            WHERE qualification.organisation_id = EXCLUDED.organisation_id
             """)
-        .param("id", qualification.id().value())
-        .param("organisation", qualification.organisation().value())
-        .param("name", qualification.name())
-        .update();
+            .param("id", qualification.id().value())
+            .param("organisation", qualification.organisation().value())
+            .param("name", qualification.name())
+            .update();
+    requireStored(stored, qualification.id().value());
   }
 
   @Override
@@ -75,5 +77,19 @@ public class JdbcQualificationRepository implements QualificationRepository {
         new QualificationId(row.getObject("id", UUID.class)),
         new OrganisationId(row.getObject("organisation_id", UUID.class)),
         row.getString("name"));
+  }
+
+  /**
+   * A save carries no {@code OrganisationId}, so the upsert's {@code WHERE} is the only thing
+   * standing between a re-used identity and another tenant's row. It makes the mismatched case
+   * affect nothing rather than overwrite; this turns that silence into a refusal, because a write
+   * that quietly did nothing is the worse of the two failures.
+   */
+  private static void requireStored(int rows, UUID id) {
+    if (rows == 0) {
+      throw new IllegalStateException(
+          "Refused to store %s: that identity already belongs to another organisation"
+              .formatted(id));
+    }
   }
 }

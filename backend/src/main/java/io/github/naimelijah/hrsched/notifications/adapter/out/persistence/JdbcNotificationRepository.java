@@ -40,26 +40,28 @@ public class JdbcNotificationRepository implements NotificationRepository {
 
   @Override
   public void save(Notification notification) {
-    jdbc.sql(
-            """
+    int stored =
+        jdbc.sql(
+                """
             INSERT INTO notification (id, organisation_id, recipient_id, kind, subject,
                                       occurred_at, read)
             VALUES (:id, :organisation, :recipient, :kind, :subject, :occurredAt, :read)
-            ON CONFLICT (id) DO UPDATE SET organisation_id = EXCLUDED.organisation_id,
-                                           recipient_id = EXCLUDED.recipient_id,
+            ON CONFLICT (id) DO UPDATE SET recipient_id = EXCLUDED.recipient_id,
                                            kind = EXCLUDED.kind,
                                            subject = EXCLUDED.subject,
                                            occurred_at = EXCLUDED.occurred_at,
                                            read = EXCLUDED.read
+            WHERE notification.organisation_id = EXCLUDED.organisation_id
             """)
-        .param("id", notification.id().value())
-        .param("organisation", notification.organisation().value())
-        .param("recipient", notification.recipient().value())
-        .param("kind", notification.kind().name())
-        .param("subject", notification.subject())
-        .param("occurredAt", notification.occurredAt().atOffset(ZoneOffset.UTC))
-        .param("read", notification.isRead())
-        .update();
+            .param("id", notification.id().value())
+            .param("organisation", notification.organisation().value())
+            .param("recipient", notification.recipient().value())
+            .param("kind", notification.kind().name())
+            .param("subject", notification.subject())
+            .param("occurredAt", notification.occurredAt().atOffset(ZoneOffset.UTC))
+            .param("read", notification.isRead())
+            .update();
+    requireStored(stored, notification.id().value());
   }
 
   @Override
@@ -107,5 +109,19 @@ public class JdbcNotificationRepository implements NotificationRepository {
             row.getObject("subject", UUID.class),
             row.getObject("occurred_at", OffsetDateTime.class).toInstant());
     return row.getBoolean("read") ? unread.markedRead() : unread;
+  }
+
+  /**
+   * A save carries no {@code OrganisationId}, so the upsert's {@code WHERE} is the only thing
+   * standing between a re-used identity and another tenant's row. It makes the mismatched case
+   * affect nothing rather than overwrite; this turns that silence into a refusal, because a write
+   * that quietly did nothing is the worse of the two failures.
+   */
+  private static void requireStored(int rows, UUID id) {
+    if (rows == 0) {
+      throw new IllegalStateException(
+          "Refused to store %s: that identity already belongs to another organisation"
+              .formatted(id));
+    }
   }
 }

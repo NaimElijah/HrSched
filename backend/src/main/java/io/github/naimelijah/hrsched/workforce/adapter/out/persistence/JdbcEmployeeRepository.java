@@ -51,26 +51,28 @@ public class JdbcEmployeeRepository implements EmployeeRepository {
   @Override
   public void save(Employee employee) {
     UUID id = employee.id().value();
-    jdbc.sql(
-            """
+    int stored =
+        jdbc.sql(
+                """
             INSERT INTO employee (id, organisation_id, name, weekly_contracted_seconds)
             VALUES (:id, :organisation, :name, :contracted)
-            ON CONFLICT (id) DO UPDATE SET organisation_id = EXCLUDED.organisation_id,
-                                           name = EXCLUDED.name,
+            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
                                            weekly_contracted_seconds =
                                                EXCLUDED.weekly_contracted_seconds
+            WHERE employee.organisation_id = EXCLUDED.organisation_id
             """)
-        .param("id", id)
-        .param("organisation", employee.organisation().value())
-        .param("name", employee.name())
-        .param(
-            "contracted",
-            employee
-                .contractTerms()
-                .map(ContractTerms::weeklyContractedHours)
-                .map(Duration::toSeconds)
-                .orElse(null))
-        .update();
+            .param("id", id)
+            .param("organisation", employee.organisation().value())
+            .param("name", employee.name())
+            .param(
+                "contracted",
+                employee
+                    .contractTerms()
+                    .map(ContractTerms::weeklyContractedHours)
+                    .map(Duration::toSeconds)
+                    .orElse(null))
+            .update();
+    requireStored(stored, id);
 
     replaceQualifications(employee, id);
     replaceUnavailability(employee, id);
@@ -273,5 +275,19 @@ public class JdbcEmployeeRepository implements EmployeeRepository {
     return new TimeRange(
         row.getObject("starts_at", OffsetDateTime.class).toInstant(),
         row.getObject("ends_at", OffsetDateTime.class).toInstant());
+  }
+
+  /**
+   * A save carries no {@code OrganisationId}, so the upsert's {@code WHERE} is the only thing
+   * standing between a re-used identity and another tenant's row. It makes the mismatched case
+   * affect nothing rather than overwrite; this turns that silence into a refusal, because a write
+   * that quietly did nothing is the worse of the two failures.
+   */
+  private static void requireStored(int rows, UUID id) {
+    if (rows == 0) {
+      throw new IllegalStateException(
+          "Refused to store %s: that identity already belongs to another organisation"
+              .formatted(id));
+    }
   }
 }

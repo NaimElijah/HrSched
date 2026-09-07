@@ -38,7 +38,8 @@ Three consequences bind everything written from now on:
   and there is no override.
 
 Persistence is settled (ADR-004): PostgreSQL, hand-written SQL through `JdbcClient`, Flyway
-migrations, one schema with `organisation_id` on every table. **Do not add an ORM.** The domain may
+migrations, one schema with `organisation_id` on every aggregate root (child tables are reached
+only through their root). **Do not add an ORM.** The domain may
 not carry `jakarta.persistence` annotations — the architecture test fails on them — so JPA would
 need a parallel annotated model and would buy only behaviour a hexagonal adapter must not leak.
 

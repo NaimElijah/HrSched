@@ -2,9 +2,14 @@
 --
 -- Two rules run through all of it.
 --
--- Tenancy: every table carries organisation_id and every index leads with it, because every
--- repository lookup takes an OrganisationId (ADR-009) and so every query already knows what its
--- WHERE clause must be.
+-- Tenancy: every aggregate root carries organisation_id and every index on one leads with it,
+-- because every repository lookup takes an OrganisationId (ADR-009) and so every query already
+-- knows what its WHERE clause must be. The five child tables -- employee_qualification,
+-- employee_unavailability, employee_preference, shift_required_qualification, roster_assignment --
+-- deliberately do NOT carry it: they have no identity apart from their root and are only ever
+-- reached through it, so a query against one is tenant-scoped by the root it was given. That is an
+-- invariant of the adapters, not of the schema, and a child query written without a root's ids
+-- would escape it.
 --
 -- Constraints mirror domain invariants and express nothing the domain does not. Where the model
 -- permits something untidy -- two organisations sharing a name, two qualifications sharing a name,
@@ -142,11 +147,16 @@ CREATE TABLE working_time_constraint (
         'MAXIMUM_WEEKLY_WORKING_TIME',
         'MAXIMUM_CONSECUTIVE_WORKING_DAYS'
     )),
+    -- Every branch tests IS NOT NULL explicitly. A CHECK passes when its expression is NULL as
+    -- well as when it is TRUE, so `day_count IS NULL AND duration_seconds > 0` would evaluate to
+    -- NULL -- and therefore pass -- for a row carrying neither value. Such a row stores, and then
+    -- makes the whole organisation's set unreadable, because the mapper reads a SQL NULL back as
+    -- zero and no working-time limit of zero can be constructed.
     CONSTRAINT working_time_constraint_carries_its_one_value CHECK (
         CASE kind
             WHEN 'MAXIMUM_CONSECUTIVE_WORKING_DAYS'
-                THEN duration_seconds IS NULL AND day_count >= 1
-            ELSE day_count IS NULL AND duration_seconds > 0
+                THEN duration_seconds IS NULL AND day_count IS NOT NULL AND day_count >= 1
+            ELSE day_count IS NULL AND duration_seconds IS NOT NULL AND duration_seconds > 0
         END
     )
 );

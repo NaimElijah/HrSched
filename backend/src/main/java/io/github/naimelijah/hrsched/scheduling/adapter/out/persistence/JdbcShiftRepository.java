@@ -44,21 +44,23 @@ public class JdbcShiftRepository implements ShiftRepository {
   @Override
   public void save(Shift shift) {
     UUID id = shift.id().value();
-    jdbc.sql(
-            """
+    int stored =
+        jdbc.sql(
+                """
             INSERT INTO shift (id, organisation_id, starts_at, ends_at, required_headcount)
             VALUES (:id, :organisation, :startsAt, :endsAt, :headcount)
-            ON CONFLICT (id) DO UPDATE SET organisation_id = EXCLUDED.organisation_id,
-                                           starts_at = EXCLUDED.starts_at,
+            ON CONFLICT (id) DO UPDATE SET starts_at = EXCLUDED.starts_at,
                                            ends_at = EXCLUDED.ends_at,
                                            required_headcount = EXCLUDED.required_headcount
+            WHERE shift.organisation_id = EXCLUDED.organisation_id
             """)
-        .param("id", id)
-        .param("organisation", shift.organisation().value())
-        .param("startsAt", shift.period().start().atOffset(ZoneOffset.UTC))
-        .param("endsAt", shift.period().end().atOffset(ZoneOffset.UTC))
-        .param("headcount", shift.requiredHeadcount())
-        .update();
+            .param("id", id)
+            .param("organisation", shift.organisation().value())
+            .param("startsAt", shift.period().start().atOffset(ZoneOffset.UTC))
+            .param("endsAt", shift.period().end().atOffset(ZoneOffset.UTC))
+            .param("headcount", shift.requiredHeadcount())
+            .update();
+    requireStored(stored, id);
 
     jdbc.sql("DELETE FROM shift_required_qualification WHERE shift_id = :id")
         .param("id", id)
@@ -160,5 +162,19 @@ public class JdbcShiftRepository implements ShiftRepository {
       byShift.computeIfAbsent(row.shift(), key -> new LinkedHashSet<>()).add(row.qualification());
     }
     return byShift;
+  }
+
+  /**
+   * A save carries no {@code OrganisationId}, so the upsert's {@code WHERE} is the only thing
+   * standing between a re-used identity and another tenant's row. It makes the mismatched case
+   * affect nothing rather than overwrite; this turns that silence into a refusal, because a write
+   * that quietly did nothing is the worse of the two failures.
+   */
+  private static void requireStored(int rows, UUID id) {
+    if (rows == 0) {
+      throw new IllegalStateException(
+          "Refused to store %s: that identity already belongs to another organisation"
+              .formatted(id));
+    }
   }
 }

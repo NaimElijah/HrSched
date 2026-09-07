@@ -176,7 +176,7 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
   approval used to strand. Every aggregate lives in PostgreSQL, and the schema is changed only by a
   versioned migration. Roster history is kept but is **not** append-only: superseding a roster
   changes its status in place — Q24. Nothing is purged and no retention period is set — Q23.
-  *Enforced by `Jdbc*Repository` (×9) and their adapter tests, `TransactionalUseCases`,
+  *Enforced by `Jdbc*Repository` (×8) and their adapter tests, `TransactionalUseCases`,
   `SwapHttpTest`; [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md),
   [ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md).*
 - **Performance and scale** — `TODO`: state as measurable numbers per organisation (employees,

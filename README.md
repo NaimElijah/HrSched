@@ -479,7 +479,7 @@ blocked on the same missing environment.
 | [ADR-001](docs/ADRs/ADR-001-java-spring-boot-maven.md) | Java 21, Spring Boot 4.1.1, Maven Wrapper | Boot 4.x is recent, so most existing tutorials name things that no longer exist |
 | [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md) | `./mvnw verify` as the single gate, Spotless for format | google-java-format is not configurable; formatting fails the build before tests run |
 | [ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md) | Hexagon in one module, enforced by ArchUnit | Many more classes per use case; hand-wiring; enforcement is a test, not the compiler |
-| [ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md) | PostgreSQL behind the driven ports, hand-written SQL, Flyway migrations | Docker is required to build; nine adapters of explicit mapping where an ORM would have generated it; last writer still wins |
+| [ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md) | PostgreSQL behind the driven ports, hand-written SQL, Flyway migrations | Docker is required to build; eight adapters of explicit mapping where an ORM would have generated it; last writer still wins |
 | [ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md) | Generation behind a port, greedy for now | The product does not yet do the thing it exists to do; a greedy result is a poor solver baseline |
 | [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md) | Organise packages by bounded context | A layer is no longer one place; `workforce` precedes its requirements |
 | [ADR-007](docs/ADRs/ADR-007-monorepo-backend-and-frontend.md) | Monorepo: `backend/` + `frontend/` siblings | Every backend command grows a `cd`; CI and Dependabot need explicit paths |
@@ -545,6 +545,11 @@ domain can now be modelled — multi-tenant, three roles, and working-time rules
   (ADR-023), so two concurrent publishes of one draft serialise rather than interleaving and
   neither is left half-done. There is still no version column, so the later one wins outright
   rather than being rejected — adding one would change port signatures.
+- **Three reads still assume a hash map.** Superseding on publish and viewing one's own schedule
+  both load every roster a tenant ever had; checking constraints fetches each assignment's shift
+  one at a time; and every child row is written with its own `INSERT`. Free against a map, not
+  against a database, and unbounded as a tenant accumulates history. The fix needs new port
+  methods, and the performance requirement that would size it is still `TODO`.
 - **An audit entry can outlive the change it records.** The trail is a log stream (ADR-018) and a
   log line cannot be rolled back, so a use case that records a change and then fails to commit
   leaves a record of something that did not happen. Newly true because the transaction is; Q20.

@@ -63,7 +63,7 @@ flowchart TB
     end
 
     kernel["shared.domain.model<br/>OrganisationId, Actor, TimeRange, EmployeeId"]
-    db[("PostgreSQL<br/>one schema, organisation_id on every table")]
+    db[("PostgreSQL<br/>one schema, organisation_id on every root")]
 
     client --> schedWeb
     client --> wfWeb
@@ -364,6 +364,14 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   draft serialise rather than interleaving, so neither is lost half-way; but there is no version
   column, so the later one still wins outright rather than being rejected. Adding one would change
   port signatures, which is a decision of its own.
+- **Three reads were written for a hash map and have not been revisited.** `supersedeOverlapping`
+  and `findOwnSchedule` call `RosterRepository.findByOrganisation`, which now loads every roster the
+  tenant has ever had together with all of their assignments, to find the few that overlap one week;
+  `violations()` fetches each assignment's shift one at a time, an N+1 inside the publish
+  transaction; and every owned collection is written one `INSERT` per row. All three were free
+  against a map and are not against a database. Fixing the first two means new port methods that
+  push the predicate into SQL, which is a change inward of the ports and so a decision of its own;
+  the performance requirement that would size it is still `TODO`.
 - **An audit entry cannot be rolled back.** The trail is a log stream (ADR-018) and a transaction
   that fails after a service has recorded a change leaves a record of something that did not
   happen. This is newly true because the transaction is, and it is Q20's problem to solve.

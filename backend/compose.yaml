@@ -13,7 +13,7 @@
 # A deployed instance gets SPRING_DATASOURCE_* from the environment instead — see .env.example.
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18
     environment:
       POSTGRES_DB: hrsched
       POSTGRES_USER: hrsched

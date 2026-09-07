@@ -27,7 +27,7 @@ public final class PostgresDatabase {
    * Pinned rather than floating: a test suite whose database changes underneath it on a Tuesday is
    * a test suite nobody trusts.
    */
-  private static final String IMAGE = "postgres:18-alpine";
+  private static final String IMAGE = "postgres:18";
 
   private static final PostgreSQLContainer CONTAINER = startContainer();
   private static final DataSource DATA_SOURCE = migratedDataSource();
@@ -91,6 +91,9 @@ public final class PostgresDatabase {
    * the obvious reason.
    */
   public static void empty() {
+    // A table name cannot be a bind parameter, so this one statement is built by concatenation.
+    // What is concatenated comes from the catalogue through quote_ident and never from a caller,
+    // and an empty schema would mean the migrations did not run, so it is louder to fail here.
     String tables =
         JDBC_CLIENT
             .sql(
@@ -100,7 +103,9 @@ public final class PostgresDatabase {
                 WHERE schemaname = 'public' AND tablename <> 'flyway_schema_history'
                 """)
             .query(String.class)
-            .single();
+            .optional()
+            .orElseThrow(
+                () -> new IllegalStateException("The schema has no tables; did Flyway run?"));
     JDBC_CLIENT.sql("TRUNCATE TABLE " + tables + " CASCADE").update();
   }
 }

@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWorkingDays;
@@ -14,6 +15,7 @@ import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
 
 /**
  * What the constraint store promises, and the one thing it now promises that it did not.
@@ -141,19 +143,76 @@ class JdbcConstraintSetRepositoryTest {
     assertThat(storedVersions()).containsExactly(1, 2, 3);
   }
 
-  /** Saving is an upsert on the version, so a retry cannot leave two rows claiming to be one. */
+  /**
+   * Two Admins revising at once both read the same current version and compute the same next one,
+   * and exactly one of them is about to lose their revision. The store refuses the second rather
+   * than absorbing it: silencing the conflict would let it overwrite the first's constraints while
+   * its audit line claimed success. The refusal takes its transaction with it (ADR-023).
+   */
   @Test
-  void GivenTheSameVersionSavedTwice_WhenReadBack_ThenItIsNotDuplicated() {
+  void GivenAVersionAlreadyStored_WhenSavedAgain_ThenItIsRefusedRatherThanOverwritten() {
     ConstraintSet set =
         ConstraintSet.initial(ACME).revisedTo(List.of(new MaximumConsecutiveWorkingDays(4)));
     repository.save(set);
-    repository.save(set);
+
+    assertThatThrownBy(() -> repository.save(sameVersionDifferently(set)))
+        .isInstanceOf(DuplicateKeyException.class);
 
     assertThat(storedVersions()).containsExactly(2);
-    assertThat(repository.findCurrent(ACME))
-        .get()
-        .extracting(ConstraintSet::constraints)
-        .isEqualTo(List.of(new MaximumConsecutiveWorkingDays(4)));
+  }
+
+  /** A different set claiming a version already taken — the shape a lost update arrives in. */
+  private static ConstraintSet sameVersionDifferently(ConstraintSet stored) {
+    return new ConstraintSet(
+        stored.organisation(), stored.version(), List.of(new MaximumConsecutiveWorkingDays(5)));
+  }
+
+  /**
+   * A CHECK passes when its expression is NULL, not only when it is TRUE, so a constraint carrying
+   * neither of its two possible values has to be refused explicitly. Left implicit, the row stores
+   * and then makes the whole organisation's set unreadable: the mapper reads a SQL NULL back as
+   * zero, and a zero-length working-time limit is one the domain refuses to construct.
+   */
+  @Test
+  void GivenAConstraintCarryingNeitherValue_WhenStoredDirectly_ThenTheSchemaRefusesIt() {
+    PostgresDatabase.jdbcClient()
+        .sql("INSERT INTO constraint_set (organisation_id, version) VALUES (:id, 1)")
+        .param("id", ACME.value())
+        .update();
+
+    assertThatThrownBy(
+            () ->
+                PostgresDatabase.jdbcClient()
+                    .sql(
+                        """
+                        INSERT INTO working_time_constraint
+                            (organisation_id, version, ordinal, kind, duration_seconds, day_count)
+                        VALUES (:id, 1, 0, 'MAXIMUM_DAILY_WORKING_TIME', NULL, NULL)
+                        """)
+                    .param("id", ACME.value())
+                    .update())
+        .hasMessageContaining("working_time_constraint_carries_its_one_value");
+  }
+
+  @Test
+  void GivenACountingConstraintCarryingNoCount_WhenStoredDirectly_ThenTheSchemaRefusesIt() {
+    PostgresDatabase.jdbcClient()
+        .sql("INSERT INTO constraint_set (organisation_id, version) VALUES (:id, 1)")
+        .param("id", ACME.value())
+        .update();
+
+    assertThatThrownBy(
+            () ->
+                PostgresDatabase.jdbcClient()
+                    .sql(
+                        """
+                        INSERT INTO working_time_constraint
+                            (organisation_id, version, ordinal, kind, duration_seconds, day_count)
+                        VALUES (:id, 1, 0, 'MAXIMUM_CONSECUTIVE_WORKING_DAYS', NULL, NULL)
+                        """)
+                    .param("id", ACME.value())
+                    .update())
+        .hasMessageContaining("working_time_constraint_carries_its_one_value");
   }
 
   private List<Integer> storedVersions() {

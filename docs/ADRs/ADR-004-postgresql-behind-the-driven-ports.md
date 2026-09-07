@@ -46,9 +46,11 @@ reviewer can see it, rather than derived by a framework.
 **We migrate with Flyway.** Versioned SQL under `src/main/resources/db/migration`, applied on
 startup. The schema has a history, and the history is in the repository.
 
-**One schema, with `organisation_id` on every table.** Shared-database, shared-schema
+**One schema, with `organisation_id` on every aggregate root.** Shared-database, shared-schema
 multi-tenancy, which is the shape ADR-009's port signatures already describe: every lookup takes an
-`OrganisationId`, so every query already knows what its `WHERE` clause must be.
+`OrganisationId`, so every query already knows what its `WHERE` clause must be. The five child
+tables do not carry it — they have no identity apart from their root and are only ever reached
+through it — so their tenant scope is an invariant of the adapters rather than of the schema.
 
 **Schema constraints mirror domain invariants, and express nothing the domain does not.** A
 positive headcount, a period that ends after it starts, no duplicate assignment on a roster, a
@@ -102,7 +104,7 @@ unexamined silence.
 - **The build now needs Docker.** A developer without a running daemon cannot run the test suite at
   all. That is a real cost and it is deliberate: the alternative is a suite that passes without
   touching a database.
-- **There is more code.** Nine adapters of explicit upserts and row mapping, where an ORM would
+- **There is more code.** Eight adapters of explicit upserts and row mapping, where an ORM would
   have generated it. The mapping for owned collections — a roster's assignments, an employee's
   unavailability and preferences — is written out and must be kept in step with the aggregate by
   hand.

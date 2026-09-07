@@ -50,25 +50,27 @@ public class JdbcRosterRepository implements RosterRepository {
   @Override
   public void save(Roster roster) {
     UUID id = roster.id().value();
-    jdbc.sql(
-            """
+    int stored =
+        jdbc.sql(
+                """
             INSERT INTO roster (id, organisation_id, starts_at, ends_at, status,
                                 validated_against_constraint_version)
             VALUES (:id, :organisation, :startsAt, :endsAt, :status, :version)
-            ON CONFLICT (id) DO UPDATE SET organisation_id = EXCLUDED.organisation_id,
-                                           starts_at = EXCLUDED.starts_at,
+            ON CONFLICT (id) DO UPDATE SET starts_at = EXCLUDED.starts_at,
                                            ends_at = EXCLUDED.ends_at,
                                            status = EXCLUDED.status,
                                            validated_against_constraint_version =
                                                EXCLUDED.validated_against_constraint_version
+            WHERE roster.organisation_id = EXCLUDED.organisation_id
             """)
-        .param("id", id)
-        .param("organisation", roster.organisation().value())
-        .param("startsAt", roster.period().start().atOffset(ZoneOffset.UTC))
-        .param("endsAt", roster.period().end().atOffset(ZoneOffset.UTC))
-        .param("status", roster.status().name())
-        .param("version", roster.validatedAgainstConstraintVersion())
-        .update();
+            .param("id", id)
+            .param("organisation", roster.organisation().value())
+            .param("startsAt", roster.period().start().atOffset(ZoneOffset.UTC))
+            .param("endsAt", roster.period().end().atOffset(ZoneOffset.UTC))
+            .param("status", roster.status().name())
+            .param("version", roster.validatedAgainstConstraintVersion())
+            .update();
+    requireStored(stored, id);
 
     jdbc.sql("DELETE FROM roster_assignment WHERE roster_id = :id").param("id", id).update();
     for (Assignment assignment : roster.assignments()) {
@@ -181,5 +183,19 @@ public class JdbcRosterRepository implements RosterRepository {
       byRoster.computeIfAbsent(row.roster(), key -> new ArrayList<>()).add(row.assignment());
     }
     return byRoster;
+  }
+
+  /**
+   * A save carries no {@code OrganisationId}, so the upsert's {@code WHERE} is the only thing
+   * standing between a re-used identity and another tenant's row. It makes the mismatched case
+   * affect nothing rather than overwrite; this turns that silence into a refusal, because a write
+   * that quietly did nothing is the worse of the two failures.
+   */
+  private static void requireStored(int rows, UUID id) {
+    if (rows == 0) {
+      throw new IllegalStateException(
+          "Refused to store %s: that identity already belongs to another organisation"
+              .formatted(id));
+    }
   }
 }

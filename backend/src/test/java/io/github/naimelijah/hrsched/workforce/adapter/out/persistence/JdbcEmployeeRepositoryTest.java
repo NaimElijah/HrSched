@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.workforce.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -196,6 +197,36 @@ class JdbcEmployeeRepositoryTest {
         .get()
         .extracting(Employee::unavailability)
         .isEqualTo(java.util.List.of(A_FORTNIGHT_OFF, A_WEEK_OFF));
+  }
+
+  /**
+   * {@code save} is the one repository method carrying no {@code OrganisationId}, so the upsert is
+   * the only thing standing between a re-used identity and another tenant's row. A UUID collision
+   * is not a realistic accident; a restore, an import or a caller supplying its own identity is,
+   * and a cross-tenant write is a security incident rather than a bug.
+   */
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenItIsRefused() {
+    Employee theirs = employee(RIVAL, "Their Employee");
+    repository.save(theirs);
+
+    assertThatThrownBy(() -> repository.save(new Employee(theirs.id(), ACME, "Ada")))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("another organisation");
+  }
+
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenTheirRowIsUntouched() {
+    Employee theirs = employee(RIVAL, "Their Employee");
+    repository.save(theirs);
+
+    assertThatThrownBy(() -> repository.save(new Employee(theirs.id(), ACME, "Ada")))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(repository.findById(RIVAL, theirs.id()))
+        .get()
+        .extracting(Employee::name)
+        .isEqualTo("Their Employee");
   }
 
   @Test
