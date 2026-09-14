@@ -239,3 +239,37 @@ code {
   margin-top: 1.25rem;
   background: #fff;
 }
+
+.day h4 {
+  margin: 1rem 0 0.4rem;
+}
+
+.shifts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shift {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  background: var(--paper);
+}
+
+.shift p {
+  margin: 0 0 0.3rem;
+}
+
+/* The shortfall is stated in words as well; the colour only draws the eye to it. */
+.short {
+  color: var(--alarm);
+}
+
+.assignees {
+  margin: 0.3rem 0 0.5rem;
+  padding-left: 1rem;
+}

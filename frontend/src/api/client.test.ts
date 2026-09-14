@@ -60,6 +60,17 @@ describe('the acting identity', () => {
     expect(headers.get('Content-Type')).toBe('application/json');
   });
 
+  it('GivenADelete_WhenRequesting_ThenItIsSentAsADeleteWithNoBody', async () => {
+    const stub = respondWith(200, {});
+
+    await api.delete(IDENTITY, '/api/rosters/1/assignments/s-1/e-1');
+
+    const init = stub.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBeUndefined();
+    expect((init.headers as Headers).get('X-Role')).toBe('SCHEDULER');
+  });
+
   it('GivenARequestWithoutABody_WhenRequesting_ThenNoContentTypeIsClaimed', async () => {
     const stub = respondWith(200, {});
 

@@ -80,6 +80,32 @@ export const scheduling = {
   publishRoster: (identity: ActingIdentity, id: string): Promise<Roster> =>
     api.post<Roster>(identity, path`/api/rosters/${id}/publication`),
 
+  findRoster: (identity: ActingIdentity, id: string): Promise<Roster> =>
+    api.get<Roster>(identity, path`/api/rosters/${id}`),
+
+  /**
+   * Puts somebody on a shift of a draft, and returns the roster as it now stands.
+   *
+   * Throws an ApiError with `isRefused` when the domain will not have that person there —
+   * unqualified, unavailable, or a shift outside the roster's period. Nothing here checks first.
+   */
+  assign: (
+    identity: ActingIdentity,
+    roster: string,
+    shift: string,
+    employee: string,
+  ): Promise<Roster> =>
+    api.post<Roster>(identity, path`/api/rosters/${roster}/assignments`, { shift, employee }),
+
+  /** Takes somebody off a shift of a draft, and returns the roster as it now stands. */
+  unassign: (
+    identity: ActingIdentity,
+    roster: string,
+    shift: string,
+    employee: string,
+  ): Promise<Roster> =>
+    api.delete<Roster>(identity, path`/api/rosters/${roster}/assignments/${shift}/${employee}`),
+
   currentConstraints: (identity: ActingIdentity): Promise<ConstraintSet> =>
     api.get<ConstraintSet>(identity, '/api/constraints'),
 

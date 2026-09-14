@@ -32,6 +32,30 @@ export function localDate(instant: string): string {
 }
 
 /**
+ * The local day an instant falls on, as a heading names it.
+ *
+ * @param instant an ISO instant
+ * @returns the weekday and date where the reader is, in their own locale
+ */
+export function dayLabel(instant: string): string {
+  return new Date(instant).toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}
+
+/**
+ * The local time an instant falls at, to the minute.
+ *
+ * @param instant an ISO instant
+ * @returns hours and minutes where the reader is, in their own locale
+ */
+export function timeLabel(instant: string): string {
+  return new Date(instant).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
  * The span the scheduling pages open on: today through a fortnight ahead, in local time.
  *
  * The clock is a parameter rather than a call to `new Date()` inside, so that the one piece of

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultSpan, localDate, startOfLocalDay } from './localDates';
+import { dayLabel, defaultSpan, localDate, startOfLocalDay, timeLabel } from './localDates';
 
 /**
  * These functions are zone-dependent on purpose — that is what the hazard in their comments is
@@ -57,6 +57,30 @@ describe('the local day an instant falls on', () => {
     const justAfterMidnight = new Date(2026, 9, 6, 0, 30, 0);
 
     expect(localDate(justAfterMidnight.toISOString())).toBe('2026-10-06');
+  });
+});
+
+describe('labelling an instant for a reader', () => {
+  it('GivenTwoInstantsOnTheSameLocalDay_WhenLabellingTheirDays_ThenTheLabelsAgree', () => {
+    const morning = new Date(2026, 9, 5, 8, 0, 0).toISOString();
+    const evening = new Date(2026, 9, 5, 22, 0, 0).toISOString();
+
+    expect(dayLabel(morning)).toBe(dayLabel(evening));
+  });
+
+  it('GivenInstantsOnConsecutiveLocalDays_WhenLabellingTheirDays_ThenTheLabelsDiffer', () => {
+    const lateEvening = new Date(2026, 9, 5, 23, 30, 0).toISOString();
+    const justAfterMidnight = new Date(2026, 9, 6, 0, 30, 0).toISOString();
+
+    expect(dayLabel(lateEvening)).not.toBe(dayLabel(justAfterMidnight));
+  });
+
+  /** A shift is read to the minute; seconds would be noise nobody entered. */
+  it('GivenInstantsWithinOneMinute_WhenLabellingTheirTimes_ThenTheLabelsAgree', () => {
+    const onTheMinute = new Date(2026, 9, 5, 8, 0, 0).toISOString();
+    const halfAMinuteLater = new Date(2026, 9, 5, 8, 0, 30).toISOString();
+
+    expect(timeLabel(onTheMinute)).toBe(timeLabel(halfAMinuteLater));
   });
 });
 
