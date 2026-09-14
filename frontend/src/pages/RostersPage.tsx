@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { identityKey } from '../api/client';
 import { scheduling } from '../api/scheduling';
-import { workforce } from '../api/workforce';
+import type { Employee } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
 import { useActingAs } from '../identity/ActingAs';
@@ -16,8 +16,18 @@ import { RosterBoard } from './RosterBoard';
  *
  * Generation is greedy and optimises nothing (ADR-005), which this page says plainly rather than
  * letting a scheduler assume the result is good.
+ *
+ * The people come from the shell, which already loads them and already decides which refusal of
+ * that listing to keep quiet about; asking again here doubled the request and repeated its failure.
  */
-export function RostersPage({ span }: { span: { from: string; to: string } }) {
+export function RostersPage({
+  span,
+  people,
+}: {
+  span: { from: string; to: string };
+  /** Everybody the acting role may list, to name assignees and offer on the board. */
+  people: readonly Employee[];
+}) {
   const { identity } = useActingAs();
   const [failure, setFailure] = useState<unknown>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -26,9 +36,7 @@ export function RostersPage({ span }: { span: { from: string; to: string } }) {
   const [revision, setRevision] = useState(0);
 
   const rosters = useAsync(() => scheduling.findRosters(identity), identityKey(identity));
-  const people = useAsync(() => workforce.findEmployees(identity), identityKey(identity));
-
-  const personById = new Map((people.value ?? []).map((person) => [person.id, person]));
+  const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (employee: string): string | undefined => personById.get(employee)?.name;
 
   async function act(action: () => Promise<unknown>) {
@@ -60,8 +68,6 @@ export function RostersPage({ span }: { span: { from: string; to: string } }) {
 
       <Failure error={failure} nameOf={nameOf} />
       <Failure error={rosters.error} />
-      {/* Surfaced rather than ignored: without the people, every name on the board is an identifier. */}
-      <Failure error={people.error} />
       <Busy busy={rosters.busy} />
 
       <table>
@@ -112,7 +118,7 @@ export function RostersPage({ span }: { span: { from: string; to: string } }) {
           // roster it had changed, must not stay on screen for another that may not read it.
           key={`${identityKey(identity)}#${selected}#${revision}`}
           roster={selected}
-          people={people.value ?? []}
+          people={people}
           onChanged={rosters.reload}
         />
       )}

@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Employee } from '../api/workforce';
 import { dayLabel, timeLabel } from '../components/localDates';
 import { ActingAsProvider, useActingAs } from '../identity/ActingAs';
 import { callsTo, routeTo, type Answer } from '../test-support/routeTo';
@@ -61,16 +62,16 @@ function aDraft(overrides: Record<string, Answer> = {}) {
     '/api/rosters': { status: 200, body: [ROSTER] },
     '/api/rosters/roster-1': { status: 200, body: ROSTER },
     '/api/shifts': { status: 200, body: [SHIFT] },
-    '/api/employees': { status: 200, body: [ADA, GRACE] },
     '/api/qualifications': { status: 200, body: [FORKLIFT] },
     ...overrides,
   });
 }
 
-function renderPage() {
+/** The people come from the shell, as App passes them, so the page itself never asks. */
+function renderPage(people: readonly Employee[] = [ADA, GRACE]) {
   return render(
     <ActingAsProvider>
-      <RostersPage span={SPAN} />
+      <RostersPage span={SPAN} people={people} />
     </ActingAsProvider>,
   );
 }
@@ -137,9 +138,8 @@ describe('the rosters page', () => {
       },
       '/api/rosters': { status: 200, body: [ROSTER] },
       '/api/shifts': { status: 200, body: [SHIFT] },
-      '/api/employees': { status: 200, body: [ADA] },
     });
-    renderPage();
+    renderPage([ADA]);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Publish' }));
 
@@ -158,6 +158,20 @@ describe('the rosters page', () => {
     await screen.findByRole('button', { name: 'Open' });
 
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+  });
+
+  /**
+   * The shell already holds the people, and already knows which refusal of them to keep quiet about.
+   * Asking again doubled the request and showed an EMPLOYEE the 403 the shell deliberately swallows.
+   */
+  it('GivenPeopleFromTheShell_WhenTheBoardIsOpened_ThenTheyAreNotAskedForAgain', async () => {
+    const stub = aDraft();
+    renderPage();
+
+    const board = await openBoard();
+
+    await within(board).findByRole('button', { name: /^Remove Ada from/ });
+    expect(callsTo(stub, 'GET', '/api/employees')).toHaveLength(0);
   });
 
   it('GivenAnEmptyDraft_WhenOpened_ThenTheGapIsExplainedRatherThanLeftBlank', async () => {
@@ -364,7 +378,7 @@ describe('the board of a draft', () => {
     render(
       <ActingAsProvider>
         <BecomeAnEmployee />
-        <RostersPage span={SPAN} />
+        <RostersPage span={SPAN} people={[ADA, GRACE]} />
       </ActingAsProvider>,
     );
     const board = await openBoard();

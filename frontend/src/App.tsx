@@ -121,7 +121,9 @@ export function App() {
         {ready && tab === 'Qualifications' ? <QualificationsPage /> : null}
         {ready && tab === 'Rules' ? <RulesPage /> : null}
         {ready && tab === 'Shifts' ? <ShiftsPage span={span} /> : null}
-        {ready && tab === 'Rosters' ? <RostersPage span={span} /> : null}
+        {ready && tab === 'Rosters' ? (
+          <RostersPage span={span} people={people.value ?? []} />
+        ) : null}
         {ready && tab === 'Swaps' ? <SwapsPage people={people.value ?? []} /> : null}
         {ready && tab === 'Me' ? <MePage span={span} people={people.value ?? []} /> : null}
         {ready && tab === 'Organisations' ? <OrganisationsPage /> : null}
