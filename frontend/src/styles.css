@@ -175,6 +175,15 @@ code {
   color: #5f5a52;
 }
 
+.work {
+  margin: 0.5rem 0 1.25rem;
+  padding-left: 1rem;
+}
+
+.work p {
+  margin: 0 0 0.3rem;
+}
+
 .failure {
   border-left: 3px solid var(--alarm);
   background: var(--alarm-bg);

@@ -53,6 +53,32 @@ export interface ConstraintSetRequest {
   readonly maximumConsecutiveDays?: number | undefined;
 }
 
+/** Work that names the caller, from a published roster. Mirrors RosteredShiftResponse. */
+export interface RosteredShift {
+  readonly shift: string;
+  readonly start: string;
+  readonly end: string;
+  readonly roster: string;
+}
+
+/** Mirrors SwapRequestResponse. */
+export interface SwapRequest {
+  readonly id: string;
+  readonly roster: string;
+  readonly shift: string;
+  readonly requester: string;
+  readonly counterparty: string;
+  readonly status: 'REQUESTED' | 'APPROVED' | 'REJECTED';
+}
+
+/** Mirrors RequestSwapRequest: whose shift, on which published roster, and who is asked to take it. */
+export interface RequestSwap {
+  readonly roster: string;
+  readonly shift: string;
+  readonly requester: string;
+  readonly counterparty: string;
+}
+
 export interface DefineShiftRequest {
   readonly start: string;
   readonly end: string;
@@ -105,6 +131,20 @@ export const scheduling = {
     employee: string,
   ): Promise<Roster> =>
     api.delete<Roster>(identity, path`/api/rosters/${roster}/assignments/${shift}/${employee}`),
+
+  /** The work naming the caller's own employee link, from published rosters only (F5). */
+  findOwnSchedule: (identity: ActingIdentity, from: string, to: string): Promise<RosteredShift[]> =>
+    api.get<RosteredShift[]>(
+      identity,
+      `/api/me/schedule?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
+
+  /**
+   * Asks for a shift to be handed to a colleague. A Scheduler decides; whether the colleague may take
+   * it is checked when they do, not now (ADR-022).
+   */
+  requestSwap: (identity: ActingIdentity, request: RequestSwap): Promise<SwapRequest> =>
+    api.post<SwapRequest>(identity, '/api/swaps', request),
 
   currentConstraints: (identity: ActingIdentity): Promise<ConstraintSet> =>
     api.get<ConstraintSet>(identity, '/api/constraints'),
