@@ -236,4 +236,27 @@ class RosterTest {
         .describedAs("work that cannot be placed in time cannot be shown not to overlap")
         .isInstanceOf(RosterNotVerifiableException.class);
   }
+
+  /**
+   * The overlap only ordering by start time finds. Assigned in this order, Monday's day shift and
+   * Monday's afternoon are never next to each other, so comparing assignments in the order they
+   * were made, rather than by when they start, would miss it.
+   */
+  @Test
+  void GivenOverlappingShiftsAssignedApart_WhenBuildingSchedules_ThenItIsStillRefused() {
+    ShiftId day = ShiftId.newId();
+    ShiftId tuesday = ShiftId.newId();
+    ShiftId afternoon = ShiftId.newId();
+    Roster roster =
+        draft()
+            .with(new Assignment(day, ADA))
+            .with(new Assignment(tuesday, ADA))
+            .with(new Assignment(afternoon, ADA));
+
+    assertThatThrownBy(
+            () ->
+                roster.schedulesFor(
+                    Map.of(day, MONDAY, tuesday, TUESDAY, afternoon, MONDAY_AFTERNOON)))
+        .isInstanceOf(OverlappingAssignmentException.class);
+  }
 }
