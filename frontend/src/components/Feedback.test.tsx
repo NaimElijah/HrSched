@@ -118,6 +118,14 @@ describe('the other refusals', () => {
     );
   });
 
+  it('GivenAConflict_WhenRendering_ThenItSaysItWasAlreadyDecided', () => {
+    render(<Failure error={new ApiError(409, 'That swap request has already been decided.')} />);
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Already decided.');
+    expect(alert).toHaveTextContent('That swap request has already been decided.');
+  });
+
   it('GivenAPlainError_WhenRendering_ThenItsMessageIsShown', () => {
     render(<Failure error={new Error('the network went away')} />);
 

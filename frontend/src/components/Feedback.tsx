@@ -70,6 +70,14 @@ export function Failure({
       </div>
     );
   }
+  if (error instanceof ApiError && error.isConflict) {
+    return (
+      <div className="failure" role="alert">
+        <strong>Already decided.</strong> Somebody answered it first. {error.message}
+        <Reference of={error} />
+      </div>
+    );
+  }
   return (
     <div className="failure" role="alert">
       {error instanceof Error ? error.message : String(error)}

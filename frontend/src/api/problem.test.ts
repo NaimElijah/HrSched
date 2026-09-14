@@ -133,6 +133,17 @@ describe('what a status means', () => {
     expect(error.isRefused).toBe(false);
   });
 
+  /** A decision somebody else already made: not the caller's fault, and not a missing record. */
+  it('GivenAConflict_WhenAsked_ThenOnlyThatPredicateIsTrue', () => {
+    const error = toApiError(409, { detail: 'That swap request has already been decided.' });
+
+    expect(error.isConflict).toBe(true);
+    expect(error.isRuleBreach).toBe(false);
+    expect(error.isRefused).toBe(false);
+    expect(error.isForbidden).toBe(false);
+    expect(error.isNotFound).toBe(false);
+  });
+
   it('GivenAServerFailure_WhenAsked_ThenNoRefusalPredicateIsTrue', () => {
     const error = toApiError(500, {});
 

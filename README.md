@@ -307,7 +307,7 @@ HrSched/
 │       ├── api/                         # typed client; client.ts is the only caller of fetch
 │       ├── identity/                    # acting-as context and its warning bar
 │       ├── components/                  # failure rendering, async loading
-│       └── pages/                       # People, Qualifications, Rules, Shifts, Rosters, Me
+│       └── pages/                       # People, Qualifications, Rules, Shifts, Rosters, Swaps, Me
 ├── docs/                                # requirements, architecture, ADRs
 ├── LICENSE
 └── README.md
@@ -426,7 +426,7 @@ npm run test:coverage  # the same tests, plus coverage/index.html
 | `components/Feedback.test.tsx` | Every refusal branch, including a 422 that lists no broken rules — a refusal, not a working-time breach — and the 404 that may also mean another tenant owns it. |
 | `components/ErrorBoundary.test.tsx` | One broken render does not become a blank page, and "Try again" recovers. |
 | `identity/ActingAs.test.tsx`, `identity/ActingAsBar.test.tsx` | The acting-as placeholder: persistence, validation, the synthetic option, and the operator rule that clears the employee link. |
-| `pages/*.test.tsx` (×7) | One per screen: what is sent, what is refused before sending, and what the user is told. |
+| `pages/*.test.tsx` (×8) | One per screen: what is sent, what is refused before sending, and what the user is told. |
 | `App.test.tsx` | Tab navigation, and the one 403 the shell deliberately swallows — with the proof that nothing else is. |
 
 **CI** runs `./mvnw verify` and `npm run verify` on every push and pull request

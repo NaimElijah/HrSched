@@ -153,6 +153,18 @@ export const scheduling = {
   findShift: (identity: ActingIdentity, id: string): Promise<Shift> =>
     api.get<Shift>(identity, path`/api/shifts/${id}`),
 
+  /**
+   * Approves a swap by publishing the roster that carries it, superseding the one it was raised
+   * against (ADR-022). Throws an ApiError with `isRuleBreach` when that roster would break a rule,
+   * and with `isConflict` when somebody has already decided the request.
+   */
+  approveSwap: (identity: ActingIdentity, id: string): Promise<Roster> =>
+    api.post<Roster>(identity, path`/api/swaps/${id}/approval`),
+
+  /** Declines a swap; no roster changes. Throws with `isConflict` when it was already decided. */
+  rejectSwap: (identity: ActingIdentity, id: string): Promise<void> =>
+    api.post<void>(identity, path`/api/swaps/${id}/rejection`),
+
   currentConstraints: (identity: ActingIdentity): Promise<ConstraintSet> =>
     api.get<ConstraintSet>(identity, '/api/constraints'),
 

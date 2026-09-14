@@ -76,6 +76,11 @@ export class ApiError extends Error {
   get isNotFound(): boolean {
     return this.status === 404;
   }
+
+  /** True when somebody else already decided what the caller was trying to decide. */
+  get isConflict(): boolean {
+    return this.status === 409;
+  }
 }
 
 function isViolation(value: unknown): value is Violation {

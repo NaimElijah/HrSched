@@ -13,8 +13,9 @@ import { QualificationsPage } from './pages/QualificationsPage';
 import { RostersPage } from './pages/RostersPage';
 import { RulesPage } from './pages/RulesPage';
 import { ShiftsPage } from './pages/ShiftsPage';
+import { SwapsPage } from './pages/SwapsPage';
 
-const TABS = ['People', 'Qualifications', 'Rules', 'Shifts', 'Rosters', 'Me'] as const;
+const TABS = ['People', 'Qualifications', 'Rules', 'Shifts', 'Rosters', 'Swaps', 'Me'] as const;
 type Tab = (typeof TABS)[number];
 
 /**
@@ -111,6 +112,7 @@ export function App() {
         {ready && tab === 'Rules' ? <RulesPage /> : null}
         {ready && tab === 'Shifts' ? <ShiftsPage span={span} /> : null}
         {ready && tab === 'Rosters' ? <RostersPage span={span} /> : null}
+        {ready && tab === 'Swaps' ? <SwapsPage people={people.value ?? []} /> : null}
         {ready && tab === 'Me' ? <MePage span={span} people={people.value ?? []} /> : null}
       </main>
     </div>

@@ -8,6 +8,7 @@ import { Busy, Failure } from '../components/Feedback';
 import { dayLabel, timeLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useActingAs } from '../identity/ActingAs';
+import { SWAP_STATUS } from './swapStatus';
 
 /**
  * The words for each kind of notification.
@@ -20,12 +21,6 @@ const WORDING: Record<NotificationKind, string> = {
   SWAP_REQUESTED: 'A colleague has asked you to take one of their shifts.',
   SWAP_APPROVED: 'A swap you are part of was approved, and the roster changed.',
   SWAP_REJECTED: 'A swap you are part of was declined. Nothing changed.',
-};
-
-const STATUS: Record<SwapRequest['status'], string> = {
-  REQUESTED: 'waiting on a Scheduler',
-  APPROVED: 'approved',
-  REJECTED: 'declined',
 };
 
 function isKnownKind(kind: string): kind is NotificationKind {
@@ -132,6 +127,6 @@ function describe(
       ? 'a shift'
       : `${timeLabel(shift.start)} to ${timeLabel(shift.end)} on ${dayLabel(shift.start)}`;
   return swap.requester === reader
-    ? `You asked ${nameOf(swap.counterparty)} to take ${when} — ${STATUS[swap.status]}.`
-    : `${nameOf(swap.requester)} asked you to take ${when} — ${STATUS[swap.status]}.`;
+    ? `You asked ${nameOf(swap.counterparty)} to take ${when} — ${SWAP_STATUS[swap.status]}.`
+    : `${nameOf(swap.requester)} asked you to take ${when} — ${SWAP_STATUS[swap.status]}.`;
 }

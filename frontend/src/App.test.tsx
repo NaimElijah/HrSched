@@ -128,6 +128,16 @@ describe('navigating', () => {
     expect(screen.getByRole('heading', { name: 'Qualifications' })).toBeInTheDocument();
   });
 
+  it('GivenTheSwapsTab_WhenPressed_ThenTheDecisionQueueIsShown', async () => {
+    actingAs('SCHEDULER');
+    respondWith({ ok: true, status: 200, body: [] });
+    show();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Swaps' }));
+
+    expect(screen.getByRole('heading', { name: 'Swaps' })).toBeInTheDocument();
+  });
+
   /** Both dates used to sit inside one label, so a screen reader named them identically. */
   it('GivenThePlanningSpan_WhenRendered_ThenEachDateHasItsOwnName', async () => {
     actingAs('ADMIN');
