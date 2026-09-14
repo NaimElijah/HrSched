@@ -33,6 +33,9 @@ const SWAP = {
   status: 'REQUESTED',
 };
 
+/** What Grace is told about Ada's request once its shift has been read — time and day included. */
+const ASKED_BY_ADA = `Ada asked you to take ${timeLabel(SHIFT.start)} to ${timeLabel(SHIFT.end)} on ${dayLabel(SHIFT.start)} — waiting on a Scheduler.`;
+
 function told(kind: string, read = false) {
   return { id: 'n-1', kind, subject: SWAP.id, occurredAt: '2026-10-01T09:30:00Z', read };
 }
@@ -157,6 +160,22 @@ describe('what it is about', () => {
   });
 });
 
+describe('what it reads', () => {
+  /**
+   * A reader who is also a Scheduler can see every swap in the organisation; the inbox needs the
+   * shifts of the few its notifications are about, not one read per swap anybody ever raised.
+   */
+  it('GivenSwapsTheInboxIsNotAbout_WhenOpened_ThenTheirShiftsAreNotRead', async () => {
+    const elsewhere = { ...SWAP, id: 'swap-2', shift: 'shift-2' };
+    const stub = serving([told('SWAP_REQUESTED')], [SWAP, elsewhere]);
+
+    show();
+
+    await screen.findByText(ASKED_BY_ADA);
+    expect(stub.mock.calls.map(([path]) => path)).not.toContain('/api/shifts/shift-2');
+  });
+});
+
 describe('reading', () => {
   it('GivenAnUnreadNotification_WhenMarkedRead_ThenItIsPostedAndShownAsRead', async () => {
     const stub = serving([told('SWAP_REQUESTED')]);
@@ -182,7 +201,7 @@ describe('reading', () => {
 
     await screen.findByRole('button', { name: /^Mark as read/ });
     // Waits until the swap it is about has been read too, so every read the inbox makes has happened.
-    await screen.findByText(/^Ada asked you to take .* on /);
+    await screen.findByText(ASKED_BY_ADA);
     expect(stub.mock.calls.some(([, init]) => (init?.method ?? 'GET') !== 'GET')).toBe(false);
   });
 });

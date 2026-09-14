@@ -57,9 +57,14 @@ export function Inbox({
   const swaps = useAsync(() => scheduling.findSwapRequests(identity), identityKey(identity));
 
   const swapById = new Map((swaps.value ?? []).map((swap) => [swap.id, swap]));
+  // Only the shifts its notifications are about. A reader who may see every swap in the organisation
+  // would otherwise cost one read for each of them.
   const shifts = useShiftsById(
     identity,
-    (swaps.value ?? []).map((swap) => swap.shift),
+    (inbox.value ?? []).flatMap((notification) => {
+      const swap = swapById.get(notification.subject);
+      return swap === undefined ? [] : [swap.shift];
+    }),
   );
 
   async function markRead(notification: Notification) {

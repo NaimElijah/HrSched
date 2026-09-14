@@ -110,6 +110,23 @@ describe('the queue', () => {
     expect(within(row).getByText('emp-2')).toBeInTheDocument();
   });
 
+  /** Every shift was read in one all-or-nothing batch, so one failure took the time off every row. */
+  it('GivenOneShiftThatCannotBeRead_WhenListed_ThenOnlyItsRowLosesItsTime', async () => {
+    aQueue({
+      '/api/swaps': {
+        status: 200,
+        body: [PENDING, { ...PENDING, id: 'swap-2', shift: 'shift-gone' }],
+      },
+      '/api/shifts/shift-gone': { status: 404, body: { detail: 'No such resource.' } },
+    });
+
+    show();
+
+    expect(await screen.findByText(WHEN)).toBeInTheDocument();
+    expect(screen.getByText('A shift')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Nothing here for this organisation.');
+  });
+
   it('GivenADecidedSwap_WhenListed_ThenItOffersNoDecision', async () => {
     aQueue({ '/api/swaps': { status: 200, body: [{ ...PENDING, status: 'APPROVED' }] } });
 

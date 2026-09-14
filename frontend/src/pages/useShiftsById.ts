@@ -11,21 +11,29 @@ import { useAsync } from '../components/useAsync';
  * take a colleague's shift can learn when it is. The identities are de-duplicated and sorted into
  * the key, so the same shifts are not read again merely because they arrived in another order.
  *
+ * The reads settle independently: a shift that cannot be read costs its own row its time, not every
+ * row, and the failure is still returned to be shown.
+ *
  * @param identity who is asking
  * @param ids the shifts wanted; a repeated identity is read once
- * @returns the shifts read, by identity, and the failure of reading them, if there was one
+ * @returns the shifts read, by identity, and the first failure among the reads, if there was one
  */
 export function useShiftsById(
   identity: ActingIdentity,
   ids: readonly string[],
 ): { readonly byId: ReadonlyMap<string, Shift>; readonly error: unknown } {
   const wanted = [...new Set(ids)].sort();
-  const shifts = useAsync(
-    () => Promise.all(wanted.map((id) => scheduling.findShift(identity, id))),
+  const reads = useAsync(
+    () => Promise.allSettled(wanted.map((id) => scheduling.findShift(identity, id))),
     `${identityKey(identity)}|${wanted.join(',')}`,
   );
-  return {
-    byId: new Map((shifts.value ?? []).map((shift) => [shift.id, shift])),
-    error: shifts.error,
-  };
+  const settled = reads.value ?? [];
+  const byId = new Map<string, Shift>();
+  for (const read of settled) {
+    if (read.status === 'fulfilled') {
+      byId.set(read.value.id, read.value);
+    }
+  }
+  const failed = settled.find((read) => read.status === 'rejected');
+  return { byId, error: reads.error ?? failed?.reason ?? null };
 }
