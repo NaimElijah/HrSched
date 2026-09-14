@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -359,5 +360,67 @@ class SwapHttpTest {
                     "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\"}"
                         .formatted(roster, shift, ada)))
         .andExpect(status().isBadRequest());
+  }
+
+  /** Raises Ada's request to hand her shift to Grace, and returns where its 201 said it lives. */
+  private String requestedLocation(String organisation, String ada, String grace) throws Exception {
+    Rostered rostered = publishedFor(organisation, ada);
+    return mockMvc
+        .perform(
+            asThemself(post("/api/swaps"), organisation, ada)
+                .content(
+                    "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
+                        .formatted(rostered.roster(), rostered.shift(), ada, grace)))
+        .andExpect(status().isCreated())
+        .andReturn()
+        .getResponse()
+        .getHeader("Location");
+  }
+
+  @Test
+  void GivenARequestedSwap_WhenTheRequesterFollowsItsLocation_ThenItIsFound() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada Lovelace");
+    String grace = addEmployee(organisation, "Grace Hopper");
+    String location = requestedLocation(organisation, ada, grace);
+
+    mockMvc
+        .perform(asThemself(get(location), organisation, ada))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.requester").value(ada))
+        .andExpect(jsonPath("$.counterparty").value(grace))
+        .andExpect(jsonPath("$.status").value("REQUESTED"));
+  }
+
+  @Test
+  void GivenAScheduler_WhenReadingAnySwap_ThenItIsFound() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada Lovelace");
+    String grace = addEmployee(organisation, "Grace Hopper");
+    String location = requestedLocation(organisation, ada, grace);
+
+    mockMvc
+        .perform(as(get(location), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.requester").value(ada));
+  }
+
+  /**
+   * The listing leaves out a swap somebody is not party to, so reading it directly must not put it
+   * back. 404 rather than 403, because a 403 would confirm there is something there to see.
+   */
+  @Test
+  void GivenAColleagueNotPartyToTheSwap_WhenReadingIt_ThenThereIsNothingThere() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada Lovelace");
+    String grace = addEmployee(organisation, "Grace Hopper");
+    String edsger = addEmployee(organisation, "Edsger Dijkstra");
+    String location = requestedLocation(organisation, ada, grace);
+
+    mockMvc
+        .perform(asThemself(get(location), organisation, edsger))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+        .andExpect(jsonPath("$.detail").value("No such resource."));
   }
 }

@@ -1,22 +1,41 @@
 import { useState } from 'react';
+import { identityKey } from '../api/client';
+import { scheduling } from '../api/scheduling';
+import type { RosteredShift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
-import type { PreferenceStrength } from '../api/workforce';
-import { Failure } from '../components/Feedback';
+import type { Employee, PreferenceStrength } from '../api/workforce';
+import { Busy, Failure } from '../components/Feedback';
+import { shiftLabel } from '../components/localDates';
+import { useAsync } from '../components/useAsync';
 import { useActingAs } from '../identity/ActingAs';
+import { Inbox } from './Inbox';
 
 /**
- * Employee self-service: when I cannot work, and how I feel about a span.
+ * Employee self-service: who I am, the work that names me, and when I cannot work.
  *
  * Unavailability is hard — nobody is rostered during it. A preference is soft and never blocks a
  * roster; today nothing consumes preferences at all, because the objectives a generator would
  * optimise are not modelled (ADR-010). This page says so rather than implying the preference will
  * be honoured.
  *
+ * Own work comes from published rosters only (F5). Handing a shift to a colleague names that
+ * colleague by their employee identifier, because an employee may not list colleagues and so has no
+ * names to choose from (Q25). Asking decides nothing: a Scheduler answers (ADR-022).
+ *
  * Acting on your own record requires the acting identity to carry your employee link (ADR-012),
  * which is what the "acting as employee" control above sets.
  */
-export function MePage() {
+export function MePage({
+  span,
+  people,
+}: {
+  span: { from: string; to: string };
+  /** Colleagues the acting role may list; empty for an employee, whose inbox then shows identifiers. */
+  people: readonly Employee[];
+}) {
   const { identity } = useActingAs();
+  const personById = new Map(people.map((person) => [person.id, person]));
+  const nameOf = (colleague: string): string => personById.get(colleague)?.name ?? colleague;
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [strength, setStrength] = useState<PreferenceStrength>('PREFERS');
@@ -25,14 +44,24 @@ export function MePage() {
 
   const employee = identity.employee;
 
+  // Without an employee link there is nobody for "my" schedule to be about, and asking would only
+  // earn a refusal the page already explains.
+  const schedule = useAsync(
+    () =>
+      employee === null
+        ? Promise.resolve([])
+        : scheduling.findOwnSchedule(identity, span.from, span.to),
+    `${identityKey(identity)}|${span.from}|${span.to}`,
+  );
+
   /**
-   * Both actions share one span, so the span is validated once, here.
+   * Both availability actions share one period, so it is validated once, here.
    *
    * The `required` attributes on the inputs do nothing on their own: neither control submits the
    * form, so the browser never runs constraint validation and an empty field would reach
    * `new Date('')` and surface as a bare "Invalid time value".
    */
-  function span(): { start: string; end: string } | null {
+  function enteredPeriod(): { start: string; end: string } | null {
     const from = new Date(start);
     const to = new Date(end);
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
@@ -52,7 +81,7 @@ export function MePage() {
     action: (when: { start: string; end: string }) => Promise<unknown>,
     message: string,
   ) {
-    const when = span();
+    const when = enteredPeriod();
     if (when === null) {
       return;
     }
@@ -66,10 +95,37 @@ export function MePage() {
     }
   }
 
+  /** @returns whether the request was stored, so the form clears only when it was */
+  async function handOver(
+    requester: string,
+    work: RosteredShift,
+    colleague: string,
+  ): Promise<boolean> {
+    setDone(null);
+    if (colleague.trim() === '') {
+      setFailure(new Error('Give the identifier of the colleague who would take it.'));
+      return false;
+    }
+    setFailure(null);
+    try {
+      await scheduling.requestSwap(identity, {
+        roster: work.roster,
+        shift: work.shift,
+        requester,
+        counterparty: colleague.trim(),
+      });
+      setDone('Asked. A Scheduler decides, and your colleague has been told you asked.');
+      return true;
+    } catch (error) {
+      setFailure(error);
+      return false;
+    }
+  }
+
   if (employee === null) {
     return (
       <section>
-        <h2>My availability</h2>
+        <h2>Me</h2>
         <p className="hint">
           Choose who you are in <strong>acting as employee</strong> above. A user and an employee
           are different identities on purpose, so the link has to be stated — without it the backend
@@ -81,7 +137,40 @@ export function MePage() {
 
   return (
     <section>
-      <h2>My availability</h2>
+      <h2>Me</h2>
+      <p className="hint">
+        You are employee <code>{employee}</code>. A colleague handing you a shift needs this
+        identifier: an employee cannot look colleagues up, because that listing says when they
+        cannot work.
+      </p>
+
+      <Failure error={failure} />
+      {/* Always in the page, so an outcome is announced when it arrives rather than skipped. */}
+      <p className="done" role="status">
+        {done}
+      </p>
+
+      <h3>My work</h3>
+      <p className="hint">
+        Published rosters only, over the planning span above. A draft binds nobody until it is
+        published.
+      </p>
+      <Failure error={schedule.error} />
+      <Busy busy={schedule.busy} />
+      {schedule.value?.length === 0 ? <p>Nothing published names you in this span.</p> : null}
+      <ul className="work">
+        {(schedule.value ?? []).map((work) => (
+          <OwnShift
+            key={`${work.roster}|${work.shift}`}
+            work={work}
+            onHandOver={(colleague) => handOver(employee, work, colleague)}
+          />
+        ))}
+      </ul>
+
+      <Inbox employee={employee} nameOf={nameOf} />
+
+      <h3>When I cannot work</h3>
       <p className="hint">
         Unavailability is hard: nobody is rostered during it. A preference is soft and never blocks
         a roster — and nothing optimises for it yet, because objectives are not modelled.
@@ -138,9 +227,57 @@ export function MePage() {
           State a preference
         </button>
       </form>
-
-      {done === null ? null : <p className="done">{done}</p>}
-      <Failure error={failure} />
     </section>
+  );
+}
+
+function OwnShift({
+  work,
+  onHandOver,
+}: {
+  work: RosteredShift;
+  onHandOver: (colleague: string) => Promise<boolean>;
+}) {
+  const [colleague, setColleague] = useState('');
+  // Each request is stored, so a second one sent while the first is on its way would be a duplicate.
+  const [asking, setAsking] = useState(false);
+  const when = shiftLabel(work.start, work.end);
+
+  return (
+    <li>
+      <p>
+        <strong>{when}</strong>
+      </p>
+      <form
+        className="row"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (asking) {
+            return;
+          }
+          setAsking(true);
+          void onHandOver(colleague).then((asked) => {
+            setAsking(false);
+            if (asked) {
+              setColleague('');
+            }
+          });
+        }}
+      >
+        {/* Each name starts with the visible label and then says which shift, since one repeats per shift. */}
+        <label>
+          Colleague&apos;s employee identifier
+          <input
+            value={colleague}
+            onChange={(event) => setColleague(event.target.value)}
+            spellCheck={false}
+            aria-label={`Colleague's employee identifier, to take ${when}`}
+          />
+        </label>
+        <button type="submit" disabled={asking} aria-label={`Ask to hand it over: ${when}`}>
+          Ask to hand it over
+        </button>
+      </form>
+    </li>
   );
 }

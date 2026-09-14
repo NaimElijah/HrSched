@@ -4,6 +4,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import java.util.List;
+import java.util.Optional;
 
 /** Driving port: defining the qualifications that exist within an organisation. */
 public interface ManageQualificationsUseCase {
@@ -21,4 +22,13 @@ public interface ManageQualificationsUseCase {
    * @return every qualification defined by that organisation
    */
   List<PublishedQualification> findQualifications(Actor actor, OrganisationId organisation);
+
+  /**
+   * @param actor whoever is asking; any member of the organisation, as for the listing
+   * @param organisation the organisation to look in
+   * @param qualification which one
+   * @return it, or empty if that organisation defines none by that identity
+   */
+  Optional<PublishedQualification> findQualification(
+      Actor actor, OrganisationId organisation, QualificationId qualification);
 }

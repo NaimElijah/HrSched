@@ -5,6 +5,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Driving port: asking for one of your shifts to be covered by a colleague (requirement F7).
@@ -50,6 +51,16 @@ public interface RequestSwapsUseCase {
    *     party to — a swap request names two colleagues and what one of them wants off their plate
    */
   List<PublishedSwapRequest> findSwapRequests(Actor actor, OrganisationId organisation);
+
+  /**
+   * @param actor whoever is asking
+   * @param organisation whose swap request
+   * @param request which one
+   * @return it, exactly when {@link #findSwapRequests} would list it for this actor. Otherwise
+   *     empty, so a request somebody is not party to reads the same as one that does not exist
+   */
+  Optional<PublishedSwapRequest> findSwapRequest(
+      Actor actor, OrganisationId organisation, SwapRequestId request);
 
   /**
    * Agrees to a swap, and publishes the roster that carries it.

@@ -6,6 +6,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.util.List;
+import java.util.Optional;
 
 /** Driving port: stating what work needs covering. */
 public interface ManageShiftsUseCase {
@@ -30,4 +31,12 @@ public interface ManageShiftsUseCase {
    * @return every shift of that organisation overlapping the span
    */
   List<Shift> findShifts(Actor actor, OrganisationId organisation, TimeRange within);
+
+  /**
+   * @param actor whoever is asking; any member of the organisation, as for the listing
+   * @param organisation the organisation to look in
+   * @param shift which one
+   * @return it, or empty if that organisation has no shift by that identity
+   */
+  Optional<Shift> findShift(Actor actor, OrganisationId organisation, ShiftId shift);
 }

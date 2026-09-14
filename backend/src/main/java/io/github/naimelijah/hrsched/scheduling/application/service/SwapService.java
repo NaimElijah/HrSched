@@ -35,6 +35,7 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -124,23 +125,35 @@ public class SwapService implements RequestSwapsUseCase {
   @Override
   public List<PublishedSwapRequest> findSwapRequests(Actor actor, OrganisationId organisation) {
     actor.requireAccessTo(organisation);
-    List<SwapRequest> all = swaps.findByOrganisation(organisation);
-    return visibleTo(actor, all).stream().map(SwapService::publish).toList();
+    return swaps.findByOrganisation(organisation).stream()
+        .filter(request -> isVisibleTo(actor, request))
+        .map(SwapService::publish)
+        .toList();
+  }
+
+  @Override
+  public Optional<PublishedSwapRequest> findSwapRequest(
+      Actor actor, OrganisationId organisation, SwapRequestId id) {
+    actor.requireAccessTo(organisation);
+    return swaps
+        .findById(organisation, id)
+        .filter(request -> isVisibleTo(actor, request))
+        .map(SwapService::publish);
   }
 
   /**
    * A swap request names two colleagues and says what one of them wants off their plate, so it is
    * personal data in the same way a roster is. An Admin or a Scheduler sees every request because
    * answering them is their job; anybody else sees only the ones they are party to.
+   *
+   * <p>One predicate serves both the listing and reading one, so the two cannot disagree about who
+   * may see a request.
    */
-  private static List<SwapRequest> visibleTo(Actor actor, List<SwapRequest> all) {
+  private static boolean isVisibleTo(Actor actor, SwapRequest request) {
     if (!(actor instanceof TenantActor tenant) || MAY_ACT_FOR_OTHERS.contains(tenant.role())) {
-      return all;
+      return true;
     }
-    return tenant
-        .employee()
-        .map(me -> all.stream().filter(request -> request.involves(me)).toList())
-        .orElseGet(List::of);
+    return tenant.employee().map(request::involves).orElse(false);
   }
 
   @Override

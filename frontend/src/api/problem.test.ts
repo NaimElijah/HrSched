@@ -89,10 +89,28 @@ describe('violations', () => {
 });
 
 describe('what a status means', () => {
+  const broken = { employee: 'ada', constraint: 'maximum daily working time', detail: 'PT12H' };
+
   it('GivenARuleBreach_WhenAsked_ThenOnlyThatPredicateIsTrue', () => {
-    const error = toApiError(422, {});
+    const error = toApiError(422, { violations: [broken] });
 
     expect(error.isRuleBreach).toBe(true);
+    expect(error.isRefused).toBe(false);
+    expect(error.isForbidden).toBe(false);
+    expect(error.isNotFound).toBe(false);
+  });
+
+  /**
+   * The scheduling context answers 422 for more than the working-time rules: an assignee without
+   * the shift's qualification, one who declared they cannot work, a shift outside the roster's
+   * period. Those list no violations, and calling them a rule breach would show a scheduler an
+   * empty list under a heading about working time.
+   */
+  it('GivenA422WithoutViolations_WhenAsked_ThenItIsARefusalNotARuleBreach', () => {
+    const error = toApiError(422, { detail: 'Ada does not hold every qualification it requires' });
+
+    expect(error.isRuleBreach).toBe(false);
+    expect(error.isRefused).toBe(true);
     expect(error.isForbidden).toBe(false);
     expect(error.isNotFound).toBe(false);
   });
@@ -102,6 +120,7 @@ describe('what a status means', () => {
 
     expect(error.isForbidden).toBe(true);
     expect(error.isRuleBreach).toBe(false);
+    expect(error.isRefused).toBe(false);
     expect(error.isNotFound).toBe(false);
   });
 
@@ -111,12 +130,25 @@ describe('what a status means', () => {
     expect(error.isNotFound).toBe(true);
     expect(error.isForbidden).toBe(false);
     expect(error.isRuleBreach).toBe(false);
+    expect(error.isRefused).toBe(false);
+  });
+
+  /** A decision somebody else already made: not the caller's fault, and not a missing record. */
+  it('GivenAConflict_WhenAsked_ThenOnlyThatPredicateIsTrue', () => {
+    const error = toApiError(409, { detail: 'That swap request has already been decided.' });
+
+    expect(error.isConflict).toBe(true);
+    expect(error.isRuleBreach).toBe(false);
+    expect(error.isRefused).toBe(false);
+    expect(error.isForbidden).toBe(false);
+    expect(error.isNotFound).toBe(false);
   });
 
   it('GivenAServerFailure_WhenAsked_ThenNoRefusalPredicateIsTrue', () => {
     const error = toApiError(500, {});
 
     expect(error.isRuleBreach).toBe(false);
+    expect(error.isRefused).toBe(false);
     expect(error.isForbidden).toBe(false);
     expect(error.isNotFound).toBe(false);
   });

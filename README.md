@@ -307,7 +307,7 @@ HrSched/
 │       ├── api/                         # typed client; client.ts is the only caller of fetch
 │       ├── identity/                    # acting-as context and its warning bar
 │       ├── components/                  # failure rendering, async loading
-│       └── pages/                       # People, Qualifications, Rules, Shifts, Rosters, Me
+│       └── pages/                       # People, Qualifications, Rules, Shifts, Rosters, Swaps, Me, Organisations
 ├── docs/                                # requirements, architecture, ADRs
 ├── LICENSE
 └── README.md
@@ -388,6 +388,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `SchedulingServiceTest`, `SwapServiceTest`, `EmployeeServiceTest`, `QualificationServiceTest`, `OrganisationServiceTest`, `NotificationServiceTest` | Application | Use cases against hand-written stubs of their own ports. No Spring, no mocking framework. `SwapServiceTest` is the exception that proves the rule: it wires a **real** `SchedulingService`, because the claim worth testing is that approving a swap goes through the same publication everything else does. |
 | `SwapHttpTest` | Adapter (HTTP) | The widest path in the system — onboard a tenant, hire people, roster, publish, hand a shift over, and have the colleague read about it. Four contexts in one test. |
 | `KnownOrganisationHttpTest` | Configuration | That a tenant nobody onboarded cannot be used, and that the refusal is the ordinary 404 carrying a trace id. |
+| `RequestBindingHttpTest` | Configuration | A missing header, a missing query parameter or an identifier that does not parse is answered with a problem detail naming it, whose detail never repeats the value sent. |
 | `NotificationTest` | Domain (notifications) | Among other invariants, that no field of a notification can hold free text — asserted by reflection over the type, because a future field is what would break it. |
 | `SchedulingCommandsTest`, `WorkforceCommandsTest` | Application | Every command rejects a null field, copies what it is handed, and stops short of judging what it carries. |
 | `RosterCandidateTest`, `PublishedLanguageTest` | Published language | What one context tells another, and nothing more. |
@@ -396,7 +397,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `ActorFromHeadersTest` (×2) | Driving adapters | The header placeholder in both contexts, including every malformed header. |
 | `SchedulingExceptionHandlerTest`, `WorkforceExceptionHandlerTest` | Driving adapters | Which failure earns which status, the structured 422, and that there is no catch-all. |
 | `GreedyRosterGeneratorTest` | Driven adapter | The placeholder generator never breaks a rule, and leaves a shift short rather than filling it illegally. |
-| `RosteringHttpTest`, `EmployeeHttpTest`, `QualificationHttpTest` | End to end | All sixteen endpoints through the real hexagon and the real adapters. |
+| `RosteringHttpTest`, `EmployeeHttpTest`, `QualificationHttpTest` | End to end | Every endpoint through the real hexagon and the real adapters. |
 | `TraceIdHttpTest` | Observability over HTTP | Every response carries a trace id, including the refusals — which are the ones a person has cause to report. |
 | `MetricsHttpTest` | Operations over HTTP | Both probes answer, the meters are published, and `loggers`, `env` and `heapdump` are **not** exposed. |
 | `SchedulingAuditLogTest`, `WorkforceAuditLogTest` | Driven adapters | Every audit field is an identifier and never a name, the message is a constant, and the counter is not tagged by tenant. |
@@ -419,12 +420,13 @@ npm run test:coverage  # the same tests, plus coverage/index.html
 | --- | --- |
 | `api/client.test.ts` | The one module that calls `fetch`: the claim headers, the failure shapes, and the reload key. |
 | `api/problem.test.ts` | The error boundary: a body that is not the shape we expect is validated, never cast. |
+| `api/workforce.test.ts` | That an identifier placed in a path stays one segment at the call site, whoever supplied it. |
 | `components/useAsync.test.tsx` | The state machine: a stale answer never reaches the screen, `busy` is derived, reload works after a failure. |
-| `components/localDates.test.ts` | The local-day round trip and the documented timezone hazard, asserted relatively so it holds in any zone. |
-| `components/Feedback.test.tsx` | All four refusal branches, including the 404 that may also mean another tenant owns it. |
+| `components/localDates.test.ts` | The local-day round trip, the documented timezone hazard, and the day and time labels a roster board is read by — all asserted relatively so they hold in any zone. |
+| `components/Feedback.test.tsx` | Every refusal branch, including a 422 that lists no broken rules — a refusal, not a working-time breach — and the 404 that may also mean another tenant owns it. |
 | `components/ErrorBoundary.test.tsx` | One broken render does not become a blank page, and "Try again" recovers. |
 | `identity/ActingAs.test.tsx`, `identity/ActingAsBar.test.tsx` | The acting-as placeholder: persistence, validation, the synthetic option, and the operator rule that clears the employee link. |
-| `pages/*.test.tsx` (×6) | One per screen: what is sent, what is refused before sending, and what the user is told. |
+| `pages/*.test.tsx` (×9) | One per screen: what is sent, what is refused before sending, and what the user is told. |
 | `App.test.tsx` | Tab navigation, and the one 403 the shell deliberately swallows — with the proof that nothing else is. |
 
 **CI** runs `./mvnw verify` and `npm run verify` on every push and pull request
@@ -498,6 +500,8 @@ blocked on the same missing environment.
 | [ADR-021](docs/ADRs/ADR-021-notifications-as-a-bounded-context.md) | Notifications are their own context, and hold no words | Delivery is pull-only, so somebody is informed when they next open the app; a lost notification means they were never told while the system believes they were |
 | [ADR-022](docs/ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md) | Approving a swap publishes a replacement roster rather than editing one | A refused approval left the replacement behind as a draft, which ADR-023 fixed |
 | [ADR-023](docs/ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md) | A use case is one transaction, applied at the composition root | A proxy nothing in the service hints at; an audit entry can now outlive the change it records |
+| [ADR-024](docs/ADRs/ADR-024-answer-unbindable-requests-with-a-problem-detail.md) | A request Spring cannot bind is answered with a problem detail, from one fallback handler | Three exception types listed by hand; 405, 415 and unmapped paths still answer with Spring's default body |
+| [ADR-025](docs/ADRs/ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md) | A draft roster is edited through a picker and buttons on a board, not by drag and drop | Moving somebody is two actions; the picker offers people the backend will refuse |
 
 Still open and blocking: **ADR-010** (objectives) and **ADR-011** (authentication). See the
 [ADR index](docs/ADRs/).

@@ -1,4 +1,4 @@
-import { api, type ActingIdentity } from './client';
+import { api, path, type ActingIdentity } from './client';
 
 /** A span of time, as the API renders one. */
 export interface Period {
@@ -50,14 +50,14 @@ export const workforce = {
     employee: string,
     qualification: string,
   ): Promise<void> =>
-    api.put<void>(identity, `/api/employees/${employee}/qualifications/${qualification}`),
+    api.put<void>(identity, path`/api/employees/${employee}/qualifications/${qualification}`),
 
   setContract: (
     identity: ActingIdentity,
     employee: string,
     weeklyContractedMinutes: number,
   ): Promise<void> =>
-    api.put<void>(identity, `/api/employees/${employee}/contract`, { weeklyContractedMinutes }),
+    api.put<void>(identity, path`/api/employees/${employee}/contract`, { weeklyContractedMinutes }),
 
   declareUnavailability: (
     identity: ActingIdentity,
@@ -65,7 +65,7 @@ export const workforce = {
     start: string,
     end: string,
   ): Promise<void> =>
-    api.post<void>(identity, `/api/employees/${employee}/unavailability`, { start, end }),
+    api.post<void>(identity, path`/api/employees/${employee}/unavailability`, { start, end }),
 
   statePreference: (
     identity: ActingIdentity,
@@ -74,5 +74,9 @@ export const workforce = {
     end: string,
     strength: PreferenceStrength,
   ): Promise<void> =>
-    api.post<void>(identity, `/api/employees/${employee}/preferences`, { start, end, strength }),
+    api.post<void>(identity, path`/api/employees/${employee}/preferences`, {
+      start,
+      end,
+      strength,
+    }),
 };

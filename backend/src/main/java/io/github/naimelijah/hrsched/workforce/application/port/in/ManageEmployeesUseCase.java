@@ -4,6 +4,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import java.util.Optional;
 
 /**
  * Driving port: maintaining the people an organisation can roster.
@@ -46,4 +48,21 @@ public interface ManageEmployeesUseCase {
    * @param command whose preference, and what it is
    */
   void statePreference(Actor actor, StatePreferenceCommand command);
+
+  /**
+   * Reads one person, restricted exactly as {@link FindRosterableEmployeesUseCase#findRosterable}
+   * is, because the answer carries the same absences.
+   *
+   * <p>Declared here rather than on {@code FindRosterableEmployeesUseCase} because that port is
+   * what scheduling consumes (ADR-008), and nothing there needs one person at a time.
+   *
+   * @param actor whoever is asking; must be an Admin or Scheduler of the organisation
+   * @param organisation the organisation to look in
+   * @param employee who to read
+   * @return them, or empty if that organisation holds nobody by that identity
+   * @throws CrossTenantAccessException if the actor may not touch that organisation
+   * @throws NotPermittedException if the actor is neither an Admin nor a Scheduler
+   */
+  Optional<RosterableEmployee> findEmployee(
+      Actor actor, OrganisationId organisation, EmployeeId employee);
 }

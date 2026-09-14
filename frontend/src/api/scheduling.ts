@@ -1,4 +1,4 @@
-import { api, type ActingIdentity } from './client';
+import { api, path, type ActingIdentity } from './client';
 
 /** A span of work that needs covering. Mirrors ShiftResponse. */
 export interface Shift {
@@ -53,6 +53,32 @@ export interface ConstraintSetRequest {
   readonly maximumConsecutiveDays?: number | undefined;
 }
 
+/** Work that names the caller, from a published roster. Mirrors RosteredShiftResponse. */
+export interface RosteredShift {
+  readonly shift: string;
+  readonly start: string;
+  readonly end: string;
+  readonly roster: string;
+}
+
+/** Mirrors SwapRequestResponse. */
+export interface SwapRequest {
+  readonly id: string;
+  readonly roster: string;
+  readonly shift: string;
+  readonly requester: string;
+  readonly counterparty: string;
+  readonly status: 'REQUESTED' | 'APPROVED' | 'REJECTED';
+}
+
+/** Mirrors RequestSwapRequest: whose shift, on which published roster, and who is asked to take it. */
+export interface RequestSwap {
+  readonly roster: string;
+  readonly shift: string;
+  readonly requester: string;
+  readonly counterparty: string;
+}
+
 export interface DefineShiftRequest {
   readonly start: string;
   readonly end: string;
@@ -78,7 +104,66 @@ export const scheduling = {
 
   /** Throws an ApiError with `isRuleBreach` and a populated `violations` when the rules refuse it. */
   publishRoster: (identity: ActingIdentity, id: string): Promise<Roster> =>
-    api.post<Roster>(identity, `/api/rosters/${id}/publication`),
+    api.post<Roster>(identity, path`/api/rosters/${id}/publication`),
+
+  findRoster: (identity: ActingIdentity, id: string): Promise<Roster> =>
+    api.get<Roster>(identity, path`/api/rosters/${id}`),
+
+  /**
+   * Puts somebody on a shift of a draft, and returns the roster as it now stands.
+   *
+   * Throws an ApiError with `isRefused` when the domain will not have that person there —
+   * unqualified, unavailable, or a shift outside the roster's period. Nothing here checks first.
+   */
+  assign: (
+    identity: ActingIdentity,
+    roster: string,
+    shift: string,
+    employee: string,
+  ): Promise<Roster> =>
+    api.post<Roster>(identity, path`/api/rosters/${roster}/assignments`, { shift, employee }),
+
+  /** Takes somebody off a shift of a draft, and returns the roster as it now stands. */
+  unassign: (
+    identity: ActingIdentity,
+    roster: string,
+    shift: string,
+    employee: string,
+  ): Promise<Roster> =>
+    api.delete<Roster>(identity, path`/api/rosters/${roster}/assignments/${shift}/${employee}`),
+
+  /** The work naming the caller's own employee link, from published rosters only (F5). */
+  findOwnSchedule: (identity: ActingIdentity, from: string, to: string): Promise<RosteredShift[]> =>
+    api.get<RosteredShift[]>(
+      identity,
+      `/api/me/schedule?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
+
+  /**
+   * Asks for a shift to be handed to a colleague. A Scheduler decides; whether the colleague may take
+   * it is checked when they do, not now (ADR-022).
+   */
+  requestSwap: (identity: ActingIdentity, request: RequestSwap): Promise<SwapRequest> =>
+    api.post<SwapRequest>(identity, '/api/swaps', request),
+
+  /** Every swap an Admin or Scheduler holds; for anybody else, only the ones they are party to. */
+  findSwapRequests: (identity: ActingIdentity): Promise<SwapRequest[]> =>
+    api.get<SwapRequest[]>(identity, '/api/swaps'),
+
+  findShift: (identity: ActingIdentity, id: string): Promise<Shift> =>
+    api.get<Shift>(identity, path`/api/shifts/${id}`),
+
+  /**
+   * Approves a swap by publishing the roster that carries it, superseding the one it was raised
+   * against (ADR-022). Throws an ApiError with `isRuleBreach` when that roster would break a rule,
+   * and with `isConflict` when somebody has already decided the request.
+   */
+  approveSwap: (identity: ActingIdentity, id: string): Promise<Roster> =>
+    api.post<Roster>(identity, path`/api/swaps/${id}/approval`),
+
+  /** Declines a swap; no roster changes. Throws with `isConflict` when it was already decided. */
+  rejectSwap: (identity: ActingIdentity, id: string): Promise<void> =>
+    api.post<void>(identity, path`/api/swaps/${id}/rejection`),
 
   currentConstraints: (identity: ActingIdentity): Promise<ConstraintSet> =>
     api.get<ConstraintSet>(identity, '/api/constraints'),

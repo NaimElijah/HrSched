@@ -13,6 +13,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
@@ -105,6 +106,30 @@ public class SchedulingController {
         .stream()
         .map(ShiftResponse::from)
         .toList();
+  }
+
+  /**
+   * Reads one shift. Any member of the organisation may, as for the listing: a shift is work that
+   * needs covering, not a person.
+   *
+   * @param id the shift to read
+   * @return it
+   * @throws UnknownShiftException answered as a 404 problem detail when this organisation has no
+   *     shift by that identity
+   */
+  @GetMapping("/shifts/{id}")
+  public ShiftResponse findShift(
+      @RequestHeader("X-Organisation") String organisation,
+      @RequestHeader("X-User") String user,
+      @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @PathVariable UUID id) {
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    ShiftId shift = new ShiftId(id);
+    return manageShifts
+        .findShift(actor, ActorFromHeaders.organisationOf(organisation), shift)
+        .map(ShiftResponse::from)
+        .orElseThrow(() -> new UnknownShiftException(shift));
   }
 
   @PutMapping("/constraints")

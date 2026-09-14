@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActingAsProvider } from '../identity/ActingAs';
@@ -12,10 +12,33 @@ import { PeoplePage } from './PeoplePage';
  * empty table — an empty table reads as "nobody works here", which is a different and wrong claim.
  */
 
+const ABSENCE = { start: '2026-10-07T08:00:00Z', end: '2026-10-07T12:00:00Z' };
+
+/** The full shape the API sends: F4 is exactly the fields a thinner fixture would leave out. */
 const PEOPLE = [
-  { id: 'e-1', name: 'Ada', qualifications: ['q-1'] },
-  { id: 'e-2', name: 'Grace', qualifications: [] },
+  {
+    id: 'e-1',
+    name: 'Ada',
+    qualifications: ['q-1'],
+    unavailability: [ABSENCE],
+    weeklyContractedMinutes: 2100,
+  },
+  {
+    id: 'e-2',
+    name: 'Grace',
+    qualifications: [],
+    unavailability: [],
+    weeklyContractedMinutes: null,
+  },
 ];
+
+function rowOf(name: string): HTMLElement {
+  const row = screen.getByText(name).closest('tr');
+  if (row === null) {
+    throw new Error(`${name} is not in a table row`);
+  }
+  return row;
+}
 
 const QUALIFICATIONS = [{ id: 'q-1', name: 'Forklift' }];
 
@@ -101,6 +124,50 @@ describe('listing people', () => {
   });
 });
 
+/**
+ * Requirement F4: a Scheduler sees the availability of every employee. The listing always carried
+ * it; the page counted qualifications and showed nothing else.
+ */
+describe('what is already known about each person', () => {
+  it('GivenQualificationsHeld_WhenListed_ThenTheirNamesAreShown', async () => {
+    routeTo();
+
+    show();
+
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    expect(within(rowOf('Ada')).getByText('Forklift', { selector: 'td' })).toBeInTheDocument();
+  });
+
+  it('GivenDeclaredUnavailability_WhenListed_ThenEachSpanIsShown', async () => {
+    routeTo();
+
+    show();
+
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    const spans = within(rowOf('Ada')).getAllByRole('listitem');
+    expect(spans).toHaveLength(1);
+    expect(spans[0]).toHaveTextContent(new Date(ABSENCE.start).toLocaleString());
+    expect(spans[0]).toHaveTextContent(new Date(ABSENCE.end).toLocaleString());
+    expect(within(rowOf('Grace')).queryAllByRole('listitem')).toHaveLength(0);
+  });
+
+  /**
+   * "None set" rather than 0, which would claim a contract of no hours. And the stored value is
+   * shown beside the field, never put in it: a prefilled number is one an Admin can submit without
+   * having chosen it.
+   */
+  it('GivenNoContract_WhenListed_ThenItSaysNoneRatherThanZero', async () => {
+    routeTo();
+
+    show();
+
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    expect(within(rowOf('Grace')).getByText('None set')).toBeInTheDocument();
+    expect(within(rowOf('Ada')).getByText('2100 minutes a week')).toBeInTheDocument();
+    expect(screen.getByLabelText('Contracted minutes per week for Ada')).toHaveValue(null);
+  });
+});
+
 describe('adding an employee', () => {
   it('GivenAName_WhenAdded_ThenItIsSentAndTheFieldClears', async () => {
     const stub = routeTo();
@@ -172,13 +239,22 @@ describe('granting a qualification', () => {
 });
 
 describe('setting contracted hours', () => {
+  /** One name repeated on every row gave a screen reader no way to tell whose field it was in. */
+  it('GivenSeveralPeople_WhenListed_ThenEachContractFieldIsNamedForItsEmployee', async () => {
+    routeTo();
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+
+    expect(screen.getByLabelText('Contracted minutes per week for Ada')).toBeInTheDocument();
+    expect(screen.getByLabelText('Contracted minutes per week for Grace')).toBeInTheDocument();
+  });
+
   it('GivenTypedMinutes_WhenSet_ThenTheyAreSentAsANumber', async () => {
     const stub = routeTo();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
-    const fields = screen.getAllByLabelText('Contracted minutes per week');
-    await userEvent.type(fields[0] as HTMLElement, '2400');
+    await userEvent.type(screen.getByLabelText('Contracted minutes per week for Ada'), '2400');
     await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
 
     await waitFor(() => {
@@ -198,8 +274,7 @@ describe('setting contracted hours', () => {
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
-    const fields = screen.getAllByLabelText('Contracted minutes per week');
-    await userEvent.type(fields[0] as HTMLElement, '5');
+    await userEvent.type(screen.getByLabelText('Contracted minutes per week for Ada'), '5');
     await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
 
     await waitFor(() =>

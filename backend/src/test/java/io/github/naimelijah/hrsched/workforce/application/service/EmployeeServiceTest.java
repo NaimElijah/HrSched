@@ -201,6 +201,38 @@ class EmployeeServiceTest {
     assertThat(published.isAvailableFor(MONDAY)).isFalse();
   }
 
+  @Test
+  void GivenAScheduler_WhenReadingSomebodyByIdentity_ThenTheyArePublished() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+
+    assertThat(service.findEmployee(actor(ACME, Role.SCHEDULER), ACME, ada))
+        .map(RosterableEmployee::name)
+        .contains("Ada");
+  }
+
+  @Test
+  void GivenAnEmployeeRole_WhenReadingSomebodyByIdentity_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+
+    assertThatThrownBy(() -> service.findEmployee(actor(ACME, Role.EMPLOYEE), ACME, ada))
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingSomebodyOfOurs_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+
+    assertThatThrownBy(() -> service.findEmployee(admin(RIVAL), ACME, ada))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenAnotherOrganisationsEmployee_WhenReadThroughOurs_ThenNothingIsFound() {
+    EmployeeId mole = service.addEmployee(admin(RIVAL), new AddEmployeeCommand(RIVAL, "Mole"));
+
+    assertThat(service.findEmployee(admin(ACME), ACME, mole)).isEmpty();
+  }
+
   /** In-memory stand-in for the driven port, scoped by organisation exactly as the real one is. */
   private static final class StubEmployeeRepository implements EmployeeRepository {
 
