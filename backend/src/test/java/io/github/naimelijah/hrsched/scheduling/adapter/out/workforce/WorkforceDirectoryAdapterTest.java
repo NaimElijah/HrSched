@@ -198,6 +198,12 @@ class WorkforceDirectoryAdapterTest {
     }
 
     @Override
+    public Optional<PublishedQualification> findQualification(
+        Actor actor, OrganisationId organisation, QualificationId qualification) {
+      throw new UnsupportedOperationException("the adapter never reads one qualification");
+    }
+
+    @Override
     public List<PublishedQualification> findQualifications(
         Actor actor, OrganisationId organisation) {
       if (refusing) {

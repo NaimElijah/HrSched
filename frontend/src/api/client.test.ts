@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, identityKey } from './client';
+import { api, identityKey, path } from './client';
 import type { ActingIdentity } from './client';
 import { ApiError } from './problem';
 
@@ -58,6 +58,17 @@ describe('the acting identity', () => {
     const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
     expect(headers.get('X-Employee')).toBe('emp-9');
     expect(headers.get('Content-Type')).toBe('application/json');
+  });
+
+  it('GivenADelete_WhenRequesting_ThenItIsSentAsADeleteWithNoBody', async () => {
+    const stub = respondWith(200, {});
+
+    await api.delete(IDENTITY, '/api/rosters/1/assignments/s-1/e-1');
+
+    const init = stub.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBeUndefined();
+    expect((init.headers as Headers).get('X-Role')).toBe('SCHEDULER');
   });
 
   it('GivenARequestWithoutABody_WhenRequesting_ThenNoContentTypeIsClaimed', async () => {
@@ -212,6 +223,31 @@ describe('the reload key', () => {
 
     const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
     expect(headers.get('X-Employee')).toBeNull();
+  });
+});
+
+/**
+ * An identifier is one path segment and has to stay one. `fetch` resolves `..` and treats `/` as a
+ * separator, so an unencoded value can quietly address a different endpoint — and the organisation
+ * in the identity bar is typed by hand.
+ */
+describe('building a path', () => {
+  it('GivenAnIdentifierContainingASlash_WhenBuildingAPath_ThenItStaysOneSegment', () => {
+    expect(path`/api/organisations/${'../employees'}`).toBe('/api/organisations/..%2Femployees');
+  });
+
+  /**
+   * Encoding cannot help: encodeURIComponent leaves dots alone, and the URL parser reads `%2e%2e` as
+   * `..` anyway. `/api/organisations/..` would quietly become `/api/`, so the path is refused.
+   */
+  it.each(['.', '..'])('GivenADotSegment_WhenBuildingAPath_ThenItIsRefused (%s)', (segment) => {
+    expect(() => path`/api/organisations/${segment}`).toThrow(/cannot be "\." or "\.\."/);
+  });
+
+  it('GivenOrdinaryIdentifiers_WhenBuildingAPath_ThenTheyArePlacedUnchanged', () => {
+    expect(path`/api/employees/${'e-1'}/qualifications/${'q-1'}`).toBe(
+      '/api/employees/e-1/qualifications/q-1',
+    );
   });
 });
 

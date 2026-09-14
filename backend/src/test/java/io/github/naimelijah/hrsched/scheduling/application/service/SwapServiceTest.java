@@ -590,6 +590,44 @@ class SwapServiceTest {
         .hasSize(2);
   }
 
+  @Test
+  void GivenTheCounterparty_WhenReadingTheSwapTheyWereAskedAbout_ThenItIsReturned() {
+    ShiftId shift = aShift(Set.of());
+    Roster published = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, published.id(), shift, ada, grace));
+
+    assertThat(service.findSwapRequest(themself(ACME, grace), ACME, request))
+        .map(PublishedSwapRequest::requester)
+        .contains(ada);
+  }
+
+  /** Reading one must not reveal what the listing withholds. */
+  @Test
+  void GivenAnEmployeeNotPartyToTheSwap_WhenReadingIt_ThenItIsAbsent() {
+    EmployeeId hopper = available(ACME, "Hopper", Set.of());
+    ShiftId shift = aShift(Set.of());
+    Roster published = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, published.id(), shift, ada, grace));
+
+    assertThat(service.findSwapRequest(themself(ACME, hopper), ACME, request)).isEmpty();
+  }
+
+  @Test
+  void GivenASchedulerOfAnotherOrganisation_WhenReadingOurSwap_ThenItIsRefused() {
+    ShiftId shift = aShift(Set.of());
+    Roster published = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, published.id(), shift, ada, grace));
+
+    assertThatThrownBy(() -> service.findSwapRequest(scheduler(RIVAL), ACME, request))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
   /**
    * What the notifier was told, so that "the colleague is informed" is something a test can ask.
    */

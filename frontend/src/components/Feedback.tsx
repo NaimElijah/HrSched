@@ -45,6 +45,14 @@ export function Failure({
       </div>
     );
   }
+  if (error instanceof ApiError && error.isRefused) {
+    return (
+      <div className="failure" role="alert">
+        <strong>Refused.</strong> {error.message}
+        <Reference of={error} />
+      </div>
+    );
+  }
   if (error instanceof ApiError && error.isForbidden) {
     return (
       <div className="failure" role="alert">
@@ -62,6 +70,14 @@ export function Failure({
       </div>
     );
   }
+  if (error instanceof ApiError && error.isConflict) {
+    return (
+      <div className="failure" role="alert">
+        <strong>Already decided.</strong> Somebody answered it first. {error.message}
+        <Reference of={error} />
+      </div>
+    );
+  }
   return (
     <div className="failure" role="alert">
       {error instanceof Error ? error.message : String(error)}
@@ -70,6 +86,17 @@ export function Failure({
   );
 }
 
+/**
+ * Says a request is in flight, from a live region that is present even while there is nothing to
+ * say.
+ *
+ * A live region is announced when its content changes, so one that only appeared along with its
+ * text would be skipped by a screen reader.
+ */
 export function Busy({ busy }: { busy: boolean }) {
-  return busy ? <p className="busy">Working…</p> : null;
+  return (
+    <p className="busy" role="status">
+      {busy ? 'Working…' : null}
+    </p>
+  );
 }

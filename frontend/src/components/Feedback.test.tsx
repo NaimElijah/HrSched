@@ -42,7 +42,9 @@ describe('a rule breach', () => {
   });
 
   it('GivenARuleBreach_WhenRendering_ThenItSaysThereIsNoOverride', () => {
-    render(<Failure error={ruleBreach([])} />);
+    render(
+      <Failure error={ruleBreach([{ employee: 'ada', constraint: 'a rule', detail: 'x' }])} />,
+    );
 
     expect(screen.getByText(/no override/i)).toBeInTheDocument();
   });
@@ -78,6 +80,29 @@ describe('a rule breach', () => {
   });
 });
 
+describe('a refusal that lists no rules', () => {
+  it('GivenAnAssignmentRefusedWithoutViolations_WhenRendering_ThenTheServersReasonIsShownNotTheWorkingTimeRules', () => {
+    render(
+      <Failure
+        error={new ApiError(422, 'Ada does not hold every qualification the shift requires')}
+      />,
+    );
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Refused.');
+    expect(alert).toHaveTextContent('does not hold every qualification the shift requires');
+    expect(alert).not.toHaveTextContent(/working-time rules/);
+    expect(screen.queryByRole('listitem')).not.toBeInTheDocument();
+  });
+
+  it('GivenARefusalCarryingATraceId_WhenRendering_ThenItIsShownToBeQuoted', () => {
+    const trace = '4bf92f3577b34da6a3ce929d0e0e4736';
+    render(<Failure error={new ApiError(422, 'That shift is outside the roster.', [], trace)} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(`Reference: ${trace}`);
+  });
+});
+
 describe('the other refusals', () => {
   it('GivenAForbidden_WhenRendering_ThenTheRoleRefusalIsShown', () => {
     render(<Failure error={new ApiError(403, 'Your role does not permit this.')} />);
@@ -91,6 +116,14 @@ describe('the other refusals', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       /may also mean it exists for somebody else/,
     );
+  });
+
+  it('GivenAConflict_WhenRendering_ThenItSaysItWasAlreadyDecided', () => {
+    render(<Failure error={new ApiError(409, 'That swap request has already been decided.')} />);
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Already decided.');
+    expect(alert).toHaveTextContent('That swap request has already been decided.');
   });
 
   it('GivenAPlainError_WhenRendering_ThenItsMessageIsShown', () => {
@@ -169,16 +202,21 @@ describe('the trace reference', () => {
   });
 });
 
+/**
+ * A live region is announced when its content changes, not when it appears, so it has to be in the
+ * page before there is anything to say. Rendering nothing while idle meant "Working…" arrived in a
+ * brand-new element that screen readers did not announce.
+ */
 describe('the working indicator', () => {
-  it('GivenARequestInFlight_WhenRendering_ThenTheIndicatorIsShown', () => {
+  it('GivenARequestInFlight_WhenRendering_ThenItIsAnnouncedAsStatus', () => {
     render(<Busy busy />);
 
-    expect(screen.getByText('Working…')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Working…');
   });
 
-  it('GivenNothingInFlight_WhenRendering_ThenNothingIsShown', () => {
-    const { container } = render(<Busy busy={false} />);
+  it('GivenNothingInFlight_WhenRendering_ThenTheStatusRegionIsPresentButSilent', () => {
+    render(<Busy busy={false} />);
 
-    expect(container).toBeEmptyDOMElement();
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 });

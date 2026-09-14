@@ -25,6 +25,7 @@ import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeExcept
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -109,6 +110,13 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
     return employees.findByOrganisation(organisation).stream()
         .map(EmployeeService::publish)
         .toList();
+  }
+
+  @Override
+  public Optional<RosterableEmployee> findEmployee(
+      Actor actor, OrganisationId organisation, EmployeeId employee) {
+    authorise(actor, organisation, MAY_SEE_EVERYONE);
+    return employees.findById(organisation, employee).map(EmployeeService::publish);
   }
 
   /**

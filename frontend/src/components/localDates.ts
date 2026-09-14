@@ -32,6 +32,44 @@ export function localDate(instant: string): string {
 }
 
 /**
+ * The local day an instant falls on, as a heading names it.
+ *
+ * @param instant an ISO instant
+ * @returns the weekday and date where the reader is, in their own locale
+ */
+export function dayLabel(instant: string): string {
+  return new Date(instant).toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}
+
+/**
+ * The local time an instant falls at, to the minute.
+ *
+ * @param instant an ISO instant
+ * @returns hours and minutes where the reader is, in their own locale
+ */
+export function timeLabel(instant: string): string {
+  return new Date(instant).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * A shift described for a reader: its times, on its day.
+ *
+ * The one sentence every screen uses, so a shift reads the same on the roster board, in the swap
+ * queue, in an inbox and on Me.
+ *
+ * @param start the shift's start, an ISO instant
+ * @param end the shift's end, an ISO instant
+ * @returns its start and end times and the day it starts, in the reader's locale and zone
+ */
+export function shiftLabel(start: string, end: string): string {
+  return `${timeLabel(start)} to ${timeLabel(end)} on ${dayLabel(start)}`;
+}
+
+/**
  * The span the scheduling pages open on: today through a fortnight ahead, in local time.
  *
  * The clock is a parameter rather than a call to `new Date()` inside, so that the one piece of

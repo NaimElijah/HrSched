@@ -23,8 +23,9 @@ export interface ProblemDetail {
 /**
  * A request the backend refused.
  *
- * Carries the status so callers can distinguish the cases that mean different things: 422 is a
- * roster that breaks the rules, 403 is a role that may not do this, 404 is a resource that does not
+ * Carries the status so callers can distinguish the cases that mean different things: a 422 listing
+ * violations is a roster that breaks the working-time rules, a 422 listing none is some other thing
+ * the domain would not do, 403 is a role that may not do this, 404 is a resource that does not
  * exist for this tenant — and, because tenancy answers 404 rather than 403, possibly one that
  * exists for somebody else.
  */
@@ -52,9 +53,20 @@ export class ApiError extends Error {
     this.reference = reference;
   }
 
-  /** True when the refusal was the working-time rules rather than the request. */
+  /**
+   * True when the working-time rules refused it.
+   *
+   * Decided by the violations rather than the status alone: the backend also answers 422 for an
+   * assignee without the shift's qualification, or a shift outside the roster's period, and those
+   * list no rules because they broke none.
+   */
   get isRuleBreach(): boolean {
-    return this.status === 422;
+    return this.status === 422 && this.violations.length > 0;
+  }
+
+  /** True when the request was well formed and the domain would not do it, for a stated reason. */
+  get isRefused(): boolean {
+    return this.status === 422 && this.violations.length === 0;
   }
 
   get isForbidden(): boolean {
@@ -63,6 +75,11 @@ export class ApiError extends Error {
 
   get isNotFound(): boolean {
     return this.status === 404;
+  }
+
+  /** True when somebody else already decided what the caller was trying to decide. */
+  get isConflict(): boolean {
+    return this.status === 409;
   }
 }
 

@@ -1,15 +1,14 @@
 import { useState } from 'react';
+import { identityKey } from '../api/client';
 import { scheduling } from '../api/scheduling';
-import type { Roster, Shift } from '../api/scheduling';
-import { workforce } from '../api/workforce';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
-import { identityKey } from '../api/client';
 import { useActingAs } from '../identity/ActingAs';
+import { RosterBoard } from './RosterBoard';
 
 /**
- * Scheduler: generate a draft, read it, publish it.
+ * Scheduler: generate a draft, change it by hand, publish it.
  *
  * Publication is the part that matters. A roster breaking the rules is refused with every violation
  * listed and there is no override, so the refusal is rendered inline as a first-class outcome
@@ -17,29 +16,27 @@ import { useActingAs } from '../identity/ActingAs';
  *
  * Generation is greedy and optimises nothing (ADR-005), which this page says plainly rather than
  * letting a scheduler assume the result is good.
+ *
+ * The people come from the shell, which already loads them and already decides which refusal of
+ * that listing to keep quiet about; asking again here doubled the request and repeated its failure.
  */
-export function RostersPage({ span }: { span: { from: string; to: string } }) {
+export function RostersPage({
+  span,
+  people,
+}: {
+  span: { from: string; to: string };
+  /** Everybody the acting role may list, to name assignees and offer on the board. */
+  people: readonly Employee[];
+}) {
   const { identity } = useActingAs();
   const [failure, setFailure] = useState<unknown>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  // Bumped whenever the list changes a roster, so an open board is rebuilt from what is now stored.
+  // A change made on the board does not bump it: the board already holds what the server returned.
+  const [revision, setRevision] = useState(0);
 
   const rosters = useAsync(() => scheduling.findRosters(identity), identityKey(identity));
-  const people = useAsync(() => workforce.findEmployees(identity), identityKey(identity));
-
-  const chosen = (rosters.value ?? []).find((roster) => roster.id === selected) ?? null;
-
-  // Against the chosen roster's own period, not the planning span: a roster opened while the span
-  // points elsewhere would otherwise resolve none of its shifts and degrade to raw identifiers.
-  const shifts = useAsync(
-    () =>
-      chosen === null
-        ? Promise.resolve([])
-        : scheduling.findShifts(identity, chosen.start, chosen.end),
-    `${identityKey(identity)}|${chosen?.start ?? ''}|${chosen?.end ?? ''}`,
-  );
-
-  const shiftById = new Map((shifts.value ?? []).map((shift) => [shift.id, shift]));
-  const personById = new Map((people.value ?? []).map((person) => [person.id, person]));
+  const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (employee: string): string | undefined => personById.get(employee)?.name;
 
   async function act(action: () => Promise<unknown>) {
@@ -47,6 +44,7 @@ export function RostersPage({ span }: { span: { from: string; to: string } }) {
     try {
       await action();
       rosters.reload();
+      setRevision((previous) => previous + 1);
     } catch (error) {
       setFailure(error);
     }
@@ -79,7 +77,9 @@ export function RostersPage({ span }: { span: { from: string; to: string } }) {
             <th>Status</th>
             <th>Assignments</th>
             <th>Approved under</th>
-            <th />
+            <th>
+              <span className="visually-hidden">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -112,47 +112,16 @@ export function RostersPage({ span }: { span: { from: string; to: string } }) {
         </tbody>
       </table>
 
-      {chosen === null ? null : (
-        <RosterDetail roster={chosen} shiftById={shiftById} personById={personById} />
+      {selected === null ? null : (
+        <RosterBoard
+          // Rebuilt for a different acting identity as well: what one identity was shown, and the
+          // roster it had changed, must not stay on screen for another that may not read it.
+          key={`${identityKey(identity)}#${selected}#${revision}`}
+          roster={selected}
+          people={people}
+          onChanged={rosters.reload}
+        />
       )}
     </section>
-  );
-}
-
-function RosterDetail({
-  roster,
-  shiftById,
-  personById,
-}: {
-  roster: Roster;
-  shiftById: Map<string, Shift>;
-  personById: Map<string, Employee>;
-}) {
-  return (
-    <div className="detail">
-      <h3>Roster {roster.status.toLowerCase()}</h3>
-      {roster.assignments.length === 0 ? (
-        <p>
-          Nothing assigned. Either no shift falls in this span, or nobody eligible was available —
-          an uncoverable shift is left short rather than filled illegally.
-        </p>
-      ) : (
-        <ul>
-          {roster.assignments.map((assignment, index) => {
-            const shift = shiftById.get(assignment.shift);
-            const person = personById.get(assignment.employee);
-            const when =
-              shift === undefined
-                ? assignment.shift
-                : `${new Date(shift.start).toLocaleString()} to ${new Date(shift.end).toLocaleString()}`;
-            return (
-              <li key={index}>
-                {person?.name ?? assignment.employee} — {when}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
   );
 }

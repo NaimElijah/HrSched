@@ -116,9 +116,10 @@ Three rules hold this together, and each fails the build when broken:
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
 | `configuration.observability` | Cross-cutting instrumentation that belongs to no context. Today that is `TraceIdResponseFilter`, which puts the request's trace id on the response as `X-Trace-Id`. It reads no request header, so unlike `ActorFromHeaders` it is unaffected by ADR-011. |
 | `configuration.tenancy` | `KnownOrganisationFilter` — checks the claimed `X-Organisation` against the register before any handler runs, and answers the ordinary 404 when nobody onboarded it. Cross-cutting rather than per context, and it outlives ADR-011 ([ADR-020](../ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md)). |
-| `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists — it writes the four identity claims and reads back `X-Trace-Id`; `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts` and `workforce.ts` mirror the backend DTOs one module per context. |
+| `configuration.web` | `RequestBindingExceptionHandler` — answers a request Spring could not bind to a controller's parameters (a missing header or query parameter, an identifier that does not parse) with a 400 problem detail naming what was wrong, whose detail repeats nothing that was sent. It belongs to no context because the failure happens before any controller runs ([ADR-024](../ADRs/ADR-024-answer-unbindable-requests-with-a-problem-detail.md)). |
+| `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists — it writes the four identity claims and reads back `X-Trace-Id`; `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts` mirror the backend DTOs, one module per context. |
 | `frontend/src/identity` | The acting-as context and its warning bar — the placeholder that supplies `X-Organisation`, `X-User`, `X-Role` and `X-Employee`, deleted with the backend placeholder when ADR-011 lands. |
-| `frontend/src/pages` | One screen per capability: People, Qualifications, Rules, Shifts, Rosters, Me. |
+| `frontend/src/pages` | One screen per capability: People, Qualifications, Rules, Shifts, Rosters, Swaps, Me, Organisations. Organisations is the platform Operator's: it lists and onboards organisations and switches the acting identity into one, sending every request as the identity the bar claims, so a tenant role is shown the 403 rather than a hidden tab. Swaps is where a Scheduler answers requests; approving publishes a replacement roster, so it is refused, with every broken rule named, exactly as any publication is. Me shows an employee their identifier, their published work over the planning span, and a way to hand a shift to a colleague named by that colleague's identifier, because an employee may not list colleagues (Q25). Me also holds the employee's `Inbox`. Opening a roster shows `RosterBoard`, which loads that roster by identifier and changes a draft through a picker and buttons per shift rather than by drag and drop ([ADR-025](../ADRs/ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md)). |
 
 ## Communication
 
@@ -231,6 +232,13 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   organisation is refused by the guard rather than by an empty repository read. It is the only place
   the branch is exercised outside a unit test
   ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)).
+- **A `Location` header names an address that answers.** A created employee, qualification, shift,
+  roster, swap request or organisation can be read back with `GET` at the address its 201 gave,
+  authorised exactly as the listing it belongs to — reading one person takes an Admin or Scheduler
+  because listing people does — so following a link never meets a looser or stricter rule than the
+  list it came from. A swap request somebody is not party to is absent from their listing, so
+  reading it directly answers them 404, as though it did not exist; one predicate in `SwapService`
+  decides both.
 - **Every log line is ECS JSON, in every environment including a laptop.** There is no profile that
   turns it off, because a format only production emits is one nobody reads until it matters. Each
   line carries the `trace_id` of the request that produced it, and the same value leaves on the
@@ -283,9 +291,17 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 - **`MaximumWeeklyWorkingTime` treats the roster period as the reference period.** Jurisdictions
   that average over a longer window cannot be expressed; that needs history beyond the roster.
 - **The user interface enforces nothing.** Every rule is the backend's. The UI renders refusals —
-  a 422 with its violations, a 403, a 404 that may mean another tenant owns the resource — and it
-  is written so those refusals read as outcomes rather than as bugs, but removing the UI removes no
-  guarantee.
+  a 422 with its violations, a 422 listing none (an assignee without the qualification, a shift
+  outside the roster's period), a 403, a 404 that may mean another tenant owns the resource — and
+  it is written so those refusals read as outcomes rather than as bugs, but removing the UI removes
+  no guarantee. A 422 is called a working-time breach only when it lists the rules it broke; the
+  status alone does not say which kind of refusal it is.
+- **Notification wording lives in the reader's interface.** The server stores a kind, a subject and
+  a time, and holds no words ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)).
+  `Inbox` turns each kind into a sentence through a `Record` over the kinds it knows, so a kind added
+  to the client's type cannot compile without its words, and a kind the server sends that this build
+  does not know is shown as unknown rather than guessed at. Opening the inbox marks nothing read;
+  the reader does.
 - **The rules screen offers no default values.** Not a styling choice: a number suggested by the UI
   would be a working-time threshold chosen by a developer, which is exactly what this system
   refuses to contain.

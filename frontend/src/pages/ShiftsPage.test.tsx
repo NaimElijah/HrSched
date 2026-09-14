@@ -22,7 +22,12 @@ const QUALIFICATIONS = [
   { id: 'q-2', name: 'Welding' },
 ];
 
-function routeTo(options: { onPost?: () => { ok: boolean; status: number; body: unknown } } = {}) {
+function routeTo(
+  options: {
+    onPost?: () => { ok: boolean; status: number; body: unknown };
+    shifts?: readonly unknown[];
+  } = {},
+) {
   const stub = vi.fn((path: string, init?: RequestInit) => {
     if (init?.method === 'POST') {
       const outcome = options.onPost?.() ?? { ok: true, status: 201, body: { id: 's-1' } };
@@ -33,7 +38,11 @@ function routeTo(options: { onPost?: () => { ok: boolean; status: number; body: 
         text: () => Promise.resolve(JSON.stringify(outcome.body)),
       });
     }
-    const body = path.startsWith('/api/qualifications') ? QUALIFICATIONS : [];
+    const body = path.startsWith('/api/qualifications')
+      ? QUALIFICATIONS
+      : path.startsWith('/api/shifts')
+        ? (options.shifts ?? [])
+        : [];
     return Promise.resolve({
       ok: true,
       status: 200,
@@ -82,6 +91,45 @@ describe('asking for the shifts in the span', () => {
       expect(String(shifts?.[0])).toContain(encodeURIComponent(SPAN.from));
       expect(String(shifts?.[0])).toContain(encodeURIComponent(SPAN.to));
     });
+  });
+});
+
+describe('what a listed shift requires', () => {
+  it('GivenAShiftRequiringQualifications_WhenListed_ThenTheirNamesAreShown', async () => {
+    routeTo({
+      shifts: [
+        {
+          id: 's-1',
+          start: '2026-10-05T08:00:00Z',
+          end: '2026-10-05T16:00:00Z',
+          requiredHeadcount: 2,
+          requiredQualifications: ['q-1', 'q-2'],
+        },
+      ],
+    });
+
+    show();
+
+    expect(await screen.findByText('Forklift, Welding')).toBeInTheDocument();
+  });
+
+  /** A name this page cannot resolve is shown as its identifier, never dropped or guessed at. */
+  it('GivenAQualificationThisPageCannotName_WhenListed_ThenItsIdentifierIsShown', async () => {
+    routeTo({
+      shifts: [
+        {
+          id: 's-1',
+          start: '2026-10-05T08:00:00Z',
+          end: '2026-10-05T16:00:00Z',
+          requiredHeadcount: 1,
+          requiredQualifications: ['q-unknown'],
+        },
+      ],
+    });
+
+    show();
+
+    expect(await screen.findByText('q-unknown')).toBeInTheDocument();
   });
 });
 
