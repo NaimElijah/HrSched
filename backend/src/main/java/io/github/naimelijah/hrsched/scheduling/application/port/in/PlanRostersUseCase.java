@@ -78,6 +78,8 @@ public interface PlanRostersUseCase {
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException if
    *     it puts anybody on two shifts at once, whatever the rules say. Checked before the rules
    * @throws RosterNotCompliantException if it breaks any rule. There is no override
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException
+   *     if a roster overlapping it was published at the same time; reload and publish again
    */
   Roster publish(Actor actor, OrganisationId organisation, RosterId roster);
 

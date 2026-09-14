@@ -11,6 +11,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmen
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException;
@@ -135,6 +136,26 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Roster cannot be checked against the rules");
+    return problem;
+  }
+
+  /**
+   * Two publications overlapped in time as well as in period, and the schema refused the one that
+   * would have left two rosters authoritative (ADR-026). A 409 rather than a 400: nothing about the
+   * request was wrong, it arrived while another publication was in flight, and reloading and
+   * publishing again is the remedy.
+   *
+   * <p>Logged at WARN, not INFO like a rule breach. Publication is meant to take turns, so reaching
+   * this means something published without doing so, and that is worth somebody's attention.
+   */
+  @ExceptionHandler(RosterPublicationConflictException.class)
+  public ProblemDetail handleConcurrentPublication(RosterPublicationConflictException exception) {
+    log.warn("Publication refused by the schema: an overlapping roster was published concurrently");
+    count(
+        REFUSED, "reason", "concurrent_publication", "Publications refused, by what refused them");
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    problem.setTitle("Published concurrently");
     return problem;
   }
 

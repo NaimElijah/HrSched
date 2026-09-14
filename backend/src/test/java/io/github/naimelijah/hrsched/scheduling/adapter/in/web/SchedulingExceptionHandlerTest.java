@@ -11,6 +11,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
@@ -251,6 +252,36 @@ class SchedulingExceptionHandlerTest {
         new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()));
 
     assertThat(refused("not_verifiable")).isEqualTo(1.0);
+    assertThat(refused("not_compliant")).isZero();
+  }
+
+  /**
+   * A publication that lost a race is a conflict, not a bad request: nothing it sent was wrong, and
+   * reloading and publishing again is the remedy (ADR-026). The store's own words stay out of the
+   * response.
+   */
+  @Test
+  void GivenAPublicationThatLostARace_WhenTranslated_ThenItIsAConflictSayingWhatToDo() {
+    RosterPublicationConflictException conflict =
+        new RosterPublicationConflictException(
+            RosterId.newId(), new IllegalStateException("what the store said"));
+
+    ProblemDetail problem = handler.handleConcurrentPublication(conflict);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getTitle()).isEqualTo("Published concurrently");
+    assertThat(problem.getDetail())
+        .isEqualTo(conflict.getMessage())
+        .doesNotContain("what the store said");
+  }
+
+  @Test
+  void GivenAPublicationThatLostARace_WhenTranslated_ThenTheRefusalIsCountedByItsReason() {
+    handler.handleConcurrentPublication(
+        new RosterPublicationConflictException(
+            RosterId.newId(), new IllegalStateException("what the store said")));
+
+    assertThat(refused("concurrent_publication")).isEqualTo(1.0);
     assertThat(refused("not_compliant")).isZero();
   }
 

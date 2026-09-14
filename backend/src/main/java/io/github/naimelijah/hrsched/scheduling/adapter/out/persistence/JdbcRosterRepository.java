@@ -4,6 +4,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterReposi
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
@@ -19,7 +20,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import org.springframework.core.NestedExceptionUtils;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -35,11 +39,32 @@ import org.springframework.stereotype.Repository;
  * only legal routes to that state, and going round them would let this adapter construct a roster
  * the domain says cannot exist.
  *
+ * <p>Saving a published roster that overlaps another published roster of its organisation is
+ * refused by the schema's {@code roster_one_published_per_moment} constraint, and this adapter
+ * reports that in the domain's words rather than the driver's (ADR-026).
+ *
  * <p>Deliberately promises no ordering, matching the port. Its siblings sort on a field; there is
  * no field here that a caller has been told to expect an order by.
  */
 @Repository
 public class JdbcRosterRepository implements RosterRepository {
+
+  /** PostgreSQL's {@code exclusion_violation}: the constraint found the overlap. */
+  private static final String EXCLUSION_VIOLATION = "23P01";
+
+  /**
+   * PostgreSQL's {@code deadlock_detected}. Two writers each publishing an overlapping roster can
+   * each wait on the other's uncommitted row; PostgreSQL then aborts one, which is the same
+   * collision reported another way.
+   */
+  private static final String DEADLOCK_DETECTED = "40P01";
+
+  /**
+   * Read by SQLState rather than by exception type, because Spring maps an exclusion violation to
+   * nothing more specific than a data integrity violation, which says nothing about which rule.
+   */
+  private static final Set<String> PUBLICATION_COLLISIONS =
+      Set.of(EXCLUSION_VIOLATION, DEADLOCK_DETECTED);
 
   private final JdbcClient jdbc;
 
@@ -49,6 +74,17 @@ public class JdbcRosterRepository implements RosterRepository {
 
   @Override
   public void save(Roster roster) {
+    try {
+      store(roster);
+    } catch (DataAccessException refused) {
+      if (isPublicationCollision(refused)) {
+        throw new RosterPublicationConflictException(roster.id(), refused);
+      }
+      throw refused;
+    }
+  }
+
+  private void store(Roster roster) {
     UUID id = roster.id().value();
     int stored =
         jdbc.sql(
@@ -84,6 +120,11 @@ public class JdbcRosterRepository implements RosterRepository {
           .param("employee", assignment.employee().value())
           .update();
     }
+  }
+
+  private static boolean isPublicationCollision(DataAccessException refused) {
+    return NestedExceptionUtils.getMostSpecificCause(refused) instanceof SQLException cause
+        && PUBLICATION_COLLISIONS.contains(cause.getSQLState());
   }
 
   @Override

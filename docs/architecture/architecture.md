@@ -182,6 +182,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 | `spring-boot-starter-jdbc` | `JdbcClient`, the connection pool, and the transaction manager | [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md). Chosen over JPA because the domain may not carry `jakarta.persistence` annotations. |
 | `spring-boot-starter-flyway` + `flyway-database-postgresql` | Versioned schema migrations, applied on startup | ADR-004. New in Boot 4.x; 3.x had no Flyway starter. |
 | `postgresql` | The JDBC driver | ADR-004. Runtime scope; nothing compiles against it. |
+| `btree_gist` (PostgreSQL extension) | The `uuid` equality the `roster_one_published_per_moment` exclusion constraint indexes on | [ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md). Ships with PostgreSQL and is trusted, so the migrating role needs `CREATE` on the database, not superuser. Installed by migration `V2`. |
 | `spring-boot-docker-compose` | Starting the local database on `./mvnw spring-boot:run` | ADR-004, and it keeps `scripts/run.mjs` free of build logic as [ADR-014](../ADRs/ADR-014-root-task-runner.md) requires. Optional scope, so it never reaches a deployed artifact. |
 | `testcontainers-postgresql`, `testcontainers-junit-jupiter`, `spring-boot-testcontainers` | The real database the tests run against | ADR-004. Docker is required to build; there is deliberately no skip-when-absent. Pinned by the Testcontainers BOM, which the Boot BOM does not manage. |
 | `spring-boot-starter-opentelemetry` | A W3C trace id per request, in the MDC and on the response | [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md). Supplies the OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters; export is switched off until Q19 is answered. |
@@ -352,6 +353,13 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   published roster of that organisation whose period overlaps as `SUPERSEDED`. Overlap rather than
   equality decides it, because a partly-overlapping published roster would otherwise still govern
   the days it shares. Whether a partial replacement should supersede the old roster whole is Q16.
+- **Two overlapping published rosters cannot be stored.** Migration `V2` adds the
+  `roster_one_published_per_moment` exclusion constraint over the organisation and the roster's
+  period, for `PUBLISHED` rows only. A writer that publishes without seeing a publication still in
+  flight is refused by PostgreSQL rather than leaving two rosters authoritative. PostgreSQL reports
+  that as an exclusion violation, or, when two such writers wait on each other, by aborting one as
+  a deadlock victim. `JdbcRosterRepository` turns either into `RosterPublicationConflictException`,
+  which is answered 409 ([ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md)).
 - **Assigning by hand asks the same questions generation asks, and no more.** `assign` enforces the
   three rules that are about one assignment — the person belongs to the organisation (R5), holds
   what the shift demands (R4), and has not declared they cannot work when it runs (F6) — plus that

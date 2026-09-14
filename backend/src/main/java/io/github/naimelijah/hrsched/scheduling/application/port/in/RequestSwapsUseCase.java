@@ -77,6 +77,8 @@ public interface RequestSwapsUseCase {
    *     resulting roster would break any working-time rule. There is no override
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException if
    *     the colleague already works a shift on that roster overlapping the one handed over
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException
+   *     if a roster overlapping the replacement was published at the same time
    */
   Roster approveSwap(Actor actor, OrganisationId organisation, SwapRequestId request);
 
