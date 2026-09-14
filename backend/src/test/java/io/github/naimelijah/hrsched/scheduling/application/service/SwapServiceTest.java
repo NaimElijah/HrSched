@@ -416,12 +416,18 @@ class SwapServiceTest {
   @Test
   void GivenASwapThatWouldBreakADailyLimit_WhenApproving_ThenItIsRefusedAndNothingChanges() {
     ShiftId monday = aShift(Set.of());
-    ShiftId alsoMonday = aShift(Set.of());
+    // Ends as the day shift starts, so covering both is sixteen hours of work rather than two
+    // places
+    // at once, which would be refused for a different reason (R3).
+    TimeRange earlyMonday =
+        new TimeRange(Instant.parse("2026-10-05T00:00:00Z"), Instant.parse("2026-10-05T08:00:00Z"));
+    ShiftId early =
+        scheduling.defineShift(
+            scheduler(ACME), new DefineShiftCommand(ACME, earlyMonday, 1, Set.of()));
     Roster draft =
         scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), monday, ada));
-    scheduling.assign(
-        scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), alsoMonday, grace));
+    scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), early, grace));
     Roster original = scheduling.publish(scheduler(ACME), ACME, draft.id());
     SwapRequestId request =
         service.requestSwap(

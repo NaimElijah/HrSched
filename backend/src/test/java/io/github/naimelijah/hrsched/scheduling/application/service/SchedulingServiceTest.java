@@ -794,12 +794,17 @@ class SchedulingServiceTest {
    * first one already carried — so that shift is assigned on both rosters. It must still appear
    * once. Counting the superseded roster would show somebody the same day of work twice and imply
    * they owe two of them.
+   *
+   * <p>The second roster's own shift is on another day, because a roster putting one person on two
+   * overlapping shifts cannot be published (R3).
    */
   @Test
   void GivenTheirRosterWasSuperseded_WhenReadingTheirOwnSchedule_ThenItIsNotCountedAgain() {
     EmployeeId ada = available(ACME, "Ada");
     ShiftId onBothRosters = publishedWork(ACME, ada, MONDAY_DAY);
-    publishedWork(ACME, ada, MONDAY_DAY);
+    TimeRange wednesday =
+        new TimeRange(Instant.parse("2026-10-07T08:00:00Z"), Instant.parse("2026-10-07T16:00:00Z"));
+    publishedWork(ACME, ada, wednesday);
 
     List<RosteredShift> mine = service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK);
 

@@ -20,6 +20,8 @@ class RosterTest {
       new TimeRange(Instant.parse("2026-09-07T00:00:00Z"), Instant.parse("2026-09-14T00:00:00Z"));
   private static final TimeRange MONDAY =
       new TimeRange(Instant.parse("2026-09-07T08:00:00Z"), Instant.parse("2026-09-07T16:00:00Z"));
+  private static final TimeRange TUESDAY =
+      new TimeRange(Instant.parse("2026-09-08T08:00:00Z"), Instant.parse("2026-09-08T16:00:00Z"));
 
   private static Roster draft() {
     return new Roster(RosterId.newId(), ACME, WEEK);
@@ -153,16 +155,16 @@ class RosterTest {
   @Test
   void GivenARosterWithAssignments_WhenBuildingSchedules_ThenEachEmployeeGetsTheirOwn() {
     ShiftId monday = ShiftId.newId();
-    ShiftId alsoMonday = ShiftId.newId();
+    ShiftId tuesday = ShiftId.newId();
     EmployeeId grace = EmployeeId.newId();
     Roster roster =
         draft()
             .with(new Assignment(monday, ADA))
-            .with(new Assignment(alsoMonday, ADA))
+            .with(new Assignment(tuesday, ADA))
             .with(new Assignment(monday, grace));
 
     List<EmployeeSchedule> schedules =
-        roster.schedulesFor(Map.of(monday, MONDAY, alsoMonday, MONDAY));
+        roster.schedulesFor(Map.of(monday, MONDAY, tuesday, TUESDAY));
 
     assertThat(schedules).hasSize(2);
     assertThat(schedules)
