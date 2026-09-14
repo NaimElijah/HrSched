@@ -286,33 +286,16 @@ class JdbcRosterRepositoryTest {
    * picks one as a deadlock victim, depends on timing. That exactly one is refused does not.
    */
   @Test
-  @Timeout(STUCK_AFTER_SECONDS * 2)
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
   void GivenTwoTransactionsOpenAtOnce_WhenBothPublishOverlappingRosters_ThenExactlyOneIsRefused()
       throws Exception {
     Roster first = draft(ACME);
     Roster second = new Roster(RosterId.newId(), ACME, OVERLAPPING_WEEK);
     repository.save(first);
     repository.save(second);
-    TransactionTemplate transaction = new TransactionTemplate(PostgresDatabase.transactions());
-    CyclicBarrier bothOpen = new CyclicBarrier(2);
-    ExecutorService writers = Executors.newFixedThreadPool(2);
 
-    List<Throwable> refusals = new ArrayList<>();
-    try {
-      List<Future<?>> publications =
-          List.of(
-              writers.submit(() -> publishOnceBothAreOpen(transaction, bothOpen, first)),
-              writers.submit(() -> publishOnceBothAreOpen(transaction, bothOpen, second)));
-      for (Future<?> publication : publications) {
-        try {
-          publication.get(STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
-        } catch (ExecutionException refused) {
-          refusals.add(refused.getCause());
-        }
-      }
-    } finally {
-      writers.shutdownNow();
-    }
+    List<Throwable> refusals =
+        refusalsOf(publishingOnceBothHaveRead(first), publishingOnceBothHaveRead(second));
 
     assertThat(refusals).singleElement().isInstanceOf(RosterPublicationConflictException.class);
     assertThat(repository.findByOrganisation(ACME))
@@ -321,21 +304,127 @@ class JdbcRosterRepositoryTest {
   }
 
   /**
-   * Reads, waits until the other writer has read too, then publishes. The read is what starts the
-   * transaction in PostgreSQL, so after the barrier both are open and neither has seen the other.
+   * The other way PostgreSQL reports the same collision, forced rather than hoped for.
+   *
+   * <p>Each writer first publishes a roster the other's does not touch, then one that overlaps only
+   * the other's first. Neither can commit before its second save, and each second save waits on the
+   * other's uncommitted row, so whichever asks first PostgreSQL has to abort one of them as a
+   * deadlock victim. Nothing here depends on timing.
    */
-  private void publishOnceBothAreOpen(
-      TransactionTemplate transaction, CyclicBarrier bothOpen, Roster draft) {
-    transaction.executeWithoutResult(
-        status -> {
-          repository.findByOrganisation(ACME);
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenTwoWritersEachWaitingOnTheOther_WhenBothPublish_ThenTheVictimIsRefusedAsAConflict()
+      throws Exception {
+    Roster thisWeek = draft(ACME);
+    Roster nextWeek = new Roster(RosterId.newId(), ACME, THE_NEXT_WEEK);
+    Roster aDayOfNextWeek =
+        new Roster(
+            RosterId.newId(),
+            ACME,
+            new TimeRange(
+                Instant.parse("2026-09-15T00:00:00Z"), Instant.parse("2026-09-16T00:00:00Z")));
+    Roster aDayOfThisWeek =
+        new Roster(
+            RosterId.newId(),
+            ACME,
+            new TimeRange(
+                Instant.parse("2026-09-08T00:00:00Z"), Instant.parse("2026-09-09T00:00:00Z")));
+    for (Roster draft : List.of(thisWeek, nextWeek, aDayOfNextWeek, aDayOfThisWeek)) {
+      repository.save(draft);
+    }
+
+    List<Throwable> refusals =
+        refusalsOf(
+            publishingOneThenAnother(thisWeek, aDayOfNextWeek),
+            publishingOneThenAnother(nextWeek, aDayOfThisWeek));
+
+    assertThat(refusals).hasSize(1);
+    assertThat(refusals.getFirst())
+        .isInstanceOf(RosterPublicationConflictException.class)
+        .rootCause()
+        .isInstanceOfSatisfying(
+            SQLException.class,
+            cause -> assertThat(cause.getSQLState()).isEqualTo(DEADLOCK_DETECTED));
+    assertThat(repository.findByOrganisation(ACME))
+        .describedAs("the writer that was not the victim published both of its rosters")
+        .filteredOn(roster -> roster.status() == RosterStatus.PUBLISHED)
+        .hasSize(2);
+  }
+
+  /** PostgreSQL's {@code deadlock_detected}: the SQLState a deadlock victim is aborted with. */
+  private static final String DEADLOCK_DETECTED = "40P01";
+
+  /** One writer's work, told when to wait for the other writer to reach the same point. */
+  @FunctionalInterface
+  private interface Writer {
+    void write(Runnable waitForTheOther);
+  }
+
+  /**
+   * Reads, waits until the other writer has read too, then publishes. The read is what starts the
+   * transaction in PostgreSQL, so after the wait both are open and neither has seen the other.
+   */
+  private Writer publishingOnceBothHaveRead(Roster draft) {
+    return waitForTheOther -> {
+      repository.findByOrganisation(ACME);
+      waitForTheOther.run();
+      repository.save(draft.publishedUnder(A_CONSTRAINT_VERSION));
+    };
+  }
+
+  /** Publishes one roster, waits until the other writer has published one too, then another. */
+  private Writer publishingOneThenAnother(Roster first, Roster then) {
+    return waitForTheOther -> {
+      repository.save(first.publishedUnder(A_CONSTRAINT_VERSION));
+      waitForTheOther.run();
+      repository.save(then.publishedUnder(A_CONSTRAINT_VERSION));
+    };
+  }
+
+  /**
+   * Runs two writers at once, each in its own transaction on its own connection, and returns what
+   * refused them.
+   *
+   * <p>Each writer calls the {@code Runnable} it is given where it has to wait for the other, so a
+   * test decides what both have done before either goes on. The executor is waited for as well as
+   * stopped: a writer still running would keep its connection, and the next test's truncation would
+   * wait on it.
+   */
+  private List<Throwable> refusalsOf(Writer first, Writer second)
+      throws InterruptedException, TimeoutException {
+    TransactionTemplate transaction = new TransactionTemplate(PostgresDatabase.transactions());
+    CyclicBarrier together = new CyclicBarrier(2);
+    Runnable waitForTheOther =
+        () -> {
           try {
-            bothOpen.await(STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
+            together.await(STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
           } catch (InterruptedException | BrokenBarrierException | TimeoutException stuck) {
-            throw new IllegalStateException("The other writer never opened its transaction", stuck);
+            throw new IllegalStateException("The other writer never got there", stuck);
           }
-          repository.save(draft.publishedUnder(A_CONSTRAINT_VERSION));
-        });
+        };
+    ExecutorService writers = Executors.newFixedThreadPool(2);
+    List<Throwable> refusals = new ArrayList<>();
+    try {
+      List<Future<?>> running =
+          List.of(
+              writers.submit(
+                  () -> transaction.executeWithoutResult(status -> first.write(waitForTheOther))),
+              writers.submit(
+                  () -> transaction.executeWithoutResult(status -> second.write(waitForTheOther))));
+      for (Future<?> writer : running) {
+        try {
+          writer.get(STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
+        } catch (ExecutionException refused) {
+          refusals.add(refused.getCause());
+        }
+      }
+    } finally {
+      writers.shutdownNow();
+      if (!writers.awaitTermination(STUCK_AFTER_SECONDS, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("A writer is still running and holding its connection");
+      }
+    }
+    return refusals;
   }
 
   /**
@@ -348,7 +437,7 @@ class JdbcRosterRepositoryTest {
    * transaction runs on its own connection while the first is suspended, still holding the lock.
    */
   @Test
-  @Timeout(STUCK_AFTER_SECONDS)
+  @Timeout(value = STUCK_AFTER_SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
   void GivenOneTransactionHoldsAnOrganisationsPublications_WhenAnotherAsksForThem_ThenItWaits() {
     TransactionTemplate holder = new TransactionTemplate(PostgresDatabase.transactions());
     TransactionTemplate another = new TransactionTemplate(PostgresDatabase.transactions());
