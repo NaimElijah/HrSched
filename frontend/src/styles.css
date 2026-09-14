@@ -165,6 +165,16 @@ code {
   color: #6b665e;
 }
 
+.spans {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.stored {
+  margin: 0 0 0.3rem;
+  color: #5f5a52;
+}
+
 .failure {
   border-left: 3px solid var(--alarm);
   background: var(--alarm-bg);

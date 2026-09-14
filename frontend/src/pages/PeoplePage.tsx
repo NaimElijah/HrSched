@@ -16,6 +16,9 @@ export function PeoplePage() {
     () => workforce.findQualifications(identity),
     identityKey(identity),
   );
+  const qualificationNames = new Map(
+    (qualifications.value ?? []).map((qualification) => [qualification.id, qualification.name]),
+  );
 
   async function act(action: () => Promise<unknown>) {
     setFailure(null);
@@ -61,6 +64,7 @@ export function PeoplePage() {
           <tr>
             <th>Name</th>
             <th>Qualifications</th>
+            <th>Cannot work</th>
             <th>Grant</th>
             <th>Contracted minutes / week</th>
           </tr>
@@ -73,7 +77,27 @@ export function PeoplePage() {
                 <br />
                 <code>{employee.id}</code>
               </td>
-              <td>{employee.qualifications.length}</td>
+              <td>
+                {employee.qualifications.length === 0
+                  ? '—'
+                  : employee.qualifications
+                      .map((id) => qualificationNames.get(id) ?? id)
+                      .join(', ')}
+              </td>
+              <td>
+                {employee.unavailability.length === 0 ? (
+                  '—'
+                ) : (
+                  <ul className="spans">
+                    {employee.unavailability.map((period) => (
+                      <li key={`${period.start}|${period.end}`}>
+                        {new Date(period.start).toLocaleString()} to{' '}
+                        {new Date(period.end).toLocaleString()}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </td>
               <td>
                 <select
                   defaultValue=""
@@ -96,6 +120,12 @@ export function PeoplePage() {
                 </select>
               </td>
               <td>
+                {/* Beside the field, never in it: a prefilled number could be submitted unchosen. */}
+                <p className="stored">
+                  {employee.weeklyContractedMinutes === null
+                    ? 'None set'
+                    : `${employee.weeklyContractedMinutes} minutes a week`}
+                </p>
                 <ContractField
                   employee={employee.name}
                   onSubmit={(minutes) =>

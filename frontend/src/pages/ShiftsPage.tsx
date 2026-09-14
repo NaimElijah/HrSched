@@ -23,6 +23,9 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
     () => workforce.findQualifications(identity),
     identityKey(identity),
   );
+  const qualificationNames = new Map(
+    (qualifications.value ?? []).map((qualification) => [qualification.id, qualification.name]),
+  );
 
   async function define(event: React.FormEvent) {
     event.preventDefault();
@@ -122,7 +125,13 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
               <td>{new Date(shift.start).toLocaleString()}</td>
               <td>{new Date(shift.end).toLocaleString()}</td>
               <td>{shift.requiredHeadcount}</td>
-              <td>{shift.requiredQualifications.length}</td>
+              <td>
+                {shift.requiredQualifications.length === 0
+                  ? '—'
+                  : shift.requiredQualifications
+                      .map((id) => qualificationNames.get(id) ?? id)
+                      .join(', ')}
+              </td>
             </tr>
           ))}
         </tbody>
