@@ -85,6 +85,7 @@ class SwapServiceTest {
   /** Fixed, so the time a request records is something these tests state rather than tolerate. */
   private static final Instant RAISED_AT = Instant.parse("2026-10-01T09:30:00Z");
 
+  private CallLog log;
   private FakeShifts shifts;
   private FakeRosters rosters;
   private FakeConstraintSets constraintSets;
@@ -100,11 +101,12 @@ class SwapServiceTest {
 
   @BeforeEach
   void setUp() {
+    log = new CallLog();
     shifts = new FakeShifts();
-    rosters = new FakeRosters();
+    rosters = new FakeRosters(log);
     constraintSets = new FakeConstraintSets();
     workforce = new FakeWorkforce();
-    swaps = new FakeSwaps();
+    swaps = new FakeSwaps(log);
     notifier = new RecordingNotifier();
     audit = new RecordingAuditTrail();
     scheduling =
@@ -558,6 +560,27 @@ class SwapServiceTest {
   }
 
   /**
+   * An approval that waited for another has to decide from what that one committed, so the lock
+   * comes before the request is read, as well as its roster - not only before the publication it
+   * ends in (ADR-027). Read first, a request the other approval has just decided still looks
+   * pending, and the refusal names a superseded roster instead of saying it was already decided.
+   */
+  @Test
+  void
+      GivenAPendingSwap_WhenApproving_ThenTheOrganisationsPublicationsWaitBeforeTheRequestIsRead() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    log.forget();
+
+    service.approveSwap(scheduler(ACME), ACME, request);
+
+    assertThat(log.calls()).first().isEqualTo(CallLog.Call.LOCK_PUBLICATIONS);
+  }
+
+  /**
    * The colleague was told they were being asked; telling only the requester when it is refused
    * leaves them holding an open question nobody ever answers.
    */
@@ -716,6 +739,15 @@ class SwapServiceTest {
   private static final class FakeSwaps implements SwapRequestRepository {
 
     private final Map<SwapRequestId, SwapRequest> stored = new LinkedHashMap<>();
+    private final CallLog log;
+
+    /**
+     * @param log shared with the roster store, so reading a request is ordered against the
+     *     publication lock too
+     */
+    FakeSwaps(CallLog log) {
+      this.log = log;
+    }
 
     @Override
     public void save(SwapRequest request) {
@@ -724,12 +756,14 @@ class SwapServiceTest {
 
     @Override
     public Optional<SwapRequest> findById(OrganisationId organisation, SwapRequestId id) {
+      log.add(CallLog.Call.FIND_SWAP_REQUEST);
       return Optional.ofNullable(stored.get(id))
           .filter(request -> request.organisation().equals(organisation));
     }
 
     @Override
     public List<SwapRequest> findByOrganisation(OrganisationId organisation) {
+      log.add(CallLog.Call.FIND_SWAP_REQUESTS);
       return stored.values().stream()
           .filter(request -> request.organisation().equals(organisation))
           .toList();

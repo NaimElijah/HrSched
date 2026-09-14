@@ -1,20 +1,36 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import java.sql.SQLException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The tenant predicate this adapter promises, and the assignments a roster owns.
@@ -34,8 +50,39 @@ class JdbcRosterRepositoryTest {
   private static final TimeRange THE_WEEK =
       new TimeRange(Instant.parse("2026-09-07T00:00:00Z"), Instant.parse("2026-09-14T00:00:00Z"));
 
+  /** Shares Thursday to Sunday with {@link #THE_WEEK}. */
+  private static final TimeRange OVERLAPPING_WEEK =
+      new TimeRange(Instant.parse("2026-09-10T00:00:00Z"), Instant.parse("2026-09-17T00:00:00Z"));
+
+  /** Starts the instant {@link #THE_WEEK} ends, so the two touch without overlapping. */
+  private static final TimeRange THE_NEXT_WEEK =
+      new TimeRange(Instant.parse("2026-09-14T00:00:00Z"), Instant.parse("2026-09-21T00:00:00Z"));
+
   /** Invented to distinguish one stored version from another; not from any statute. */
   private static final int A_CONSTRAINT_VERSION = 3;
+
+  /**
+   * How long a racing writer may take before the test gives up on it. Far longer than a publication
+   * needs, including PostgreSQL's one-second wait before it resolves a deadlock, so reaching it
+   * means something is stuck rather than slow.
+   */
+  private static final long STUCK_AFTER_SECONDS = 30;
+
+  /** PostgreSQL's {@code deadlock_detected}: the SQLState a deadlock victim is aborted with. */
+  private static final String DEADLOCK_DETECTED = "40P01";
+
+  /**
+   * How long a probing transaction waits for the lock before giving up. Any wait at all proves the
+   * point; this only has to be long enough that a lock free to take is never mistaken for one held.
+   */
+  private static final String A_PROBE_WAIT = "200ms";
+
+  /**
+   * PostgreSQL's {@code lock_not_available}: the statement waited for a lock until {@code
+   * lock_timeout} ran out. Asserted by SQLState because Spring reports it as an uncategorised
+   * exception rather than as a lock failure, so the type would say nothing about the wait.
+   */
+  private static final String LOCK_NOT_AVAILABLE = "55P03";
 
   private final JdbcRosterRepository repository =
       new JdbcRosterRepository(PostgresDatabase.jdbcClient());
@@ -48,6 +95,10 @@ class JdbcRosterRepositoryTest {
 
   private static Roster draft(OrganisationId organisation) {
     return new Roster(RosterId.newId(), organisation, THE_WEEK);
+  }
+
+  private static Roster published(OrganisationId organisation, TimeRange period) {
+    return new Roster(RosterId.newId(), organisation, period).publishedUnder(A_CONSTRAINT_VERSION);
   }
 
   @Test
@@ -174,5 +225,312 @@ class JdbcRosterRepositoryTest {
     assertThat(repository.findByOrganisation(ACME))
         .extracting(Roster::assignments)
         .containsExactlyInAnyOrder(List.of(ada), List.of(grace));
+  }
+
+  /**
+   * R11 in the schema. Publishing supersedes before it publishes, so a writer only reaches this
+   * without having seen the other roster - which is why it is a conflict to reload and retry, not a
+   * bad request.
+   */
+  @Test
+  void GivenAPublishedRoster_WhenAnOverlappingOneIsStoredAsPublished_ThenItIsRefusedAsAConflict() {
+    repository.save(published(ACME, THE_WEEK));
+    Roster overlapping = published(ACME, OVERLAPPING_WEEK);
+
+    assertThatThrownBy(() -> repository.save(overlapping))
+        .isInstanceOf(RosterPublicationConflictException.class);
+  }
+
+  @Test
+  void GivenPublishedRostersThatOnlyTouch_WhenBothAreStored_ThenBothArePublished() {
+    repository.save(published(ACME, THE_WEEK));
+    repository.save(published(ACME, THE_NEXT_WEEK));
+
+    assertThat(repository.findByOrganisation(ACME))
+        .describedAs("a period's end is exclusive, so the next week starting then is no overlap")
+        .extracting(Roster::status)
+        .containsOnly(RosterStatus.PUBLISHED)
+        .hasSize(2);
+  }
+
+  @Test
+  void
+      GivenAnOverlappingPublishedRosterOfAnotherOrganisation_WhenPublishing_ThenItIsNotAConflict() {
+    repository.save(published(RIVAL, THE_WEEK));
+    Roster ours = published(ACME, OVERLAPPING_WEEK);
+
+    repository.save(ours);
+
+    assertThat(repository.findById(ACME, ours.id()))
+        .get()
+        .extracting(Roster::status)
+        .isEqualTo(RosterStatus.PUBLISHED);
+  }
+
+  /** History may overlap: a superseded roster governs nothing, so it blocks nothing. */
+  @Test
+  void GivenASupersededRoster_WhenAnOverlappingOneIsPublished_ThenItIsStored() {
+    repository.save(published(ACME, THE_WEEK).superseded());
+    Roster replacement = published(ACME, OVERLAPPING_WEEK);
+
+    repository.save(replacement);
+
+    assertThat(repository.findById(ACME, replacement.id()))
+        .get()
+        .extracting(Roster::status)
+        .isEqualTo(RosterStatus.PUBLISHED);
+  }
+
+  /** Generating a draft over a published week is how every replacement starts. */
+  @Test
+  void GivenAPublishedRoster_WhenAnOverlappingDraftIsStored_ThenItIsAccepted() {
+    repository.save(published(ACME, THE_WEEK));
+    Roster draft = new Roster(RosterId.newId(), ACME, OVERLAPPING_WEEK);
+
+    repository.save(draft);
+
+    assertThat(repository.findById(ACME, draft.id())).contains(draft);
+  }
+
+  /**
+   * The race the constraint exists for: two writers that each publish without seeing the other,
+   * because neither has committed. Publication takes a lock so that this cannot happen through the
+   * use cases (ADR-027), so this deliberately takes none - it is what stands behind any writer that
+   * forgets to.
+   *
+   * <p>Which writer is refused, and whether PostgreSQL reports it as an exclusion violation or
+   * picks one as a deadlock victim, depends on timing. That exactly one is refused does not.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenTwoTransactionsOpenAtOnce_WhenBothPublishOverlappingRosters_ThenExactlyOneIsRefused()
+      throws Exception {
+    Roster first = draft(ACME);
+    Roster second = new Roster(RosterId.newId(), ACME, OVERLAPPING_WEEK);
+    repository.save(first);
+    repository.save(second);
+
+    List<Throwable> refusals =
+        refusalsOf(publishingOnceBothHaveRead(first), publishingOnceBothHaveRead(second));
+
+    assertThat(refusals).singleElement().isInstanceOf(RosterPublicationConflictException.class);
+    assertThat(repository.findByOrganisation(ACME))
+        .filteredOn(roster -> roster.status() == RosterStatus.PUBLISHED)
+        .hasSize(1);
+  }
+
+  /**
+   * The other way PostgreSQL reports the same collision, forced rather than hoped for.
+   *
+   * <p>Each writer first publishes a roster the other's does not touch, then one that overlaps only
+   * the other's first. Neither can commit before its second save, and each second save waits on the
+   * other's uncommitted row, so whichever asks first PostgreSQL has to abort one of them as a
+   * deadlock victim. Nothing here depends on timing.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenTwoWritersEachWaitingOnTheOther_WhenBothPublish_ThenTheVictimIsRefusedAsAConflict()
+      throws Exception {
+    Roster thisWeek = draft(ACME);
+    Roster nextWeek = new Roster(RosterId.newId(), ACME, THE_NEXT_WEEK);
+    Roster aDayOfNextWeek =
+        new Roster(
+            RosterId.newId(),
+            ACME,
+            new TimeRange(
+                Instant.parse("2026-09-15T00:00:00Z"), Instant.parse("2026-09-16T00:00:00Z")));
+    Roster aDayOfThisWeek =
+        new Roster(
+            RosterId.newId(),
+            ACME,
+            new TimeRange(
+                Instant.parse("2026-09-08T00:00:00Z"), Instant.parse("2026-09-09T00:00:00Z")));
+    for (Roster draft : List.of(thisWeek, nextWeek, aDayOfNextWeek, aDayOfThisWeek)) {
+      repository.save(draft);
+    }
+
+    List<Throwable> refusals =
+        refusalsOf(
+            publishingOneThenAnother(thisWeek, aDayOfNextWeek),
+            publishingOneThenAnother(nextWeek, aDayOfThisWeek));
+
+    assertThat(refusals).hasSize(1);
+    assertThat(refusals.getFirst())
+        .isInstanceOf(RosterPublicationConflictException.class)
+        .rootCause()
+        .isInstanceOfSatisfying(
+            SQLException.class,
+            cause -> assertThat(cause.getSQLState()).isEqualTo(DEADLOCK_DETECTED));
+    assertThat(repository.findByOrganisation(ACME))
+        .describedAs("the writer that was not the victim published both of its rosters")
+        .filteredOn(roster -> roster.status() == RosterStatus.PUBLISHED)
+        .hasSize(2);
+  }
+
+  /**
+   * A deadlock that has nothing to do with publishing. Two writers each save one draft and then the
+   * other's, in opposite orders, so each waits on the row the other holds and PostgreSQL aborts
+   * one. Nothing was published, so calling that a publication conflict would be false - and it
+   * would be counted as evidence that some writer skipped the publication lock.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenTwoWritersDeadlockedOverDrafts_WhenOneIsAborted_ThenItIsNotAPublicationConflict()
+      throws Exception {
+    Roster one = draft(ACME);
+    Roster other = new Roster(RosterId.newId(), ACME, THE_NEXT_WEEK);
+    repository.save(one);
+    repository.save(other);
+
+    List<Throwable> refusals =
+        refusalsOf(savingOneThenAnother(one, other), savingOneThenAnother(other, one));
+
+    assertThat(refusals).hasSize(1);
+    assertThat(refusals.getFirst())
+        .isNotInstanceOf(RosterPublicationConflictException.class)
+        .rootCause()
+        .isInstanceOfSatisfying(
+            SQLException.class,
+            cause -> assertThat(cause.getSQLState()).isEqualTo(DEADLOCK_DETECTED));
+  }
+
+  /** Saves one draft, waits until the other writer has saved one too, then saves another. */
+  private Writer savingOneThenAnother(Roster first, Roster then) {
+    return waitForTheOther -> {
+      repository.save(first);
+      waitForTheOther.run();
+      repository.save(then);
+    };
+  }
+
+  /** One writer's work, told when to wait for the other writer to reach the same point. */
+  @FunctionalInterface
+  private interface Writer {
+    void write(Runnable waitForTheOther);
+  }
+
+  /**
+   * Reads, waits until the other writer has read too, then publishes. The read is what starts the
+   * transaction in PostgreSQL, so after the wait both are open and neither has seen the other.
+   */
+  private Writer publishingOnceBothHaveRead(Roster draft) {
+    return waitForTheOther -> {
+      repository.findByOrganisation(ACME);
+      waitForTheOther.run();
+      repository.save(draft.publishedUnder(A_CONSTRAINT_VERSION));
+    };
+  }
+
+  /** Publishes one roster, waits until the other writer has published one too, then another. */
+  private Writer publishingOneThenAnother(Roster first, Roster then) {
+    return waitForTheOther -> {
+      repository.save(first.publishedUnder(A_CONSTRAINT_VERSION));
+      waitForTheOther.run();
+      repository.save(then.publishedUnder(A_CONSTRAINT_VERSION));
+    };
+  }
+
+  /**
+   * Runs two writers at once, each in its own transaction on its own connection, and returns what
+   * refused them.
+   *
+   * <p>Each writer calls the {@code Runnable} it is given where it has to wait for the other, so a
+   * test decides what both have done before either goes on. The executor is waited for as well as
+   * stopped: a writer still running would keep its connection, and the next test's truncation would
+   * wait on it.
+   */
+  private List<Throwable> refusalsOf(Writer first, Writer second)
+      throws InterruptedException, TimeoutException {
+    TransactionTemplate transaction = new TransactionTemplate(PostgresDatabase.transactions());
+    CyclicBarrier together = new CyclicBarrier(2);
+    Runnable waitForTheOther =
+        () -> {
+          try {
+            together.await(STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
+          } catch (InterruptedException | BrokenBarrierException | TimeoutException stuck) {
+            throw new IllegalStateException("The other writer never got there", stuck);
+          }
+        };
+    ExecutorService writers = Executors.newFixedThreadPool(2);
+    List<Throwable> refusals = new ArrayList<>();
+    try {
+      List<Future<?>> running =
+          List.of(
+              writers.submit(
+                  () -> transaction.executeWithoutResult(status -> first.write(waitForTheOther))),
+              writers.submit(
+                  () -> transaction.executeWithoutResult(status -> second.write(waitForTheOther))));
+      for (Future<?> writer : running) {
+        try {
+          writer.get(STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
+        } catch (ExecutionException refused) {
+          refusals.add(refused.getCause());
+        }
+      }
+    } finally {
+      writers.shutdownNow();
+      if (!writers.awaitTermination(STUCK_AFTER_SECONDS, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("A writer is still running and holding its connection");
+      }
+    }
+    return refusals;
+  }
+
+  /**
+   * The lock ADR-027 relies on, against the real database: while one transaction holds an
+   * organisation's publications, another transaction asking for them waits, and one asking for a
+   * different organisation's does not.
+   *
+   * <p>The waiting is shown by giving the second transaction a lock timeout, so a wait becomes a
+   * refusal the test can see rather than a pause it would have to time. Single-threaded: the second
+   * transaction runs on its own connection while the first is suspended, still holding the lock.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenOneTransactionHoldsAnOrganisationsPublications_WhenAnotherAsksForThem_ThenItWaits() {
+    TransactionTemplate holder = new TransactionTemplate(PostgresDatabase.transactions());
+    TransactionTemplate another = new TransactionTemplate(PostgresDatabase.transactions());
+    another.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+    holder.executeWithoutResult(
+        held -> {
+          repository.lockPublicationsOf(ACME);
+
+          assertThatThrownBy(() -> another.executeWithoutResult(probe -> askBrieflyFor(ACME)))
+              .rootCause()
+              .isInstanceOfSatisfying(
+                  SQLException.class,
+                  cause -> assertThat(cause.getSQLState()).isEqualTo(LOCK_NOT_AVAILABLE));
+          assertThatCode(() -> another.executeWithoutResult(probe -> askBrieflyFor(RIVAL)))
+              .describedAs("another organisation's publications do not wait on this one's")
+              .doesNotThrowAnyException();
+        });
+
+    assertThatCode(() -> another.executeWithoutResult(probe -> askBrieflyFor(ACME)))
+        .describedAs("the lock ends with the transaction that took it")
+        .doesNotThrowAnyException();
+  }
+
+  /**
+   * Outside a transaction the lock would be released the moment the statement taking it ended, so
+   * nothing would wait for anything and the caller would not know. It is refused instead, so a use
+   * case that is not wrapped in its transaction fails loudly rather than racing quietly (ADR-027).
+   */
+  @Test
+  void GivenNoTransaction_WhenLockingAnOrganisationsPublications_ThenItIsRefused() {
+    assertThatThrownBy(() -> repository.lockPublicationsOf(ACME))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  /**
+   * Asks for an organisation's publications, giving up after a short wait instead of waiting on.
+   */
+  private void askBrieflyFor(OrganisationId organisation) {
+    PostgresDatabase.jdbcClient()
+        .sql("SELECT set_config('lock_timeout', :wait, true)")
+        .param("wait", A_PROBE_WAIT)
+        .query(String.class)
+        .single();
+    repository.lockPublicationsOf(organisation);
   }
 }

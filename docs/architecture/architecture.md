@@ -182,6 +182,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 | `spring-boot-starter-jdbc` | `JdbcClient`, the connection pool, and the transaction manager | [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md). Chosen over JPA because the domain may not carry `jakarta.persistence` annotations. |
 | `spring-boot-starter-flyway` + `flyway-database-postgresql` | Versioned schema migrations, applied on startup | ADR-004. New in Boot 4.x; 3.x had no Flyway starter. |
 | `postgresql` | The JDBC driver | ADR-004. Runtime scope; nothing compiles against it. |
+| `btree_gist` (PostgreSQL extension) | The `uuid` equality the `roster_one_published_per_moment` exclusion constraint indexes on | [ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md). Ships with PostgreSQL and is trusted, so the migrating role needs `CREATE` on the database, not superuser. Installed by migration `V2`. |
 | `spring-boot-docker-compose` | Starting the local database on `./mvnw spring-boot:run` | ADR-004, and it keeps `scripts/run.mjs` free of build logic as [ADR-014](../ADRs/ADR-014-root-task-runner.md) requires. Optional scope, so it never reaches a deployed artifact. |
 | `testcontainers-postgresql`, `testcontainers-junit-jupiter`, `spring-boot-testcontainers` | The real database the tests run against | ADR-004. Docker is required to build; there is deliberately no skip-when-absent. Pinned by the Testcontainers BOM, which the Boot BOM does not manage. |
 | `spring-boot-starter-opentelemetry` | A W3C trace id per request, in the MDC and on the response | [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md). Supplies the OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters; export is switched off until Q19 is answered. |
@@ -352,6 +353,13 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   published roster of that organisation whose period overlaps as `SUPERSEDED`. Overlap rather than
   equality decides it, because a partly-overlapping published roster would otherwise still govern
   the days it shares. Whether a partial replacement should supersede the old roster whole is Q16.
+- **Two overlapping published rosters cannot be stored.** Migration `V2` adds the
+  `roster_one_published_per_moment` exclusion constraint over the organisation and the roster's
+  period, for `PUBLISHED` rows only. A writer that publishes without seeing a publication still in
+  flight is refused by PostgreSQL rather than leaving two rosters authoritative. PostgreSQL reports
+  that as an exclusion violation, or, when two such writers wait on each other, by aborting one as
+  a deadlock victim. `JdbcRosterRepository` turns either into `RosterPublicationConflictException`,
+  which is answered 409 ([ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md)).
 - **Assigning by hand asks the same questions generation asks, and no more.** `assign` enforces the
   three rules that are about one assignment — the person belongs to the organisation (R5), holds
   what the shift demands (R4), and has not declared they cannot work when it runs (F6) — plus that
@@ -389,10 +397,18 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   application layer and so `@Transactional` cannot go where a reader would look for it
   ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)). A nested use case joins
   its caller's transaction, which is what makes approving a swap atomic.
-- **Read-modify-write is now atomic, but still not optimistic.** Two concurrent publishes of one
-  draft serialise rather than interleaving, so neither is lost half-way; but there is no version
-  column, so the later one still wins outright rather than being rejected. Adding one would change
-  port signatures, which is a decision of its own.
+- **Two edits of one draft are atomic, but the later still wins.** Two concurrent saves of one
+  roster serialise on its row rather than interleaving, so neither is left half-done; but there is
+  no version column, so the later one overwrites the earlier outright rather than being rejected.
+  Adding one would change port signatures, which is a decision of its own.
+- **Publications within one organisation take turns.** `publish` and `approveSwap` first call
+  `RosterRepository.lockPublicationsOf`, a transaction-scoped PostgreSQL advisory lock per
+  organisation, before reading anything they decide from. A second publication therefore waits,
+  then reads what the first committed: it supersedes that roster as R11 says, and a second swap
+  approval finds its request already decided or its roster no longer the published one. The lock is
+  a convention every writer has to follow; the `roster_one_published_per_moment` constraint is what
+  holds for one that does not
+  ([ADR-027](../ADRs/ADR-027-take-turns-publishing-within-an-organisation.md)).
 - **Three reads were written for a hash map and have not been revisited.** `supersedeOverlapping`
   and `findOwnSchedule` call `RosterRepository.findByOrganisation`, which now loads every roster the
   tenant has ever had together with all of their assignments, to find the few that overlap one week;

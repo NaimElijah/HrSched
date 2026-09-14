@@ -228,6 +228,9 @@ public class SchedulingService
   @Override
   public Roster publish(Actor actor, OrganisationId organisation, RosterId rosterId) {
     authorise(actor, organisation, MAY_SCHEDULE);
+    // Before anything is read. What this supersedes is decided from what it reads, and a
+    // publication still in flight would otherwise be invisible to it (ADR-027).
+    rosters.lockPublicationsOf(organisation);
     Roster draft =
         rosters
             .findById(organisation, rosterId)

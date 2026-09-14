@@ -159,6 +159,10 @@ public class SwapService implements RequestSwapsUseCase {
   @Override
   public Roster approveSwap(Actor actor, OrganisationId organisation, SwapRequestId id) {
     authorise(actor, organisation, MAY_DECIDE);
+    // Before the request and its roster are read, so an approval that waited for another decides
+    // from what that one committed rather than building on a roster it has just replaced. The
+    // publication below takes the same lock again, and already holds it (ADR-027).
+    rosters.lockPublicationsOf(organisation);
     SwapRequest request = pending(organisation, id);
     Roster current = publishedRoster(organisation, request.roster());
     if (!current.assignments().contains(request.given())) {
