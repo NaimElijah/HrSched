@@ -87,6 +87,14 @@ export function RosterBoard({
   const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (employee: string): string => personById.get(employee)?.name ?? employee;
 
+  // Who is assigned is the roster's to say, not the shift listing's. When a shift cannot be placed —
+  // its listing failed, or does not include it — the assignment is still shown, by identifier.
+  const placed = new Set((shifts.value ?? []).map((shift) => shift.id));
+  const unplaced =
+    roster === null || shifts.busy
+      ? []
+      : roster.assignments.filter((assignment) => !placed.has(assignment.shift));
+
   /** @returns whether the change was stored, so a control can reset only on success */
   async function change(action: () => Promise<Roster>): Promise<boolean> {
     if (changing) {
@@ -169,6 +177,20 @@ export function RosterBoard({
               </ul>
             </div>
           ))}
+
+          {unplaced.length === 0 ? null : (
+            <div className="day">
+              <h4>On shifts that could not be shown</h4>
+              <ul className="assignees">
+                {unplaced.map((assignment) => (
+                  <li key={`${assignment.shift}|${assignment.employee}`}>
+                    <span>{nameOf(assignment.employee)}</span> — shift{' '}
+                    <code>{assignment.shift}</code>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       )}
     </section>

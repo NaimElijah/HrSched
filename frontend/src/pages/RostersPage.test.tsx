@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dayLabel, timeLabel } from '../components/localDates';
-import { ActingAsProvider } from '../identity/ActingAs';
+import { ActingAsProvider, useActingAs } from '../identity/ActingAs';
 import { callsTo, routeTo, type Answer } from '../test-support/routeTo';
 import { RostersPage } from './RostersPage';
 
@@ -72,6 +72,16 @@ function renderPage() {
     <ActingAsProvider>
       <RostersPage span={SPAN} />
     </ActingAsProvider>,
+  );
+}
+
+/** Changes the acting role from inside the provider, as the identity bar does. */
+function BecomeAnEmployee() {
+  const { setRole } = useActingAs();
+  return (
+    <button type="button" onClick={() => setRole('EMPLOYEE')}>
+      Become an employee
+    </button>
   );
 }
 
@@ -343,6 +353,51 @@ describe('the board of a draft', () => {
 
     await within(board).findByRole('button', { name: /^Remove Grace from/ });
     expect(within(board).getByLabelText(/^Who to assign/)).toHaveValue('');
+  });
+
+  /**
+   * An EMPLOYEE may not read a whole roster (R12). A board that kept what it last showed after the
+   * identity changed would put every assignee, and the controls, in front of exactly that role.
+   */
+  it('GivenAnEditedBoard_WhenTheActingIdentityChanges_ThenWhatItShowedIsNotKept', async () => {
+    aDraft({ 'POST /api/rosters/roster-1/assignments': { status: 200, body: WITH_GRACE } });
+    render(
+      <ActingAsProvider>
+        <BecomeAnEmployee />
+        <RostersPage span={SPAN} />
+      </ActingAsProvider>,
+    );
+    const board = await openBoard();
+    await assignGrace(board);
+    await within(board).findByRole('button', { name: /^Remove Grace from/ });
+    const refused = { status: 403, body: { detail: 'Your role does not permit this.' } };
+    aDraft({
+      '/api/rosters': refused,
+      '/api/rosters/roster-1': refused,
+      '/api/employees': refused,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Become an employee' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^Remove/ })).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByLabelText(/^Who to assign/)).not.toBeInTheDocument();
+  });
+
+  /** A Scheduler about to publish must see who is on the draft even when its shifts will not load. */
+  it('GivenShiftsThatCannotBeLoaded_WhenOpened_ThenWhoIsAssignedIsStillShown', async () => {
+    aDraft({
+      '/api/shifts': { status: 500, body: { detail: 'The shift store is unavailable.' } },
+    });
+    renderPage();
+
+    const board = await openBoard();
+
+    expect(await within(board).findByRole('alert')).toHaveTextContent(
+      'The shift store is unavailable.',
+    );
+    expect(await within(board).findByText('Ada')).toBeInTheDocument();
   });
 
   it('GivenAPublishedRoster_WhenOpened_ThenThereAreNoEditingControls', async () => {

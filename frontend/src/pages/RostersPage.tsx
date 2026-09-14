@@ -108,7 +108,9 @@ export function RostersPage({ span }: { span: { from: string; to: string } }) {
 
       {selected === null ? null : (
         <RosterBoard
-          key={`${selected}#${revision}`}
+          // Rebuilt for a different acting identity as well: what one identity was shown, and the
+          // roster it had changed, must not stay on screen for another that may not read it.
+          key={`${identityKey(identity)}#${selected}#${revision}`}
           roster={selected}
           people={people.value ?? []}
           onChanged={rosters.reload}
