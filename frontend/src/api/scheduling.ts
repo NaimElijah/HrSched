@@ -1,4 +1,4 @@
-import { api, type ActingIdentity } from './client';
+import { api, path, type ActingIdentity } from './client';
 
 /** A span of work that needs covering. Mirrors ShiftResponse. */
 export interface Shift {
@@ -78,7 +78,7 @@ export const scheduling = {
 
   /** Throws an ApiError with `isRuleBreach` and a populated `violations` when the rules refuse it. */
   publishRoster: (identity: ActingIdentity, id: string): Promise<Roster> =>
-    api.post<Roster>(identity, `/api/rosters/${id}/publication`),
+    api.post<Roster>(identity, path`/api/rosters/${id}/publication`),
 
   currentConstraints: (identity: ActingIdentity): Promise<ConstraintSet> =>
     api.get<ConstraintSet>(identity, '/api/constraints'),

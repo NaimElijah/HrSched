@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, identityKey } from './client';
+import { api, identityKey, path } from './client';
 import type { ActingIdentity } from './client';
 import { ApiError } from './problem';
 
@@ -212,6 +212,23 @@ describe('the reload key', () => {
 
     const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
     expect(headers.get('X-Employee')).toBeNull();
+  });
+});
+
+/**
+ * An identifier is one path segment and has to stay one. `fetch` resolves `..` and treats `/` as a
+ * separator, so an unencoded value can quietly address a different endpoint — and the organisation
+ * in the identity bar is typed by hand.
+ */
+describe('building a path', () => {
+  it('GivenAnIdentifierContainingASlash_WhenBuildingAPath_ThenItStaysOneSegment', () => {
+    expect(path`/api/organisations/${'../employees'}`).toBe('/api/organisations/..%2Femployees');
+  });
+
+  it('GivenOrdinaryIdentifiers_WhenBuildingAPath_ThenTheyArePlacedUnchanged', () => {
+    expect(path`/api/employees/${'e-1'}/qualifications/${'q-1'}`).toBe(
+      '/api/employees/e-1/qualifications/q-1',
+    );
   });
 });
 

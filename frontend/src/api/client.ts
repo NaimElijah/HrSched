@@ -93,6 +93,24 @@ export function identityKey(identity: ActingIdentity): string {
   return `${identity.organisation}|${identity.user}|${identity.role}|${identity.employee ?? ''}`;
 }
 
+/**
+ * Builds an API path, encoding every identifier interpolated into it.
+ *
+ * An identifier is one path segment and has to stay one: `fetch` resolves `..` and splits on `/`,
+ * so an unencoded value can quietly address a different endpoint. Every path carrying an identifier
+ * is built with this, whether the identifier came from the server or was typed by hand.
+ *
+ * @param segments the literal parts of the path
+ * @param identifiers the values placed between them
+ * @returns the path, with each identifier percent-encoded
+ */
+export function path(segments: TemplateStringsArray, ...identifiers: readonly string[]): string {
+  return String.raw(
+    { raw: segments },
+    ...identifiers.map((identifier) => encodeURIComponent(identifier)),
+  );
+}
+
 export const api = {
   get: <T>(identity: ActingIdentity, path: string): Promise<T> => request<T>(identity, path),
 
