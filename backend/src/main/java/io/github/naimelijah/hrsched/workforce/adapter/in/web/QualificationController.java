@@ -4,6 +4,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.workforce.application.port.in.DefineQualificationCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.ManageQualificationsUseCase;
+import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
@@ -54,27 +55,30 @@ public class QualificationController {
     return manageQualifications
         .findQualifications(actor, ActorFromHeaders.organisationOf(organisation))
         .stream()
-        .map(
-            qualification ->
-                new QualificationResponse(qualification.id().value(), qualification.name()))
+        .map(QualificationResponse::from)
         .toList();
   }
 
+  /**
+   * Reads one qualification. Any member of the organisation may, as for the listing.
+   *
+   * @param id the qualification to read
+   * @return it
+   * @throws UnknownQualificationException answered as a 404 problem detail when this organisation
+   *     defines none by that identity
+   */
   @GetMapping("/{id}")
-  public ResponseEntity<QualificationResponse> find(
+  public QualificationResponse find(
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
       @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @PathVariable UUID id) {
     Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    QualificationId qualification = new QualificationId(id);
     return manageQualifications
-        .findQualification(
-            actor, ActorFromHeaders.organisationOf(organisation), new QualificationId(id))
-        .map(
-            qualification ->
-                new QualificationResponse(qualification.id().value(), qualification.name()))
-        .map(ResponseEntity::ok)
-        .orElseGet(() -> ResponseEntity.notFound().build());
+        .findQualification(actor, ActorFromHeaders.organisationOf(organisation), qualification)
+        .map(QualificationResponse::from)
+        .orElseThrow(() -> new UnknownQualificationException(qualification));
   }
 }

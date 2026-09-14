@@ -11,6 +11,7 @@ import io.github.naimelijah.hrsched.workforce.application.port.in.GrantQualifica
 import io.github.naimelijah.hrsched.workforce.application.port.in.ManageEmployeesUseCase;
 import io.github.naimelijah.hrsched.workforce.application.port.in.SetContractTermsCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.StatePreferenceCommand;
+import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeException;
 import java.net.URI;
 import java.time.Duration;
 import java.util.List;
@@ -73,19 +74,27 @@ public class EmployeeController {
         .toList();
   }
 
+  /**
+   * Reads one person, authorised as the listing is.
+   *
+   * @param id the employee to read
+   * @return them, carrying the same absences and contract the listing does
+   * @throws UnknownEmployeeException answered as a 404 problem detail when this organisation holds
+   *     nobody by that identity; a role that may not list people is answered 403 before that
+   */
   @GetMapping("/{id}")
-  public ResponseEntity<EmployeeResponse> find(
+  public EmployeeResponse find(
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
       @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @PathVariable UUID id) {
     Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    EmployeeId employee = new EmployeeId(id);
     return manageEmployees
-        .findEmployee(actor, ActorFromHeaders.organisationOf(organisation), new EmployeeId(id))
+        .findEmployee(actor, ActorFromHeaders.organisationOf(organisation), employee)
         .map(EmployeeResponse::from)
-        .map(ResponseEntity::ok)
-        .orElseGet(() -> ResponseEntity.notFound().build());
+        .orElseThrow(() -> new UnknownEmployeeException(employee));
   }
 
   @PutMapping("/{id}/qualifications/{qualification}")

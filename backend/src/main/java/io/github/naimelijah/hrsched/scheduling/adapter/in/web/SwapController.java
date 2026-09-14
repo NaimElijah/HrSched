@@ -4,6 +4,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.RequestSwapCo
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RequestSwapsUseCase;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownSwapRequestException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import java.net.URI;
 import java.util.List;
@@ -79,20 +80,27 @@ public class SwapController {
         .toList();
   }
 
+  /**
+   * Reads one swap request, exactly when the listing would show it to the caller.
+   *
+   * @param id the swap request to read
+   * @return it
+   * @throws UnknownSwapRequestException answered as a 404 problem detail both when there is no such
+   *     request and when the caller is not party to it, so a response cannot tell the two apart
+   */
   @GetMapping("/{id}")
-  public ResponseEntity<SwapRequestResponse> find(
+  public SwapRequestResponse find(
       @RequestHeader("X-Organisation") String organisation,
       @RequestHeader("X-User") String user,
       @RequestHeader("X-Role") String role,
       @RequestHeader(value = "X-Employee", required = false) String actingAs,
       @PathVariable UUID id) {
     Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    SwapRequestId request = new SwapRequestId(id);
     return requestSwaps
-        .findSwapRequest(
-            actor, ActorFromHeaders.organisationOf(organisation), new SwapRequestId(id))
+        .findSwapRequest(actor, ActorFromHeaders.organisationOf(organisation), request)
         .map(SwapRequestResponse::from)
-        .map(ResponseEntity::ok)
-        .orElseGet(() -> ResponseEntity.notFound().build());
+        .orElseThrow(() -> new UnknownSwapRequestException(request));
   }
 
   @PostMapping("/{id}/approval")

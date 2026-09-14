@@ -4,6 +4,7 @@ import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHtt
 import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHttpRequests.as;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -191,6 +192,7 @@ class QualificationHttpTest {
 
     mockMvc
         .perform(as(get(theirs), anOrganisation(mockMvc), "ADMIN"))
-        .andExpect(status().isNotFound());
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
 }
