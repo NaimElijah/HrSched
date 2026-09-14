@@ -6,6 +6,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
@@ -32,6 +34,8 @@ public final class PostgresDatabase {
   private static final PostgreSQLContainer CONTAINER = startContainer();
   private static final DataSource DATA_SOURCE = migratedDataSource();
   private static final JdbcClient JDBC_CLIENT = JdbcClient.create(DATA_SOURCE);
+  private static final PlatformTransactionManager TRANSACTIONS =
+      new DataSourceTransactionManager(DATA_SOURCE);
 
   private PostgresDatabase() {}
 
@@ -63,6 +67,20 @@ public final class PostgresDatabase {
    */
   public static JdbcClient jdbcClient() {
     return JDBC_CLIENT;
+  }
+
+  /**
+   * Transactions over the same pool {@link #jdbcClient()} draws from, so a statement made through
+   * that client inside one of them joins it.
+   *
+   * <p>For an adapter test that has to hold a transaction open while something else happens: two
+   * writers racing, or a second connection finding what the first one holds. Everything else runs
+   * in autocommit and needs none.
+   *
+   * @return a transaction manager over the migrated schema
+   */
+  public static PlatformTransactionManager transactions() {
+    return TRANSACTIONS;
   }
 
   /**

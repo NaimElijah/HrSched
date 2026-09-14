@@ -464,7 +464,7 @@ through `jq` to read it locally.
 | `hrsched_shifts_required_places` | Places each generation was asked to fill |
 | `hrsched_shifts_uncovered_places` | Places it could not fill without breaking a rule — the product's own success metric, and the ratio of the two is coverage |
 | `hrsched_access_denied_total{kind}` | Refusals, split into `cross_tenant` and `role`. A rise in `cross_tenant` is a security signal, not a usage one — and it is the only way to tell that 404 apart from an ordinary miss |
-| `hrsched_rosters_refused_total{reason}` | Publications refused by the working-time rules, or because the work could not be checked |
+| `hrsched_rosters_refused_total{reason}` | Publications refused by the working-time rules, because the work could not be checked, or because an overlapping roster was published at the same time (`concurrent_publication`) |
 | `hrsched_changes_total{context,change}` | Every recorded state change, by context and kind |
 
 Exposure is an allow list. `loggers`, `env` and `heapdump` are deliberately shut, and
@@ -502,6 +502,8 @@ blocked on the same missing environment.
 | [ADR-023](docs/ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md) | A use case is one transaction, applied at the composition root | A proxy nothing in the service hints at; an audit entry can now outlive the change it records |
 | [ADR-024](docs/ADRs/ADR-024-answer-unbindable-requests-with-a-problem-detail.md) | A request Spring cannot bind is answered with a problem detail, from one fallback handler | Three exception types listed by hand; 405, 415 and unmapped paths still answer with Spring's default body |
 | [ADR-025](docs/ADRs/ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md) | A draft roster is edited through a picker and buttons on a board, not by drag and drop | Moving somebody is two actions; the picker offers people the backend will refuse |
+| [ADR-026](docs/ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md) | Two overlapping published rosters of one organisation cannot be stored: an exclusion constraint, refused with 409 | The database needs the `btree_gist` extension; a database already holding such a pair fails to migrate |
+| [ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md) | Publications within one organisation take turns, under a transaction-scoped advisory lock | Publications in one tenant serialise; a port gained a method, and the lock is a convention the constraint stands behind |
 
 Still open and blocking: **ADR-010** (objectives) and **ADR-011** (authentication). See the
 [ADR index](docs/ADRs/).
@@ -545,10 +547,12 @@ domain can now be modelled — multi-tenant, three roles, and working-time rules
 - **Nothing automated proves the UI and the API agree.** The typed client is written by hand from
   the Java records, so a DTO change can drift silently. There is no contract test and no browser
   test — see ADR-013 for the trigger to add one.
-- **A concurrent write is atomic but not optimistic.** Every use case is one transaction
-  (ADR-023), so two concurrent publishes of one draft serialise rather than interleaving and
-  neither is left half-done. There is still no version column, so the later one wins outright
-  rather than being rejected — adding one would change port signatures.
+- **A concurrent edit of one draft is atomic but not optimistic.** Every use case is one
+  transaction (ADR-023), so two concurrent saves of one roster serialise rather than interleaving
+  and neither is left half-done. There is still no version column, so the later one wins outright
+  rather than being rejected — adding one would change port signatures. Publications are
+  different: within one organisation they take turns (ADR-027), and the schema refuses two
+  overlapping published rosters from any writer that does not (ADR-026).
 - **Three reads still assume a hash map.** Superseding on publish and viewing one's own schedule
   both load every roster a tenant ever had; checking constraints fetches each assignment's shift
   one at a time; and every child row is written with its own `INSERT`. Free against a map, not

@@ -32,6 +32,8 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-023](ADR-023-the-transaction-boundary-is-the-use-case.md) | Make the use case the transaction boundary, wrapped at the composition root | Accepted | 2026-09-06 |
 | [ADR-024](ADR-024-answer-unbindable-requests-with-a-problem-detail.md) | Answer a request Spring cannot bind with a problem detail, from one fallback handler | Accepted | 2026-09-14 |
 | [ADR-025](ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md) | Edit a draft roster through controls on a board, not by drag and drop | Accepted | 2026-09-14 |
+| [ADR-026](ADR-026-make-overlapping-published-rosters-unrepresentable.md) | Make two overlapping published rosters of one organisation unrepresentable in the schema | Accepted | 2026-09-14 |
+| [ADR-027](ADR-027-take-turns-publishing-within-an-organisation.md) | Make publications within one organisation take turns, with a transaction-scoped advisory lock | Accepted | 2026-09-14 |
 
 ## Decisions waiting to be recorded
 
