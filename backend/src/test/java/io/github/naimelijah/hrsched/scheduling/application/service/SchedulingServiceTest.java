@@ -760,16 +760,17 @@ class SchedulingServiceTest {
 
   /**
    * Publishing decides what to supersede from what it reads, so the organisation's publications
-   * have to be held before anything is read, or a publication in flight is missed (ADR-027).
+   * have to be held before that, or a publication in flight is missed (ADR-027). The first thing
+   * publication reads is the draft itself, so a lock taken any later than this is caught here.
    */
   @Test
-  void GivenAScheduler_WhenPublishing_ThenTheOrganisationsPublicationsWaitBeforeAnythingIsRead() {
+  void GivenAScheduler_WhenPublishing_ThenTheOrganisationsPublicationsWaitBeforeAnyRosterIsRead() {
     Roster draft = emptyDraft(ACME);
-    rosters.forgetCalls();
+    rosters.log().forget();
 
     service.publish(scheduler(ACME), ACME, draft.id());
 
-    assertThat(rosters.calls()).first().isEqualTo(FakeRosters.Call.LOCK_PUBLICATIONS);
+    assertThat(rosters.log().calls()).first().isEqualTo(CallLog.Call.LOCK_PUBLICATIONS);
   }
 
   @Test
