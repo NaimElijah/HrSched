@@ -79,7 +79,9 @@ public interface PlanRostersUseCase {
    *     it puts anybody on two shifts at once, whatever the rules say. Checked before the rules
    * @throws RosterNotCompliantException if it breaks any rule. There is no override
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException
-   *     if a roster overlapping it was published at the same time; reload and publish again
+   *     if a roster overlapping it was published at the same time by a writer that did not take
+   *     turns. Publishing through this port always does (ADR-027), so this means some other writer
+   *     skipped the publication lock (ADR-026)
    */
   Roster publish(Actor actor, OrganisationId organisation, RosterId roster);
 

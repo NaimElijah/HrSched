@@ -15,8 +15,9 @@ public interface RosterRepository {
    *
    * @param roster the roster as it now is
    * @throws RosterPublicationConflictException if it is published and overlaps another published
-   *     roster of its organisation. Publication supersedes before it publishes, so this means
-   *     another publication was in flight at the same time (ADR-026)
+   *     roster of its organisation. Publication supersedes before it publishes, and takes turns
+   *     through {@link #lockPublicationsOf}, so this means another writer published without taking
+   *     that lock (ADR-026)
    */
   void save(Roster roster);
 

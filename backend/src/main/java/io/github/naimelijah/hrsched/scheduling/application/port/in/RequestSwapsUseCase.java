@@ -78,7 +78,9 @@ public interface RequestSwapsUseCase {
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException if
    *     the colleague already works a shift on that roster overlapping the one handed over
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException
-   *     if a roster overlapping the replacement was published at the same time
+   *     if a roster overlapping the replacement was published at the same time by a writer that did
+   *     not take turns. Approving always does (ADR-027), so this means some other writer skipped
+   *     the publication lock (ADR-026)
    */
   Roster approveSwap(Actor actor, OrganisationId organisation, SwapRequestId request);
 
