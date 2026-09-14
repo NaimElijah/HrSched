@@ -45,6 +45,14 @@ export function Failure({
       </div>
     );
   }
+  if (error instanceof ApiError && error.isRefused) {
+    return (
+      <div className="failure" role="alert">
+        <strong>Refused.</strong> {error.message}
+        <Reference of={error} />
+      </div>
+    );
+  }
   if (error instanceof ApiError && error.isForbidden) {
     return (
       <div className="failure" role="alert">

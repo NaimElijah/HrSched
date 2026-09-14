@@ -42,7 +42,9 @@ describe('a rule breach', () => {
   });
 
   it('GivenARuleBreach_WhenRendering_ThenItSaysThereIsNoOverride', () => {
-    render(<Failure error={ruleBreach([])} />);
+    render(
+      <Failure error={ruleBreach([{ employee: 'ada', constraint: 'a rule', detail: 'x' }])} />,
+    );
 
     expect(screen.getByText(/no override/i)).toBeInTheDocument();
   });
@@ -75,6 +77,29 @@ describe('a rule breach', () => {
     );
 
     expect(screen.getByText('ada')).toBeInTheDocument();
+  });
+});
+
+describe('a refusal that lists no rules', () => {
+  it('GivenAnAssignmentRefusedWithoutViolations_WhenRendering_ThenTheServersReasonIsShownNotTheWorkingTimeRules', () => {
+    render(
+      <Failure
+        error={new ApiError(422, 'Ada does not hold every qualification the shift requires')}
+      />,
+    );
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Refused.');
+    expect(alert).toHaveTextContent('does not hold every qualification the shift requires');
+    expect(alert).not.toHaveTextContent(/working-time rules/);
+    expect(screen.queryByRole('listitem')).not.toBeInTheDocument();
+  });
+
+  it('GivenARefusalCarryingATraceId_WhenRendering_ThenItIsShownToBeQuoted', () => {
+    const trace = '4bf92f3577b34da6a3ce929d0e0e4736';
+    render(<Failure error={new ApiError(422, 'That shift is outside the roster.', [], trace)} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(`Reference: ${trace}`);
   });
 });
 

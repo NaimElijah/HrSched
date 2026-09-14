@@ -422,7 +422,7 @@ npm run test:coverage  # the same tests, plus coverage/index.html
 | `api/problem.test.ts` | The error boundary: a body that is not the shape we expect is validated, never cast. |
 | `components/useAsync.test.tsx` | The state machine: a stale answer never reaches the screen, `busy` is derived, reload works after a failure. |
 | `components/localDates.test.ts` | The local-day round trip and the documented timezone hazard, asserted relatively so it holds in any zone. |
-| `components/Feedback.test.tsx` | All four refusal branches, including the 404 that may also mean another tenant owns it. |
+| `components/Feedback.test.tsx` | Every refusal branch, including a 422 that lists no broken rules — a refusal, not a working-time breach — and the 404 that may also mean another tenant owns it. |
 | `components/ErrorBoundary.test.tsx` | One broken render does not become a blank page, and "Try again" recovers. |
 | `identity/ActingAs.test.tsx`, `identity/ActingAsBar.test.tsx` | The acting-as placeholder: persistence, validation, the synthetic option, and the operator rule that clears the employee link. |
 | `pages/*.test.tsx` (×6) | One per screen: what is sent, what is refused before sending, and what the user is told. |

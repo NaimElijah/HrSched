@@ -291,9 +291,11 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 - **`MaximumWeeklyWorkingTime` treats the roster period as the reference period.** Jurisdictions
   that average over a longer window cannot be expressed; that needs history beyond the roster.
 - **The user interface enforces nothing.** Every rule is the backend's. The UI renders refusals —
-  a 422 with its violations, a 403, a 404 that may mean another tenant owns the resource — and it
-  is written so those refusals read as outcomes rather than as bugs, but removing the UI removes no
-  guarantee.
+  a 422 with its violations, a 422 listing none (an assignee without the qualification, a shift
+  outside the roster's period), a 403, a 404 that may mean another tenant owns the resource — and
+  it is written so those refusals read as outcomes rather than as bugs, but removing the UI removes
+  no guarantee. A 422 is called a working-time breach only when it lists the rules it broke; the
+  status alone does not say which kind of refusal it is.
 - **The rules screen offers no default values.** Not a styling choice: a number suggested by the UI
   would be a working-time threshold chosen by a developer, which is exactly what this system
   refuses to contain.
