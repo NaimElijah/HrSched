@@ -19,6 +19,12 @@ export interface Notification {
   readonly read: boolean;
 }
 
+/**
+ * The caller's own notifications: reading them and marking one read.
+ *
+ * There is deliberately no way to raise one. A notification is something a use case decided
+ * somebody deserved to be told, not something a client can post into a colleague's inbox (ADR-021).
+ */
 export const notifications = {
   /** The caller's own inbox. Whose it is comes from the employee link, never from a parameter. */
   findMine: (identity: ActingIdentity): Promise<Notification[]> =>

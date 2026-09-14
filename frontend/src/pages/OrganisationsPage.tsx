@@ -46,8 +46,8 @@ export function OrganisationsPage() {
     <section>
       <h2>Organisations</h2>
       <p className="hint">
-        The platform operator&apos;s screen. Every request here claims the identity above; as any
-        other role, listing and onboarding are refused.
+        The platform operator&apos;s screen. Every request here is made as the identity above, so in
+        any other role listing and onboarding are refused.
       </p>
 
       <Failure error={current.error} />
