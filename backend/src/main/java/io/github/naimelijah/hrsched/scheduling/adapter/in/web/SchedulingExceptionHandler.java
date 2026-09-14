@@ -150,7 +150,9 @@ public class SchedulingExceptionHandler {
    */
   @ExceptionHandler(RosterPublicationConflictException.class)
   public ProblemDetail handleConcurrentPublication(RosterPublicationConflictException exception) {
-    log.warn("Publication refused by the schema: an overlapping roster was published concurrently");
+    log.atWarn()
+        .addKeyValue("roster", exception.roster().value())
+        .log("Publication refused by the schema: an overlapping roster was published concurrently");
     count(
         REFUSED, "reason", "concurrent_publication", "Publications refused, by what refused them");
     ProblemDetail problem =

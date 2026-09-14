@@ -257,14 +257,18 @@ class SchedulingExceptionHandlerTest {
 
   /**
    * A publication that lost a race is a conflict, not a bad request: nothing it sent was wrong, and
-   * reloading and publishing again is the remedy (ADR-026). The store's own words stay out of the
-   * response.
+   * reloading and trying again is the remedy (ADR-026).
+   *
+   * <p>Two things stay out of the response. The store's own words, and the roster being published:
+   * when a swap approval loses, that roster is a replacement the caller never saw, rolled back with
+   * the refusal, so naming it would point them at something that does not exist.
    */
   @Test
   void GivenAPublicationThatLostARace_WhenTranslated_ThenItIsAConflictSayingWhatToDo() {
+    RosterId replacement = RosterId.newId();
     RosterPublicationConflictException conflict =
         new RosterPublicationConflictException(
-            RosterId.newId(), new IllegalStateException("what the store said"));
+            replacement, new IllegalStateException("what the store said"));
 
     ProblemDetail problem = handler.handleConcurrentPublication(conflict);
 
@@ -272,7 +276,8 @@ class SchedulingExceptionHandlerTest {
     assertThat(problem.getTitle()).isEqualTo("Published concurrently");
     assertThat(problem.getDetail())
         .isEqualTo(conflict.getMessage())
-        .doesNotContain("what the store said");
+        .doesNotContain("what the store said")
+        .doesNotContain(replacement.value().toString());
   }
 
   @Test

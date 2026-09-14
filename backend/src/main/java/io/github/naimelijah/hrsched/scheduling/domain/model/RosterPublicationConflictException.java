@@ -7,10 +7,12 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
  * <p>Exactly one roster is authoritative for any moment, and the schema holds that even against a
  * writer that could not see the other publication because it had not yet committed (ADR-026).
  * Nothing about the request was wrong - it arrived while somebody else's publication was still in
- * flight - so it is a 409 rather than a 400: reload what is now published, and publish again if it
- * is still wanted.
+ * flight - so it is a 409 rather than a 400: reload what is now published, and try again if it is
+ * still wanted.
  */
 public class RosterPublicationConflictException extends RuntimeException {
+
+  private final transient RosterId roster;
 
   /**
    * @param roster the roster whose publication was refused
@@ -18,8 +20,17 @@ public class RosterPublicationConflictException extends RuntimeException {
    */
   public RosterPublicationConflictException(RosterId roster, Throwable cause) {
     super(
-        "Roster %s overlaps a roster published at the same time; reload and publish again"
-            .formatted(roster.value()),
+        "A roster covering part of the same period was published at the same time; reload and try"
+            + " again",
         cause);
+    this.roster = roster;
+  }
+
+  /**
+   * @return the roster whose publication was refused. Deliberately not in the message: when a swap
+   *     approval loses, it is a replacement the caller never saw, rolled back with the refusal
+   */
+  public RosterId roster() {
+    return roster;
   }
 }
