@@ -138,6 +138,16 @@ describe('navigating', () => {
     expect(screen.getByRole('heading', { name: 'Swaps' })).toBeInTheDocument();
   });
 
+  it('GivenTheOrganisationsTab_WhenPressed_ThenThePlatformScreenIsShown', async () => {
+    actingAs('OPERATOR');
+    respondWith({ ok: true, status: 200, body: [] });
+    show();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Organisations' }));
+
+    expect(screen.getByRole('heading', { name: 'Organisations' })).toBeInTheDocument();
+  });
+
   /** Both dates used to sit inside one label, so a screen reader named them identically. */
   it('GivenThePlanningSpan_WhenRendered_ThenEachDateHasItsOwnName', async () => {
     actingAs('ADMIN');

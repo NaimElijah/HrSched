@@ -1,9 +1,9 @@
 # Requirements — HrSched
 
 **Status: specified, partially built.** Every question that blocked modelling is answered. The
-domain is modelled, and a React user interface exercises every endpoint the API exposes across all
-three roles, over a PostgreSQL that survives a restart. Generation is greedy rather than optimised,
-and there is no authentication.
+domain is modelled, and a React user interface offers every capability below — for the three roles
+within an organisation and for the platform Operator — over a PostgreSQL that survives a restart.
+Generation is greedy rather than optimised, and there is no authentication.
 
 Nothing in the user interface *enforces* a requirement. The `Enforced by` column below names
 backend classes and tests on purpose: a screen that appears to satisfy a rule is not evidence that

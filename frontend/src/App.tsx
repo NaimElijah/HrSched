@@ -8,6 +8,7 @@ import { useAsync } from './components/useAsync';
 import { ActingAsBar } from './identity/ActingAsBar';
 import { useActingAs } from './identity/ActingAs';
 import { MePage } from './pages/MePage';
+import { OrganisationsPage } from './pages/OrganisationsPage';
 import { PeoplePage } from './pages/PeoplePage';
 import { QualificationsPage } from './pages/QualificationsPage';
 import { RostersPage } from './pages/RostersPage';
@@ -15,7 +16,16 @@ import { RulesPage } from './pages/RulesPage';
 import { ShiftsPage } from './pages/ShiftsPage';
 import { SwapsPage } from './pages/SwapsPage';
 
-const TABS = ['People', 'Qualifications', 'Rules', 'Shifts', 'Rosters', 'Swaps', 'Me'] as const;
+const TABS = [
+  'People',
+  'Qualifications',
+  'Rules',
+  'Shifts',
+  'Rosters',
+  'Swaps',
+  'Me',
+  'Organisations',
+] as const;
 type Tab = (typeof TABS)[number];
 
 /**
@@ -114,6 +124,7 @@ export function App() {
         {ready && tab === 'Rosters' ? <RostersPage span={span} /> : null}
         {ready && tab === 'Swaps' ? <SwapsPage people={people.value ?? []} /> : null}
         {ready && tab === 'Me' ? <MePage span={span} people={people.value ?? []} /> : null}
+        {ready && tab === 'Organisations' ? <OrganisationsPage /> : null}
       </main>
     </div>
   );
