@@ -420,6 +420,7 @@ npm run test:coverage  # the same tests, plus coverage/index.html
 | --- | --- |
 | `api/client.test.ts` | The one module that calls `fetch`: the claim headers, the failure shapes, and the reload key. |
 | `api/problem.test.ts` | The error boundary: a body that is not the shape we expect is validated, never cast. |
+| `api/workforce.test.ts` | That an identifier placed in a path stays one segment at the call site, whoever supplied it. |
 | `components/useAsync.test.tsx` | The state machine: a stale answer never reaches the screen, `busy` is derived, reload works after a failure. |
 | `components/localDates.test.ts` | The local-day round trip, the documented timezone hazard, and the day and time labels a roster board is read by — all asserted relatively so they hold in any zone. |
 | `components/Feedback.test.tsx` | Every refusal branch, including a 422 that lists no broken rules — a refusal, not a working-time breach — and the 404 that may also mean another tenant owns it. |
