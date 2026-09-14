@@ -312,8 +312,8 @@ describe('the board of a draft', () => {
   });
 
   /**
-   * The list is cleared while it reloads. A board derived from it vanished on every change and took
-   * the keyboard focus with it, which is why the board loads its own roster.
+   * The list reloads after every change on the board. When the board was derived from the list it
+   * vanished each time and took the keyboard focus with it; this pins that it no longer does.
    */
   it('GivenTheListReloads_WhenAnAssignmentIsMade_ThenTheBoardStaysMounted', async () => {
     const withGrace = {

@@ -39,8 +39,8 @@ function byLocalDay(shifts: readonly Shift[]): Day[] {
  * second copy of the backend's rules, free to drift from them; the backend refuses an ineligible
  * assignment with its reason, and that refusal is what this shows. See ADR-025.
  *
- * It loads its own roster by identifier rather than taking the one in the roster list, because the
- * list is cleared while it reloads and a board derived from it disappeared on every change.
+ * It loads its own roster by identifier, and after a change shows the roster the server returned
+ * for that change, rather than deriving what it shows from the roster list around it.
  */
 export function RosterBoard({
   roster: id,

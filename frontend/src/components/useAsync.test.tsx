@@ -159,6 +159,32 @@ describe('reloading', () => {
     await waitFor(() => expect(value()).toBe('second'));
   });
 
+  /**
+   * The same question asked again. Clearing the answer while it was re-fetched unmounted everything
+   * rendered from it — a list, and the keyboard focus inside it — after every change a page made.
+   * A different question still clears at once; that is the stale-answer guard above.
+   */
+  it('GivenAHeldValue_WhenReloaded_ThenItStaysOnScreenUntilTheNewAnswerArrives', async () => {
+    const before = deferred<string>();
+    const after = deferred<string>();
+    const answers = [before.promise, after.promise];
+    render(
+      <Probe
+        load={() => answers.shift() ?? Promise.reject(new Error('asked too often'))}
+        asked="a"
+      />,
+    );
+    before.resolve('before');
+    await waitFor(() => expect(value()).toBe('before'));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reload' }));
+
+    expect(busy()).toBe('busy');
+    expect(value()).toBe('before');
+    after.resolve('after');
+    await waitFor(() => expect(value()).toBe('after'));
+  });
+
   it('GivenAnUnchangedKey_WhenTheParentReRenders_ThenNothingIsFetchedAgain', async () => {
     const load = vi.fn(() => Promise.resolve('shifts'));
     const { rerender } = render(<Probe load={load} asked="a" />);
