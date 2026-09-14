@@ -107,6 +107,21 @@ public class SchedulingController {
         .toList();
   }
 
+  @GetMapping("/shifts/{id}")
+  public ResponseEntity<ShiftResponse> findShift(
+      @RequestHeader("X-Organisation") String organisation,
+      @RequestHeader("X-User") String user,
+      @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @PathVariable UUID id) {
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    return manageShifts
+        .findShift(actor, ActorFromHeaders.organisationOf(organisation), new ShiftId(id))
+        .map(ShiftResponse::from)
+        .map(ResponseEntity::ok)
+        .orElseGet(() -> ResponseEntity.notFound().build());
+  }
+
   @PutMapping("/constraints")
   public ConstraintSetResponse reviseConstraints(
       @RequestHeader("X-Organisation") String organisation,

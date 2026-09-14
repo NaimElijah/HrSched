@@ -79,6 +79,22 @@ public class SwapController {
         .toList();
   }
 
+  @GetMapping("/{id}")
+  public ResponseEntity<SwapRequestResponse> find(
+      @RequestHeader("X-Organisation") String organisation,
+      @RequestHeader("X-User") String user,
+      @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @PathVariable UUID id) {
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    return requestSwaps
+        .findSwapRequest(
+            actor, ActorFromHeaders.organisationOf(organisation), new SwapRequestId(id))
+        .map(SwapRequestResponse::from)
+        .map(ResponseEntity::ok)
+        .orElseGet(() -> ResponseEntity.notFound().build());
+  }
+
   @PostMapping("/{id}/approval")
   public RosterResponse approve(
       @RequestHeader("X-Organisation") String organisation,

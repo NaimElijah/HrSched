@@ -132,6 +132,12 @@ public class SchedulingService
   }
 
   @Override
+  public Optional<Shift> findShift(Actor actor, OrganisationId organisation, ShiftId shift) {
+    actor.requireAccessTo(organisation);
+    return shifts.findById(organisation, shift);
+  }
+
+  @Override
   public ConstraintSet reviseConstraints(Actor actor, ReviseConstraintsCommand command) {
     authorise(actor, command.organisation(), MAY_CONFIGURE);
     ConstraintSet revised =

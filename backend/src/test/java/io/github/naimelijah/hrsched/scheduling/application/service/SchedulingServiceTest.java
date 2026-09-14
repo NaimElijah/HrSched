@@ -259,6 +259,27 @@ class SchedulingServiceTest {
   }
 
   @Test
+  void GivenADefinedShift_WhenAnEmployeeReadsItByIdentity_ThenItIsReturned() {
+    ShiftId id =
+        service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+
+    assertThat(service.findShift(new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE), ACME, id))
+        .map(Shift::period)
+        .contains(MONDAY_DAY);
+  }
+
+  @Test
+  void GivenAnotherOrganisationsShift_WhenReadByIdentity_ThenNothingLeaks() {
+    ShiftId theirs =
+        service.defineShift(
+            scheduler(RIVAL), new DefineShiftCommand(RIVAL, MONDAY_DAY, 1, Set.of()));
+
+    assertThatThrownBy(() -> service.findShift(scheduler(RIVAL), ACME, theirs))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(service.findShift(scheduler(ACME), ACME, theirs)).isEmpty();
+  }
+
+  @Test
   void GivenRostersOfTwoOrganisations_WhenListingThem_ThenOnlyTheCallersComeBack() {
     available(ACME, "Ada");
     service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));

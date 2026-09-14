@@ -652,4 +652,37 @@ class RosteringHttpTest {
         .perform(as(get("/api/rosters/" + roster), anOrganisation(mockMvc), "SCHEDULER"))
         .andExpect(status().isNotFound());
   }
+
+  @Test
+  void GivenADefinedShift_WhenFollowingItsLocation_ThenItIsFound() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String location =
+        mockMvc
+            .perform(
+                as(post("/api/shifts"), organisation, "SCHEDULER")
+                    .content(
+                        "{\"start\":\"2026-11-16T08:00:00Z\",\"end\":\"2026-11-16T16:00:00Z\",\"requiredHeadcount\":2}"))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getHeader("Location");
+
+    // Any member, as for the listing: a shift is work that needs covering, not a person.
+    mockMvc
+        .perform(as(get(location), organisation, "EMPLOYEE"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.start").value("2026-11-16T08:00:00Z"))
+        .andExpect(jsonPath("$.requiredHeadcount").value(2));
+  }
+
+  @Test
+  void GivenAShiftOfAnotherOrganisation_WhenReadThroughOurs_ThenThereIsNothingThere()
+      throws Exception {
+    String theirs =
+        defineShift(anOrganisation(mockMvc), "2026-11-16T08:00:00Z", "2026-11-16T16:00:00Z", 1);
+
+    mockMvc
+        .perform(as(get("/api/shifts/" + theirs), anOrganisation(mockMvc), "SCHEDULER"))
+        .andExpect(status().isNotFound());
+  }
 }
