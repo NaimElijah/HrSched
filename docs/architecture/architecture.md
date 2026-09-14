@@ -119,7 +119,7 @@ Three rules hold this together, and each fails the build when broken:
 | `configuration.web` | `RequestBindingExceptionHandler` — answers a request Spring could not bind to a controller's parameters (a missing header or query parameter, an identifier that does not parse) with a 400 problem detail naming what was wrong, whose detail repeats nothing that was sent. It belongs to no context because the failure happens before any controller runs ([ADR-024](../ADRs/ADR-024-answer-unbindable-requests-with-a-problem-detail.md)). |
 | `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists — it writes the four identity claims and reads back `X-Trace-Id`; `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts` mirror the backend DTOs, one module per context. |
 | `frontend/src/identity` | The acting-as context and its warning bar — the placeholder that supplies `X-Organisation`, `X-User`, `X-Role` and `X-Employee`, deleted with the backend placeholder when ADR-011 lands. |
-| `frontend/src/pages` | One screen per capability: People, Qualifications, Rules, Shifts, Rosters, Swaps, Me, Organisations. Organisations is the platform Operator's: it lists and onboards organisations and switches the acting identity into one, sending every request as the identity the bar claims, so a tenant role is shown the 403 rather than a hidden tab. Swaps is where a Scheduler answers requests; approving publishes a replacement roster, so it is refused, with every broken rule named, exactly as any publication is. Me shows an employee their identifier, their published work over the planning span, and a way to hand a shift to a colleague named by that colleague's identifier, because an employee may not list colleagues (Q25). Me also holds the employee's `Inbox`. Opening a roster shows `RosterBoard`, which loads that roster by identifier and changes a draft through a picker and buttons per shift rather than by drag and drop ([ADR-025](../ADRs/ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md)). |
+| `frontend/src/pages` | One screen per capability: People, Qualifications, Rules, Shifts, Rosters, Swaps, Me, Organisations. Organisations is the platform Operator's: it lists and onboards organisations and switches the acting identity into one, sending every request as the identity the bar claims, so a tenant role is shown the 403 rather than a hidden tab. Swaps is where a Scheduler answers requests; approving publishes a replacement roster, so it is refused exactly as any publication is: with every broken working-time rule named, or, if it would put somebody in two places at once, with that. Me shows an employee their identifier, their published work over the planning span, and a way to hand a shift to a colleague named by that colleague's identifier, because an employee may not list colleagues (Q25). Me also holds the employee's `Inbox`. Opening a roster shows `RosterBoard`, which loads that roster by identifier and changes a draft through a picker and buttons per shift rather than by drag and drop ([ADR-025](../ADRs/ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md)). |
 
 ## Communication
 
@@ -345,7 +345,9 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   it means listing colleagues, which discloses their unavailability, and an Employee may not. So a
   request may name somebody who cannot cover the shift — because they lack a qualification, or
   because they are already unavailable — and the Scheduler answering it is where that is found out,
-  through the same `AssignmentEligibility` the manual path uses.
+  through the same `AssignmentEligibility` the manual path uses. A colleague who already works a
+  shift overlapping the one handed over is found out a step later, when the replacement is
+  published.
 - **Publishing supersedes, so exactly one roster is authoritative.** `publish` marks every
   published roster of that organisation whose period overlaps as `SUPERSEDED`. Overlap rather than
   equality decides it, because a partly-overlapping published roster would otherwise still govern
@@ -354,7 +356,9 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   three rules that are about one assignment — the person belongs to the organisation (R5), holds
   what the shift demands (R4), and has not declared they cannot work when it runs (F6) — plus that
   the shift falls inside the roster's own period, which generation cannot violate because it only
-  ever assigns shifts it found there. It deliberately leaves the working-time rules to publication,
+  ever assigns shifts it found there, and that the person holds no other shift on this draft
+  overlapping it (R3), which generation cannot violate because it skips anybody already working
+  then. It deliberately leaves the working-time rules to publication,
   exactly as generation does: those judge a whole schedule rather than a single assignment, so the
   honest place for them is the step that cannot be bypassed, and a hand-made roster breaking a daily
   limit is refused at publication just as a generated one is.
@@ -368,6 +372,15 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   repository cannot return, publication fails with `RosterNotVerifiableException` rather than
   quietly omitting that work from the constraint check. Omission would publish hours nobody
   counted, which is the failure publication exists to prevent.
+- **Nobody is published in two places at once, whatever the rules say.** Building each person's
+  schedule for the constraint check refuses one holding two overlapping shifts with
+  `OverlappingAssignmentException` (R3), before any constraint is evaluated. It cannot be left to
+  the rules: minimum rest is the only one that notices an overlap, it is optional, and an empty
+  constraint set checks nothing — the asymmetry unavailability once had. `assign` asks the same
+  question of the one person being assigned, so the board is told as it happens; publication asks
+  it of everybody, so a swap approval and a generated draft are held to it too. Both answer 422.
+  It looks within one roster only: whether R3 should also look across rosters, for a shift that
+  straddles two roster periods, is Q26.
 - **Reading the people of an organisation is restricted to Admins and Schedulers**, because
   unavailability is personal data. Generation reaches the same data through the anti-corruption
   layer carrying the Scheduler's own identity, so the restriction holds there too.

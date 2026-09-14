@@ -25,7 +25,8 @@ public interface PlanRostersUseCase {
    *
    * <p>Checks the rules that are about the assignment itself: the person is one of the
    * organisation's own (R5), holds every qualification the shift demands (R4), and has not declared
-   * that they cannot work when it runs (F6) — the same three questions generation asks. It
+   * that they cannot work when it runs (F6) — the same three questions generation asks — and holds
+   * no other shift on this draft overlapping it (R3), which generation never produces either. It
    * deliberately does <em>not</em> check working-time rules, exactly as generation does not: those
    * judge a whole schedule rather than one assignment, and they are enforced where they can be
    * enforced honestly, at publication, which cannot be bypassed.
@@ -47,6 +48,8 @@ public interface PlanRostersUseCase {
    *     roster is no longer a draft
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException if
    *     they already cover that shift
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException if
+   *     they already cover another shift on this draft that overlaps it
    */
   Roster assign(Actor actor, AssignToShiftCommand command);
 
@@ -72,6 +75,8 @@ public interface PlanRostersUseCase {
    * @param organisation whose roster
    * @param roster which draft
    * @return the published roster
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException if
+   *     it puts anybody on two shifts at once, whatever the rules say. Checked before the rules
    * @throws RosterNotCompliantException if it breaks any rule. There is no override
    */
   Roster publish(Actor actor, OrganisationId organisation, RosterId roster);

@@ -191,6 +191,16 @@ public class SchedulingService
         workforce, actor, command.organisation(), command.employee(), shift);
 
     Roster amended = draft.with(new Assignment(command.shift(), command.employee()));
+    // R3. Publication would refuse this roster too, but only here can the Scheduler be told which
+    // assignment did it, while they are making it.
+    amended.requireNoOverlappingWorkFor(
+        command.employee(),
+        periodsOf(
+            command.organisation(),
+            amended,
+            amended.assignments().stream()
+                .filter(assignment -> assignment.employee().equals(command.employee()))
+                .toList()));
     rosters.save(amended);
     recorded(
         actor, command.organisation(), SchedulingChange.ASSIGNMENT_ADDED, amended.id().value());
@@ -305,18 +315,31 @@ public class SchedulingService
    */
   private List<ConstraintViolation> violations(
       OrganisationId organisation, Roster roster, ConstraintSet constraints) {
+    return roster.schedulesFor(periodsOf(organisation, roster, roster.assignments())).stream()
+        .map(constraints::violationsFor)
+        .flatMap(List::stream)
+        .toList();
+  }
+
+  /**
+   * When the shifts of these assignments run, which the roster itself does not know.
+   *
+   * <p>A shift the repository cannot return refuses rather than being left out: whatever is judged
+   * against these periods would otherwise be judged against less work than the roster carries.
+   *
+   * @throws RosterNotVerifiableException if any of those shifts cannot be resolved
+   */
+  private Map<ShiftId, TimeRange> periodsOf(
+      OrganisationId organisation, Roster roster, List<Assignment> assignments) {
     Map<ShiftId, TimeRange> periods = new LinkedHashMap<>();
-    for (Assignment assignment : roster.assignments()) {
+    for (Assignment assignment : assignments) {
       Shift shift =
           shifts
               .findById(organisation, assignment.shift())
               .orElseThrow(() -> new RosterNotVerifiableException(roster.id(), assignment.shift()));
       periods.put(shift.id(), shift.period());
     }
-    return roster.schedulesFor(periods).stream()
-        .map(constraints::violationsFor)
-        .flatMap(List::stream)
-        .toList();
+    return periods;
   }
 
   /**

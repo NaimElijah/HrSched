@@ -20,6 +20,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
@@ -687,6 +688,76 @@ class SchedulingServiceTest {
         .isInstanceOf(ShiftOutsideRosterPeriodException.class);
   }
 
+  /**
+   * Rule R3 on the manual path, with no rules configured. Generation never puts somebody on two
+   * shifts at once, and the only working-time rule that noticed an overlap is optional, so an
+   * organisation with an empty constraint set could publish one person in two places.
+   */
+  @Test
+  void GivenSomebodyAlreadyOnAnOverlappingShift_WhenAssigningThem_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId day = aShift(ACME, Set.of());
+    TimeRange afternoon =
+        new TimeRange(Instant.parse("2026-10-05T12:00:00Z"), Instant.parse("2026-10-05T20:00:00Z"));
+    ShiftId overlapping =
+        service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, afternoon, 1, Set.of()));
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), day, ada));
+    audit.forget();
+
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), overlapping, ada)))
+        .isInstanceOf(OverlappingAssignmentException.class);
+
+    assertThat(rosters.byId(draft.id()).assignments())
+        .describedAs("the refused assignment is not stored")
+        .containsExactly(new Assignment(day, ada));
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  @Test
+  void GivenShiftsThatOnlyTouch_WhenAssigningOnePersonToBoth_ThenItIsPermitted() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId day = aShift(ACME, Set.of());
+    TimeRange evening =
+        new TimeRange(Instant.parse("2026-10-05T16:00:00Z"), Instant.parse("2026-10-05T20:00:00Z"));
+    ShiftId next =
+        service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, evening, 1, Set.of()));
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), day, ada));
+
+    assertThatCode(
+            () ->
+                service.assign(
+                    scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), next, ada)))
+        .describedAs("a shift ending as the next begins is not two places at once")
+        .doesNotThrowAnyException();
+  }
+
+  /**
+   * The gate nothing bypasses. A draft can carry overlapping work without passing through {@code
+   * assign} — a generator is a port, and this one is not the greedy adapter — and an empty
+   * constraint set checks nothing, so publication has to refuse it for itself.
+   */
+  @Test
+  void GivenADraftAlreadyCarryingOverlappingWork_WhenPublishingWithNoRules_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId day = aShift(ACME, Set.of());
+    ShiftId sameDay = aShift(ACME, Set.of());
+    Roster draft =
+        new Roster(RosterId.newId(), ACME, THE_WEEK)
+            .withAssignments(List.of(new Assignment(day, ada), new Assignment(sameDay, ada)));
+    rosters.save(draft);
+
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, draft.id()))
+        .isInstanceOf(OverlappingAssignmentException.class);
+
+    assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.ROSTER_PUBLISHED);
+  }
+
   @Test
   void GivenAScheduler_WhenAssigningAndRemoving_ThenBothAreRecordedAgainstThem() {
     EmployeeId ada = available(ACME, "Ada");
@@ -794,12 +865,17 @@ class SchedulingServiceTest {
    * first one already carried — so that shift is assigned on both rosters. It must still appear
    * once. Counting the superseded roster would show somebody the same day of work twice and imply
    * they owe two of them.
+   *
+   * <p>The second roster's own shift is on another day, because a roster putting one person on two
+   * overlapping shifts cannot be published (R3).
    */
   @Test
   void GivenTheirRosterWasSuperseded_WhenReadingTheirOwnSchedule_ThenItIsNotCountedAgain() {
     EmployeeId ada = available(ACME, "Ada");
     ShiftId onBothRosters = publishedWork(ACME, ada, MONDAY_DAY);
-    publishedWork(ACME, ada, MONDAY_DAY);
+    TimeRange wednesday =
+        new TimeRange(Instant.parse("2026-10-07T08:00:00Z"), Instant.parse("2026-10-07T16:00:00Z"));
+    publishedWork(ACME, ada, wednesday);
 
     List<RosteredShift> mine = service.findOwnSchedule(themself(ACME, ada), ACME, THE_WEEK);
 

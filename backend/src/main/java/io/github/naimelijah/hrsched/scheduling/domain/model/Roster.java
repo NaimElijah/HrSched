@@ -4,6 +4,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -153,9 +154,14 @@ public final class Roster {
    * Groups the assignments into one schedule per employee, which is what constraints are evaluated
    * against.
    *
+   * <p>Nobody's schedule is built with two shifts at once in it. R3 holds whatever the constraint
+   * set says, and this is the step publication cannot skip, so it is where a roster carrying
+   * somebody in two places is refused however the draft was made.
+   *
    * @param shiftPeriods when each assigned shift runs; must cover every assigned shift
    * @return one schedule per employee appearing in this roster
    * @throws RosterNotVerifiableException if any assigned shift is missing from {@code shiftPeriods}
+   * @throws OverlappingAssignmentException if anybody would work two of these shifts at once
    */
   public List<EmployeeSchedule> schedulesFor(Map<ShiftId, TimeRange> shiftPeriods) {
     Objects.requireNonNull(shiftPeriods, "shiftPeriods must not be null");
@@ -167,9 +173,51 @@ public final class Roster {
       }
       byEmployee.computeIfAbsent(assignment.employee(), key -> new ArrayList<>()).add(when);
     }
+    byEmployee.keySet().forEach(employee -> requireNoOverlappingWorkFor(employee, shiftPeriods));
     return byEmployee.entrySet().stream()
         .map(entry -> new EmployeeSchedule(entry.getKey(), entry.getValue()))
         .toList();
+  }
+
+  /**
+   * Refuses this roster if one person would work two of its shifts at once (R3).
+   *
+   * <p>Only that person's shifts need to be in {@code shiftPeriods}, so assigning somebody by hand
+   * can be checked without resolving everybody else's work.
+   *
+   * @param employee whose work to check
+   * @param shiftPeriods when shifts run; must cover every shift this employee is assigned
+   * @throws RosterNotVerifiableException if one of their shifts is missing from {@code
+   *     shiftPeriods}
+   * @throws OverlappingAssignmentException naming two of their shifts that overlap
+   */
+  public void requireNoOverlappingWorkFor(
+      EmployeeId employee, Map<ShiftId, TimeRange> shiftPeriods) {
+    Objects.requireNonNull(employee, "employee must not be null");
+    Objects.requireNonNull(shiftPeriods, "shiftPeriods must not be null");
+    List<ShiftId> theirs =
+        assignments.stream()
+            .filter(assignment -> assignment.employee().equals(employee))
+            .map(Assignment::shift)
+            .toList();
+    for (ShiftId shift : theirs) {
+      if (!shiftPeriods.containsKey(shift)) {
+        throw new RosterNotVerifiableException(id, shift);
+      }
+    }
+    List<ShiftId> chronological =
+        theirs.stream()
+            .sorted(Comparator.comparing(shift -> shiftPeriods.get(shift).start()))
+            .toList();
+    // Sorted by start, an overlap anywhere implies one between neighbours: if a shift overlaps a
+    // later one, it also overlaps every shift starting between them. So neighbours are enough.
+    for (int i = 1; i < chronological.size(); i++) {
+      ShiftId earlier = chronological.get(i - 1);
+      ShiftId later = chronological.get(i);
+      if (shiftPeriods.get(earlier).overlaps(shiftPeriods.get(later))) {
+        throw new OverlappingAssignmentException(employee, earlier, later);
+      }
+    }
   }
 
   private void requireDraft() {
