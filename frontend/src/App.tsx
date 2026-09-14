@@ -111,7 +111,7 @@ export function App() {
         {ready && tab === 'Rules' ? <RulesPage /> : null}
         {ready && tab === 'Shifts' ? <ShiftsPage span={span} /> : null}
         {ready && tab === 'Rosters' ? <RostersPage span={span} /> : null}
-        {ready && tab === 'Me' ? <MePage span={span} /> : null}
+        {ready && tab === 'Me' ? <MePage span={span} people={people.value ?? []} /> : null}
       </main>
     </div>
   );

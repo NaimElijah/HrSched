@@ -184,6 +184,19 @@ code {
   margin: 0 0 0.3rem;
 }
 
+.inbox {
+  margin: 0.5rem 0 1.25rem;
+  padding-left: 1rem;
+}
+
+.inbox li {
+  margin-bottom: 0.6rem;
+}
+
+.inbox p {
+  margin: 0 0 0.2rem;
+}
+
 .failure {
   border-left: 3px solid var(--alarm);
   background: var(--alarm-bg);

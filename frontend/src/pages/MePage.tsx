@@ -3,11 +3,12 @@ import { identityKey } from '../api/client';
 import { scheduling } from '../api/scheduling';
 import type { RosteredShift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
-import type { PreferenceStrength } from '../api/workforce';
+import type { Employee, PreferenceStrength } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { dayLabel, timeLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useActingAs } from '../identity/ActingAs';
+import { Inbox } from './Inbox';
 
 /**
  * Employee self-service: who I am, the work that names me, and when I cannot work.
@@ -24,8 +25,17 @@ import { useActingAs } from '../identity/ActingAs';
  * Acting on your own record requires the acting identity to carry your employee link (ADR-012),
  * which is what the "acting as employee" control above sets.
  */
-export function MePage({ span }: { span: { from: string; to: string } }) {
+export function MePage({
+  span,
+  people,
+}: {
+  span: { from: string; to: string };
+  /** Colleagues the acting role may list; empty for an employee, whose inbox then shows identifiers. */
+  people: readonly Employee[];
+}) {
   const { identity } = useActingAs();
+  const personById = new Map(people.map((person) => [person.id, person]));
+  const nameOf = (colleague: string): string => personById.get(colleague)?.name ?? colleague;
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [strength, setStrength] = useState<PreferenceStrength>('PREFERS');
@@ -150,6 +160,8 @@ export function MePage({ span }: { span: { from: string; to: string } }) {
           />
         ))}
       </ul>
+
+      <Inbox employee={employee} nameOf={nameOf} />
 
       <h3>When I cannot work</h3>
       <p className="hint">

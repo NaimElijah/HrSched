@@ -36,13 +36,21 @@ interface Answer {
   readonly body: unknown;
 }
 
-/** Every read is answered with `schedule`, every write with `write`. */
+/**
+ * Reading one's own schedule is answered with `schedule` and every write with `write`. Any other read
+ * — the inbox on the same page — gets an empty list: what it does with one is Inbox.test's business.
+ */
 function stubbed({
   schedule = { status: 200, body: [] },
   write = { status: 204, body: null },
 }: { schedule?: Answer; write?: Answer } = {}) {
-  const stub = vi.fn((_path: string, init?: RequestInit) => {
-    const answer = (init?.method ?? 'GET') === 'GET' ? schedule : write;
+  const stub = vi.fn((path: string, init?: RequestInit) => {
+    const answer =
+      (init?.method ?? 'GET') !== 'GET'
+        ? write
+        : path.startsWith('/api/me/schedule')
+          ? schedule
+          : { status: 200, body: [] };
     return Promise.resolve({
       ok: answer.status < 400,
       status: answer.status,
@@ -81,7 +89,7 @@ function actingAsEmployee(employee: string | null) {
 function show() {
   render(
     <ActingAsProvider>
-      <MePage span={SPAN} />
+      <MePage span={SPAN} people={[]} />
     </ActingAsProvider>,
   );
 }

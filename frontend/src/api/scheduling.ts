@@ -146,6 +146,13 @@ export const scheduling = {
   requestSwap: (identity: ActingIdentity, request: RequestSwap): Promise<SwapRequest> =>
     api.post<SwapRequest>(identity, '/api/swaps', request),
 
+  /** Every swap an Admin or Scheduler holds; for anybody else, only the ones they are party to. */
+  findSwapRequests: (identity: ActingIdentity): Promise<SwapRequest[]> =>
+    api.get<SwapRequest[]>(identity, '/api/swaps'),
+
+  findShift: (identity: ActingIdentity, id: string): Promise<Shift> =>
+    api.get<Shift>(identity, path`/api/shifts/${id}`),
+
   currentConstraints: (identity: ActingIdentity): Promise<ConstraintSet> =>
     api.get<ConstraintSet>(identity, '/api/constraints'),
 
