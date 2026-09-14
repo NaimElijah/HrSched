@@ -231,6 +231,10 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   organisation is refused by the guard rather than by an empty repository read. It is the only place
   the branch is exercised outside a unit test
   ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)).
+- **A `Location` header names an address that answers.** A created employee, qualification, roster
+  or organisation can be read back with `GET` at the address its 201 gave, authorised exactly as
+  the listing it belongs to — reading one person takes an Admin or Scheduler because listing people
+  does — so following a link never meets a looser or stricter rule than the list it came from.
 - **Every log line is ECS JSON, in every environment including a laptop.** There is no profile that
   turns it off, because a format only production emits is one nobody reads until it matters. Each
   line carries the `trace_id` of the request that produced it, and the same value leaves on the

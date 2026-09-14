@@ -445,4 +445,49 @@ class EmployeeHttpTest {
         .perform(as(get("/api/employees"), "not-a-uuid", "ADMIN"))
         .andExpect(status().isBadRequest());
   }
+
+  /**
+   * A 201 says where the new resource lives. For as long as nothing answered that address, the one
+   * link the API handed out was the one link that led nowhere.
+   */
+  @Test
+  void GivenAnAddedEmployee_WhenFollowingTheirLocation_ThenTheyAreFound() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String location =
+        mockMvc
+            .perform(
+                as(post("/api/employees"), organisation, "ADMIN").content("{\"name\":\"Ada\"}"))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getHeader("Location");
+
+    mockMvc
+        .perform(as(get(location), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.name").value("Ada"))
+        .andExpect(jsonPath("$.qualifications.length()").value(0))
+        .andExpect(jsonPath("$.unavailability.length()").value(0));
+  }
+
+  /** Reading one person is restricted exactly as listing them is: it carries the same absences. */
+  @Test
+  void GivenAnEmployeeRole_WhenReadingSomebodyByIdentity_ThenItIsForbidden() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+
+    mockMvc
+        .perform(as(get("/api/employees/" + ada), organisation, "EMPLOYEE"))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenAnEmployeeOfAnotherOrganisation_WhenReadThroughOurs_ThenThereIsNothingThere()
+      throws Exception {
+    String theirs = addEmployee(anOrganisation(mockMvc), "Mole");
+
+    mockMvc
+        .perform(as(get("/api/employees/" + theirs), anOrganisation(mockMvc), "ADMIN"))
+        .andExpect(status().isNotFound());
+  }
 }

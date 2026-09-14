@@ -396,7 +396,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `ActorFromHeadersTest` (×2) | Driving adapters | The header placeholder in both contexts, including every malformed header. |
 | `SchedulingExceptionHandlerTest`, `WorkforceExceptionHandlerTest` | Driving adapters | Which failure earns which status, the structured 422, and that there is no catch-all. |
 | `GreedyRosterGeneratorTest` | Driven adapter | The placeholder generator never breaks a rule, and leaves a shift short rather than filling it illegally. |
-| `RosteringHttpTest`, `EmployeeHttpTest`, `QualificationHttpTest` | End to end | All sixteen endpoints through the real hexagon and the real adapters. |
+| `RosteringHttpTest`, `EmployeeHttpTest`, `QualificationHttpTest` | End to end | Every endpoint through the real hexagon and the real adapters. |
 | `TraceIdHttpTest` | Observability over HTTP | Every response carries a trace id, including the refusals — which are the ones a person has cause to report. |
 | `MetricsHttpTest` | Operations over HTTP | Both probes answer, the meters are published, and `loggers`, `env` and `heapdump` are **not** exposed. |
 | `SchedulingAuditLogTest`, `WorkforceAuditLogTest` | Driven adapters | Every audit field is an identifier and never a name, the message is a constant, and the counter is not tagged by tenant. |

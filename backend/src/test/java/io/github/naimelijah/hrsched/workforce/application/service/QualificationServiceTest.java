@@ -162,6 +162,33 @@ class QualificationServiceTest {
     assertThat(service.findQualifications(admin(ACME), ACME)).isEmpty();
   }
 
+  @Test
+  void GivenAnEmployeeRole_WhenReadingAQualificationByIdentity_ThenItIsPublished() {
+    QualificationId forklift =
+        service.defineQualification(admin(ACME), new DefineQualificationCommand(ACME, "Forklift"));
+
+    assertThat(service.findQualification(actor(ACME, Role.EMPLOYEE), ACME, forklift))
+        .map(PublishedQualification::name)
+        .contains("Forklift");
+  }
+
+  @Test
+  void GivenAnActorOfAnotherOrganisation_WhenReadingAQualificationByIdentity_ThenItIsRefused() {
+    QualificationId forklift =
+        service.defineQualification(admin(ACME), new DefineQualificationCommand(ACME, "Forklift"));
+
+    assertThatThrownBy(() -> service.findQualification(admin(RIVAL), ACME, forklift))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenAnotherOrganisationsQualification_WhenReadThroughOurs_ThenNothingIsFound() {
+    QualificationId theirs =
+        service.defineQualification(admin(RIVAL), new DefineQualificationCommand(RIVAL, "Theirs"));
+
+    assertThat(service.findQualification(admin(ACME), ACME, theirs)).isEmpty();
+  }
+
   /** Hand-written, like every other double here: the repository is our own port. */
   private static final class StubQualificationRepository implements QualificationRepository {
 

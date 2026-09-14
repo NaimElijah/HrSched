@@ -73,6 +73,21 @@ public class EmployeeController {
         .toList();
   }
 
+  @GetMapping("/{id}")
+  public ResponseEntity<EmployeeResponse> find(
+      @RequestHeader("X-Organisation") String organisation,
+      @RequestHeader("X-User") String user,
+      @RequestHeader("X-Role") String role,
+      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @PathVariable UUID id) {
+    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+    return manageEmployees
+        .findEmployee(actor, ActorFromHeaders.organisationOf(organisation), new EmployeeId(id))
+        .map(EmployeeResponse::from)
+        .map(ResponseEntity::ok)
+        .orElseGet(() -> ResponseEntity.notFound().build());
+  }
+
   @PutMapping("/{id}/qualifications/{qualification}")
   public ResponseEntity<Void> grantQualification(
       @RequestHeader("X-Organisation") String organisation,

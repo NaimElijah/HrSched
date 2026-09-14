@@ -31,12 +31,16 @@ class QualificationHttpTest {
 
   @Autowired private MockMvc mockMvc;
 
-  private void define(String organisation, String name) throws Exception {
-    mockMvc
+  /** Returns the Location the 201 names, so a test can follow it. */
+  private String define(String organisation, String name) throws Exception {
+    return mockMvc
         .perform(
             as(post("/api/qualifications"), organisation, "ADMIN")
                 .content("{\"name\":\"%s\"}".formatted(name)))
-        .andExpect(status().isCreated());
+        .andExpect(status().isCreated())
+        .andReturn()
+        .getResponse()
+        .getHeader("Location");
   }
 
   @Test
@@ -155,5 +159,38 @@ class QualificationHttpTest {
     mockMvc
         .perform(as(get("/api/qualifications"), "not-a-uuid", "ADMIN"))
         .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void GivenADefinedQualification_WhenFollowingItsLocation_ThenItIsFound() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String location = define(organisation, "Forklift");
+
+    mockMvc
+        .perform(as(get(location), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.name").value("Forklift"))
+        .andExpect(jsonPath("$.id").isNotEmpty());
+  }
+
+  @Test
+  void GivenAnEmployeeRole_WhenReadingAQualification_ThenItIsReturned() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String location = define(organisation, "Forklift");
+
+    mockMvc
+        .perform(as(get(location), organisation, "EMPLOYEE"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.name").value("Forklift"));
+  }
+
+  @Test
+  void GivenAQualificationOfAnotherOrganisation_WhenReadThroughOurs_ThenThereIsNothingThere()
+      throws Exception {
+    String theirs = define(anOrganisation(mockMvc), "Their Qualification");
+
+    mockMvc
+        .perform(as(get(theirs), anOrganisation(mockMvc), "ADMIN"))
+        .andExpect(status().isNotFound());
   }
 }

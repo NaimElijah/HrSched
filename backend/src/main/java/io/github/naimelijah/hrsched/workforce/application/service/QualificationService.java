@@ -15,6 +15,7 @@ import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChan
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /** Orchestrates the qualification use cases. */
@@ -52,7 +53,18 @@ public class QualificationService implements ManageQualificationsUseCase {
   public List<PublishedQualification> findQualifications(Actor actor, OrganisationId organisation) {
     actor.requireAccessTo(organisation);
     return qualifications.findByOrganisation(organisation).stream()
-        .map(qualification -> new PublishedQualification(qualification.id(), qualification.name()))
+        .map(QualificationService::publish)
         .toList();
+  }
+
+  @Override
+  public Optional<PublishedQualification> findQualification(
+      Actor actor, OrganisationId organisation, QualificationId qualification) {
+    actor.requireAccessTo(organisation);
+    return qualifications.findById(organisation, qualification).map(QualificationService::publish);
+  }
+
+  private static PublishedQualification publish(Qualification qualification) {
+    return new PublishedQualification(qualification.id(), qualification.name());
   }
 }
