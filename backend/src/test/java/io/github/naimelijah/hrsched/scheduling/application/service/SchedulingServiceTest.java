@@ -758,6 +758,20 @@ class SchedulingServiceTest {
     assertThat(audit.changes()).doesNotContain(SchedulingChange.ROSTER_PUBLISHED);
   }
 
+  /**
+   * Publishing decides what to supersede from what it reads, so the organisation's publications
+   * have to be held before anything is read, or a publication in flight is missed (ADR-027).
+   */
+  @Test
+  void GivenAScheduler_WhenPublishing_ThenTheOrganisationsPublicationsWaitBeforeAnythingIsRead() {
+    Roster draft = emptyDraft(ACME);
+    rosters.forgetCalls();
+
+    service.publish(scheduler(ACME), ACME, draft.id());
+
+    assertThat(rosters.calls()).first().isEqualTo(FakeRosters.Call.LOCK_PUBLICATIONS);
+  }
+
   @Test
   void GivenAScheduler_WhenAssigningAndRemoving_ThenBothAreRecordedAgainstThem() {
     EmployeeId ada = available(ACME, "Ada");

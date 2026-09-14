@@ -558,6 +558,25 @@ class SwapServiceTest {
   }
 
   /**
+   * An approval that waited for another has to decide from what that one committed, so the lock
+   * comes before the request's roster is read - not only before the publication it ends in
+   * (ADR-027).
+   */
+  @Test
+  void GivenAPendingSwap_WhenApproving_ThenTheOrganisationsPublicationsWaitBeforeTheRosterIsRead() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    rosters.forgetCalls();
+
+    service.approveSwap(scheduler(ACME), ACME, request);
+
+    assertThat(rosters.calls()).first().isEqualTo(FakeRosters.Call.LOCK_PUBLICATIONS);
+  }
+
+  /**
    * The colleague was told they were being asked; telling only the requester when it is refused
    * leaves them holding an open question nobody ever answers.
    */

@@ -397,10 +397,18 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   application layer and so `@Transactional` cannot go where a reader would look for it
   ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)). A nested use case joins
   its caller's transaction, which is what makes approving a swap atomic.
-- **Read-modify-write is now atomic, but still not optimistic.** Two concurrent publishes of one
-  draft serialise rather than interleaving, so neither is lost half-way; but there is no version
-  column, so the later one still wins outright rather than being rejected. Adding one would change
-  port signatures, which is a decision of its own.
+- **Two edits of one draft are atomic, but the later still wins.** Two concurrent saves of one
+  roster serialise on its row rather than interleaving, so neither is left half-done; but there is
+  no version column, so the later one overwrites the earlier outright rather than being rejected.
+  Adding one would change port signatures, which is a decision of its own.
+- **Publications within one organisation take turns.** `publish` and `approveSwap` first call
+  `RosterRepository.lockPublicationsOf`, a transaction-scoped PostgreSQL advisory lock per
+  organisation, before reading anything they decide from. A second publication therefore waits,
+  then reads what the first committed: it supersedes that roster as R11 says, and a second swap
+  approval finds its request already decided or its roster no longer the published one. The lock is
+  a convention every writer has to follow; the `roster_one_published_per_moment` constraint is what
+  holds for one that does not
+  ([ADR-027](../ADRs/ADR-027-take-turns-publishing-within-an-organisation.md)).
 - **Three reads were written for a hash map and have not been revisited.** `supersedeOverlapping`
   and `findOwnSchedule` call `RosterRepository.findByOrganisation`, which now loads every roster the
   tenant has ever had together with all of their assignments, to find the few that overlap one week;

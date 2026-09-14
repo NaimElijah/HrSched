@@ -84,6 +84,30 @@ public class JdbcRosterRepository implements RosterRepository {
     }
   }
 
+  /**
+   * Names what the publication lock guards, so its key can never coincide with some other use of
+   * PostgreSQL's advisory locks. Hashed in SQL rather than chosen as a number.
+   */
+  private static final String PUBLICATION_LOCK_SCOPE = "hrsched.roster-publication";
+
+  /**
+   * A transaction-scoped advisory lock keyed by organisation (ADR-027).
+   *
+   * <p>Transaction-scoped because PostgreSQL releases it when the transaction ends, so no path can
+   * forget to, and it stays correct behind a pooler that lends connections per transaction.
+   * Re-entrant within a session, so the publication nested in a swap approval takes it again
+   * harmlessly. Two organisations whose identities hash alike only wait for each other; neither
+   * sees anything of the other's.
+   */
+  @Override
+  public void lockPublicationsOf(OrganisationId organisation) {
+    jdbc.sql("SELECT pg_advisory_xact_lock(hashtext(:scope), hashtext(:organisation))")
+        .param("scope", PUBLICATION_LOCK_SCOPE)
+        .param("organisation", organisation.value().toString())
+        .query()
+        .listOfRows();
+  }
+
   private void store(Roster roster) {
     UUID id = roster.id().value();
     int stored =

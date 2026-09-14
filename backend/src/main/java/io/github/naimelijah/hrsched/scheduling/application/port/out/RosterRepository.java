@@ -20,6 +20,17 @@ public interface RosterRepository {
    */
   void save(Roster roster);
 
+  /**
+   * Makes every other publication for this organisation wait until the calling use case finishes.
+   *
+   * <p>Publishing decides what to supersede from what it reads, so two publications reading at once
+   * would each miss the other. Taken before that read, the second publication reads what the first
+   * committed (ADR-027). Taking it again within the same use case is harmless.
+   *
+   * @param organisation whose publications take turns
+   */
+  void lockPublicationsOf(OrganisationId organisation);
+
   Optional<Roster> findById(OrganisationId organisation, RosterId id);
 
   List<Roster> findByOrganisation(OrganisationId organisation);

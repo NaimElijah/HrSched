@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
@@ -13,6 +14,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +29,7 @@ import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -333,5 +336,65 @@ class JdbcRosterRepositoryTest {
           }
           repository.save(draft.publishedUnder(A_CONSTRAINT_VERSION));
         });
+  }
+
+  /**
+   * The lock ADR-027 relies on, against the real database: while one transaction holds an
+   * organisation's publications, another transaction asking for them waits, and one asking for a
+   * different organisation's does not.
+   *
+   * <p>The waiting is shown by giving the second transaction a lock timeout, so a wait becomes a
+   * refusal the test can see rather than a pause it would have to time. Single-threaded: the second
+   * transaction runs on its own connection while the first is suspended, still holding the lock.
+   */
+  @Test
+  @Timeout(STUCK_AFTER_SECONDS)
+  void GivenOneTransactionHoldsAnOrganisationsPublications_WhenAnotherAsksForThem_ThenItWaits() {
+    TransactionTemplate holder = new TransactionTemplate(PostgresDatabase.transactions());
+    TransactionTemplate another = new TransactionTemplate(PostgresDatabase.transactions());
+    another.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+    holder.executeWithoutResult(
+        held -> {
+          repository.lockPublicationsOf(ACME);
+
+          assertThatThrownBy(() -> another.executeWithoutResult(probe -> askBrieflyFor(ACME)))
+              .rootCause()
+              .isInstanceOfSatisfying(
+                  SQLException.class,
+                  cause -> assertThat(cause.getSQLState()).isEqualTo(LOCK_NOT_AVAILABLE));
+          assertThatCode(() -> another.executeWithoutResult(probe -> askBrieflyFor(RIVAL)))
+              .describedAs("another organisation's publications do not wait on this one's")
+              .doesNotThrowAnyException();
+        });
+
+    assertThatCode(() -> another.executeWithoutResult(probe -> askBrieflyFor(ACME)))
+        .describedAs("the lock ends with the transaction that took it")
+        .doesNotThrowAnyException();
+  }
+
+  /**
+   * How long a probing transaction waits for the lock before giving up. Any wait at all proves the
+   * point; this only has to be long enough that a lock free to take is never mistaken for one held.
+   */
+  private static final String A_PROBE_WAIT = "200ms";
+
+  /**
+   * PostgreSQL's {@code lock_not_available}: the statement waited for a lock until {@code
+   * lock_timeout} ran out. Asserted by SQLState because Spring reports it as an uncategorised
+   * exception rather than as a lock failure, so the type would say nothing about the wait.
+   */
+  private static final String LOCK_NOT_AVAILABLE = "55P03";
+
+  /**
+   * Asks for an organisation's publications, giving up after a short wait instead of waiting on.
+   */
+  private void askBrieflyFor(OrganisationId organisation) {
+    PostgresDatabase.jdbcClient()
+        .sql("SELECT set_config('lock_timeout', :wait, true)")
+        .param("wait", A_PROBE_WAIT)
+        .query(String.class)
+        .single();
+    repository.lockPublicationsOf(organisation);
   }
 }
