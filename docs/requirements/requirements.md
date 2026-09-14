@@ -235,6 +235,7 @@ applicant tracking, and being the HR system of record.
 | Q23 | How long is each kind of record kept, and what is erased on request? | NaimElijah | A retention policy and a purge; part of the Compliance TODO, and it constrains Q20 |
 | Q24 | Must roster history be append-only, so that what was authoritative at a past moment can be reconstructed? | NaimElijah | Whether superseding writes a new row rather than changing a status ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) |
 | Q25 | An employee may not list colleagues, so the user interface has them name the colleague taking a shift by pasting that colleague's employee identifier. Is a names-only colleague directory required, and may an employee see a colleague's name at all? | NaimElijah | Choosing a swap counterparty by name; what an employee may learn about colleagues, on the reasoning behind R12 |
+| Q26 | A shift can straddle two roster periods, and both rosters can then carry it without either superseding the other. Which roster governs such a shift, and is R3 judged across every authoritative roster or within one? | NaimElijah | R3 across rosters: today it is enforced within one roster only ([#63](https://github.com/NaimElijah/HrSched/issues/63)) |
 
 **Resolved**
 

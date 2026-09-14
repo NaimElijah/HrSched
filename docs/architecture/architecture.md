@@ -380,7 +380,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   question of the one person being assigned, so the board is told as it happens; publication asks
   it of everybody, so a swap approval and a generated draft are held to it too. Both answer 422.
   It looks within one roster only: whether R3 should also look across rosters, for a shift that
-  straddles two roster periods, is undecided (#63).
+  straddles two roster periods, is Q26.
 - **Reading the people of an organisation is restricted to Admins and Schedulers**, because
   unavailability is personal data. Generation reaches the same data through the anti-corruption
   layer carrying the Scheduler's own identity, so the restriction holds there too.
