@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dayLabel, timeLabel } from '../components/localDates';
 import { ActingAsProvider } from '../identity/ActingAs';
+import { callsTo, routeTo, type Answer } from '../test-support/routeTo';
 import { RostersPage } from './RostersPage';
 
 /**
@@ -48,35 +49,6 @@ const GRACE = { ...ADA, id: 'emp-2', name: 'Grace' };
 
 const FORKLIFT = { id: 'q-1', name: 'Forklift' };
 
-interface Answer {
-  readonly status: number;
-  readonly body: unknown;
-}
-
-/**
- * Answers by `METHOD path` when a key names a method, and otherwise by the longest path prefix, so
- * `/api/rosters/roster-1` is never answered with the roster list.
- */
-function routeTo(handlers: Record<string, Answer>) {
-  const stub = vi.fn((path: string, init?: RequestInit) => {
-    const method = init?.method ?? 'GET';
-    const bare = path.split('?')[0] ?? path;
-    const prefix = Object.keys(handlers)
-      .filter((key) => !key.includes(' ') && bare.startsWith(key))
-      .sort((a, b) => b.length - a.length)[0];
-    const match = handlers[`${method} ${bare}`] ??
-      (prefix === undefined ? undefined : handlers[prefix]) ?? { status: 404, body: {} };
-    return Promise.resolve({
-      ok: match.status < 400,
-      status: match.status,
-      headers: new Headers(),
-      text: () => Promise.resolve(JSON.stringify(match.body)),
-    });
-  });
-  vi.stubGlobal('fetch', stub);
-  return stub;
-}
-
 /** A draft with Ada on its one shift, and Grace free to be assigned. */
 function aDraft(overrides: Record<string, Answer> = {}) {
   return routeTo({
@@ -107,12 +79,6 @@ async function assignGrace(board: HTMLElement) {
   await waitFor(() => expect(within(picker).getAllByRole('option')).toHaveLength(3));
   await userEvent.selectOptions(picker, 'emp-2');
   await userEvent.click(within(board).getByRole('button', { name: /^Assign to/ }));
-}
-
-function calls(stub: ReturnType<typeof routeTo>, method: string, path: string) {
-  return stub.mock.calls.filter(
-    ([called, init]) => (init?.method ?? 'GET') === method && called === path,
-  );
 }
 
 afterEach(() => {
@@ -284,7 +250,7 @@ describe('the board of a draft', () => {
     expect(
       await within(board).findByRole('button', { name: /^Remove Grace from/ }),
     ).toBeInTheDocument();
-    const [posted] = calls(stub, 'POST', '/api/rosters/roster-1/assignments');
+    const [posted] = callsTo(stub, 'POST', '/api/rosters/roster-1/assignments');
     expect(JSON.parse(String(posted?.[1]?.body))).toEqual({
       shift: 'shift-1',
       employee: 'emp-2',
@@ -308,7 +274,7 @@ describe('the board of a draft', () => {
         within(board).queryByRole('button', { name: /^Remove Ada from/ }),
       ).not.toBeInTheDocument(),
     );
-    expect(calls(stub, 'DELETE', '/api/rosters/roster-1/assignments/shift-1/emp-1')).toHaveLength(
+    expect(callsTo(stub, 'DELETE', '/api/rosters/roster-1/assignments/shift-1/emp-1')).toHaveLength(
       1,
     );
   });
@@ -359,12 +325,12 @@ describe('the board of a draft', () => {
     });
     renderPage();
     const board = await openBoard();
-    const listedBefore = calls(stub, 'GET', '/api/rosters').length;
+    const listedBefore = callsTo(stub, 'GET', '/api/rosters').length;
 
     await assignGrace(board);
 
     await waitFor(() =>
-      expect(calls(stub, 'GET', '/api/rosters').length).toBeGreaterThan(listedBefore),
+      expect(callsTo(stub, 'GET', '/api/rosters').length).toBeGreaterThan(listedBefore),
     );
     expect(board).toBeInTheDocument();
     expect(within(board).getByRole('button', { name: /^Remove Grace from/ })).toBeInTheDocument();
