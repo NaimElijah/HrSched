@@ -22,6 +22,8 @@ export function SwapsPage({ people }: { people: readonly Employee[] }) {
   const { identity } = useActingAs();
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
+  // One decision at a time: a second approval racing the first could publish a second replacement.
+  const [deciding, setDeciding] = useState(false);
 
   const swaps = useAsync(() => scheduling.findSwapRequests(identity), identityKey(identity));
   const shiftIds = [...new Set((swaps.value ?? []).map((swap) => swap.shift))].sort();
@@ -34,6 +36,10 @@ export function SwapsPage({ people }: { people: readonly Employee[] }) {
   const nameOf = (employee: string): string => personById.get(employee)?.name ?? employee;
 
   async function decide(action: () => Promise<unknown>, outcome: string) {
+    if (deciding) {
+      return;
+    }
+    setDeciding(true);
     setFailure(null);
     setDone(null);
     try {
@@ -42,6 +48,7 @@ export function SwapsPage({ people }: { people: readonly Employee[] }) {
     } catch (error) {
       setFailure(error);
     } finally {
+      setDeciding(false);
       // Either way the queue may have moved: a refusal can mean somebody else decided it first.
       swaps.reload();
     }
@@ -97,6 +104,7 @@ export function SwapsPage({ people }: { people: readonly Employee[] }) {
                     <>
                       <button
                         type="button"
+                        disabled={deciding}
                         aria-label={`Approve: ${what}`}
                         onClick={() =>
                           void decide(
@@ -109,6 +117,7 @@ export function SwapsPage({ people }: { people: readonly Employee[] }) {
                       </button>{' '}
                       <button
                         type="button"
+                        disabled={deciding}
                         aria-label={`Decline: ${what}`}
                         onClick={() =>
                           void decide(

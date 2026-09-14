@@ -58,6 +58,8 @@ export function RosterBoard({
   const heading = useId();
   const [changed, setChanged] = useState<Roster | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
+  // One change at a time: two racing each other could leave the board showing the older answer.
+  const [changing, setChanging] = useState(false);
 
   const loaded = useAsync(
     () => scheduling.findRoster(identity, id),
@@ -85,13 +87,22 @@ export function RosterBoard({
   const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (employee: string): string => personById.get(employee)?.name ?? employee;
 
-  async function change(action: () => Promise<Roster>) {
+  /** @returns whether the change was stored, so a control can reset only on success */
+  async function change(action: () => Promise<Roster>): Promise<boolean> {
+    if (changing) {
+      return false;
+    }
+    setChanging(true);
     setFailure(null);
     try {
       setChanged(await action());
       onChanged();
+      return true;
     } catch (error) {
       setFailure(error);
+      return false;
+    } finally {
+      setChanging(false);
     }
   }
 
@@ -146,6 +157,7 @@ export function RosterBoard({
                     }
                     people={people}
                     nameOf={nameOf}
+                    busy={changing}
                     onAssign={(employee) =>
                       change(() => scheduling.assign(identity, roster.id, shift.id, employee))
                     }
@@ -170,6 +182,7 @@ function ShiftOnBoard({
   requires,
   people,
   nameOf,
+  busy,
   onAssign,
   onRemove,
 }: {
@@ -180,8 +193,10 @@ function ShiftOnBoard({
   requires: string;
   people: readonly Employee[];
   nameOf: (employee: string) => string;
-  onAssign: (employee: string) => Promise<void>;
-  onRemove: (employee: string) => Promise<void>;
+  /** A change is on its way somewhere on the board, so these controls wait for its answer. */
+  busy: boolean;
+  onAssign: (employee: string) => Promise<boolean>;
+  onRemove: (employee: string) => Promise<boolean>;
 }) {
   const [choice, setChoice] = useState('');
   const times = `${timeLabel(shift.start)} to ${timeLabel(shift.end)}`;
@@ -208,6 +223,7 @@ function ShiftOnBoard({
                   {' '}
                   <button
                     type="button"
+                    disabled={busy}
                     aria-label={`Remove ${nameOf(employee)} from ${when}`}
                     onClick={() => void onRemove(employee)}
                   >
@@ -224,12 +240,17 @@ function ShiftOnBoard({
           className="row"
           onSubmit={(event) => {
             event.preventDefault();
-            void onAssign(choice);
+            void onAssign(choice).then((assigned) => {
+              if (assigned) {
+                setChoice('');
+              }
+            });
           }}
         >
           <select
             value={choice}
             required
+            disabled={busy}
             aria-label={`Who to assign to ${when}`}
             onChange={(event) => setChoice(event.target.value)}
           >
@@ -240,7 +261,7 @@ function ShiftOnBoard({
               </option>
             ))}
           </select>
-          <button type="submit" aria-label={`Assign to ${when}`}>
+          <button type="submit" disabled={busy} aria-label={`Assign to ${when}`}>
             Assign
           </button>
         </form>

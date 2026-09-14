@@ -153,6 +153,42 @@ describe('deciding', () => {
     expect(await screen.findByText(/^Approved\./)).toHaveAttribute('role', 'status');
   });
 
+  /**
+   * A second approval racing the first could publish a second replacement roster, so while one
+   * decision is on its way no other can be sent.
+   */
+  it('GivenADecisionInFlight_WhenApproveIsPressedAgain_ThenOnlyOneApprovalIsSent', async () => {
+    const routed = aQueue({
+      'POST /api/swaps/swap-1/approval': {
+        status: 200,
+        body: { id: 'roster-2', status: 'PUBLISHED' },
+      },
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        (init?.method ?? 'GET') === 'GET'
+          ? routed(path, init)
+          : held.then(() => routed(path, init)),
+      ),
+    );
+    show();
+    const approve = await screen.findByRole('button', { name: /^Approve/ });
+
+    await userEvent.click(approve);
+    await userEvent.click(approve);
+
+    expect(approve).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Decline/ })).toBeDisabled();
+    release();
+    await screen.findByText(/^Approved\./);
+    expect(callsTo(routed, 'POST', '/api/swaps/swap-1/approval')).toHaveLength(1);
+  });
+
   it('GivenAPendingSwap_WhenDeclined_ThenARejectionIsPosted', async () => {
     const stub = aQueue({ 'POST /api/swaps/swap-1/rejection': { status: 204, body: null } });
     show();

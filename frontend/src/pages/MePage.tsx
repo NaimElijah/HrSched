@@ -95,11 +95,16 @@ export function MePage({
     }
   }
 
-  async function handOver(requester: string, work: RosteredShift, colleague: string) {
+  /** @returns whether the request was stored, so the form clears only when it was */
+  async function handOver(
+    requester: string,
+    work: RosteredShift,
+    colleague: string,
+  ): Promise<boolean> {
     setDone(null);
     if (colleague.trim() === '') {
       setFailure(new Error('Give the identifier of the colleague who would take it.'));
-      return;
+      return false;
     }
     setFailure(null);
     try {
@@ -110,8 +115,10 @@ export function MePage({
         counterparty: colleague.trim(),
       });
       setDone('Asked. A Scheduler decides, and your colleague has been told you asked.');
+      return true;
     } catch (error) {
       setFailure(error);
+      return false;
     }
   }
 
@@ -229,9 +236,11 @@ function OwnShift({
   onHandOver,
 }: {
   work: RosteredShift;
-  onHandOver: (colleague: string) => Promise<void>;
+  onHandOver: (colleague: string) => Promise<boolean>;
 }) {
   const [colleague, setColleague] = useState('');
+  // Each request is stored, so a second one sent while the first is on its way would be a duplicate.
+  const [asking, setAsking] = useState(false);
   const when = `${timeLabel(work.start)} to ${timeLabel(work.end)} on ${dayLabel(work.start)}`;
 
   return (
@@ -243,7 +252,16 @@ function OwnShift({
         className="row"
         onSubmit={(event) => {
           event.preventDefault();
-          void onHandOver(colleague);
+          if (asking) {
+            return;
+          }
+          setAsking(true);
+          void onHandOver(colleague).then((asked) => {
+            setAsking(false);
+            if (asked) {
+              setColleague('');
+            }
+          });
         }}
       >
         {/* Each name starts with the visible label and then says which shift, since one repeats per shift. */}
@@ -256,7 +274,7 @@ function OwnShift({
             aria-label={`Colleague's employee identifier, to take ${when}`}
           />
         </label>
-        <button type="submit" aria-label={`Ask to hand it over: ${when}`}>
+        <button type="submit" disabled={asking} aria-label={`Ask to hand it over: ${when}`}>
           Ask to hand it over
         </button>
       </form>

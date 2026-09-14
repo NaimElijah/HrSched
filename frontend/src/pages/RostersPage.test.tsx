@@ -49,6 +49,12 @@ const GRACE = { ...ADA, id: 'emp-2', name: 'Grace' };
 
 const FORKLIFT = { id: 'q-1', name: 'Forklift' };
 
+/** The draft as the server returns it once Grace has been put on the shift beside Ada. */
+const WITH_GRACE = {
+  ...ROSTER,
+  assignments: [...ROSTER.assignments, { shift: 'shift-1', employee: 'emp-2' }],
+};
+
 /** A draft with Ada on its one shift, and Grace free to be assigned. */
 function aDraft(overrides: Record<string, Answer> = {}) {
   return routeTo({
@@ -294,6 +300,49 @@ describe('the board of a draft', () => {
     const alert = await within(board).findByRole('alert');
     expect(alert).toHaveTextContent('Refused.');
     expect(alert).toHaveTextContent('does not hold every qualification the shift requires');
+  });
+
+  /**
+   * Two changes racing each other could show whichever answer arrived last, not the latest roster,
+   * so the board takes one change at a time.
+   */
+  it('GivenAChangeInFlight_WhenTheBoardIsUsedAgain_ThenItsControlsWaitForTheFirstAnswer', async () => {
+    const routed = aDraft({
+      'POST /api/rosters/roster-1/assignments': { status: 200, body: WITH_GRACE },
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        (init?.method ?? 'GET') === 'GET'
+          ? routed(path, init)
+          : held.then(() => routed(path, init)),
+      ),
+    );
+    renderPage();
+    const board = await openBoard();
+
+    await assignGrace(board);
+
+    expect(within(board).getByRole('button', { name: /^Remove Ada from/ })).toBeDisabled();
+    expect(within(board).getByRole('button', { name: /^Assign to/ })).toBeDisabled();
+    release();
+    expect(await within(board).findByRole('button', { name: /^Remove Grace from/ })).toBeEnabled();
+  });
+
+  /** Left selected, the picker would send the same person again on the next press. */
+  it('GivenASuccessfulAssignment_WhenItIsShown_ThenThePickerIsReadyForTheNextOne', async () => {
+    aDraft({ 'POST /api/rosters/roster-1/assignments': { status: 200, body: WITH_GRACE } });
+    renderPage();
+    const board = await openBoard();
+
+    await assignGrace(board);
+
+    await within(board).findByRole('button', { name: /^Remove Grace from/ });
+    expect(within(board).getByLabelText(/^Who to assign/)).toHaveValue('');
   });
 
   it('GivenAPublishedRoster_WhenOpened_ThenThereAreNoEditingControls', async () => {

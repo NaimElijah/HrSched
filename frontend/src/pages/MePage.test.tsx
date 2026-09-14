@@ -237,6 +237,57 @@ describe('handing a shift to a colleague', () => {
     await waitFor(() => expect(screen.getByText(/^Asked\./)).toHaveAttribute('role', 'status'));
   });
 
+  /** Left filled in, the field invites the same request again, and each one is stored. */
+  it('GivenAHandOverThatSucceeds_WhenItIsAnnounced_ThenTheFieldIsClearedSoItIsNotAskedTwice', async () => {
+    actingAsEmployee(EMPLOYEE);
+    stubbed({
+      schedule: { status: 200, body: [WORK] },
+      write: { status: 201, body: { id: 'swap-1', status: 'REQUESTED' } },
+    });
+    show();
+    const field = await screen.findByLabelText(/^Colleague's employee identifier/);
+
+    await userEvent.type(field, COLLEAGUE);
+    await userEvent.click(screen.getByRole('button', { name: /^Ask to hand/ }));
+
+    await screen.findByText(/^Asked\./);
+    expect(field).toHaveValue('');
+  });
+
+  it('GivenAHandOverInFlight_WhenAskedAgain_ThenOnlyOneRequestIsSent', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const routed = stubbed({
+      schedule: { status: 200, body: [WORK] },
+      write: { status: 201, body: { id: 'swap-1', status: 'REQUESTED' } },
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        (init?.method ?? 'GET') === 'GET'
+          ? routed(path, init)
+          : held.then(() => routed(path, init)),
+      ),
+    );
+    show();
+    await userEvent.type(
+      await screen.findByLabelText(/^Colleague's employee identifier/),
+      COLLEAGUE,
+    );
+    const ask = screen.getByRole('button', { name: /^Ask to hand/ });
+
+    await userEvent.click(ask);
+    await userEvent.click(ask);
+
+    expect(ask).toBeDisabled();
+    release();
+    await screen.findByText(/^Asked\./);
+    expect(writes(routed)).toHaveLength(1);
+  });
+
   it('GivenNoColleagueIdentifier_WhenHandingAShiftOver_ThenNothingIsSent', async () => {
     actingAsEmployee(EMPLOYEE);
     const stub = stubbed({ schedule: { status: 200, body: [WORK] } });
