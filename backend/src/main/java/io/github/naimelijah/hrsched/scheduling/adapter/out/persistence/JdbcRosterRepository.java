@@ -26,6 +26,7 @@ import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Driven adapter storing rosters in PostgreSQL.
@@ -104,6 +105,13 @@ public class JdbcRosterRepository implements RosterRepository {
    */
   @Override
   public void lockPublicationsOf(OrganisationId organisation) {
+    // Taken in autocommit, a transaction-scoped lock ends with its own statement: the caller would
+    // believe it was taking turns while nothing waited for anything.
+    if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+      throw new IllegalStateException(
+          "Publications can only be locked inside a transaction; outside one the lock would be"
+              + " released as soon as it was taken");
+    }
     jdbc.sql("SELECT pg_advisory_xact_lock(hashtext(:scope), hashtext(:organisation))")
         .param("scope", PUBLICATION_LOCK_SCOPE)
         .param("organisation", organisation.value().toString())

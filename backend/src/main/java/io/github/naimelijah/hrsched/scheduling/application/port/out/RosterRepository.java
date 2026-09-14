@@ -28,6 +28,8 @@ public interface RosterRepository {
    * committed (ADR-027). Taking it again within the same use case is harmless.
    *
    * @param organisation whose publications take turns
+   * @throws IllegalStateException if called outside the unit of work a use case runs in, where
+   *     there is nothing to hold the lock until
    */
   void lockPublicationsOf(OrganisationId organisation);
 

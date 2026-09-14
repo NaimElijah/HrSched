@@ -499,6 +499,17 @@ class JdbcRosterRepositoryTest {
   }
 
   /**
+   * Outside a transaction the lock would be released the moment the statement taking it ended, so
+   * nothing would wait for anything and the caller would not know. It is refused instead, so a use
+   * case that is not wrapped in its transaction fails loudly rather than racing quietly (ADR-027).
+   */
+  @Test
+  void GivenNoTransaction_WhenLockingAnOrganisationsPublications_ThenItIsRefused() {
+    assertThatThrownBy(() -> repository.lockPublicationsOf(ACME))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  /**
    * How long a probing transaction waits for the lock before giving up. Any wait at all proves the
    * point; this only has to be long enough that a lock free to take is never mistaken for one held.
    */
