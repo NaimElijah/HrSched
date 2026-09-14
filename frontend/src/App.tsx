@@ -74,29 +74,35 @@ export function App() {
         ))}
       </nav>
 
-      <label className="span">
-        Planning span
-        <input
-          type="date"
-          value={localDate(span.from)}
-          onChange={(event) => {
-            const changed = startOfLocalDay(event.target.value);
-            if (changed !== null) {
-              setSpan({ ...span, from: changed });
-            }
-          }}
-        />
-        <input
-          type="date"
-          value={localDate(span.to)}
-          onChange={(event) => {
-            const changed = startOfLocalDay(event.target.value);
-            if (changed !== null) {
-              setSpan({ ...span, to: changed });
-            }
-          }}
-        />
-      </label>
+      <fieldset className="span">
+        <legend>Planning span</legend>
+        <label>
+          Span from
+          <input
+            type="date"
+            value={localDate(span.from)}
+            onChange={(event) => {
+              const changed = startOfLocalDay(event.target.value);
+              if (changed !== null) {
+                setSpan({ ...span, from: changed });
+              }
+            }}
+          />
+        </label>
+        <label>
+          Span to
+          <input
+            type="date"
+            value={localDate(span.to)}
+            onChange={(event) => {
+              const changed = startOfLocalDay(event.target.value);
+              if (changed !== null) {
+                setSpan({ ...span, to: changed });
+              }
+            }}
+          />
+        </label>
+      </fieldset>
 
       <main>
         {!ready ? <p>Setting up an organisation…</p> : null}

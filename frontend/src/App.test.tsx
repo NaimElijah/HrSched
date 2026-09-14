@@ -128,6 +128,18 @@ describe('navigating', () => {
     expect(screen.getByRole('heading', { name: 'Qualifications' })).toBeInTheDocument();
   });
 
+  /** Both dates used to sit inside one label, so a screen reader named them identically. */
+  it('GivenThePlanningSpan_WhenRendered_ThenEachDateHasItsOwnName', async () => {
+    actingAs('ADMIN');
+    respondWith({ ok: true, status: 200, body: [] });
+
+    show();
+
+    const span = await screen.findByRole('group', { name: 'Planning span' });
+    expect(within(span).getByLabelText('Span from')).toHaveAttribute('type', 'date');
+    expect(within(span).getByLabelText('Span to')).toHaveAttribute('type', 'date');
+  });
+
   it('GivenTheMeTab_WhenOpenedWithoutAnEmployeeLink_ThenItExplainsWhatToDo', async () => {
     actingAs('EMPLOYEE');
     respondWith({ ok: false, status: 403, body: { detail: 'Your role does not permit this.' } });

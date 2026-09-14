@@ -139,7 +139,10 @@ export function MePage() {
         </button>
       </form>
 
-      {done === null ? null : <p className="done">{done}</p>}
+      {/* Always in the page, so the outcome is announced when it arrives rather than skipped. */}
+      <p className="done" role="status">
+        {done}
+      </p>
       <Failure error={failure} />
     </section>
   );

@@ -106,11 +106,23 @@ nav {
   border-color: var(--ink);
 }
 
-.span {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1.25rem;
+fieldset.span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem 0.75rem;
+  border: 0;
+  padding: 0;
+  margin: 0 0 1.25rem;
+}
+
+/* Floated, so the legend lines up beside the inputs instead of sitting in the fieldset's border. */
+fieldset.span legend {
+  float: left;
+  align-self: center;
+  padding: 0;
+  font-size: 0.82rem;
+  color: #5f5a52;
 }
 
 .hint {
@@ -184,6 +196,30 @@ code {
 
 .busy {
   color: #5f5a52;
+}
+
+/*
+ * Live regions stay in the page while silent, so only their box goes. Not display:none, which
+ * removes a region from the accessibility tree and stops it announcing at all.
+ */
+.busy:empty,
+.done:empty {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Named for assistive technology without taking space on screen. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .detail {

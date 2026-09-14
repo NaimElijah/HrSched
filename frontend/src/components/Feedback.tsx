@@ -78,6 +78,17 @@ export function Failure({
   );
 }
 
+/**
+ * Says a request is in flight, from a live region that is present even while there is nothing to
+ * say.
+ *
+ * A live region is announced when its content changes, so one that only appeared along with its
+ * text would be skipped by a screen reader.
+ */
 export function Busy({ busy }: { busy: boolean }) {
-  return busy ? <p className="busy">Working…</p> : null;
+  return (
+    <p className="busy" role="status">
+      {busy ? 'Working…' : null}
+    </p>
+  );
 }

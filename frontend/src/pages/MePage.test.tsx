@@ -187,7 +187,7 @@ describe('declaring unavailability', () => {
     expect(stub.mock.calls[0]?.[0]).toBe(`/api/employees/${EMPLOYEE}/unavailability`);
   });
 
-  it('GivenTheBackendAccepts_WhenDeclaring_ThenItSaysNobodyWillBeRosteredThen', async () => {
+  it('GivenTheBackendAccepts_WhenDeclaring_ThenItIsAnnouncedThatNobodyWillBeRosteredThen', async () => {
     actingAsEmployee(EMPLOYEE);
     accepting();
     show();
@@ -196,7 +196,7 @@ describe('declaring unavailability', () => {
     await userEvent.click(screen.getByRole('button', { name: 'I cannot work this' }));
 
     await waitFor(() =>
-      expect(screen.getByText('Recorded: you cannot work then.')).toBeInTheDocument(),
+      expect(screen.getByRole('status')).toHaveTextContent('Recorded: you cannot work then.'),
     );
   });
 

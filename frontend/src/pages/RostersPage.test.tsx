@@ -113,6 +113,19 @@ describe('the rosters page', () => {
     expect(alert).toHaveTextContent('There is no override');
   });
 
+  it('GivenTheRosterTable_WhenRendered_ThenEveryColumnHasAHeader', async () => {
+    routeTo({
+      '/api/rosters': { status: 200, body: [ROSTER] },
+      '/api/shifts': { status: 200, body: [] },
+      '/api/employees': { status: 200, body: [] },
+    });
+    renderPage();
+
+    await screen.findByRole('button', { name: 'Open' });
+
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+  });
+
   it('GivenAnEmptyDraft_WhenOpened_ThenTheGapIsExplainedRatherThanLeftBlank', async () => {
     routeTo({
       '/api/rosters': {

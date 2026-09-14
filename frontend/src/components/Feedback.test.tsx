@@ -194,16 +194,21 @@ describe('the trace reference', () => {
   });
 });
 
+/**
+ * A live region is announced when its content changes, not when it appears, so it has to be in the
+ * page before there is anything to say. Rendering nothing while idle meant "Working…" arrived in a
+ * brand-new element that screen readers did not announce.
+ */
 describe('the working indicator', () => {
-  it('GivenARequestInFlight_WhenRendering_ThenTheIndicatorIsShown', () => {
+  it('GivenARequestInFlight_WhenRendering_ThenItIsAnnouncedAsStatus', () => {
     render(<Busy busy />);
 
-    expect(screen.getByText('Working…')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Working…');
   });
 
-  it('GivenNothingInFlight_WhenRendering_ThenNothingIsShown', () => {
-    const { container } = render(<Busy busy={false} />);
+  it('GivenNothingInFlight_WhenRendering_ThenTheStatusRegionIsPresentButSilent', () => {
+    render(<Busy busy={false} />);
 
-    expect(container).toBeEmptyDOMElement();
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 });

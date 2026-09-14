@@ -79,7 +79,9 @@ export function RostersPage({ span }: { span: { from: string; to: string } }) {
             <th>Status</th>
             <th>Assignments</th>
             <th>Approved under</th>
-            <th />
+            <th>
+              <span className="visually-hidden">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody>

@@ -172,13 +172,22 @@ describe('granting a qualification', () => {
 });
 
 describe('setting contracted hours', () => {
+  /** One name repeated on every row gave a screen reader no way to tell whose field it was in. */
+  it('GivenSeveralPeople_WhenListed_ThenEachContractFieldIsNamedForItsEmployee', async () => {
+    routeTo();
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+
+    expect(screen.getByLabelText('Contracted minutes per week for Ada')).toBeInTheDocument();
+    expect(screen.getByLabelText('Contracted minutes per week for Grace')).toBeInTheDocument();
+  });
+
   it('GivenTypedMinutes_WhenSet_ThenTheyAreSentAsANumber', async () => {
     const stub = routeTo();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
-    const fields = screen.getAllByLabelText('Contracted minutes per week');
-    await userEvent.type(fields[0] as HTMLElement, '2400');
+    await userEvent.type(screen.getByLabelText('Contracted minutes per week for Ada'), '2400');
     await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
 
     await waitFor(() => {
@@ -198,8 +207,7 @@ describe('setting contracted hours', () => {
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
-    const fields = screen.getAllByLabelText('Contracted minutes per week');
-    await userEvent.type(fields[0] as HTMLElement, '5');
+    await userEvent.type(screen.getByLabelText('Contracted minutes per week for Ada'), '5');
     await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
 
     await waitFor(() =>

@@ -97,6 +97,7 @@ export function PeoplePage() {
               </td>
               <td>
                 <ContractField
+                  employee={employee.name}
                   onSubmit={(minutes) =>
                     act(() => workforce.setContract(identity, employee.id, minutes))
                   }
@@ -110,7 +111,14 @@ export function PeoplePage() {
   );
 }
 
-function ContractField({ onSubmit }: { onSubmit: (minutes: number) => Promise<unknown> }) {
+function ContractField({
+  employee,
+  onSubmit,
+}: {
+  /** Whose field it is, so every row's input has a name of its own. */
+  employee: string;
+  onSubmit: (minutes: number) => Promise<unknown>;
+}) {
   const [minutes, setMinutes] = useState('');
   return (
     <form
@@ -124,7 +132,7 @@ function ContractField({ onSubmit }: { onSubmit: (minutes: number) => Promise<un
         type="number"
         min="1"
         value={minutes}
-        aria-label="Contracted minutes per week"
+        aria-label={`Contracted minutes per week for ${employee}`}
         onChange={(event) => setMinutes(event.target.value)}
         required
       />
