@@ -100,11 +100,20 @@ export function identityKey(identity: ActingIdentity): string {
  * so an unencoded value can quietly address a different endpoint. Every path carrying an identifier
  * is built with this, whether the identifier came from the server or was typed by hand.
  *
+ * Encoding keeps a `/` inside its segment, but nothing keeps `.` or `..` there: encodeURIComponent
+ * leaves dots alone, and the URL parser reads `%2e%2e` as `..` anyway. Those two are refused.
+ *
  * @param segments the literal parts of the path
  * @param identifiers the values placed between them
  * @returns the path, with each identifier percent-encoded
+ * @throws Error when an identifier is exactly `.` or `..`, which no encoding can keep in its segment
  */
 export function path(segments: TemplateStringsArray, ...identifiers: readonly string[]): string {
+  if (identifiers.some((identifier) => identifier === '.' || identifier === '..')) {
+    throw new Error(
+      'An identifier in a path cannot be "." or "..": it would address another endpoint.',
+    );
+  }
   return String.raw(
     { raw: segments },
     ...identifiers.map((identifier) => encodeURIComponent(identifier)),

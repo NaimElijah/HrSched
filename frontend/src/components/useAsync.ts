@@ -49,8 +49,9 @@ export function useAsync<T>(load: () => Promise<T>, key: string): AsyncState<T> 
 
   useEffect(() => {
     let live = true;
-    loader
-      .current()
+    // Started inside a promise, so a loader that fails before it has a promise to return is a failure
+    // to hold like any other, rather than one thrown out of the effect and taking the page with it.
+    new Promise<T>((resolve) => resolve(loader.current()))
       .then((value) => {
         if (live) {
           setSettled({ asked: key, key: wanted, value, error: null });

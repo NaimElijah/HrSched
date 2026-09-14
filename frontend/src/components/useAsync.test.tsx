@@ -66,6 +66,25 @@ describe('holding the three states a caller has to render', () => {
     expect(busy()).toBe('settled');
   });
 
+  /**
+   * A loader can fail before it has a promise to return — a path it must refuse to build, for one.
+   * That failure is held like any other, rather than thrown out of the effect, where it would take
+   * the whole page down with it.
+   */
+  it('GivenALoaderThatThrowsBeforeReturningAPromise_WhenMounted_ThenTheFailureIsHeld', async () => {
+    render(
+      <Probe
+        load={() => {
+          throw new Error('refused before asking');
+        }}
+        asked="a"
+      />,
+    );
+
+    await waitFor(() => expect(failure()).toContain('refused before asking'));
+    expect(busy()).toBe('settled');
+  });
+
   it('GivenALoadStillInFlight_WhenRendered_ThenItReportsBusy', () => {
     render(<Probe load={() => deferred<string>().promise} asked="a" />);
 

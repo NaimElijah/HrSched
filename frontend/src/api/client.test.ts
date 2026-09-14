@@ -236,6 +236,14 @@ describe('building a path', () => {
     expect(path`/api/organisations/${'../employees'}`).toBe('/api/organisations/..%2Femployees');
   });
 
+  /**
+   * Encoding cannot help: encodeURIComponent leaves dots alone, and the URL parser reads `%2e%2e` as
+   * `..` anyway. `/api/organisations/..` would quietly become `/api/`, so the path is refused.
+   */
+  it.each(['.', '..'])('GivenADotSegment_WhenBuildingAPath_ThenItIsRefused (%s)', (segment) => {
+    expect(() => path`/api/organisations/${segment}`).toThrow(/cannot be "\." or "\.\."/);
+  });
+
   it('GivenOrdinaryIdentifiers_WhenBuildingAPath_ThenTheyArePlacedUnchanged', () => {
     expect(path`/api/employees/${'e-1'}/qualifications/${'q-1'}`).toBe(
       '/api/employees/e-1/qualifications/q-1',
