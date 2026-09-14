@@ -5,10 +5,11 @@ import type { Notification, NotificationKind } from '../api/notifications';
 import { scheduling } from '../api/scheduling';
 import type { Shift, SwapRequest } from '../api/scheduling';
 import { Busy, Failure } from '../components/Feedback';
-import { dayLabel, timeLabel } from '../components/localDates';
+import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useActingAs } from '../identity/ActingAs';
 import { SWAP_STATUS } from './swapStatus';
+import { useShiftsById } from './useShiftsById';
 
 /**
  * The words for each kind of notification.
@@ -56,14 +57,10 @@ export function Inbox({
   const swaps = useAsync(() => scheduling.findSwapRequests(identity), identityKey(identity));
 
   const swapById = new Map((swaps.value ?? []).map((swap) => [swap.id, swap]));
-  const shiftIds = [...new Set((swaps.value ?? []).map((swap) => swap.shift))].sort();
-  // One read per shift, by identifier, which any member may do: the colleague asked to take a shift
-  // has no other way to learn when it is, because it is not theirs.
-  const shifts = useAsync(
-    () => Promise.all(shiftIds.map((id) => scheduling.findShift(identity, id))),
-    `${identityKey(identity)}|${shiftIds.join(',')}`,
+  const shifts = useShiftsById(
+    identity,
+    (swaps.value ?? []).map((swap) => swap.shift),
   );
-  const shiftById = new Map((shifts.value ?? []).map((shift) => [shift.id, shift]));
 
   async function markRead(notification: Notification) {
     setFailure(null);
@@ -96,7 +93,7 @@ export function Inbox({
             <li key={notification.id}>
               <p>{wording}</p>
               {swap === undefined ? null : (
-                <p>{describe(swap, employee, shiftById.get(swap.shift), nameOf)}</p>
+                <p>{describe(swap, employee, shifts.byId.get(swap.shift), nameOf)}</p>
               )}
               <p className="hint">{`${at} · ${notification.read ? 'read' : 'unread'}`}</p>
               {notification.read ? null : (
@@ -122,10 +119,7 @@ function describe(
   shift: Shift | undefined,
   nameOf: (employee: string) => string,
 ): string {
-  const when =
-    shift === undefined
-      ? 'a shift'
-      : `${timeLabel(shift.start)} to ${timeLabel(shift.end)} on ${dayLabel(shift.start)}`;
+  const when = shift === undefined ? 'a shift' : shiftLabel(shift.start, shift.end);
   return swap.requester === reader
     ? `You asked ${nameOf(swap.counterparty)} to take ${when} — ${SWAP_STATUS[swap.status]}.`
     : `${nameOf(swap.requester)} asked you to take ${when} — ${SWAP_STATUS[swap.status]}.`;

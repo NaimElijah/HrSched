@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { dayLabel, defaultSpan, localDate, startOfLocalDay, timeLabel } from './localDates';
+import {
+  dayLabel,
+  defaultSpan,
+  localDate,
+  shiftLabel,
+  startOfLocalDay,
+  timeLabel,
+} from './localDates';
 
 /**
  * These functions are zone-dependent on purpose — that is what the hazard in their comments is
@@ -73,6 +80,16 @@ describe('labelling an instant for a reader', () => {
     const justAfterMidnight = new Date(2026, 9, 6, 0, 30, 0).toISOString();
 
     expect(dayLabel(lateEvening)).not.toBe(dayLabel(justAfterMidnight));
+  });
+
+  /** One sentence for a shift, so the board, the queue, the inbox and Me cannot describe it apart. */
+  it('GivenAShift_WhenDescribingIt_ThenItReadsAsItsTimesOnItsDay', () => {
+    const start = new Date(2026, 9, 5, 8, 0, 0).toISOString();
+    const end = new Date(2026, 9, 5, 16, 0, 0).toISOString();
+
+    expect(shiftLabel(start, end)).toBe(
+      `${timeLabel(start)} to ${timeLabel(end)} on ${dayLabel(start)}`,
+    );
   });
 
   /** A shift is read to the minute; seconds would be noise nobody entered. */

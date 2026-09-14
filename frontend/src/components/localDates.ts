@@ -56,6 +56,20 @@ export function timeLabel(instant: string): string {
 }
 
 /**
+ * A shift described for a reader: its times, on its day.
+ *
+ * The one sentence every screen uses, so a shift reads the same on the roster board, in the swap
+ * queue, in an inbox and on Me.
+ *
+ * @param start the shift's start, an ISO instant
+ * @param end the shift's end, an ISO instant
+ * @returns its start and end times and the day it starts, in the reader's locale and zone
+ */
+export function shiftLabel(start: string, end: string): string {
+  return `${timeLabel(start)} to ${timeLabel(end)} on ${dayLabel(start)}`;
+}
+
+/**
  * The span the scheduling pages open on: today through a fortnight ahead, in local time.
  *
  * The clock is a parameter rather than a call to `new Date()` inside, so that the one piece of

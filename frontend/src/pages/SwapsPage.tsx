@@ -3,10 +3,11 @@ import { identityKey } from '../api/client';
 import { scheduling } from '../api/scheduling';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
-import { dayLabel, timeLabel } from '../components/localDates';
+import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useActingAs } from '../identity/ActingAs';
 import { SWAP_STATUS } from './swapStatus';
+import { useShiftsById } from './useShiftsById';
 
 /**
  * Scheduler: answer the swap requests (F7).
@@ -26,12 +27,10 @@ export function SwapsPage({ people }: { people: readonly Employee[] }) {
   const [deciding, setDeciding] = useState(false);
 
   const swaps = useAsync(() => scheduling.findSwapRequests(identity), identityKey(identity));
-  const shiftIds = [...new Set((swaps.value ?? []).map((swap) => swap.shift))].sort();
-  const shifts = useAsync(
-    () => Promise.all(shiftIds.map((id) => scheduling.findShift(identity, id))),
-    `${identityKey(identity)}|${shiftIds.join(',')}`,
+  const shifts = useShiftsById(
+    identity,
+    (swaps.value ?? []).map((swap) => swap.shift),
   );
-  const shiftById = new Map((shifts.value ?? []).map((shift) => [shift.id, shift]));
   const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (employee: string): string => personById.get(employee)?.name ?? employee;
 
@@ -86,11 +85,8 @@ export function SwapsPage({ people }: { people: readonly Employee[] }) {
         </thead>
         <tbody>
           {(swaps.value ?? []).map((swap) => {
-            const shift = shiftById.get(swap.shift);
-            const when =
-              shift === undefined
-                ? 'A shift'
-                : `${timeLabel(shift.start)} to ${timeLabel(shift.end)} on ${dayLabel(shift.start)}`;
+            const shift = shifts.byId.get(swap.shift);
+            const when = shift === undefined ? 'A shift' : shiftLabel(shift.start, shift.end);
             // Every row repeats the same two buttons, so each one's name says which request it answers.
             const what = `${nameOf(swap.requester)} hands ${when} to ${nameOf(swap.counterparty)}`;
             return (

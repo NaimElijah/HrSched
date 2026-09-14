@@ -5,7 +5,7 @@ import type { RosteredShift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import type { Employee, PreferenceStrength } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
-import { dayLabel, timeLabel } from '../components/localDates';
+import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useActingAs } from '../identity/ActingAs';
 import { Inbox } from './Inbox';
@@ -241,7 +241,7 @@ function OwnShift({
   const [colleague, setColleague] = useState('');
   // Each request is stored, so a second one sent while the first is on its way would be a duplicate.
   const [asking, setAsking] = useState(false);
-  const when = `${timeLabel(work.start)} to ${timeLabel(work.end)} on ${dayLabel(work.start)}`;
+  const when = shiftLabel(work.start, work.end);
 
   return (
     <li>

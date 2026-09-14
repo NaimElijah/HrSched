@@ -5,7 +5,7 @@ import type { Roster, Shift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
-import { dayLabel, localDate, timeLabel } from '../components/localDates';
+import { dayLabel, localDate, shiftLabel, timeLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useActingAs } from '../identity/ActingAs';
 
@@ -223,7 +223,7 @@ function ShiftOnBoard({
   const [choice, setChoice] = useState('');
   const times = `${timeLabel(shift.start)} to ${timeLabel(shift.end)}`;
   // A board repeats the same controls on every shift, so each control's name says which one it is.
-  const when = `${times} on ${dayLabel(shift.start)}`;
+  const when = shiftLabel(shift.start, shift.end);
   const shortfall = shift.requiredHeadcount - assigned.length;
 
   return (
