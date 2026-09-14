@@ -77,7 +77,10 @@ public class JdbcRosterRepository implements RosterRepository {
     try {
       store(roster);
     } catch (DataAccessException refused) {
-      if (isPublicationCollision(refused)) {
+      // Only a published roster enters the constraint's partial index, so only its save can be the
+      // one PostgreSQL refuses, or picks as the victim, when two publications collide. A deadlock
+      // anywhere else is not a publication conflict, and stays what it is.
+      if (roster.status() == RosterStatus.PUBLISHED && isPublicationCollision(refused)) {
         throw new RosterPublicationConflictException(roster.id(), refused);
       }
       throw refused;

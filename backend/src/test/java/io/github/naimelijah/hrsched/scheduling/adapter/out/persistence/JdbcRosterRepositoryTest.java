@@ -351,6 +351,42 @@ class JdbcRosterRepositoryTest {
         .hasSize(2);
   }
 
+  /**
+   * A deadlock that has nothing to do with publishing. Two writers each save one draft and then the
+   * other's, in opposite orders, so each waits on the row the other holds and PostgreSQL aborts
+   * one. Nothing was published, so calling that a publication conflict would be false - and it
+   * would be counted as evidence that some writer skipped the publication lock.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenTwoWritersDeadlockedOverDrafts_WhenOneIsAborted_ThenItIsNotAPublicationConflict()
+      throws Exception {
+    Roster one = draft(ACME);
+    Roster other = new Roster(RosterId.newId(), ACME, THE_NEXT_WEEK);
+    repository.save(one);
+    repository.save(other);
+
+    List<Throwable> refusals =
+        refusalsOf(savingOneThenAnother(one, other), savingOneThenAnother(other, one));
+
+    assertThat(refusals).hasSize(1);
+    assertThat(refusals.getFirst())
+        .isNotInstanceOf(RosterPublicationConflictException.class)
+        .rootCause()
+        .isInstanceOfSatisfying(
+            SQLException.class,
+            cause -> assertThat(cause.getSQLState()).isEqualTo(DEADLOCK_DETECTED));
+  }
+
+  /** Saves one draft, waits until the other writer has saved one too, then saves another. */
+  private Writer savingOneThenAnother(Roster first, Roster then) {
+    return waitForTheOther -> {
+      repository.save(first);
+      waitForTheOther.run();
+      repository.save(then);
+    };
+  }
+
   /** PostgreSQL's {@code deadlock_detected}: the SQLState a deadlock victim is aborted with. */
   private static final String DEADLOCK_DETECTED = "40P01";
 
