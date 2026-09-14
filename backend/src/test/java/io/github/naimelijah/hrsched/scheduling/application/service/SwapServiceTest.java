@@ -418,8 +418,7 @@ class SwapServiceTest {
   void GivenASwapThatWouldBreakADailyLimit_WhenApproving_ThenItIsRefusedAndNothingChanges() {
     ShiftId monday = aShift(Set.of());
     // Ends as the day shift starts, so covering both is sixteen hours of work rather than two
-    // places
-    // at once, which would be refused for a different reason (R3).
+    // places at once, which would be refused for a different reason (R3).
     TimeRange earlyMonday =
         new TimeRange(Instant.parse("2026-10-05T00:00:00Z"), Instant.parse("2026-10-05T08:00:00Z"));
     ShiftId early =
