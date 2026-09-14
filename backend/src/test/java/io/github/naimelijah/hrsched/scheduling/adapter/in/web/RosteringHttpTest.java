@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.anOrganisation;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.as;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -18,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -231,6 +233,34 @@ class RosteringHttpTest {
             as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
                 .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, ada)))
         .andExpect(status().isUnprocessableEntity());
+  }
+
+  /**
+   * Rule R3 on the manual path, with no rules configured: a 422 problem the board shows with its
+   * reason, as it shows the other assignment refusals.
+   */
+  @Test
+  void GivenSomebodyAlreadyOnAnOverlappingShift_WhenAssigning_ThenItIsUnprocessable()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String roster = generateRoster(organisation, "2026-11-16T00:00:00Z", "2026-11-17T00:00:00Z");
+    String day = defineShift(organisation, "2026-11-16T08:00:00Z", "2026-11-16T16:00:00Z", 1);
+    String afternoon = defineShift(organisation, "2026-11-16T12:00:00Z", "2026-11-16T20:00:00Z", 1);
+    mockMvc
+        .perform(
+            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(day, ada)))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(afternoon, ada)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.title").value("Assignment refused"))
+        .andExpect(jsonPath("$.detail").value(containsString("overlap")));
   }
 
   @Test
