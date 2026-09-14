@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.scheduling.domain.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
@@ -20,6 +21,8 @@ class RosterTest {
       new TimeRange(Instant.parse("2026-09-07T00:00:00Z"), Instant.parse("2026-09-14T00:00:00Z"));
   private static final TimeRange MONDAY =
       new TimeRange(Instant.parse("2026-09-07T08:00:00Z"), Instant.parse("2026-09-07T16:00:00Z"));
+  private static final TimeRange MONDAY_AFTERNOON =
+      new TimeRange(Instant.parse("2026-09-07T12:00:00Z"), Instant.parse("2026-09-07T20:00:00Z"));
   private static final TimeRange TUESDAY =
       new TimeRange(Instant.parse("2026-09-08T08:00:00Z"), Instant.parse("2026-09-08T16:00:00Z"));
 
@@ -171,5 +174,66 @@ class RosterTest {
         .filteredOn(schedule -> schedule.employee().equals(ADA))
         .singleElement()
         .satisfies(schedule -> assertThat(schedule.workingPeriods()).hasSize(2));
+  }
+
+  /**
+   * R3, whatever the constraint set says. Building schedules is the step publication cannot skip,
+   * so a roster carrying somebody in two places is refused there however the draft was made.
+   */
+  @Test
+  void GivenOnePersonOnTwoOverlappingShifts_WhenBuildingSchedules_ThenItIsRefused() {
+    ShiftId day = ShiftId.newId();
+    ShiftId afternoon = ShiftId.newId();
+    Roster roster = draft().with(new Assignment(day, ADA)).with(new Assignment(afternoon, ADA));
+
+    assertThatThrownBy(() -> roster.schedulesFor(Map.of(day, MONDAY, afternoon, MONDAY_AFTERNOON)))
+        .isInstanceOf(OverlappingAssignmentException.class);
+  }
+
+  @Test
+  void GivenOnePersonOnShiftsThatOnlyTouch_WhenBuildingSchedules_ThenNothingIsRefused() {
+    ShiftId day = ShiftId.newId();
+    ShiftId evening = ShiftId.newId();
+    TimeRange mondayEvening =
+        new TimeRange(Instant.parse("2026-09-07T16:00:00Z"), Instant.parse("2026-09-07T20:00:00Z"));
+    Roster roster = draft().with(new Assignment(day, ADA)).with(new Assignment(evening, ADA));
+
+    assertThatCode(() -> roster.schedulesFor(Map.of(day, MONDAY, evening, mondayEvening)))
+        .describedAs("a period's end is exclusive, so ending as the next begins is no overlap")
+        .doesNotThrowAnyException();
+  }
+
+  /**
+   * Checking one person needs only their own shifts. Assigning somebody by hand asks about them
+   * alone, so a colleague's shift that cannot be resolved must neither hide the overlap nor refuse
+   * on its own account.
+   */
+  @Test
+  void
+      GivenSomebodyElsesShiftCannotBeResolved_WhenCheckingOnePerson_ThenTheirOverlapIsStillFound() {
+    ShiftId day = ShiftId.newId();
+    ShiftId afternoon = ShiftId.newId();
+    Roster roster =
+        draft()
+            .with(new Assignment(day, ADA))
+            .with(new Assignment(afternoon, ADA))
+            .with(new Assignment(ShiftId.newId(), EmployeeId.newId()));
+
+    assertThatThrownBy(
+            () ->
+                roster.requireNoOverlappingWorkFor(
+                    ADA, Map.of(day, MONDAY, afternoon, MONDAY_AFTERNOON)))
+        .isInstanceOf(OverlappingAssignmentException.class);
+  }
+
+  @Test
+  void GivenOneOfTheirShiftsCannotBeResolved_WhenCheckingThem_ThenItIsNotVerifiable() {
+    ShiftId day = ShiftId.newId();
+    Roster roster =
+        draft().with(new Assignment(day, ADA)).with(new Assignment(ShiftId.newId(), ADA));
+
+    assertThatThrownBy(() -> roster.requireNoOverlappingWorkFor(ADA, Map.of(day, MONDAY)))
+        .describedAs("work that cannot be placed in time cannot be shown not to overlap")
+        .isInstanceOf(RosterNotVerifiableException.class);
   }
 }

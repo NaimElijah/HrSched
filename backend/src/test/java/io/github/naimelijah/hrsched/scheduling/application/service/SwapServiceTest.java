@@ -20,6 +20,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableE
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
+import io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
@@ -520,6 +521,41 @@ class SwapServiceTest {
 
     assertThatThrownBy(() -> service.approveSwap(scheduler(ACME), ACME, request))
         .isInstanceOf(AssigneeUnavailableException.class);
+  }
+
+  /**
+   * R3 at approval, with no rules configured. Grace already works an afternoon overlapping Ada's
+   * day shift, so handing it to her would put her in two places at once, and an empty constraint
+   * set checks nothing. Publication refuses that for itself, and the approval is refused with it.
+   */
+  @Test
+  void GivenAColleagueAlreadyWorkingThen_WhenApprovingTheSwap_ThenItIsRefusedAndNothingChanges() {
+    ShiftId day = aShift(Set.of());
+    TimeRange afternoon =
+        new TimeRange(Instant.parse("2026-10-05T12:00:00Z"), Instant.parse("2026-10-05T20:00:00Z"));
+    ShiftId gracesAfternoon =
+        scheduling.defineShift(
+            scheduler(ACME), new DefineShiftCommand(ACME, afternoon, 1, Set.of()));
+    Roster draft =
+        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+    scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), day, ada));
+    scheduling.assign(
+        scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), gracesAfternoon, grace));
+    Roster original = scheduling.publish(scheduler(ACME), ACME, draft.id());
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), day, ada, grace));
+
+    assertThatThrownBy(() -> service.approveSwap(scheduler(ACME), ACME, request))
+        .isInstanceOf(OverlappingAssignmentException.class);
+
+    assertThat(rosters.byId(original.id()).status())
+        .describedAs("the roster people are already working to is untouched")
+        .isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(swaps.byId(request).status())
+        .describedAs("a refused swap is still waiting on somebody, not silently decided")
+        .isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.SWAP_APPROVED);
   }
 
   /**

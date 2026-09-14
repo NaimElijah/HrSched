@@ -191,6 +191,16 @@ public class SchedulingService
         workforce, actor, command.organisation(), command.employee(), shift);
 
     Roster amended = draft.with(new Assignment(command.shift(), command.employee()));
+    // R3. Publication would refuse this roster too, but only here can the Scheduler be told which
+    // assignment did it, while they are making it.
+    amended.requireNoOverlappingWorkFor(
+        command.employee(),
+        periodsOf(
+            command.organisation(),
+            amended,
+            amended.assignments().stream()
+                .filter(assignment -> assignment.employee().equals(command.employee()))
+                .toList()));
     rosters.save(amended);
     recorded(
         actor, command.organisation(), SchedulingChange.ASSIGNMENT_ADDED, amended.id().value());

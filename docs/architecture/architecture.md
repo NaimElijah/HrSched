@@ -345,7 +345,9 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   it means listing colleagues, which discloses their unavailability, and an Employee may not. So a
   request may name somebody who cannot cover the shift — because they lack a qualification, or
   because they are already unavailable — and the Scheduler answering it is where that is found out,
-  through the same `AssignmentEligibility` the manual path uses.
+  through the same `AssignmentEligibility` the manual path uses. A colleague who already works a
+  shift overlapping the one handed over is found out a step later, when the replacement is
+  published.
 - **Publishing supersedes, so exactly one roster is authoritative.** `publish` marks every
   published roster of that organisation whose period overlaps as `SUPERSEDED`. Overlap rather than
   equality decides it, because a partly-overlapping published roster would otherwise still govern
@@ -354,7 +356,9 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   three rules that are about one assignment — the person belongs to the organisation (R5), holds
   what the shift demands (R4), and has not declared they cannot work when it runs (F6) — plus that
   the shift falls inside the roster's own period, which generation cannot violate because it only
-  ever assigns shifts it found there. It deliberately leaves the working-time rules to publication,
+  ever assigns shifts it found there, and that the person holds no other shift on this draft
+  overlapping it (R3), which generation cannot violate because it skips anybody already working
+  then. It deliberately leaves the working-time rules to publication,
   exactly as generation does: those judge a whole schedule rather than a single assignment, so the
   honest place for them is the step that cannot be bypassed, and a hand-made roster breaking a daily
   limit is refused at publication just as a generated one is.
@@ -368,6 +372,15 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   repository cannot return, publication fails with `RosterNotVerifiableException` rather than
   quietly omitting that work from the constraint check. Omission would publish hours nobody
   counted, which is the failure publication exists to prevent.
+- **Nobody is published in two places at once, whatever the rules say.** Building each person's
+  schedule for the constraint check refuses one holding two overlapping shifts with
+  `OverlappingAssignmentException` (R3), before any constraint is evaluated. It cannot be left to
+  the rules: minimum rest is the only one that notices an overlap, it is optional, and an empty
+  constraint set checks nothing — the asymmetry unavailability once had. `assign` asks the same
+  question of the one person being assigned, so the board is told as it happens; publication asks
+  it of everybody, so a swap approval and a generated draft are held to it too. Both answer 422.
+  It looks within one roster only: whether R3 should also look across rosters, for a shift that
+  straddles two roster periods, is undecided (#63).
 - **Reading the people of an organisation is restricted to Admins and Schedulers**, because
   unavailability is personal data. Generation reaches the same data through the anti-corruption
   layer carrying the Scheduler's own identity, so the restriction holds there too.

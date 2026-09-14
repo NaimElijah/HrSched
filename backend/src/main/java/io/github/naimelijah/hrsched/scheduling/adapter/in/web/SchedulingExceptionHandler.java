@@ -7,6 +7,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentE
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
@@ -170,15 +171,20 @@ public class SchedulingExceptionHandler {
 
   /**
    * Assigning work that the domain forbids: somebody who lacks a qualification the shift demands
-   * (R4), somebody who said they cannot work when it runs (F6), or a shift the roster's own period
-   * does not cover (R11). All three earn a 422 for the same reason a non-compliant roster does: the
-   * caller named real things and asked for something the domain forbids, which is neither a
-   * malformed request nor a missing one.
+   * (R4), somebody who said they cannot work when it runs (F6), a shift the roster's own period
+   * does not cover (R11), or somebody who would then work two shifts at once (R3). All four earn a
+   * 422 for the same reason a non-compliant roster does: the caller named real things and asked for
+   * something the domain forbids, which is neither a malformed request nor a missing one.
+   *
+   * <p>The overlap can also be found at publication — approving a swap, or publishing a draft that
+   * arrived carrying one — and is answered the same way there. It is not counted as a refused
+   * publication, because this handler cannot tell those apart from a refused assignment.
    */
   @ExceptionHandler({
     AssigneeNotQualifiedException.class,
     AssigneeUnavailableException.class,
-    ShiftOutsideRosterPeriodException.class
+    ShiftOutsideRosterPeriodException.class,
+    OverlappingAssignmentException.class
   })
   public ProblemDetail handleAssignmentRefused(RuntimeException exception) {
     ProblemDetail problem =

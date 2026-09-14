@@ -1,0 +1,23 @@
+package io.github.naimelijah.hrsched.scheduling.domain.model;
+
+import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+
+/**
+ * Raised when one person would work two shifts at once (R3).
+ *
+ * <p>It holds whatever the organisation's constraint set says. Minimum rest is the only
+ * working-time rule that notices an overlap, and it is optional, so an organisation that configured
+ * no rules would otherwise publish somebody in two places — and no statute is needed to say that
+ * cannot happen.
+ *
+ * <p>A 422 rather than a 400: the caller named real things and asked for something the domain
+ * forbids.
+ */
+public class OverlappingAssignmentException extends RuntimeException {
+
+  public OverlappingAssignmentException(EmployeeId employee, ShiftId shift, ShiftId overlapping) {
+    super(
+        "Employee %s would work shifts %s and %s, which overlap"
+            .formatted(employee.value(), shift.value(), overlapping.value()));
+  }
+}

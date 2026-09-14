@@ -107,7 +107,7 @@ a published roster is superseded rather than edited (R6).
 | --- | --- |
 | R1 | A time range must end strictly after it starts. *`TimeRange`, `TimeRangeTest`* |
 | R2 | An employee must have a name that is not blank. *`Employee`, `EmployeeTest`* |
-| R3 | An employee may not hold two overlapping assignments. *`GreedyRosterGeneratorTest`, `WorkingTimeConstraintTest`* |
+| R3 | An employee may not hold two overlapping assignments. *`Roster`, `RosterTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`; at swap approval `SwapServiceTest`; in generation `GreedyRosterGeneratorTest`* |
 | R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `RosterCandidateTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`* |
 | R5 | An employee may only be assigned within their own organisation. *`SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`* |
 | R6 | A published roster may not be edited; it is superseded by a new version. *`Roster`, `SchedulingService`, `SchedulingServiceTest`* |
