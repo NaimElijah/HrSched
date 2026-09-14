@@ -388,6 +388,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `SchedulingServiceTest`, `SwapServiceTest`, `EmployeeServiceTest`, `QualificationServiceTest`, `OrganisationServiceTest`, `NotificationServiceTest` | Application | Use cases against hand-written stubs of their own ports. No Spring, no mocking framework. `SwapServiceTest` is the exception that proves the rule: it wires a **real** `SchedulingService`, because the claim worth testing is that approving a swap goes through the same publication everything else does. |
 | `SwapHttpTest` | Adapter (HTTP) | The widest path in the system — onboard a tenant, hire people, roster, publish, hand a shift over, and have the colleague read about it. Four contexts in one test. |
 | `KnownOrganisationHttpTest` | Configuration | That a tenant nobody onboarded cannot be used, and that the refusal is the ordinary 404 carrying a trace id. |
+| `RequestBindingHttpTest` | Configuration | A missing header, a missing query parameter or an identifier that does not parse is answered with a problem detail naming it, whose detail never repeats the value sent. |
 | `NotificationTest` | Domain (notifications) | Among other invariants, that no field of a notification can hold free text — asserted by reflection over the type, because a future field is what would break it. |
 | `SchedulingCommandsTest`, `WorkforceCommandsTest` | Application | Every command rejects a null field, copies what it is handed, and stops short of judging what it carries. |
 | `RosterCandidateTest`, `PublishedLanguageTest` | Published language | What one context tells another, and nothing more. |
@@ -498,6 +499,7 @@ blocked on the same missing environment.
 | [ADR-021](docs/ADRs/ADR-021-notifications-as-a-bounded-context.md) | Notifications are their own context, and hold no words | Delivery is pull-only, so somebody is informed when they next open the app; a lost notification means they were never told while the system believes they were |
 | [ADR-022](docs/ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md) | Approving a swap publishes a replacement roster rather than editing one | A refused approval left the replacement behind as a draft, which ADR-023 fixed |
 | [ADR-023](docs/ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md) | A use case is one transaction, applied at the composition root | A proxy nothing in the service hints at; an audit entry can now outlive the change it records |
+| [ADR-024](docs/ADRs/ADR-024-answer-unbindable-requests-with-a-problem-detail.md) | A request Spring cannot bind is answered with a problem detail, from one fallback handler | Three exception types listed by hand; 405, 415 and unmapped paths still answer with Spring's default body |
 
 Still open and blocking: **ADR-010** (objectives) and **ADR-011** (authentication). See the
 [ADR index](docs/ADRs/).
