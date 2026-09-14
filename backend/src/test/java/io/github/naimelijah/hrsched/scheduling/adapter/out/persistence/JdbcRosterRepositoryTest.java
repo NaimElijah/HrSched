@@ -68,6 +68,22 @@ class JdbcRosterRepositoryTest {
    */
   private static final long STUCK_AFTER_SECONDS = 30;
 
+  /** PostgreSQL's {@code deadlock_detected}: the SQLState a deadlock victim is aborted with. */
+  private static final String DEADLOCK_DETECTED = "40P01";
+
+  /**
+   * How long a probing transaction waits for the lock before giving up. Any wait at all proves the
+   * point; this only has to be long enough that a lock free to take is never mistaken for one held.
+   */
+  private static final String A_PROBE_WAIT = "200ms";
+
+  /**
+   * PostgreSQL's {@code lock_not_available}: the statement waited for a lock until {@code
+   * lock_timeout} ran out. Asserted by SQLState because Spring reports it as an uncategorised
+   * exception rather than as a lock failure, so the type would say nothing about the wait.
+   */
+  private static final String LOCK_NOT_AVAILABLE = "55P03";
+
   private final JdbcRosterRepository repository =
       new JdbcRosterRepository(PostgresDatabase.jdbcClient());
 
@@ -387,9 +403,6 @@ class JdbcRosterRepositoryTest {
     };
   }
 
-  /** PostgreSQL's {@code deadlock_detected}: the SQLState a deadlock victim is aborted with. */
-  private static final String DEADLOCK_DETECTED = "40P01";
-
   /** One writer's work, told when to wait for the other writer to reach the same point. */
   @FunctionalInterface
   private interface Writer {
@@ -508,19 +521,6 @@ class JdbcRosterRepositoryTest {
     assertThatThrownBy(() -> repository.lockPublicationsOf(ACME))
         .isInstanceOf(IllegalStateException.class);
   }
-
-  /**
-   * How long a probing transaction waits for the lock before giving up. Any wait at all proves the
-   * point; this only has to be long enough that a lock free to take is never mistaken for one held.
-   */
-  private static final String A_PROBE_WAIT = "200ms";
-
-  /**
-   * PostgreSQL's {@code lock_not_available}: the statement waited for a lock until {@code
-   * lock_timeout} ran out. Asserted by SQLState because Spring reports it as an uncategorised
-   * exception rather than as a lock failure, so the type would say nothing about the wait.
-   */
-  private static final String LOCK_NOT_AVAILABLE = "55P03";
 
   /**
    * Asks for an organisation's publications, giving up after a short wait instead of waiting on.

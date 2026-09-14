@@ -67,6 +67,13 @@ public class JdbcRosterRepository implements RosterRepository {
   private static final Set<String> PUBLICATION_COLLISIONS =
       Set.of(EXCLUSION_VIOLATION, DEADLOCK_DETECTED);
 
+  /**
+   * Names what the publication lock guards, so its key has a namespace of its own rather than a
+   * number somebody chose. Both halves of the key are 32-bit hashes, so two keys can still
+   * coincide; the only cost is a publication that waits when it did not need to.
+   */
+  private static final String PUBLICATION_LOCK_SCOPE = "hrsched.roster-publication";
+
   private final JdbcClient jdbc;
 
   public JdbcRosterRepository(JdbcClient jdbc) {
@@ -87,12 +94,6 @@ public class JdbcRosterRepository implements RosterRepository {
       throw refused;
     }
   }
-
-  /**
-   * Names what the publication lock guards, so its key can never coincide with some other use of
-   * PostgreSQL's advisory locks. Hashed in SQL rather than chosen as a number.
-   */
-  private static final String PUBLICATION_LOCK_SCOPE = "hrsched.roster-publication";
 
   /**
    * A transaction-scoped advisory lock keyed by organisation (ADR-027).
