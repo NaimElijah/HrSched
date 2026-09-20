@@ -203,6 +203,41 @@ class JdbcAccountRepositoryTest {
     assertThat(repository.findAll(ACME)).hasSize(1);
   }
 
+  @Test
+  void GivenAFreeSignInName_WhenSavingIfAbsent_ThenItIsStoredAndTrueIsReturned() {
+    Account operator = operator("operator@example.com");
+
+    assertThat(repository.saveIfAbsent(operator)).isTrue();
+    assertThat(repository.findBySignInName(new SignInName("operator@example.com")))
+        .map(Account::id)
+        .contains(operator.id());
+  }
+
+  /**
+   * The bootstrap depends on this: an operator whose password has since been changed must not be
+   * put back to whatever is still in the environment on the next restart.
+   */
+  @Test
+  void GivenATakenSignInName_WhenSavingIfAbsent_ThenNothingChangesAndFalseIsReturned() {
+    Account first = operator("operator@example.com");
+    repository.saveIfAbsent(first);
+    Account second =
+        new Account(
+            UserId.newId(),
+            new SignInName("operator@example.com"),
+            new PasswordHash("{bcrypt}$2a$04$a.different.invented.value"),
+            new OperatorMembership(),
+            false,
+            CREATED_AT);
+
+    assertThat(repository.saveIfAbsent(second)).isFalse();
+
+    Account stored =
+        repository.findBySignInName(new SignInName("operator@example.com")).orElseThrow();
+    assertThat(stored.id()).isEqualTo(first.id());
+    assertThat(stored.passwordHash()).isEqualTo(HASH);
+  }
+
   /**
    * Outside a transaction the lock would be released the moment the statement taking it ended, so
    * nothing would wait for anything and the caller would not know. It is refused instead, so a use

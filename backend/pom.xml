@@ -168,7 +168,10 @@
 			  the repackage goal that builds the jar: a packaged artifact therefore carries no
 			  permission to invent a key, and a deployment that forgot HRSCHED_SECURITY_TOKEN_-
 			  PRIVATEKEY fails to start rather than signing tokens no other instance can verify.
-			  See ADR-011.
+			  The same mechanism supplies a throwaway local operator to sign in as, following
+			  compose.yaml's precedent for the local database: local-only credentials that never
+			  reach a packaged jar, and that must be changed at first sign-in anyway. See ADR-011
+			  and ADR-029.
 			-->
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
@@ -179,6 +182,8 @@
 						<configuration>
 							<systemPropertyVariables>
 								<hrsched.security.token.ephemeral>true</hrsched.security.token.ephemeral>
+								<hrsched.bootstrap.operator.sign-in-name>operator</hrsched.bootstrap.operator.sign-in-name>
+								<hrsched.bootstrap.operator.password>local-development-only</hrsched.bootstrap.operator.password>
 							</systemPropertyVariables>
 						</configuration>
 					</execution>

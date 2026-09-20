@@ -41,7 +41,7 @@ public class OrganisationService implements ManageOrganisationsUseCase, KnownOrg
     organisations.save(organisation);
     audit.record(
         new AuditedChange(
-            organisation.id(),
+            Optional.of(organisation.id()),
             actor.id(),
             AccessChange.ORGANISATION_ONBOARDED,
             organisation.id().value()));

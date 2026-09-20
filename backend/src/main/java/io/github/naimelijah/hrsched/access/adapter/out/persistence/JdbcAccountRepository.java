@@ -18,7 +18,9 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -65,6 +67,32 @@ public class JdbcAccountRepository implements AccountRepository {
   private static final String TENANT_KIND = "TENANT";
   private static final String OPERATOR_KIND = "OPERATOR";
 
+  private static final String INSERT_ACCOUNT =
+      """
+      INSERT INTO account (id, sign_in_name, password_hash, kind, organisation_id, role,
+                           employee_id, active, password_change_required, failed_sign_ins,
+                           locked_until, created_at)
+      VALUES (:id, :signInName, :passwordHash, :kind, :organisation, :role,
+              :employee, :active, :passwordChangeRequired, :failedSignIns,
+              :lockedUntil, :createdAt)
+      """;
+
+  /** Replaces the stored version of an account that is already there, by identity. */
+  private static final String ON_CONFLICT_REPLACE =
+      """
+      ON CONFLICT (id) DO UPDATE SET sign_in_name = EXCLUDED.sign_in_name,
+                                     password_hash = EXCLUDED.password_hash,
+                                     kind = EXCLUDED.kind,
+                                     organisation_id = EXCLUDED.organisation_id,
+                                     role = EXCLUDED.role,
+                                     employee_id = EXCLUDED.employee_id,
+                                     active = EXCLUDED.active,
+                                     password_change_required = EXCLUDED.password_change_required,
+                                     failed_sign_ins = EXCLUDED.failed_sign_ins,
+                                     locked_until = EXCLUDED.locked_until,
+                                     created_at = EXCLUDED.created_at
+      """;
+
   private final JdbcClient jdbc;
 
   public JdbcAccountRepository(JdbcClient jdbc) {
@@ -75,6 +103,19 @@ public class JdbcAccountRepository implements AccountRepository {
   public void save(Account account) {
     try {
       store(account);
+    } catch (DataAccessException refused) {
+      throw translate(account, refused);
+    }
+  }
+
+  @Override
+  public boolean saveIfAbsent(Account account) {
+    Optional<TenantMembership> tenant = tenantMembershipOf(account);
+    try {
+      return jdbc.sql(INSERT_ACCOUNT + "ON CONFLICT (sign_in_name) DO NOTHING")
+              .params(parametersOf(account, tenant))
+              .update()
+          == 1;
     } catch (DataAccessException refused) {
       throw translate(account, refused);
     }
@@ -132,45 +173,33 @@ public class JdbcAccountRepository implements AccountRepository {
   }
 
   private void store(Account account) {
-    Optional<TenantMembership> tenant = tenantMembershipOf(account);
-    jdbc.sql(
-            """
-            INSERT INTO account (id, sign_in_name, password_hash, kind, organisation_id, role,
-                                 employee_id, active, password_change_required, failed_sign_ins,
-                                 locked_until, created_at)
-            VALUES (:id, :signInName, :passwordHash, :kind, :organisation, :role,
-                    :employee, :active, :passwordChangeRequired, :failedSignIns,
-                    :lockedUntil, :createdAt)
-            ON CONFLICT (id) DO UPDATE SET sign_in_name = EXCLUDED.sign_in_name,
-                                           password_hash = EXCLUDED.password_hash,
-                                           kind = EXCLUDED.kind,
-                                           organisation_id = EXCLUDED.organisation_id,
-                                           role = EXCLUDED.role,
-                                           employee_id = EXCLUDED.employee_id,
-                                           active = EXCLUDED.active,
-                                           password_change_required =
-                                               EXCLUDED.password_change_required,
-                                           failed_sign_ins = EXCLUDED.failed_sign_ins,
-                                           locked_until = EXCLUDED.locked_until,
-                                           created_at = EXCLUDED.created_at
-            """)
-        .param("id", account.id().value())
-        .param("signInName", account.signInName().value())
-        .param("passwordHash", account.passwordHash().value())
-        .param("kind", tenant.isPresent() ? TENANT_KIND : OPERATOR_KIND)
-        .param("organisation", tenant.map(member -> member.organisation().value()).orElse(null))
-        .param("role", tenant.map(member -> member.role().name()).orElse(null))
-        .param(
-            "employee",
-            tenant.flatMap(TenantMembership::employee).map(EmployeeId::value).orElse(null))
-        .param("active", account.active())
-        .param("passwordChangeRequired", account.passwordChangeRequired())
-        .param("failedSignIns", account.failedSignIns())
-        .param(
-            "lockedUntil",
-            account.lockedUntil().map(locked -> locked.atOffset(ZoneOffset.UTC)).orElse(null))
-        .param("createdAt", account.createdAt().atOffset(ZoneOffset.UTC))
+    jdbc.sql(INSERT_ACCOUNT + ON_CONFLICT_REPLACE)
+        .params(parametersOf(account, tenantMembershipOf(account)))
         .update();
+  }
+
+  private static Map<String, Object> parametersOf(
+      Account account, Optional<TenantMembership> tenant) {
+    // A HashMap rather than Map.of, because most of these are null for one kind of account or the
+    // other and Map.of refuses a null value.
+    Map<String, Object> parameters = new HashMap<>();
+    parameters.put("id", account.id().value());
+    parameters.put("signInName", account.signInName().value());
+    parameters.put("passwordHash", account.passwordHash().value());
+    parameters.put("kind", tenant.isPresent() ? TENANT_KIND : OPERATOR_KIND);
+    parameters.put(
+        "organisation", tenant.map(member -> member.organisation().value()).orElse(null));
+    parameters.put("role", tenant.map(member -> member.role().name()).orElse(null));
+    parameters.put(
+        "employee", tenant.flatMap(TenantMembership::employee).map(EmployeeId::value).orElse(null));
+    parameters.put("active", account.active());
+    parameters.put("passwordChangeRequired", account.passwordChangeRequired());
+    parameters.put("failedSignIns", account.failedSignIns());
+    parameters.put(
+        "lockedUntil",
+        account.lockedUntil().map(locked -> locked.atOffset(ZoneOffset.UTC)).orElse(null));
+    parameters.put("createdAt", account.createdAt().atOffset(ZoneOffset.UTC));
+    return parameters;
   }
 
   /**

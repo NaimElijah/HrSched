@@ -2,7 +2,10 @@ package io.github.naimelijah.hrsched.configuration;
 
 import static io.github.naimelijah.hrsched.configuration.persistence.TransactionalUseCases.transactional;
 
+import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
+import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
+import io.github.naimelijah.hrsched.access.application.service.AccountService;
 import io.github.naimelijah.hrsched.access.application.service.OrganisationService;
 import io.github.naimelijah.hrsched.notifications.application.port.out.NotificationRepository;
 import io.github.naimelijah.hrsched.notifications.application.service.NotificationService;
@@ -50,6 +53,16 @@ import org.springframework.transaction.PlatformTransactionManager;
  */
 @Configuration
 public class UseCaseConfiguration {
+
+  @Bean
+  AccountService accountService(
+      AccountRepository accounts,
+      PasswordHasher passwords,
+      io.github.naimelijah.hrsched.access.application.port.out.AuditTrail audit,
+      Clock clock,
+      PlatformTransactionManager transactions) {
+    return transactional(new AccountService(accounts, passwords, audit, clock), transactions);
+  }
 
   @Bean
   OrganisationService organisationService(

@@ -208,7 +208,10 @@ class OrganisationServiceTest {
     assertThat(audit.of(AccessChange.ORGANISATION_ONBOARDED))
         .containsExactly(
             new AuditedChange(
-                onboarded, operator.id(), AccessChange.ORGANISATION_ONBOARDED, onboarded.value()));
+                Optional.of(onboarded),
+                operator.id(),
+                AccessChange.ORGANISATION_ONBOARDED,
+                onboarded.value()));
   }
 
   @Test

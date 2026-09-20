@@ -34,6 +34,18 @@ public interface AccountRepository {
   void save(Account account);
 
   /**
+   * Stores an account only if no account already signs in under its name.
+   *
+   * <p>Asking and writing are one statement rather than a read followed by a write, so two
+   * instances starting at the same moment cannot both decide the name was free.
+   *
+   * @param account the account to store, never {@code null}
+   * @return whether this call stored it; false means another account already holds that sign-in
+   *     name, and nothing was changed - in particular, no password was overwritten
+   */
+  boolean saveIfAbsent(Account account);
+
+  /**
    * @param organisation the organisation whose account this must be
    * @param account which account to read
    * @return the account, or empty if it belongs to another organisation or does not exist — the two

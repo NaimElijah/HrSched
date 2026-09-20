@@ -12,6 +12,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,7 +78,9 @@ class AccessAuditLogTest {
   void GivenARecordedChange_WhenItIsWritten_ThenTheActorOrganisationAndSubjectAreAllFields() {
     UserId actor = UserId.newId();
 
-    trail.record(new AuditedChange(ACME, actor, AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
+    trail.record(
+        new AuditedChange(
+            Optional.of(ACME), actor, AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
 
     assertThat(fieldsOf(onlyEvent()))
         .containsEntry("organisation", ACME.value())
@@ -89,7 +92,8 @@ class AccessAuditLogTest {
   @Test
   void GivenAnOnboarding_WhenItIsWritten_ThenEveryFieldIsAnIdentifierOrAnEnum() {
     trail.record(
-        new AuditedChange(ACME, UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
+        new AuditedChange(
+            Optional.of(ACME), UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
 
     ILoggingEvent event = onlyEvent();
     assertThat(event.getKeyValuePairs())
@@ -112,15 +116,37 @@ class AccessAuditLogTest {
   @Test
   void GivenAnOnboarding_WhenItIsWritten_ThenTheOrganisationsNameIsNowhereInIt() {
     trail.record(
-        new AuditedChange(ACME, UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
+        new AuditedChange(
+            Optional.of(ACME), UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
 
     assertThat(onlyEvent().toString()).doesNotContain("Acme");
+  }
+
+  /**
+   * The platform operator belongs to no organisation, so its record has none to carry. The field is
+   * left out rather than written as null: a trail where "organisation" sometimes means "nobody's"
+   * and sometimes means "not recorded" is a trail nobody can filter on.
+   */
+  @Test
+  void GivenAChangeBelongingToNoOrganisation_WhenItIsWritten_ThenNoOrganisationFieldIsWritten() {
+    UserId operator = UserId.newId();
+
+    trail.record(
+        new AuditedChange(
+            Optional.empty(), operator, AccessChange.OPERATOR_BOOTSTRAPPED, operator.value()));
+
+    assertThat(fieldsOf(onlyEvent()))
+        .doesNotContainKey("organisation")
+        .containsEntry("actor", operator.value())
+        .containsEntry("change", AccessChange.OPERATOR_BOOTSTRAPPED)
+        .containsEntry("subject", operator.value());
   }
 
   @Test
   void GivenARecordedChange_WhenItIsWritten_ThenItIsLoggedAtInfo() {
     trail.record(
-        new AuditedChange(ACME, UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
+        new AuditedChange(
+            Optional.of(ACME), UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
 
     assertThat(onlyEvent().getLevel()).isEqualTo(Level.INFO);
   }
@@ -128,9 +154,11 @@ class AccessAuditLogTest {
   @Test
   void GivenARecordedChange_WhenItIsWritten_ThenItIsAlsoCountedByItsKind() {
     trail.record(
-        new AuditedChange(ACME, UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
+        new AuditedChange(
+            Optional.of(ACME), UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
     trail.record(
-        new AuditedChange(ACME, UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
+        new AuditedChange(
+            Optional.of(ACME), UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
 
     assertThat(changesTagged("ORGANISATION_ONBOARDED")).isEqualTo(2.0);
   }
@@ -147,10 +175,16 @@ class AccessAuditLogTest {
 
     trail.record(
         new AuditedChange(
-            first, UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, first.value()));
+            Optional.of(first),
+            UserId.newId(),
+            AccessChange.ORGANISATION_ONBOARDED,
+            first.value()));
     trail.record(
         new AuditedChange(
-            second, UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, second.value()));
+            Optional.of(second),
+            UserId.newId(),
+            AccessChange.ORGANISATION_ONBOARDED,
+            second.value()));
 
     assertThat(meters.find("hrsched.changes").counters())
         .describedAs("one series per kind of change, however many tenants there are")

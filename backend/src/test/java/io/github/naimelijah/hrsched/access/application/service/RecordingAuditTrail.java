@@ -28,6 +28,11 @@ final class RecordingAuditTrail implements AuditTrail {
     recorded.add(change);
   }
 
+  /** Drops everything recorded so far, so a later assertion is about later behaviour alone. */
+  void forget() {
+    recorded.clear();
+  }
+
   /**
    * @return the kind of every change recorded so far, in order
    */
