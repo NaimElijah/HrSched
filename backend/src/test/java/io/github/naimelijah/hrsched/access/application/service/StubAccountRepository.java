@@ -62,6 +62,11 @@ final class StubAccountRepository implements AccountRepository {
   }
 
   @Override
+  public Optional<Account> findForAuthentication(UserId account) {
+    return stored.stream().filter(candidate -> candidate.id().equals(account)).findFirst();
+  }
+
+  @Override
   public Optional<Account> findBySignInName(SignInName name) {
     return stored.stream().filter(candidate -> candidate.signInName().equals(name)).findFirst();
   }

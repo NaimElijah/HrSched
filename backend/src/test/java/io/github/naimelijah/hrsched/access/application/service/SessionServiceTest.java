@@ -3,6 +3,8 @@ package io.github.naimelijah.hrsched.access.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.naimelijah.hrsched.access.application.port.in.AccountKind;
+import io.github.naimelijah.hrsched.access.application.port.in.RefreshOutcome;
+import io.github.naimelijah.hrsched.access.application.port.in.RefreshRefusal;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInRefusal;
@@ -12,10 +14,12 @@ import io.github.naimelijah.hrsched.access.application.port.out.IssuedAccessToke
 import io.github.naimelijah.hrsched.access.application.port.out.RefreshTokenSecret;
 import io.github.naimelijah.hrsched.access.application.port.out.SessionRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.SessionSecrets;
+import io.github.naimelijah.hrsched.access.application.port.out.StoredRefreshToken;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
 import io.github.naimelijah.hrsched.access.domain.model.SessionPolicy;
+import io.github.naimelijah.hrsched.access.domain.model.SessionRevocation;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
 import io.github.naimelijah.hrsched.access.domain.model.SignInSession;
 import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
@@ -30,7 +34,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -277,6 +283,60 @@ class SessionServiceTest {
         .isInstanceOf(SignInOutcome.SignedIn.class);
   }
 
+  /**
+   * The race the conditional update exists for. Two refreshes arrive holding one token, both read
+   * it as current, and the database awards the exchange to one of them; the other is told it
+   * changed no row. There is no way to tell that from somebody presenting a token that had already
+   * been spent, so it is treated as exactly that.
+   */
+  @Test
+  void GivenTwoRefreshesRacingWithOneToken_WhenTheSecondFindsItReplaced_ThenItIsTreatedAsReuse() {
+    Account account = accounts.given(tenant(ADA, Role.EMPLOYEE, Optional.empty()));
+    SignInSession session =
+        new SignInSession(
+            SignInSessionId.newId(), account.id(), NOW, NOW.plus(Duration.ofHours(12)));
+    sessions.given(
+        "a-current-token",
+        new StoredRefreshToken(session, NOW.plus(Duration.ofHours(1)), Optional.empty()));
+    sessions.whereTheExchangeIsAlreadyTaken();
+
+    RefreshOutcome outcome = service.refresh("a-current-token");
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            RefreshOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(RefreshRefusal.REUSED));
+    assertThat(sessions.revocationOf(session.id())).contains(SessionRevocation.REFRESH_REUSED);
+    assertThat(audit.of(AccessChange.REFRESH_TOKEN_REUSED)).hasSize(1);
+  }
+
+  @Test
+  void GivenARefreshTokenAlreadyReplaced_WhenPresented_ThenTheWholeSessionIsRevoked() {
+    Account account = accounts.given(tenant(ADA, Role.EMPLOYEE, Optional.empty()));
+    SignInSession session =
+        new SignInSession(
+            SignInSessionId.newId(), account.id(), NOW, NOW.plus(Duration.ofHours(12)));
+    sessions.given(
+        "a-spent-token",
+        new StoredRefreshToken(
+            session, NOW.plus(Duration.ofHours(1)), Optional.of(NOW.minusSeconds(60))));
+
+    service.refresh("a-spent-token");
+
+    assertThat(sessions.revocationOf(session.id())).contains(SessionRevocation.REFRESH_REUSED);
+  }
+
+  @Test
+  void GivenAnUnknownRefreshToken_WhenRefreshing_ThenNothingIsRevoked() {
+    RefreshOutcome outcome = service.refresh("a-token-nobody-ever-issued");
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            RefreshOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(RefreshRefusal.UNKNOWN_TOKEN));
+    assertThat(audit.changes()).isEmpty();
+  }
+
   private Account tenant(String name, Role role, Optional<EmployeeId> employee) {
     return new Account(
         UserId.newId(),
@@ -297,18 +357,62 @@ class SessionServiceTest {
         NOW.minus(Duration.ofDays(1)));
   }
 
-  /** Remembers the sessions it was asked to start, and what they were given to renew with. */
+  /**
+   * Remembers the sessions it was asked to start and the revocations it was asked to make, and lets
+   * a test say that the conditional update found nothing to change.
+   *
+   * <p>That last part is the only way to reach the race the real adapter guards against: two
+   * refreshes holding one token, where the database awards the exchange to one of them. Here the
+   * test simply says the exchange was already taken.
+   */
   private static final class StubSessionRepository implements SessionRepository {
 
     private final List<SignInSession> started = new ArrayList<>();
+    private final Map<SignInSessionId, SessionRevocation> revocations = new LinkedHashMap<>();
+    private final Map<String, StoredRefreshToken> tokens = new LinkedHashMap<>();
+    private boolean exchangeAlreadyTaken;
 
     List<SignInSession> started() {
       return List.copyOf(started);
     }
 
+    Optional<SessionRevocation> revocationOf(SignInSessionId session) {
+      return Optional.ofNullable(revocations.get(session));
+    }
+
+    /** Arranges the losing half of a race: the row was already marked by somebody else. */
+    void whereTheExchangeIsAlreadyTaken() {
+      exchangeAlreadyTaken = true;
+    }
+
+    void given(String tokenValue, StoredRefreshToken token) {
+      tokens.put(tokenValue, token);
+    }
+
     @Override
     public void start(SignInSession session, byte[] refreshDigest, Instant refreshExpiresAt) {
       started.add(session);
+    }
+
+    @Override
+    public Optional<StoredRefreshToken> findRefreshToken(byte[] refreshDigest) {
+      return Optional.ofNullable(tokens.get(new String(refreshDigest, StandardCharsets.UTF_8)));
+    }
+
+    @Override
+    public boolean markReplaced(byte[] refreshDigest, Instant now) {
+      return !exchangeAlreadyTaken;
+    }
+
+    @Override
+    public void issueSuccessor(
+        SignInSessionId session, byte[] refreshDigest, Instant issuedAt, Instant expiresAt) {
+      // Nothing to remember: these tests are about which path was taken, not about what it wrote.
+    }
+
+    @Override
+    public void revoke(SignInSessionId session, SessionRevocation reason, Instant now) {
+      revocations.putIfAbsent(session, reason);
     }
   }
 

@@ -1,7 +1,10 @@
 package io.github.naimelijah.hrsched.access.application.port.out;
 
+import io.github.naimelijah.hrsched.access.domain.model.SessionRevocation;
 import io.github.naimelijah.hrsched.access.domain.model.SignInSession;
+import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
 import java.time.Instant;
+import java.util.Optional;
 
 /**
  * Driven port: storing sign-in sessions and the refresh tokens that renew them.
@@ -22,4 +25,54 @@ public interface SessionRepository {
    * @param refreshExpiresAt when that token stops being accepted, never {@code null}
    */
   void start(SignInSession session, byte[] refreshDigest, Instant refreshExpiresAt);
+
+  /**
+   * Finds a refresh token by its digest, together with the session it renews.
+   *
+   * <p>By digest and never by value: the value is not stored, so there is nothing else to look one
+   * up by. A caller digests what was presented and asks for that.
+   *
+   * @param refreshDigest the digest of the token presented, never {@code null}
+   * @return the token and its session, or empty if no such token was ever issued
+   */
+  Optional<StoredRefreshToken> findRefreshToken(byte[] refreshDigest);
+
+  /**
+   * Marks a refresh token as exchanged, but only if it has not been exchanged already.
+   *
+   * <p>Conditional on purpose, and it is the whole of the race protection. Two requests arriving
+   * with the same token would otherwise both read it as current and both rotate it; here exactly
+   * one changes the row, and the other is told it did not - which is indistinguishable from, and
+   * treated as, somebody presenting a token that had already been used.
+   *
+   * @param refreshDigest the digest of the token being exchanged, never {@code null}
+   * @param now when it was exchanged, never {@code null}
+   * @return whether this call was the one that marked it; false means it was already replaced
+   */
+  boolean markReplaced(byte[] refreshDigest, Instant now);
+
+  /**
+   * Issues the successor to a token just exchanged.
+   *
+   * @param session the session it renews, never {@code null}
+   * @param refreshDigest the digest of the new token, never {@code null}
+   * @param issuedAt when it was issued, never {@code null}
+   * @param expiresAt when it stops being accepted, never {@code null}
+   */
+  void issueSuccessor(
+      SignInSessionId session, byte[] refreshDigest, Instant issuedAt, Instant expiresAt);
+
+  /**
+   * Ends a session early.
+   *
+   * <p>Records why as well as when, because the reasons are not interchangeable: a session ended by
+   * reuse detection is evidence of a stolen token, and one ended by signing out is somebody
+   * leaving. Revoking a session that is already revoked changes nothing, so the first reason
+   * stands.
+   *
+   * @param session which session to end, never {@code null}
+   * @param reason why it is ending, never {@code null}
+   * @param now when it ended, never {@code null}
+   */
+  void revoke(SignInSessionId session, SessionRevocation reason, Instant now);
 }

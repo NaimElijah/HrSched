@@ -140,6 +140,14 @@ public class JdbcAccountRepository implements AccountRepository {
   }
 
   @Override
+  public Optional<Account> findForAuthentication(UserId account) {
+    return jdbc.sql(selectAccount() + " WHERE id = :id")
+        .param("id", account.value())
+        .query(JdbcAccountRepository::toAccount)
+        .optional();
+  }
+
+  @Override
   public Optional<Account> findBySignInName(SignInName name) {
     return jdbc.sql(selectAccount() + " WHERE sign_in_name = :name")
         .param("name", name.value())

@@ -24,5 +24,15 @@ public enum AccessChange {
    * An account was locked after too many consecutive failures. Recorded because it is both a sign
    * somebody is guessing and the reason a colleague cannot get in.
    */
-  ACCOUNT_LOCKED
+  ACCOUNT_LOCKED,
+
+  /** A session ended because somebody signed out. */
+  SIGNED_OUT,
+
+  /**
+   * A refresh token was presented after it had already been exchanged, so two parties held it and
+   * one of them should not have. The sharpest entry in this vocabulary: it is the only one that
+   * says, on its own, that something has probably been stolen.
+   */
+  REFRESH_TOKEN_REUSED
 }

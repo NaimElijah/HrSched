@@ -80,6 +80,24 @@ public interface AccountRepository {
   Optional<Account> findBySignInName(SignInName name);
 
   /**
+   * Finds an account by identity alone, across every organisation.
+   *
+   * <p><strong>The second and last unscoped read in this port,</strong> and named so that its
+   * absence of a tenant predicate is a decision somebody made rather than one somebody forgot.
+   * Authentication has to work before there is an organisation to scope by: a token names an
+   * account, and the operator's account belongs to no organisation at all, so a scoped lookup could
+   * not find it under any argument.
+   *
+   * <p>Safe only because of what the caller does with it. What comes back is used to decide who the
+   * caller <em>is</em>, never to answer a question they asked about somebody else. Anything acting
+   * on an account on behalf of a user belongs on {@link #find(OrganisationId, UserId)}.
+   *
+   * @param account whose account to read
+   * @return the account, or empty if there is none
+   */
+  Optional<Account> findForAuthentication(UserId account);
+
+  /**
    * Takes an organisation's account administration, so that two administrators changing accounts at
    * once take turns rather than both deciding against the same stored state.
    *

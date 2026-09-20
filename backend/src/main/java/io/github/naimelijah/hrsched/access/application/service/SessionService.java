@@ -3,6 +3,9 @@ package io.github.naimelijah.hrsched.access.application.service;
 import io.github.naimelijah.hrsched.access.application.port.in.AccountKind;
 import io.github.naimelijah.hrsched.access.application.port.in.IssuedSession;
 import io.github.naimelijah.hrsched.access.application.port.in.PublishedSession;
+import io.github.naimelijah.hrsched.access.application.port.in.RefreshOutcome;
+import io.github.naimelijah.hrsched.access.application.port.in.RefreshRefusal;
+import io.github.naimelijah.hrsched.access.application.port.in.SessionsUseCase;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInRefusal;
@@ -17,11 +20,13 @@ import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.application.port.out.RefreshTokenSecret;
 import io.github.naimelijah.hrsched.access.application.port.out.SessionRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.SessionSecrets;
+import io.github.naimelijah.hrsched.access.application.port.out.StoredRefreshToken;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.InvalidSignInNameException;
 import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.PasswordHash;
 import io.github.naimelijah.hrsched.access.domain.model.SessionPolicy;
+import io.github.naimelijah.hrsched.access.domain.model.SessionRevocation;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
 import io.github.naimelijah.hrsched.access.domain.model.SignInSession;
 import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
@@ -56,7 +61,7 @@ import java.util.Optional;
  * rolls back on any unchecked exception (ADR-023), so throwing would undo the failed attempt this
  * had just counted and no account would ever lock. ADR-011 records the departure.
  */
-public class SessionService implements SignInUseCase {
+public class SessionService implements SignInUseCase, SessionsUseCase {
 
   /** Bytes of randomness behind the dummy password, which exists only to be compared against. */
   private static final int DUMMY_PASSWORD_BYTES = 32;
@@ -121,6 +126,95 @@ public class SessionService implements SignInUseCase {
       return refuseAndCount(account, now);
     }
     return signedIn(account, now);
+  }
+
+  /**
+   * Exchanges a refresh token for a new pair.
+   *
+   * <p>Reading the order of the checks matters. Reuse is decided <em>before</em> anything about
+   * whether the session is otherwise usable, because a token presented twice is evidence about a
+   * stolen credential regardless of what else is wrong, and it is the one case that changes state
+   * on the way out.
+   */
+  @Override
+  public RefreshOutcome refresh(String refreshToken) {
+    Objects.requireNonNull(refreshToken, "refreshToken must not be null");
+    Instant now = clock.instant();
+    Optional<StoredRefreshToken> found = sessions.findRefreshToken(secrets.digestOf(refreshToken));
+    if (found.isEmpty()) {
+      return RefreshOutcome.Refused.of(RefreshRefusal.UNKNOWN_TOKEN);
+    }
+    StoredRefreshToken presented = found.get();
+    SignInSession session = presented.session();
+    if (presented.isReplaced()) {
+      return reuseDetected(session, now);
+    }
+    if (!session.isLiveAt(now)) {
+      return refusedAbout(session, RefreshRefusal.SESSION_ENDED);
+    }
+    if (presented.hasExpiredAt(now)) {
+      return refusedAbout(session, RefreshRefusal.EXPIRED);
+    }
+    Optional<Account> owner = accounts.findForAuthentication(session.account());
+    if (owner.isEmpty() || !owner.get().active()) {
+      return refusedAbout(session, RefreshRefusal.ACCOUNT_DISABLED);
+    }
+    // The conditional update is what decides the race: two requests holding one token both reach
+    // here, and the one that does not change a row is presenting a token somebody else just spent.
+    if (!sessions.markReplaced(secrets.digestOf(refreshToken), now)) {
+      return reuseDetected(session, now);
+    }
+    RefreshTokenSecret successor = secrets.generate();
+    Instant expiresAt = earlier(now.plus(sessionPolicy.idleLifetime()), session.expiresAt());
+    sessions.issueSuccessor(session.id(), successor.digest(), now, expiresAt);
+    IssuedAccessToken accessToken = tokens.issue(session.account(), session.id());
+    return new RefreshOutcome.Renewed(
+        new IssuedSession(
+            accessToken.value(),
+            accessToken.expiresAt(),
+            successor.value(),
+            expiresAt,
+            publish(owner.get())));
+  }
+
+  @Override
+  public void signOut(String refreshToken) {
+    Objects.requireNonNull(refreshToken, "refreshToken must not be null");
+    Instant now = clock.instant();
+    sessions
+        .findRefreshToken(secrets.digestOf(refreshToken))
+        .map(StoredRefreshToken::session)
+        .filter(session -> session.isLiveAt(now))
+        .ifPresent(
+            session -> {
+              sessions.revoke(session.id(), SessionRevocation.SIGNED_OUT, now);
+              recordAbout(session, AccessChange.SIGNED_OUT);
+            });
+  }
+
+  /**
+   * Ends the whole session, not merely this request. Two parties hold a token that works exactly
+   * once, and there is no way to tell which of them is its owner, so the only safe move is to stop
+   * believing both.
+   */
+  private RefreshOutcome reuseDetected(SignInSession session, Instant now) {
+    sessions.revoke(session.id(), SessionRevocation.REFRESH_REUSED, now);
+    recordAbout(session, AccessChange.REFRESH_TOKEN_REUSED);
+    return new RefreshOutcome.Refused(Optional.of(session.id().value()), RefreshRefusal.REUSED);
+  }
+
+  private static RefreshOutcome refusedAbout(SignInSession session, RefreshRefusal reason) {
+    return new RefreshOutcome.Refused(Optional.of(session.id().value()), reason);
+  }
+
+  /**
+   * Records a change about a session, looking its account up for the organisation to file under.
+   */
+  private void recordAbout(SignInSession session, AccessChange change) {
+    Optional<Account> owner = accounts.findForAuthentication(session.account());
+    audit.record(
+        new AuditedChange(
+            owner.flatMap(Account::organisation), session.account(), change, session.id().value()));
   }
 
   private SignInOutcome refuseAndCount(Account account, Instant now) {
