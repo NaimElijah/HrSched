@@ -1,12 +1,19 @@
 package io.github.naimelijah.hrsched.access.adapter.in.web;
 
+import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordCommand;
+import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordOutcome;
+import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordUseCase;
 import io.github.naimelijah.hrsched.access.application.port.in.IssuedSession;
+import io.github.naimelijah.hrsched.access.application.port.in.ReadSessionUseCase;
 import io.github.naimelijah.hrsched.access.application.port.in.RefreshOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.RefreshRefusal;
 import io.github.naimelijah.hrsched.access.application.port.in.SessionsUseCase;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInUseCase;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordRejection;
+import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
@@ -19,7 +26,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -71,13 +80,25 @@ public class AuthController {
 
   private final SignInUseCase signIn;
   private final SessionsUseCase sessions;
+  private final ReadSessionUseCase readSession;
+  private final ChangePasswordUseCase changePassword;
+  private final PasswordPolicy policy;
   private final MeterRegistry meters;
   private final Clock clock;
 
   public AuthController(
-      SignInUseCase signIn, SessionsUseCase sessions, MeterRegistry meters, Clock clock) {
+      SignInUseCase signIn,
+      SessionsUseCase sessions,
+      ReadSessionUseCase readSession,
+      ChangePasswordUseCase changePassword,
+      PasswordPolicy policy,
+      MeterRegistry meters,
+      Clock clock) {
     this.signIn = Objects.requireNonNull(signIn, "signIn must not be null");
     this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
+    this.readSession = Objects.requireNonNull(readSession, "readSession must not be null");
+    this.changePassword = Objects.requireNonNull(changePassword, "changePassword must not be null");
+    this.policy = Objects.requireNonNull(policy, "policy must not be null");
     this.meters = Objects.requireNonNull(meters, "meters must not be null");
     this.clock = Objects.requireNonNull(clock, "clock must not be null");
   }
@@ -134,6 +155,81 @@ public class AuthController {
         .header(HttpHeaders.SET_COOKIE, RefreshCookie.clearing().toString())
         .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
         .build();
+  }
+
+  /**
+   * @param actor whoever is asking, taken from their verified token
+   * @return 200 describing the caller's own account
+   */
+  @GetMapping("/session")
+  public ResponseEntity<SessionResponse> session(@AuthenticationPrincipal Actor actor) {
+    return readSession
+        .findSession(actor)
+        .map(SessionResponse::of)
+        .map(
+            session ->
+                ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, NO_STORE).body(session))
+        .orElseGet(() -> ResponseEntity.notFound().build());
+  }
+
+  /**
+   * Changes the caller's own password, ending every session it had and beginning a new one.
+   *
+   * <p>A wrong current password is a 403 rather than a 401, deliberately. A 401 means "renew your
+   * token and try again", which is exactly what a client would do — and it would then try the same
+   * wrong password for ever.
+   *
+   * @param actor whoever is changing their own password
+   * @param request the current and new passwords
+   * @return 200 with a new session, 403 if the current password was wrong, or 422 naming the rule a
+   *     new password broke
+   */
+  @PostMapping(path = "/password", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<?> changePassword(
+      @AuthenticationPrincipal Actor actor, @RequestBody ChangePasswordRequest request) {
+    ChangePasswordOutcome outcome =
+        changePassword.changePassword(
+            actor, new ChangePasswordCommand(request.submittedCurrent(), request.submittedNew()));
+    return switch (outcome) {
+      case ChangePasswordOutcome.Changed changed -> accepted(changed.session());
+      case ChangePasswordOutcome.CurrentPasswordRejected rejected -> currentPasswordRejected();
+      case ChangePasswordOutcome.NewPasswordRejected rejected ->
+          newPasswordRejected(rejected.reason());
+    };
+  }
+
+  private ResponseEntity<ProblemDetail> currentPasswordRejected() {
+    denied("current_password");
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Current password not accepted.");
+    problem.setTitle("Password not changed");
+    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+        .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
+        .body(problem);
+  }
+
+  /**
+   * Names the rule that was broken, because somebody choosing a password has to be told what would
+   * satisfy it. The rule is the same for everybody and could be found by trying, so saying it
+   * reveals nothing. The password itself is never echoed.
+   */
+  private ResponseEntity<ProblemDetail> newPasswordRejected(PasswordRejection reason) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, detailFor(reason));
+    problem.setTitle("Password not accepted");
+    problem.setProperty("reason", reason.name());
+    return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+        .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
+        .body(problem);
+  }
+
+  private String detailFor(PasswordRejection reason) {
+    return switch (reason) {
+      case TOO_SHORT ->
+          "A password must be at least %d characters long.".formatted(policy.minimumLength());
+      case TOO_LONG -> "A password must be at most %d bytes long.".formatted(policy.maximumBytes());
+      case SAME_AS_CURRENT -> "The new password must be different from the current one.";
+    };
   }
 
   private ResponseEntity<SignInResponse> accepted(IssuedSession session) {

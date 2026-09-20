@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.access.application.port.out;
 import io.github.naimelijah.hrsched.access.domain.model.SessionRevocation;
 import io.github.naimelijah.hrsched.access.domain.model.SignInSession;
 import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
+import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -36,6 +37,24 @@ public interface SessionRepository {
    * @return the token and its session, or empty if no such token was ever issued
    */
   Optional<StoredRefreshToken> findRefreshToken(byte[] refreshDigest);
+
+  /**
+   * Reads an account together with one of its sessions, in one query.
+   *
+   * <p>The read on the hot path: every authenticated request asks it, because a token's signature
+   * says only that this system issued it and says nothing about whether the account is still
+   * enabled or the session still live.
+   *
+   * <p><strong>Not scoped by organisation,</strong> and cannot be: this is the read that
+   * <em>discovers</em> which organisation the caller belongs to, and the platform operator belongs
+   * to none. The account identifier comes from a token this system signed, so there is nothing a
+   * caller could substitute.
+   *
+   * @param account the account a token names, never {@code null}
+   * @param session the session it names, never {@code null}
+   * @return the pair, or empty if there is no such account, or the session is not that account's
+   */
+  Optional<AuthenticatedSession> findAuthenticatedSession(UserId account, SignInSessionId session);
 
   /**
    * Marks a refresh token as exchanged, but only if it has not been exchanged already.
@@ -75,4 +94,17 @@ public interface SessionRepository {
    * @param now when it ended, never {@code null}
    */
   void revoke(SignInSessionId session, SessionRevocation reason, Instant now);
+
+  /**
+   * Ends every live session of one account.
+   *
+   * <p>For the acts that invalidate everything opened under the old state: a password changed, an
+   * account disabled, a password reset. Leaving one session alive after any of those would leave
+   * the door somebody was being shut out of standing open.
+   *
+   * @param account whose sessions to end, never {@code null}
+   * @param reason why they are ending, never {@code null}
+   * @param now when they ended, never {@code null}
+   */
+  void revokeEverySessionOf(UserId account, SessionRevocation reason, Instant now);
 }

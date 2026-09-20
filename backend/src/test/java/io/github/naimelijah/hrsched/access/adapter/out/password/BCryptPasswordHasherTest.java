@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 class BCryptPasswordHasherTest {
 
   private static final int TEST_STRENGTH = 4;
+
   private static final String CHOSEN = "an invented password for a test";
 
   private final BCryptPasswordHasher hasher =

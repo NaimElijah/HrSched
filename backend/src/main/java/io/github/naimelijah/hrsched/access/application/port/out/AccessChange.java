@@ -30,6 +30,11 @@ public enum AccessChange {
   SIGNED_OUT,
 
   /**
+   * Somebody changed their own password, which also ended every session opened under the old one.
+   */
+  PASSWORD_CHANGED,
+
+  /**
    * A refresh token was presented after it had already been exchanged, so two parties held it and
    * one of them should not have. The sharpest entry in this vocabulary: it is the only one that
    * says, on its own, that something has probably been stolen.

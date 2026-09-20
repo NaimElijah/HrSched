@@ -101,7 +101,7 @@ Three rules hold this together, and each fails the build when broken:
 | --- | --- |
 | `shared.domain.model` | The kernel: `OrganisationId`, `UserId`, `EmployeeId`, `QualificationId`, `Role`, `TimeRange`, and the sealed `Actor` (`TenantActor`, `Operator`). Identities and pure values that cross contexts, with no behaviour of their own. A `TenantActor` also carries the `EmployeeId` it is, when it is one ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). |
 | `access.domain.model` | `Organisation` — the tenant itself — and `Account`, what signs in. An account's `Membership` is sealed into one organisation in one role, or the platform operator, so an operator carrying a role or an employee link is unrepresentable. `SignInName` and `PasswordHash` both print as redacted. Otherwise deliberately small: the tenancy *types* live in the kernel because every context needs them. |
-| `access.application` | Onboarding, listing and reading organisations (F13), and the register they live in. Onboarding and listing are the platform `Operator`'s alone — the guard is the inverse of every other one here, asking whether the actor belongs to a tenant rather than which role they hold in it. `KnownOrganisationsUseCase` is this context's **published API**: one question, whether an organisation exists, asked by the boundary check below. See [ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md). |
+| `access.application` | Signing in, renewing and ending a session, reading one's own session and changing one's own password (F14); bootstrapping the platform operator; and onboarding, listing and reading organisations (F13), with the register they live in. Onboarding and listing are the platform `Operator`'s alone — the guard is the inverse of every other one here, asking whether the actor belongs to a tenant rather than which role they hold in it. `KnownOrganisationsUseCase` is this context's **published API**: one question, whether an organisation exists, asked by the boundary check below. See [ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md). |
 | `notifications.domain.model` | `Notification` — something one person has been told, and whether they have seen it. It carries identifiers, a kind, a time and a flag, and **there is nowhere in it to put a sentence or a name** ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `notifications.application` | Raising and reading notifications. `NotifyUseCase` is this context's **published API** and is deliberately not on a controller; `ReadNotificationsUseCase` is strictly self-service, and whose inbox is read comes from the acting identity rather than from any parameter. Takes a `Clock`, so when something happened is an input rather than an ambient fact. |
 | `workforce.domain.model` | `Employee` (aggregate root: qualifications, unavailability, preferences, contract terms), `Qualification`, `ShiftPreference`, `ContractTerms`. |
@@ -114,6 +114,11 @@ Three rules hold this together, and each fails the build when broken:
 | `*.adapter.out.persistence` | `Jdbc*Repository` — hand-written SQL through `JdbcClient`, one per driven port, every read carrying its organisation in the `WHERE` clause. The one exception is named as such in its port: `JdbcAccountRepository.findBySignInName`, which sign-in needs because a submitted name is all it has to go on. No ORM: the domain may not be annotated, so mapping is explicit ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). |
 | `*.adapter.out.audit` | `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog` and `NotificationAuditLog` — one per context, each implementing its own context's `AuditTrail` port and turning one recorded change into a structured log event and a counter. All four are named for their contexts because Spring derives a bean name from the simple class name alone, so four classes called `AuditLog` would collide at startup rather than at compile time. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
+| `access.adapter.in.token` | `AccessTokenDecoder` (the application's only `JwtDecoder`), `ActorAuthenticationConverter` and `ActorAuthentication`. Verifying a token and deciding who is acting both live here, in the context that owns accounts, rather than in `configuration` — which may not name an adapter class, so the chain receives them by type. |
+| `access.adapter.out.token` | `AccessTokenKey` (the RSA key pair, or a refusal to start without one), `AccessTokenSigning`, `JwtAccessTokenIssuer` and `SecureRandomSessionSecrets`. |
+| `access.adapter.out.password` | `BCryptPasswordHasher` — a `DelegatingPasswordEncoder`, so every stored hash names the algorithm that made it and a later change needs no migration. |
+| `access.adapter.in.bootstrap` | `OperatorBootstrap` — an `ApplicationRunner` that creates the first platform operator from configuration, and only if no account holds the name ([ADR-029](../ADRs/ADR-029-provision-accounts-from-the-top-down.md)). |
+| `configuration.security` | `SecurityConfiguration` (the one filter chain), `ProblemAuthenticationEntryPoint` and `ProblemAccessDeniedHandler` (which write the 401 and 403 bodies a filter would otherwise leave empty), and `SecurityPolicyProperties`. |
 | `configuration.observability` | Cross-cutting instrumentation that belongs to no context. Today that is `TraceIdResponseFilter`, which puts the request's trace id on the response as `X-Trace-Id`. It reads no request header, so unlike `ActorFromHeaders` it is unaffected by ADR-011. |
 | `configuration.tenancy` | `KnownOrganisationFilter` — checks the claimed `X-Organisation` against the register before any handler runs, and answers the ordinary 404 when nobody onboarded it. Cross-cutting rather than per context, and it outlives ADR-011 ([ADR-020](../ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md)). |
 | `configuration.web` | `RequestBindingExceptionHandler` — answers a request Spring could not bind to a controller's parameters (a missing header or query parameter, an identifier that does not parse) with a 400 problem detail naming what was wrong, whose detail repeats nothing that was sent. It belongs to no context because the failure happens before any controller runs ([ADR-024](../ADRs/ADR-024-answer-unbindable-requests-with-a-problem-detail.md)). |
@@ -129,6 +134,63 @@ by direct method call. There are no events and no queues.
 The browser talks to the backend over JSON on `/api`. In development that request goes to the Vite
 dev server, which proxies it; in production the built bundle is served however the deployment
 chooses and the same paths apply. The backend is unaware of either arrangement.
+
+## Authentication
+
+A request carrying `Authorization: Bearer …` is authenticated. A request without one is not, and
+today that is still allowed almost everywhere: only `GET /api/auth/session` and
+`POST /api/auth/password` require a token, and every other route still takes its acting identity
+from `X-User`, `X-Role`, `X-Organisation` and `X-Employee`, which any caller can write. That
+placeholder is being deleted one route family at a time
+([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md)).
+
+**A verified signature is not enough, and that is the point.** The decoder proves a token is one
+this service signed, for this service, unexpired, of type `at+jwt`, and naming both an account and
+a session. It cannot know whether the account has since been disabled, whether its role changed, or
+whether the session was signed out a second ago — so every authenticated request asks the database,
+and a token whose account or session no longer stands is refused. That is what makes disabling,
+demoting and signing out take effect on the next request rather than whenever a token happens to
+expire, and it costs one read per request.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as AuthController
+    participant S as SessionService
+    participant D as AccessTokenDecoder
+    participant V as ActorAuthenticationConverter
+    participant DB as PostgreSQL
+
+    B->>A: POST /api/auth/sign-in
+    A->>S: signIn(name, password)
+    S->>DB: account by sign-in name, then open a session
+    S-->>A: access token + refresh token
+    A-->>B: 200 {accessToken} + Set-Cookie __Secure-hrsched-refresh
+
+    B->>D: GET /api/auth/session, Authorization: Bearer …
+    D->>D: RS256 pinned, typ/iss/aud/exp/iat/sub/sid checked
+    D->>V: verified Jwt
+    V->>S: findActor(sub, sid)
+    S->>DB: one query joining account and sign_in_session
+    S-->>V: Actor, or nothing
+    V-->>B: 401 if nothing, otherwise the request proceeds
+
+    B->>A: POST /api/auth/refresh (cookie + X-Requested-With)
+    A->>S: refresh(token)
+    S->>DB: mark replaced WHERE replaced_at IS NULL, then issue a successor
+    S-->>A: new access token + rotated refresh token
+    A-->>B: 200 + rotated cookie, or 401 and the cookie cleared
+
+    B->>A: POST /api/auth/sign-out (cookie + X-Requested-With)
+    A->>S: signOut(token)
+    S->>DB: revoke the session
+    A-->>B: 204 + cookie cleared
+```
+
+Signing in, renewing and signing out are open by design: the credential for each is what the caller
+presents. The session endpoints are reachable by an account whose temporary password is still
+pending, because they are the two things such an account has to be able to do — it holds
+`PASSWORD_CHANGE_REQUIRED` and no role at all, so every rule written in terms of a role refuses it.
 
 ## Data flow
 
@@ -179,7 +241,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 | --- | --- | --- |
 | `spring-boot-starter-webmvc` | HTTP boundary, embedded Tomcat | ADR-001. Boot 4.x renamed this from `spring-boot-starter-web`. |
 | `spring-boot-starter-actuator` | Health and readiness probes | Required of every service by the project baseline. A `db` health contributor now appears with the datasource. |
-| `spring-boot-starter-security-oauth2-resource-server` | The security filter chain in front of every request, and (unused so far) signing and verifying JWTs | [ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md). Pulls in Spring Security and Nimbus JOSE+JWT, both Apache-2.0 and maintained on Boot's release train. Authentication is security-critical code nobody should hand-roll. Today `SecurityConfiguration` declares one chain that permits every request unchanged; no token is issued or verified yet. |
+| `spring-boot-starter-security-oauth2-resource-server` | The security filter chain in front of every request, and signing and verifying the access tokens | [ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md). Pulls in Spring Security and Nimbus JOSE+JWT, both Apache-2.0 and maintained on Boot's release train. Authentication is security-critical code nobody should hand-roll. `SecurityConfiguration` declares the one chain; a bearer token is verified on every request that carries one, and two endpoints require one. |
 | `spring-boot-starter-jdbc` | `JdbcClient`, the connection pool, and the transaction manager | [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md). Chosen over JPA because the domain may not carry `jakarta.persistence` annotations. |
 | `spring-boot-starter-flyway` + `flyway-database-postgresql` | Versioned schema migrations, applied on startup | ADR-004. New in Boot 4.x; 3.x had no Flyway starter. |
 | `postgresql` | The JDBC driver | ADR-004. Runtime scope; nothing compiles against it. |
@@ -223,11 +285,13 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   adapters, and it outlives ADR-011 — whether a tenant exists is a different question from who the
   caller is. It is **not** authentication: anyone who learns a real identifier can still claim any
   role inside it ([ADR-020](../ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md)).
-- **The two servlet filters are explicitly ordered, and the numbers matter.**
+- **The servlet filters are explicitly ordered, and the numbers matter.**
   `TraceIdResponseFilter` must run after Boot's observation filter (registered at
   `HIGHEST_PRECEDENCE + 1`), which opens the span it reads — ordered any earlier, `currentSpan()` is
   null and `X-Trace-Id` silently disappears from every response. `KnownOrganisationFilter` runs
-  immediately after it, so a request it refuses still carries an id the caller can quote.
+  immediately after it, so a request it refuses still carries an id the caller can quote. Spring
+  Security's chain runs after both, at its own default order (`spring.security.filter.order`, −100),
+  which is why a 401 from the security chain still carries a trace id.
 - **There is now one endpoint where that guard genuinely fires over HTTP.** On `GET
   /api/organisations/{id}` the acting identity comes from `X-Organisation` and the target comes from
   the path, so unlike every other route the two can differ, and a tenant naming somebody else's

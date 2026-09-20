@@ -12,6 +12,7 @@ import io.github.naimelijah.hrsched.access.application.service.AccountService;
 import io.github.naimelijah.hrsched.access.application.service.OrganisationService;
 import io.github.naimelijah.hrsched.access.application.service.SessionService;
 import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.SessionPolicy;
 import io.github.naimelijah.hrsched.configuration.security.SecurityPolicyProperties;
 import io.github.naimelijah.hrsched.notifications.application.port.out.NotificationRepository;
@@ -90,6 +91,16 @@ public class UseCaseConfiguration {
         policies.session().absoluteLifetime(), policies.session().idleLifetime());
   }
 
+  /**
+   * What a password somebody chooses has to satisfy: a floor from configuration, and a ceiling the
+   * hasher imposes. Asking the hasher for its own limit keeps the two from drifting apart if the
+   * algorithm ever changes.
+   */
+  @Bean
+  PasswordPolicy passwordPolicy(SecurityPolicyProperties policies, PasswordHasher hasher) {
+    return new PasswordPolicy(policies.password().minimumLength(), hasher.maximumBytes());
+  }
+
   @Bean
   SessionService sessionService(
       AccountRepository accounts,
@@ -101,10 +112,20 @@ public class UseCaseConfiguration {
       Clock clock,
       LockoutPolicy lockout,
       SessionPolicy sessionPolicy,
+      PasswordPolicy passwordPolicy,
       PlatformTransactionManager transactions) {
     return transactional(
         new SessionService(
-            accounts, sessions, passwords, tokens, secrets, audit, clock, lockout, sessionPolicy),
+            accounts,
+            sessions,
+            passwords,
+            tokens,
+            secrets,
+            audit,
+            clock,
+            lockout,
+            sessionPolicy,
+            passwordPolicy),
         transactions);
   }
 

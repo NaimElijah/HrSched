@@ -247,6 +247,21 @@ public class JdbcAccountRepository implements AccountRepository {
   }
 
   private static Account toAccount(ResultSet row, int rowNumber) throws SQLException {
+    return readAccount(row);
+  }
+
+  /**
+   * Reads an account from a row, whatever query produced it.
+   *
+   * <p>Package-private so that {@code JdbcSessionRepository} can map the account half of its join
+   * with this mapper rather than a second copy of it. Two mappers over one table would be two
+   * things to keep in step with the next migration.
+   *
+   * @param row a row carrying every column of {@code account}
+   * @return the account it describes
+   * @throws SQLException if a column cannot be read
+   */
+  static Account readAccount(ResultSet row) throws SQLException {
     return new Account(
         new UserId(row.getObject("id", UUID.class)),
         new SignInName(row.getString("sign_in_name")),

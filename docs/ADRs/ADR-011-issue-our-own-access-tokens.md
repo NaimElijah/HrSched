@@ -1,6 +1,6 @@
 # ADR-011: Issue our own signed access tokens, and resolve the actor from the stored account and session on every request
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-16
 
 ## Context

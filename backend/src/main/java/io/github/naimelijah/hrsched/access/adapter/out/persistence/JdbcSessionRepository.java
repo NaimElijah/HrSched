@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.access.adapter.out.persistence;
 
+import io.github.naimelijah.hrsched.access.application.port.out.AuthenticatedSession;
 import io.github.naimelijah.hrsched.access.application.port.out.SessionRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.StoredRefreshToken;
 import io.github.naimelijah.hrsched.access.domain.model.SessionRevocation;
@@ -28,6 +29,23 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public class JdbcSessionRepository implements SessionRepository {
+
+  /**
+   * The one query on the authenticated path. The session's columns are aliased because the two
+   * tables both have an {@code id}, an {@code expires_at} and a {@code created_at}-shaped column,
+   * and a mapper reading the wrong one of a pair would be a bug nothing would show.
+   */
+  private static final String SELECT_AUTHENTICATED_SESSION =
+      """
+      SELECT a.id, a.sign_in_name, a.password_hash, a.kind, a.organisation_id, a.role,
+             a.employee_id, a.active, a.password_change_required, a.failed_sign_ins,
+             a.locked_until, a.created_at,
+             s.id AS session_id, s.account_id, s.started_at,
+             s.expires_at AS session_expires_at, s.revoked_at, s.revocation
+      FROM sign_in_session s
+      JOIN account a ON a.id = s.account_id
+      WHERE s.id = :session AND s.account_id = :account
+      """;
 
   private final JdbcClient jdbc;
 
@@ -131,6 +149,47 @@ public class JdbcSessionRepository implements SessionRepository {
         .param("reason", reason.name())
         .param("id", session.value())
         .update();
+  }
+
+  @Override
+  public Optional<AuthenticatedSession> findAuthenticatedSession(
+      UserId account, SignInSessionId session) {
+    Objects.requireNonNull(account, "account must not be null");
+    Objects.requireNonNull(session, "session must not be null");
+    return jdbc.sql(SELECT_AUTHENTICATED_SESSION)
+        .param("account", account.value())
+        .param("session", session.value())
+        .query(JdbcSessionRepository::toAuthenticatedSession)
+        .optional();
+  }
+
+  @Override
+  public void revokeEverySessionOf(UserId account, SessionRevocation reason, Instant now) {
+    Objects.requireNonNull(account, "account must not be null");
+    Objects.requireNonNull(reason, "reason must not be null");
+    Objects.requireNonNull(now, "now must not be null");
+    jdbc.sql(
+            """
+            UPDATE sign_in_session SET revoked_at = :now, revocation = :reason
+            WHERE account_id = :account AND revoked_at IS NULL
+            """)
+        .param("now", now.atOffset(ZoneOffset.UTC))
+        .param("reason", reason.name())
+        .param("account", account.value())
+        .update();
+  }
+
+  private static AuthenticatedSession toAuthenticatedSession(ResultSet row, int rowNumber)
+      throws SQLException {
+    return new AuthenticatedSession(
+        JdbcAccountRepository.readAccount(row),
+        new SignInSession(
+            new SignInSessionId(row.getObject("session_id", UUID.class)),
+            new UserId(row.getObject("account_id", UUID.class)),
+            instantOf(row, "started_at"),
+            instantOf(row, "session_expires_at"),
+            Optional.ofNullable(row.getString("revocation")).map(SessionRevocation::valueOf),
+            optionalInstantOf(row, "revoked_at")));
   }
 
   private static StoredRefreshToken toStoredRefreshToken(ResultSet row, int rowNumber)

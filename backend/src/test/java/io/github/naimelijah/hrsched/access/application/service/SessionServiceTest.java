@@ -10,6 +10,7 @@ import io.github.naimelijah.hrsched.access.application.port.in.SignInOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInRefusal;
 import io.github.naimelijah.hrsched.access.application.port.out.AccessChange;
 import io.github.naimelijah.hrsched.access.application.port.out.AccessTokenIssuer;
+import io.github.naimelijah.hrsched.access.application.port.out.AuthenticatedSession;
 import io.github.naimelijah.hrsched.access.application.port.out.IssuedAccessToken;
 import io.github.naimelijah.hrsched.access.application.port.out.RefreshTokenSecret;
 import io.github.naimelijah.hrsched.access.application.port.out.SessionRepository;
@@ -18,6 +19,7 @@ import io.github.naimelijah.hrsched.access.application.port.out.StoredRefreshTok
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.SessionPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.SessionRevocation;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
@@ -64,6 +66,7 @@ class SessionServiceTest {
       new LockoutPolicy(3, Duration.ofMinutes(15));
   private static final SessionPolicy A_DAY_AND_AN_HOUR =
       new SessionPolicy(Duration.ofHours(12), Duration.ofHours(1));
+  private static final PasswordPolicy A_FIFTEEN_CHARACTER_MINIMUM = new PasswordPolicy(15, 72);
 
   private final StubAccountRepository accounts = new StubAccountRepository();
   private final StubSessionRepository sessions = new StubSessionRepository();
@@ -84,7 +87,8 @@ class SessionServiceTest {
         audit,
         Clock.fixed(now, ZoneOffset.UTC),
         LOCK_AFTER_THREE,
-        policy);
+        policy,
+        A_FIFTEEN_CHARACTER_MINIMUM);
   }
 
   @Test
@@ -370,6 +374,7 @@ class SessionServiceTest {
     private final List<SignInSession> started = new ArrayList<>();
     private final Map<SignInSessionId, SessionRevocation> revocations = new LinkedHashMap<>();
     private final Map<String, StoredRefreshToken> tokens = new LinkedHashMap<>();
+    private final Map<UserId, SessionRevocation> accountsWhoseSessionsEnded = new LinkedHashMap<>();
     private boolean exchangeAlreadyTaken;
 
     List<SignInSession> started() {
@@ -378,6 +383,10 @@ class SessionServiceTest {
 
     Optional<SessionRevocation> revocationOf(SignInSessionId session) {
       return Optional.ofNullable(revocations.get(session));
+    }
+
+    Optional<SessionRevocation> everySessionEndedFor(UserId account) {
+      return Optional.ofNullable(accountsWhoseSessionsEnded.get(account));
     }
 
     /** Arranges the losing half of a race: the row was already marked by somebody else. */
@@ -413,6 +422,17 @@ class SessionServiceTest {
     @Override
     public void revoke(SignInSessionId session, SessionRevocation reason, Instant now) {
       revocations.putIfAbsent(session, reason);
+    }
+
+    @Override
+    public Optional<AuthenticatedSession> findAuthenticatedSession(
+        UserId account, SignInSessionId session) {
+      return Optional.empty();
+    }
+
+    @Override
+    public void revokeEverySessionOf(UserId account, SessionRevocation reason, Instant now) {
+      accountsWhoseSessionsEnded.put(account, reason);
     }
   }
 

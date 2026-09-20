@@ -17,9 +17,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param signIn what it takes to lock an account, and for how long
  * @param session how long a session may live, in total and while idle
+ * @param password the floor on a password somebody chooses; the ceiling comes from the hasher
  */
 @ConfigurationProperties("hrsched.security")
-public record SecurityPolicyProperties(SignIn signIn, Session session) {
+public record SecurityPolicyProperties(SignIn signIn, Session session, Password password) {
 
   /**
    * @param lockoutThreshold consecutive failures that lock an account
@@ -32,4 +33,12 @@ public record SecurityPolicyProperties(SignIn signIn, Session session) {
    * @param idleLifetime how long it survives without being renewed
    */
   public record Session(Duration absoluteLifetime, Duration idleLifetime) {}
+
+  /**
+   * Only the minimum. The maximum is not configuration at all: it is whatever the hashing algorithm
+   * can actually read, and is asked of the hasher rather than written down twice.
+   *
+   * @param minimumLength the fewest characters a password somebody chooses may have
+   */
+  public record Password(int minimumLength) {}
 }

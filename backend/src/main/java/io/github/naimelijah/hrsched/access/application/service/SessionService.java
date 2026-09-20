@@ -1,8 +1,14 @@
 package io.github.naimelijah.hrsched.access.application.service;
 
 import io.github.naimelijah.hrsched.access.application.port.in.AccountKind;
+import io.github.naimelijah.hrsched.access.application.port.in.AuthenticatedActor;
+import io.github.naimelijah.hrsched.access.application.port.in.AuthenticatedActorsUseCase;
+import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordCommand;
+import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordOutcome;
+import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordUseCase;
 import io.github.naimelijah.hrsched.access.application.port.in.IssuedSession;
 import io.github.naimelijah.hrsched.access.application.port.in.PublishedSession;
+import io.github.naimelijah.hrsched.access.application.port.in.ReadSessionUseCase;
 import io.github.naimelijah.hrsched.access.application.port.in.RefreshOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.RefreshRefusal;
 import io.github.naimelijah.hrsched.access.application.port.in.SessionsUseCase;
@@ -25,14 +31,18 @@ import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.InvalidSignInNameException;
 import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.PasswordHash;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordRejection;
 import io.github.naimelijah.hrsched.access.domain.model.SessionPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.SessionRevocation;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
 import io.github.naimelijah.hrsched.access.domain.model.SignInSession;
 import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
 import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
+import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
@@ -61,7 +71,12 @@ import java.util.Optional;
  * rolls back on any unchecked exception (ADR-023), so throwing would undo the failed attempt this
  * had just counted and no account would ever lock. ADR-011 records the departure.
  */
-public class SessionService implements SignInUseCase, SessionsUseCase {
+public class SessionService
+    implements SignInUseCase,
+        SessionsUseCase,
+        AuthenticatedActorsUseCase,
+        ReadSessionUseCase,
+        ChangePasswordUseCase {
 
   /** Bytes of randomness behind the dummy password, which exists only to be compared against. */
   private static final int DUMMY_PASSWORD_BYTES = 32;
@@ -75,6 +90,7 @@ public class SessionService implements SignInUseCase, SessionsUseCase {
   private final Clock clock;
   private final LockoutPolicy lockout;
   private final SessionPolicy sessionPolicy;
+  private final PasswordPolicy passwordPolicy;
   private final PasswordHash dummyHash;
 
   public SessionService(
@@ -86,7 +102,8 @@ public class SessionService implements SignInUseCase, SessionsUseCase {
       AuditTrail audit,
       Clock clock,
       LockoutPolicy lockout,
-      SessionPolicy sessionPolicy) {
+      SessionPolicy sessionPolicy,
+      PasswordPolicy passwordPolicy) {
     this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
     this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
     this.passwords = Objects.requireNonNull(passwords, "passwords must not be null");
@@ -96,6 +113,7 @@ public class SessionService implements SignInUseCase, SessionsUseCase {
     this.clock = Objects.requireNonNull(clock, "clock must not be null");
     this.lockout = Objects.requireNonNull(lockout, "lockout must not be null");
     this.sessionPolicy = Objects.requireNonNull(sessionPolicy, "sessionPolicy must not be null");
+    this.passwordPolicy = Objects.requireNonNull(passwordPolicy, "passwordPolicy must not be null");
     this.dummyHash = passwords.hash(randomPassword());
   }
 
@@ -177,6 +195,82 @@ public class SessionService implements SignInUseCase, SessionsUseCase {
             publish(owner.get())));
   }
 
+  /**
+   * The read every authenticated request makes. Nothing here trusts the token beyond the two
+   * identifiers it names: whether the account is usable and the session live are read fresh, which
+   * is what makes disabling, demoting and signing out take effect on the next request.
+   *
+   * <p>A session belonging to another account simply is not found, because the query asks for both
+   * at once — a token pairing one account's subject with another's session matches no row.
+   */
+  @Override
+  public Optional<AuthenticatedActor> findActor(UserId account, SignInSessionId session) {
+    Objects.requireNonNull(account, "account must not be null");
+    Objects.requireNonNull(session, "session must not be null");
+    Instant now = clock.instant();
+    return sessions
+        .findAuthenticatedSession(account, session)
+        .filter(found -> found.account().active())
+        .filter(found -> found.session().isLiveAt(now))
+        .map(
+            found ->
+                new AuthenticatedActor(
+                    found.account().actor(), found.account().passwordChangeRequired()));
+  }
+
+  @Override
+  public Optional<PublishedSession> findSession(Actor actor) {
+    Objects.requireNonNull(actor, "actor must not be null");
+    return accounts.findForAuthentication(actor.id()).map(SessionService::publish);
+  }
+
+  /**
+   * Changes the caller's own password, and ends every session it had.
+   *
+   * <p>The current password is checked even though the caller is authenticated, and a wrong one is
+   * counted as a failed attempt: without that, this endpoint would be a way to guess at a password
+   * with no lockout behind it. That count is why the refusal is returned rather than thrown.
+   */
+  @Override
+  public ChangePasswordOutcome changePassword(Actor actor, ChangePasswordCommand command) {
+    Objects.requireNonNull(actor, "actor must not be null");
+    Objects.requireNonNull(command, "command must not be null");
+    Instant now = clock.instant();
+    // Authenticated moments ago, so an account that is not there is a fault rather than a refusal,
+    // and fails loudly instead of being reported as a wrong password.
+    Account account =
+        accounts
+            .findForAuthentication(actor.id())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "The authenticated account no longer exists: " + actor.id().value()));
+    if (!passwords.matches(command.currentPassword(), account.passwordHash())) {
+      Account counted = account.recordFailedSignIn(now, lockout);
+      accounts.save(counted);
+      if (counted.isLockedAt(now)) {
+        record(counted, AccessChange.ACCOUNT_LOCKED, counted.id().value());
+      }
+      return new ChangePasswordOutcome.CurrentPasswordRejected();
+    }
+    Optional<PasswordRejection> broken = passwordPolicy.assess(command.newPassword());
+    if (broken.isPresent()) {
+      return new ChangePasswordOutcome.NewPasswordRejected(broken.get());
+    }
+    if (passwords.matches(command.newPassword(), account.passwordHash())) {
+      return new ChangePasswordOutcome.NewPasswordRejected(PasswordRejection.SAME_AS_CURRENT);
+    }
+    Account changed =
+        account.withPassword(passwords.hash(command.newPassword()), false).recordSuccessfulSignIn();
+    accounts.save(changed);
+    // Every session, including the one that asked: a password change has to end anything opened
+    // under the old one, and the caller is handed a new session rather than being signed out of
+    // their own password change.
+    sessions.revokeEverySessionOf(changed.id(), SessionRevocation.PASSWORD_CHANGED, now);
+    record(changed, AccessChange.PASSWORD_CHANGED, changed.id().value());
+    return new ChangePasswordOutcome.Changed(beginSession(changed, now, AccessChange.SIGNED_IN));
+  }
+
   @Override
   public void signOut(String refreshToken) {
     Objects.requireNonNull(refreshToken, "refreshToken must not be null");
@@ -230,6 +324,18 @@ public class SessionService implements SignInUseCase, SessionsUseCase {
     if (account.failedSignIns() > 0 || account.lockedUntil().isPresent()) {
       accounts.save(account.recordSuccessfulSignIn());
     }
+    return new SignInOutcome.SignedIn(beginSession(account, now, AccessChange.SIGNED_IN));
+  }
+
+  /**
+   * Opens a session and hands back everything a client needs to use it.
+   *
+   * @param account whose session it is
+   * @param now when it begins
+   * @param change what is recorded about it, since a session begun by a password change is not a
+   *     sign-in and should not be counted as one
+   */
+  private IssuedSession beginSession(Account account, Instant now, AccessChange change) {
     SignInSession session =
         new SignInSession(
             SignInSessionId.newId(), account.id(), now, now.plus(sessionPolicy.absoluteLifetime()));
@@ -239,14 +345,13 @@ public class SessionService implements SignInUseCase, SessionsUseCase {
     RefreshTokenSecret refresh = secrets.generate();
     sessions.start(session, refresh.digest(), refreshExpiresAt);
     IssuedAccessToken accessToken = tokens.issue(account.id(), session.id());
-    record(account, AccessChange.SIGNED_IN, session.id().value());
-    return new SignInOutcome.SignedIn(
-        new IssuedSession(
-            accessToken.value(),
-            accessToken.expiresAt(),
-            refresh.value(),
-            refreshExpiresAt,
-            publish(account)));
+    record(account, change, session.id().value());
+    return new IssuedSession(
+        accessToken.value(),
+        accessToken.expiresAt(),
+        refresh.value(),
+        refreshExpiresAt,
+        publish(account));
   }
 
   /**
