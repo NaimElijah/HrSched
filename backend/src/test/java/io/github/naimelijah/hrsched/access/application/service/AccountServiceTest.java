@@ -4,9 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.naimelijah.hrsched.access.application.port.in.BootstrapOperatorCommand;
 import io.github.naimelijah.hrsched.access.application.port.out.AccessChange;
-import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.AuditedChange;
-import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
 import io.github.naimelijah.hrsched.access.domain.model.PasswordHash;
@@ -18,9 +16,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -135,86 +131,5 @@ class AccountServiceTest {
     String printed = new BootstrapOperatorCommand(OPERATOR_NAME, A_PASSWORD).toString();
 
     assertThat(printed).doesNotContain(OPERATOR_NAME).doesNotContain(A_PASSWORD);
-  }
-
-  /**
-   * Stores accounts in a map, and answers the two questions the service asks of the real one.
-   *
-   * <p>Hand-written rather than mocked, like every other double here: insert-if-absent is a rule
-   * this fake has to keep for the test to mean anything, and a mock would only replay whatever it
-   * was told.
-   */
-  private static final class StubAccountRepository implements AccountRepository {
-
-    private final List<Account> stored = new ArrayList<>();
-
-    void given(Account account) {
-      stored.add(account);
-    }
-
-    @Override
-    public void save(Account account) {
-      stored.removeIf(existing -> existing.id().equals(account.id()));
-      stored.add(account);
-    }
-
-    @Override
-    public boolean saveIfAbsent(Account account) {
-      if (findBySignInName(account.signInName()).isPresent()) {
-        return false;
-      }
-      stored.add(account);
-      return true;
-    }
-
-    @Override
-    public Optional<Account> find(OrganisationId organisation, UserId account) {
-      return stored.stream()
-          .filter(candidate -> candidate.organisation().filter(organisation::equals).isPresent())
-          .filter(candidate -> candidate.id().equals(account))
-          .findFirst();
-    }
-
-    @Override
-    public List<Account> findAll(OrganisationId organisation) {
-      return stored.stream()
-          .filter(candidate -> candidate.organisation().filter(organisation::equals).isPresent())
-          .toList();
-    }
-
-    @Override
-    public Optional<Account> findBySignInName(SignInName name) {
-      return stored.stream().filter(candidate -> candidate.signInName().equals(name)).findFirst();
-    }
-
-    @Override
-    public void lockAdministrationOf(OrganisationId organisation) {
-      // Nothing to serialise: this fake is never shared between threads.
-    }
-  }
-
-  /**
-   * Hashes by labelling the password rather than by computing anything. Reversible on purpose: a
-   * real hash would make this test measure bcrypt's work factor instead of the service's rules.
-   */
-  private static final class StubPasswordHasher implements PasswordHasher {
-
-    private static final String PREFIX = "{stub}";
-
-    @Override
-    public PasswordHash hash(String rawPassword) {
-      Objects.requireNonNull(rawPassword, "rawPassword must not be null");
-      return new PasswordHash(PREFIX + rawPassword);
-    }
-
-    @Override
-    public boolean matches(String rawPassword, PasswordHash hash) {
-      return hash.value().equals(PREFIX + rawPassword);
-    }
-
-    @Override
-    public int maximumBytes() {
-      return 72;
-    }
   }
 }

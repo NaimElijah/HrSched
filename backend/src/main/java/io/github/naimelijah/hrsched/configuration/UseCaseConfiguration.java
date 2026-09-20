@@ -2,11 +2,18 @@ package io.github.naimelijah.hrsched.configuration;
 
 import static io.github.naimelijah.hrsched.configuration.persistence.TransactionalUseCases.transactional;
 
+import io.github.naimelijah.hrsched.access.application.port.out.AccessTokenIssuer;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
+import io.github.naimelijah.hrsched.access.application.port.out.SessionRepository;
+import io.github.naimelijah.hrsched.access.application.port.out.SessionSecrets;
 import io.github.naimelijah.hrsched.access.application.service.AccountService;
 import io.github.naimelijah.hrsched.access.application.service.OrganisationService;
+import io.github.naimelijah.hrsched.access.application.service.SessionService;
+import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
+import io.github.naimelijah.hrsched.access.domain.model.SessionPolicy;
+import io.github.naimelijah.hrsched.configuration.security.SecurityPolicyProperties;
 import io.github.naimelijah.hrsched.notifications.application.port.out.NotificationRepository;
 import io.github.naimelijah.hrsched.notifications.application.service.NotificationService;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
@@ -62,6 +69,43 @@ public class UseCaseConfiguration {
       Clock clock,
       PlatformTransactionManager transactions) {
     return transactional(new AccountService(accounts, passwords, audit, clock), transactions);
+  }
+
+  /**
+   * Turns the configured numbers into the policy the domain understands.
+   *
+   * <p>A bean rather than a field read inside the use case, so that what counts as too many
+   * failures is an input a test supplies rather than an ambient fact it has to live with.
+   */
+  @Bean
+  LockoutPolicy lockoutPolicy(SecurityPolicyProperties policies) {
+    return new LockoutPolicy(
+        policies.signIn().lockoutThreshold(), policies.signIn().lockoutDuration());
+  }
+
+  /** As {@link #lockoutPolicy}, for how long a session lives. */
+  @Bean
+  SessionPolicy sessionPolicy(SecurityPolicyProperties policies) {
+    return new SessionPolicy(
+        policies.session().absoluteLifetime(), policies.session().idleLifetime());
+  }
+
+  @Bean
+  SessionService sessionService(
+      AccountRepository accounts,
+      SessionRepository sessions,
+      PasswordHasher passwords,
+      AccessTokenIssuer tokens,
+      SessionSecrets secrets,
+      io.github.naimelijah.hrsched.access.application.port.out.AuditTrail audit,
+      Clock clock,
+      LockoutPolicy lockout,
+      SessionPolicy sessionPolicy,
+      PlatformTransactionManager transactions) {
+    return transactional(
+        new SessionService(
+            accounts, sessions, passwords, tokens, secrets, audit, clock, lockout, sessionPolicy),
+        transactions);
   }
 
   @Bean

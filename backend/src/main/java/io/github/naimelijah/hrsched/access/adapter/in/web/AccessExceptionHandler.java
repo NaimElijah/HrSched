@@ -26,8 +26,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * <p>It is also where these refusals are recorded, because it is the only place that sees every one
  * of them. The caller is told exactly what it was told before; only the operator gains anything.
  * See ADR-018.
+ *
+ * <p>It covers {@link AuthController} as well, and the reason is narrower than it looks: a body
+ * Jackson cannot read is answered here with a message of this handler's own, never the parser's. A
+ * parser's message quotes what it choked on, and what it choked on is a request carrying a
+ * password.
  */
-@RestControllerAdvice(assignableTypes = OrganisationController.class)
+@RestControllerAdvice(assignableTypes = {OrganisationController.class, AuthController.class})
 public class AccessExceptionHandler {
 
   private static final Logger log = LoggerFactory.getLogger(AccessExceptionHandler.class);
@@ -60,6 +65,10 @@ public class AccessExceptionHandler {
     return problem;
   }
 
+  /**
+   * Answers with a fixed sentence and never with {@code exception.getMessage()}. Jackson's message
+   * quotes the input it failed on, and on the sign-in endpoint that input contains a password.
+   */
   @ExceptionHandler(HttpMessageNotReadableException.class)
   public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException exception) {
     ProblemDetail problem =
