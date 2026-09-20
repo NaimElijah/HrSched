@@ -162,9 +162,27 @@
 
 	<build>
 		<plugins>
+			<!--
+			  The ephemeral signing key is permitted for `spring-boot:run` and nowhere else.
+			  Bound to default-cli, so it reaches goals invoked from the command line and never
+			  the repackage goal that builds the jar: a packaged artifact therefore carries no
+			  permission to invent a key, and a deployment that forgot HRSCHED_SECURITY_TOKEN_-
+			  PRIVATEKEY fails to start rather than signing tokens no other instance can verify.
+			  See ADR-011.
+			-->
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>default-cli</id>
+						<configuration>
+							<systemPropertyVariables>
+								<hrsched.security.token.ephemeral>true</hrsched.security.token.ephemeral>
+							</systemPropertyVariables>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 
 			<!--

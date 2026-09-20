@@ -201,6 +201,10 @@ be a default that travels somewhere it is wrong.
 | `management.endpoint.health.probes.enabled` | Exposes `health/liveness` and `health/readiness` | `true` (set explicitly; Spring defaults it off outside Kubernetes) |
 | `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info,metrics,prometheus`. An allow list: `loggers`, `env` and `heapdump` are deliberately absent while there is no authentication ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md)) |
 | `server.port` | HTTP port | `8080` (Spring default, not overridden) |
+| `hrsched.security.token.issuer` | The `iss` claim put in an access token, and required of one | `hrsched` ([ADR-011](docs/ADRs/ADR-011-issue-our-own-access-tokens.md)) |
+| `hrsched.security.token.audience` | The `aud` claim put in an access token, and required of one | `hrsched-api` |
+| `hrsched.security.token.lifetime` | How long an issued access token stays valid | `10m`. Short on purpose: a stolen token is useful only until it expires. The number is open for review (Q29) |
+| `HRSCHED_SECURITY_TOKEN_PRIVATEKEY` | The RSA private key tokens are signed with, as a PKCS#8 PEM of at least 2048 bits | None, and **startup fails without it**. See [`.env.example`](.env.example). `./mvnw spring-boot:run` is the exception: it permits a throwaway key generated at startup, so local development needs no secret |
 | `SPRING_DATASOURCE_URL` / `_USERNAME` / `_PASSWORD` | Where the database is, and who connects to it | **Deliberately unset.** Supplied by `compose.yaml` locally and by the environment in a deployment; see [`.env.example`](.env.example) |
 | `logging.structured.format.console` | Log format on stdout | `ecs` — Elastic Common Schema JSON, always, with no profile that turns it off ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
 | `logging.structured.ecs.service.name` / `.version` | Identify the emitting service in every line | `HrSched` / the Maven project version, filtered in at build time |
