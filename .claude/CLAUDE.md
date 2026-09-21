@@ -4,24 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## State of the repository
 
-The domain is modelled and works end to end: define people and shifts, configure working-time
-rules, generate a roster, publish it. Three contexts — `scheduling`, `workforce`, `access` —
-plus a `shared` kernel, with the hexagon and the context boundaries enforced by build-failing
-tests.
+The domain is modelled and works end to end: sign in, define people and shifts, configure
+working-time rules, generate a roster, publish it. Four contexts — `scheduling`, `workforce`,
+`access`, `notifications` — plus a `shared` kernel, with the hexagon and the context boundaries
+enforced by build-failing tests.
 
-Three things are **not** what they look like:
+**Authentication is real, and the header placeholder is gone.** HrSched holds its own accounts and
+signs its own tokens (ADR-011, ADR-028). Every controller takes the acting identity from
+`@AuthenticationPrincipal Actor`, and the organisation from that actor through each adapter's
+`actingIn` helper — never from a header, a path or a body (ADR-031). `X-User`, `X-Role`,
+`X-Organisation` and `X-Employee` are read by nothing; do not reintroduce them.
+**`SecurityConfiguration` ends in `denyAll`** (ADR-032), so a new route is unreachable until it is
+named there — that second edit is the decision about who may call it, not a formality. The URL
+rules are the coarse outer line; the use case behind each route is what decides.
+
+Two things are **not** what they look like:
 
 - **Generation is greedy, not optimised.** Automatic generation is the point of the product and
   a real implementation is a solver; `GreedyRosterGenerator` exists to prove the port (ADR-005).
   It ignores fairness, preferences and disruption entirely.
-- **Authentication is real, and the header placeholder is gone.** HrSched holds its own accounts
-  and signs its own tokens (ADR-011, ADR-028). Every controller takes the acting identity from
-  `@AuthenticationPrincipal Actor`, and the organisation from that actor through each adapter's
-  `actingIn` helper — never from a header, a path or a body (ADR-031). `X-User`, `X-Role`,
-  `X-Organisation` and `X-Employee` are read by nothing; do not reintroduce them.
-  **`SecurityConfiguration` ends in `denyAll`** (ADR-032), so a new route is unreachable until it
-  is named there — that second edit is the decision about who may call it, not a formality. The URL
-  rules are the coarse outer line; the use case behind each route is what decides.
 - **The audit trail is a log stream, not a trail.** Every change and refusal is recorded through
   an `AuditTrail` driven port, but nothing is stored and nothing is queryable: the record lives
   only wherever stdout is collected. Whether an Admin may read it, and for how long it is kept,

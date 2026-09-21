@@ -19,9 +19,9 @@
 > [!WARNING]
 > **The domain is real; the product is not finished.** You can onboard an organisation, define
 > people and shifts, configure working-time rules, generate a roster, adjust it by hand, publish
-> it, and swap a shift, and all of it is stored in PostgreSQL — but **generation is greedy, not
-> optimised**, and **there is no authentication** (the acting identity comes from a header, so any
-> caller can claim any role).
+> it, and swap a shift, and all of it is stored in PostgreSQL. People sign in, and every request
+> is authenticated by a token HrSched signed and authorised against the account it names. What is
+> still unfinished is the part the product is named for: **generation is greedy, not optimised**.
 
 This README is ordered for a **contributor**, not an evaluator: there is not yet anything to
 evaluate, so Quick start comes before Architecture.
@@ -114,8 +114,10 @@ you and stops it afterwards, and `verify` starts its own throwaway database thro
 There is deliberately no in-memory fallback and no skip-when-Docker-is-absent: a check that quietly
 does not run still reports green ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)).
 
-There is no seed data, and no credentials are needed locally: the database in `compose.yaml` has
-throwaway ones, and there is no authentication yet.
+There is no seed data. No credentials are needed locally either: the database in `compose.yaml`
+has throwaway ones, and `./mvnw spring-boot:run` bootstraps a local platform operator —
+`operator` / `local-development-only` — which you are made to change at first sign-in. A real
+deployment sets `HRSCHED_BOOTSTRAP_OPERATOR_*` instead; see Configuration below.
 
 To run the user interface as well, from the repository root:
 
@@ -458,7 +460,7 @@ npm run test:coverage  # the same tests, plus coverage/index.html
 | `components/localDates.test.ts` | The local-day round trip, the documented timezone hazard, and the day and time labels a roster board is read by — all asserted relatively so they hold in any zone. |
 | `components/Feedback.test.tsx` | Every refusal branch, including a 422 that lists no broken rules — a refusal, not a working-time breach — and the 404 that may also mean another tenant owns it. |
 | `components/ErrorBoundary.test.tsx` | One broken render does not become a blank page, and "Try again" recovers. |
-| `identity/ActingAs.test.tsx`, `identity/ActingAsBar.test.tsx` | The acting-as placeholder: persistence, validation, the synthetic option, and the operator rule that clears the employee link. |
+| `auth/session.test.tsx` | Signing in, the restore handshake every load begins with, the single-flight refresh, and that the access token is held where no script can read it back. |
 | `pages/*.test.tsx` (×9) | One per screen: what is sent, what is refused before sending, and what the user is told. |
 | `App.test.tsx` | Tab navigation, and the one 403 the shell deliberately swallows — with the proof that nothing else is. |
 

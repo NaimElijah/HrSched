@@ -3,7 +3,8 @@
 **Status: specified, partially built.** Every question that blocked modelling is answered. The
 domain is modelled, and a React user interface offers every capability below — for the three roles
 within an organisation and for the platform Operator — over a PostgreSQL that survives a restart.
-Generation is greedy rather than optimised, and there is no authentication.
+People sign in, and every request is authenticated by a token HrSched signed and authorised
+against the account it names. Generation is greedy rather than optimised.
 
 Nothing in the user interface *enforces* a requirement. The `Enforced by` column below names
 backend classes and tests on purpose: a screen that appears to satisfy a rule is not evidence that
@@ -169,10 +170,14 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
   reading them (F13) — and is **refused inside any organisation**
   ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)), enforced by
   `Actor.requireAccessTo`, every application service, and their tests. Authorisation is enforced in
-  the application services. Authentication is being introduced now (F14, ADR-011): sign-in issues a
-  signed access token and the acting identity is resolved from a stored account and session on every
-  request. **The header placeholder still exists** on every route but the session endpoints, and any
-  caller can still claim any role through it until it is deleted.
+  the application services. Authentication is HrSched's own (F14, ADR-011): signing in issues a
+  signed access token, and the acting identity is resolved from a stored account and a live session
+  on **every** request, so disabling somebody, changing their role or signing them out takes effect
+  on their next call rather than whenever a token happens to expire. The security chain ends in
+  `denyAll`, so a route nobody wrote a rule for is refused
+  ([ADR-032](../ADRs/ADR-032-close-the-security-chain-by-default.md)). There are no identity
+  headers left: the organisation comes from the account
+  ([ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)).
 - **Tenant isolation** — the deployment is shared by independent organisations that must never
   see one another's data. Every aggregate belongs to exactly one organisation, and every query
   is scoped to it. A cross-tenant read is a security incident, not a bug, and isolation must be

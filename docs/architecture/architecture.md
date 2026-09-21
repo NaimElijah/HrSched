@@ -8,10 +8,10 @@ these choices were made, see the [ADRs](../ADRs/).
 
 > **Current state:** the domain is modelled and works end to end — onboard an organisation, define
 > people and shifts, configure rules, generate a roster, adjust it by hand, publish it, and swap a
-> shift — and it is all stored in PostgreSQL, so it survives a restart. But **generation is greedy,
-> not optimised** (see [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md)) and **there is
-> no authentication**: the acting identity comes from request headers and any caller can claim any
-> role.
+> shift — and it is all stored in PostgreSQL, so it survives a restart. People sign in, and every
+> request is authenticated by a token HrSched signed and authorised against the account it names.
+> What is still unfinished is the part the product is named for: **generation is greedy, not
+> optimised** (see [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md)).
 
 ---
 
