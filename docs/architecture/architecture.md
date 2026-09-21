@@ -276,6 +276,11 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   filtering by organisation and returning nothing, which surfaces as an unknown-record 404.
   `CrossTenantAccessException` still guards every direct caller, and every exception handler still
   translates it. Worth knowing before anyone concludes the guard is dead code and deletes it.
+- **The platform operator is refused inside an organisation, with a 403 rather than that 404.** The
+  404 exists so a tenant cannot learn another organisation exists; an operator already knows,
+  because listing them is the job. `NotATenantMemberException` carries that refusal and every
+  exception handler translates it, counting it as `hrsched.access.denied{kind="operator_confined"}`.
+  Reading one organisation from the register is the single documented exemption (ADR-030).
 - **An organisation must exist before anything can be done in its name.** `KnownOrganisationFilter`
   checks `X-Organisation` against the register on every `/api/**` request and answers the ordinary
   404 when it names an organisation nobody onboarded. Before it, a caller could invent a tenant with
@@ -337,9 +342,14 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 - **Coverage is measured and never enforced.** `./mvnw verify` writes `target/site/jacoco/`; the
   frontend reports only under `npm run test:coverage`. No threshold exists, on purpose
   ([ADR-015](../ADRs/ADR-015-report-coverage-without-a-threshold.md)).
-- **`Actor` is sealed.** The set of things that can cross a tenant boundary is closed and lives
-  in one file; `Operator` is the only member that can, and it is a named type rather than an
-  implicit privilege.
+- **`Actor` is sealed, and the tenancy guard returns what it proved.**
+  `Actor.requireAccessTo(organisation)` hands back the `TenantActor` that may act there, decided by
+  a `switch` over the sealed type. That shape is deliberate: the guard used to be a statement, and
+  callers followed it with `if (actor instanceof TenantActor t)` before checking a role — an idiom
+  that silently *skipped* the role check for an `Operator`. Returning the member leaves nothing to
+  skip, and a third kind of actor cannot be added without deciding, in that one file, what it may
+  reach. `Operator` reaches no organisation at all
+  ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)).
 - **Aggregates are immutable.** Every change returns a new instance, so nothing is ever observed
   half-updated and invariants are checked in exactly one place.
 - **Entities are classes, value objects are records.** `Shift`, `Roster`, `Employee`,

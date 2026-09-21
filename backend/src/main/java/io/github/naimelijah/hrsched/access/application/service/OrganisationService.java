@@ -57,7 +57,13 @@ public class OrganisationService implements ManageOrganisationsUseCase, KnownOrg
   @Override
   public Optional<PublishedOrganisation> findOrganisation(
       Actor actor, OrganisationId organisation) {
-    actor.requireAccessTo(organisation);
+    // The one place an operator is let past the tenant boundary, and it is the register rather than
+    // anything inside a tenant: administering organisations is what an operator is for (F13), and
+    // listing them already tells them which exist. Everywhere else requireAccessTo refuses an
+    // operator outright, which is the whole of ADR-030.
+    if (!(actor instanceof Operator)) {
+      actor.requireAccessTo(organisation);
+    }
     return organisations.findById(organisation).map(OrganisationService::publish);
   }
 

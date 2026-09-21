@@ -8,8 +8,8 @@ package io.github.naimelijah.hrsched.shared.domain.model;
  * {@link TenantActor} can reach exactly its own organisation, {@link Operator} can reach any. A
  * third possibility cannot be added without editing this file.
  *
- * <p>Carries no credentials. Authentication is not modelled yet; an actor is the *result* of
- * authentication, and this type describes only what that result permits.
+ * <p>Carries no credentials. An actor is the <em>result</em> of authentication, and this type
+ * describes only what that result permits.
  */
 public sealed interface Actor permits TenantActor, Operator {
 
@@ -20,19 +20,38 @@ public sealed interface Actor permits TenantActor, Operator {
 
   /**
    * @param organisation the organisation whose data is about to be touched
-   * @return whether this actor may touch it
+   * @return whether this actor may act on that organisation's data; never true for an {@link
+   *     Operator}, which belongs to no organisation and acts inside none (ADR-030)
    */
   boolean mayAccess(OrganisationId organisation);
 
   /**
-   * Guards an operation against cross-tenant access.
+   * Guards an operation on an organisation's data, and hands back the member who may perform it.
+   *
+   * <p><strong>Returning the {@link TenantActor} is the point.</strong> The guard used to be a
+   * statement, and every caller followed it with {@code if (actor instanceof TenantActor t)} before
+   * checking a role — an idiom that silently <em>skipped</em> the role check for an operator, so
+   * the one identity that belongs to no tenant could do anything inside every tenant. Handing back
+   * the member means the next line has something to ask a role of, and there is nothing left to
+   * skip.
+   *
+   * <p>A {@code switch} over the sealed type rather than a boolean, so that a third kind of actor
+   * cannot be added without deciding, here, what it may reach.
    *
    * @param organisation the organisation whose data is about to be touched
-   * @throws CrossTenantAccessException if this actor may not touch it
+   * @return this actor as a member of that organisation
+   * @throws CrossTenantAccessException if this actor belongs to a different organisation
+   * @throws NotATenantMemberException if this actor belongs to no organisation at all
    */
-  default void requireAccessTo(OrganisationId organisation) {
-    if (!mayAccess(organisation)) {
-      throw new CrossTenantAccessException(id(), organisation);
-    }
+  default TenantActor requireAccessTo(OrganisationId organisation) {
+    return switch (this) {
+      case TenantActor tenant -> {
+        if (!tenant.mayAccess(organisation)) {
+          throw new CrossTenantAccessException(id(), organisation);
+        }
+        yield tenant;
+      }
+      case Operator operator -> throw new NotATenantMemberException(id());
+    };
   }
 }

@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.notifications.adapter.in.web;
 import io.github.naimelijah.hrsched.notifications.domain.model.NotAddressableException;
 import io.github.naimelijah.hrsched.notifications.domain.model.UnknownNotificationException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
+import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -79,6 +80,24 @@ public class NotificationExceptionHandler {
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
     problem.setDetail("No such resource.");
+    return problem;
+  }
+
+  /**
+   * The platform operator reaching inside an organisation. A 403 rather than the 404 a cross-tenant
+   * attempt gets: that 404 exists so a tenant cannot learn another organisation exists, and an
+   * operator already knows, because listing them is the job. See ADR-030.
+   */
+  @ExceptionHandler(NotATenantMemberException.class)
+  public ProblemDetail handleOperatorConfined(NotATenantMemberException exception) {
+    log.atWarn()
+        .addKeyValue("actor", exception.actor().value())
+        .log("Refused: the platform operator reached inside an organisation");
+    denied("operator_confined");
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.FORBIDDEN, "The platform operator may not act inside an organisation.");
+    problem.setTitle("Not permitted");
     return problem;
   }
 }

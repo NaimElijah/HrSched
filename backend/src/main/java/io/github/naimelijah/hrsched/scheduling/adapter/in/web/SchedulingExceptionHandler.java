@@ -23,6 +23,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftExceptio
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownSwapRequestException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
+import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -252,6 +253,24 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
     problem.setDetail("No such resource.");
+    return problem;
+  }
+
+  /**
+   * The platform operator reaching inside an organisation. A 403 rather than the 404 a cross-tenant
+   * attempt gets: that 404 exists so a tenant cannot learn another organisation exists, and an
+   * operator already knows, because listing them is the job. See ADR-030.
+   */
+  @ExceptionHandler(NotATenantMemberException.class)
+  public ProblemDetail handleOperatorConfined(NotATenantMemberException exception) {
+    log.atWarn()
+        .addKeyValue("actor", exception.actor().value())
+        .log("Refused: the platform operator reached inside an organisation");
+    count(DENIED, "kind", "operator_confined", "Refused attempts, by what refused them");
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.FORBIDDEN, "The platform operator may not act inside an organisation.");
+    problem.setTitle("Not permitted");
     return problem;
   }
 }

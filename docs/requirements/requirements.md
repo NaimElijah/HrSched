@@ -158,11 +158,15 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
 ## Non-functional requirements
 
 - **Authentication and authorisation** — three roles per organisation: **Employee**,
-  **Scheduler**, **Admin**, plus a platform **Operator** belonging to no organisation and the
-  only identity permitted to cross the tenant boundary. Authorisation is enforced in the
-  application services. **Authentication does not exist**: the acting identity currently comes
-  from request headers and any caller can claim any role. The identity provider is `TODO`
-  (ADR-011), and the placeholder must be deleted when it lands.
+  **Scheduler**, **Admin**, plus a platform **Operator** belonging to no organisation. The
+  Operator administers the **register** of organisations across tenants — onboarding, listing and
+  reading them (F13) — and is **refused inside any organisation**
+  ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)), enforced by
+  `Actor.requireAccessTo`, every application service, and their tests. Authorisation is enforced in
+  the application services. Authentication is being introduced now (F14, ADR-011): sign-in issues a
+  signed access token and the acting identity is resolved from a stored account and session on every
+  request. **The header placeholder still exists** on every route but the session endpoints, and any
+  caller can still claim any role through it until it is deleted.
 - **Tenant isolation** — the deployment is shared by independent organisations that must never
   see one another's data. Every aggregate belongs to exactly one organisation, and every query
   is scoped to it. A cross-tenant read is a security incident, not a bug, and isolation must be

@@ -660,8 +660,7 @@ class RosteringHttpTest {
   }
 
   @Test
-  void GivenAPlatformOperator_WhenReadingAnotherOrganisationsRoster_ThenItIsPermitted()
-      throws Exception {
+  void GivenTheOperator_WhenReadingAnOrganisationsRoster_ThenItIsForbidden() throws Exception {
     String organisation = anOrganisation(mockMvc);
     addEmployee(organisation, "Ada");
     defineShift(organisation, "2026-10-19T08:00:00Z", "2026-10-19T16:00:00Z", 1);
@@ -669,7 +668,7 @@ class RosteringHttpTest {
 
     mockMvc
         .perform(as(get("/api/rosters/" + roster), organisation, "OPERATOR"))
-        .andExpect(status().isOk());
+        .andExpect(status().isForbidden());
   }
 
   @Test

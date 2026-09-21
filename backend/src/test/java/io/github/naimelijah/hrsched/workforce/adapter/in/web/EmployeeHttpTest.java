@@ -180,15 +180,15 @@ class EmployeeHttpTest {
         .andExpect(jsonPath("$[0].name").value("Ada"));
   }
 
+  /** Flipped by ADR-030: a staff list is a tenant's, and the operator is not a member of one. */
   @Test
-  void GivenAnOperator_WhenListingAnotherOrganisation_ThenItIsPermitted() throws Exception {
+  void GivenTheOperator_WhenListingAnOrganisationsEmployees_ThenItIsForbidden() throws Exception {
     String theirs = anOrganisation(mockMvc);
     addEmployee(theirs, "Ada");
 
     mockMvc
         .perform(as(get("/api/employees"), theirs, "OPERATOR"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.length()").value(1));
+        .andExpect(status().isForbidden());
   }
 
   @Test

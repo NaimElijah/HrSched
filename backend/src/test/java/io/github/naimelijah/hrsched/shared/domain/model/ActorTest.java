@@ -35,12 +35,39 @@ class ActorTest {
         .isInstanceOf(CrossTenantAccessException.class);
   }
 
+  /**
+   * The operator belongs to no organisation, so there is none whose data it may act on. This test
+   * asserted the opposite until ADR-030: {@code mayAccess} returning true was what let the operator
+   * skip every role check in every tenant.
+   */
   @Test
-  void GivenAnOperator_WhenAccessingAnyOrganisation_ThenItIsPermitted() {
+  void GivenTheOperator_WhenRequiringAccessToAnyOrganisation_ThenItIsRefusedAsNotAMember() {
     Actor operator = new Operator(UserId.newId());
 
-    assertThat(operator.mayAccess(ACME)).isTrue();
-    assertThat(operator.mayAccess(OTHER)).isTrue();
+    assertThat(operator.mayAccess(ACME)).isFalse();
+    assertThat(operator.mayAccess(OTHER)).isFalse();
+    assertThatThrownBy(() -> operator.requireAccessTo(ACME))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  /**
+   * The guard hands back the member it proved, so the next line has something to ask a role of.
+   * Before ADR-030 it returned nothing, and callers reached for the role with an {@code instanceof}
+   * that silently skipped an operator.
+   */
+  @Test
+  void GivenATenantActor_WhenRequiringAccessToTheirOwnOrganisation_ThenTheyAreReturned() {
+    TenantActor member = new TenantActor(UserId.newId(), ACME, Role.ADMIN);
+
+    assertThat(member.requireAccessTo(ACME)).isSameAs(member);
+  }
+
+  @Test
+  void GivenATenantActor_WhenRequiringAccessToAnotherOrganisation_ThenItIsACrossTenantAttempt() {
+    TenantActor member = new TenantActor(UserId.newId(), ACME, Role.ADMIN);
+
+    assertThatThrownBy(() -> member.requireAccessTo(OTHER))
+        .isInstanceOf(CrossTenantAccessException.class);
   }
 
   @Test

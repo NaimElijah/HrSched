@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -112,12 +113,14 @@ class EmployeeServiceTest {
         .isInstanceOf(UnknownEmployeeException.class);
   }
 
+  /** Flipped by ADR-030: a staff list is a tenant's data, and the operator is not a member. */
   @Test
-  void GivenAnOperator_WhenListingAnyOrganisation_ThenItIsPermitted() {
+  void GivenTheOperator_WhenListingRosterableEmployees_ThenItIsRefused() {
     service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
     Actor operator = new Operator(UserId.newId());
 
-    assertThat(service.findRosterable(operator, ACME)).hasSize(1);
+    assertThatThrownBy(() -> service.findRosterable(operator, ACME))
+        .isInstanceOf(NotATenantMemberException.class);
   }
 
   @Test
@@ -396,5 +399,68 @@ class EmployeeServiceTest {
         .isInstanceOf(NotPermittedException.class);
 
     assertThat(audit.changes()).isEmpty();
+  }
+
+  // --- ADR-030: the platform operator is refused by every tenant use case -------------------
+  //
+  // One test per driving-port method rather than a table. Each is a permission decision, and a
+  // table would read as a list rather than as a set of security properties.
+
+  @Test
+  void GivenTheOperator_WhenAddingAnEmployee_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.addEmployee(anOperator(), new AddEmployeeCommand(ACME, "Ada")))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenGrantingAQualification_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.grantQualification(
+                    anOperator(),
+                    new GrantQualificationCommand(
+                        ACME, EmployeeId.newId(), QualificationId.newId())))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenSettingContractTerms_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.setContractTerms(
+                    anOperator(),
+                    new SetContractTermsCommand(ACME, EmployeeId.newId(), Duration.ofHours(20))))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenDeclaringUnavailability_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.declareUnavailability(
+                    anOperator(),
+                    new DeclareUnavailabilityCommand(ACME, EmployeeId.newId(), MONDAY)))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenStatingAPreference_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.statePreference(
+                    anOperator(),
+                    new StatePreferenceCommand(
+                        ACME, EmployeeId.newId(), MONDAY, PreferenceStrength.PREFERS_NOT)))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingAnEmployee_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.findEmployee(anOperator(), ACME, EmployeeId.newId()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  private static Operator anOperator() {
+    return new Operator(UserId.newId());
   }
 }

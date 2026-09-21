@@ -22,6 +22,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
@@ -38,7 +39,9 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownSwapRequestEx
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
+import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
@@ -772,5 +775,53 @@ class SwapServiceTest {
     SwapRequest byId(SwapRequestId id) {
       return stored.get(id);
     }
+  }
+
+  // --- ADR-030: the platform operator is refused by every tenant use case -------------------
+  //
+  // One test per driving-port method rather than a table, because each of these is a permission
+  // decision and a table would hide which row matters.
+
+  @Test
+  void GivenTheOperator_WhenRequestingASwap_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.requestSwap(
+                    anOperator(),
+                    new RequestSwapCommand(
+                        ACME,
+                        RosterId.newId(),
+                        ShiftId.newId(),
+                        EmployeeId.newId(),
+                        EmployeeId.newId())))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenListingSwapRequests_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.findSwapRequests(anOperator(), ACME))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingASwapRequest_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.findSwapRequest(anOperator(), ACME, SwapRequestId.newId()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenApprovingASwap_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.approveSwap(anOperator(), ACME, SwapRequestId.newId()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenRejectingASwap_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.rejectSwap(anOperator(), ACME, SwapRequestId.newId()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  private static Operator anOperator() {
+    return new Operator(UserId.newId());
   }
 }

@@ -119,15 +119,16 @@ class QualificationHttpTest {
         .andExpect(jsonPath("$[1].name").value("Welding"));
   }
 
+  /** Flipped by ADR-030. */
   @Test
-  void GivenAnOperator_WhenListingAnotherOrganisation_ThenItIsPermitted() throws Exception {
+  void GivenTheOperator_WhenListingAnOrganisationsQualifications_ThenItIsForbidden()
+      throws Exception {
     String theirs = anOrganisation(mockMvc);
     define(theirs, "Forklift");
 
     mockMvc
         .perform(as(get("/api/qualifications"), theirs, "OPERATOR"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.length()").value(1));
+        .andExpect(status().isForbidden());
   }
 
   @Test
