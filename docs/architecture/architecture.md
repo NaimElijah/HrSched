@@ -145,6 +145,12 @@ from `X-User`, `X-Role`, `X-Organisation` and `X-Employee`, which any caller can
 placeholder is being deleted one route family at a time
 ([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md)).
 
+**The organisation routes take their identity from the token.** `POST`/`GET /api/organisations` are
+the operator's, `GET /api/organisations/{id}` is any member's, and all three read the acting
+identity from the account a token names rather than from headers. Every other route still reads the
+headers, and a request carrying an invalid token is refused there too — which is the bearer filter's
+own behaviour, and why a client must send no token rather than a stale one.
+
 **A verified signature is not enough, and that is the point.** The decoder proves a token is one
 this service signed, for this service, unexpired, of type `at+jwt`, and naming both an account and
 a session. It cannot know whether the account has since been disabled, whether its role changed, or

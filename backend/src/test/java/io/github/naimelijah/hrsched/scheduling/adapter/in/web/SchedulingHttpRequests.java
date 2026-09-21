@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import java.util.UUID;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -41,10 +42,7 @@ final class SchedulingHttpRequests {
     String body =
         mockMvc
             .perform(
-                post("/api/organisations")
-                    .header("X-User", UUID.randomUUID().toString())
-                    .header("X-Role", "OPERATOR")
-                    .contentType(MediaType.APPLICATION_JSON)
+                TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
                     .content("{\"name\":\"Organisation %s\"}".formatted(UUID.randomUUID())))
             .andExpect(status().isCreated())
             .andReturn()

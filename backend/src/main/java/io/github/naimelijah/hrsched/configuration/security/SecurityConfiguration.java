@@ -23,12 +23,12 @@ import org.springframework.security.web.access.AccessDeniedHandler;
  * 401, on every route, whether or not the route itself requires authentication — that is the bearer
  * filter's own behaviour, and it means a client must send no token rather than a stale one.
  *
- * <p><strong>Still transitional.</strong> Only the two session endpoints require authentication;
- * every other route is permitted and still takes its acting identity from {@code X-User}, {@code
- * X-Role} and {@code X-Organisation}, which any caller can write. That placeholder is what ADR-011
- * exists to delete, and it goes one route family at a time: each controller moves onto the access
- * token, one rule is added here per move, and the last change makes every request that no rule
- * permits be refused. This chain is on its way there, not there.
+ * <p><strong>Still transitional.</strong> The session endpoints and the organisation routes require
+ * a token; every other route is permitted and still takes its acting identity from {@code X-User},
+ * {@code X-Role} and {@code X-Organisation}, which any caller can write. That placeholder is what
+ * ADR-011 exists to delete, and it goes one route family at a time: each controller moves onto the
+ * access token, one rule is added here per move, and the last change makes every request that no
+ * rule permits be refused. This chain is on its way there, not there.
  *
  * <p>The decoder, the converter and the two refusal handlers are all injected <em>by type</em>.
  * Configuration may not name an adapter class (the architecture test fails on it), and that is not
@@ -58,6 +58,21 @@ public class SecurityConfiguration {
 
   /** Changing one's own password: the other, and the one that clears the pending change. */
   private static final String PASSWORD = "/api/auth/password";
+
+  /** The register of tenants: administering it is the operator's, and only the operator's. */
+  private static final String ORGANISATIONS = "/api/organisations";
+
+  /** One organisation by identity. Readable by any member; the guard decides whose. */
+  private static final String ONE_ORGANISATION = "/api/organisations/*";
+
+  /**
+   * Spring Security's own convention drops the {@code ROLE_} prefix in these, and the token adapter
+   * grants the prefixed form. The two have to agree, and an HTTP test asserting an operator reaches
+   * an operator-only route is what proves they do.
+   */
+  private static final String OPERATOR = "OPERATOR";
+
+  private static final String[] EVERY_ROLE = {"OPERATOR", "ADMIN", "SCHEDULER", "EMPLOYEE"};
 
   /**
    * @param http the builder Spring Security hands every {@code SecurityFilterChain} bean
@@ -101,6 +116,17 @@ public class SecurityConfiguration {
                     .authenticated()
                     .requestMatchers(HttpMethod.POST, PASSWORD)
                     .authenticated()
+                    // Administering the register of tenants. A role rather than merely being
+                    // authenticated, so an account whose temporary password is still pending -
+                    // which holds no role at all - is refused here like everywhere else.
+                    .requestMatchers(HttpMethod.POST, ORGANISATIONS)
+                    .hasRole(OPERATOR)
+                    .requestMatchers(HttpMethod.GET, ORGANISATIONS)
+                    .hasRole(OPERATOR)
+                    // Any member may ask for an organisation by identity; which ones they get back
+                    // is the use case's decision, and a tenant naming another gets a 404.
+                    .requestMatchers(HttpMethod.GET, ONE_ORGANISATION)
+                    .hasAnyRole(EVERY_ROLE)
                     .anyRequest()
                     .permitAll())
         .build();

@@ -16,6 +16,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import jakarta.servlet.http.Cookie;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -301,10 +302,7 @@ class SessionHttpTest {
     MockHttpServletResponse response =
         mockMvc
             .perform(
-                post("/api/organisations")
-                    .header("X-User", UUID.randomUUID().toString())
-                    .header("X-Role", "OPERATOR")
-                    .contentType(MediaType.APPLICATION_JSON)
+                TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
                     .content("{\"name\":\"Acme %s\"}".formatted(UUID.randomUUID())))
             .andReturn()
             .getResponse();

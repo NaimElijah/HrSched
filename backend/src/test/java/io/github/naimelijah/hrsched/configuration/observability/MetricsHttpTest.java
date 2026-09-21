@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
+import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,7 +16,6 @@ import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfig
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -78,10 +78,7 @@ class MetricsHttpTest {
     String body =
         mockMvc
             .perform(
-                post("/api/organisations")
-                    .header("X-User", UUID.randomUUID().toString())
-                    .header("X-Role", "OPERATOR")
-                    .contentType(MediaType.APPLICATION_JSON)
+                TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
                     .content("{\"name\":\"Organisation %s\"}".formatted(UUID.randomUUID())))
             .andExpect(status().isCreated())
             .andReturn()

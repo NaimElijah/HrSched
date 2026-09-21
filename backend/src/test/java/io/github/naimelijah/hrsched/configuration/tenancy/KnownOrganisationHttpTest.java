@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.configuration.observability.TraceIdResponseFilter;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
+import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,10 +42,7 @@ class KnownOrganisationHttpTest {
     String body =
         mockMvc
             .perform(
-                post("/api/organisations")
-                    .header("X-User", UUID.randomUUID().toString())
-                    .header("X-Role", "OPERATOR")
-                    .contentType(MediaType.APPLICATION_JSON)
+                TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
                     .content("{\"name\":\"Organisation %s\"}".formatted(UUID.randomUUID())))
             .andExpect(status().isCreated())
             .andReturn()
@@ -128,10 +126,7 @@ class KnownOrganisationHttpTest {
       throws Exception {
     mockMvc
         .perform(
-            post("/api/organisations")
-                .header("X-User", UUID.randomUUID().toString())
-                .header("X-Role", "OPERATOR")
-                .contentType(MediaType.APPLICATION_JSON)
+            TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
                 .content("{\"name\":\"Acme\"}"))
         .andExpect(status().isCreated());
   }

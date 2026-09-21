@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
+import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,7 +13,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.MediaType;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -54,10 +54,7 @@ class SecurityConfigurationTest {
       throws Exception {
     mockMvc
         .perform(
-            post("/api/organisations")
-                .header("X-User", UUID.randomUUID().toString())
-                .header("X-Role", "OPERATOR")
-                .contentType(MediaType.APPLICATION_JSON)
+            TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
                 .content("{\"name\":\"Acme Security Test %s\"}".formatted(UUID.randomUUID())))
         .andExpect(status().isCreated());
   }
