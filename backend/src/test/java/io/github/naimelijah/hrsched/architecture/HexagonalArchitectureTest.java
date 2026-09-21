@@ -190,6 +190,47 @@ class HexagonalArchitectureTest {
           .because("a meter or a span needs a backend, and the hexagon may not know it has one");
 
   /**
+   * Who is acting arrives as an argument, and is never fetched from the air.
+   *
+   * <p>Spring Security keeps the authenticated caller in a thread-local, and reading it is one line
+   * from anywhere. Every use case here takes an {@code Actor} parameter instead, and that is not
+   * ceremony: a method whose identity is a parameter can be tested as anybody, reviewed by reading
+   * its signature, and cannot behave differently depending on which thread it happens to be running
+   * on. One that reaches for the holder can do none of those, and the case it silently gets wrong
+   * is the one that matters — work moved onto another thread, where the holder is empty and the
+   * call either fails far from its cause or proceeds as nobody.
+   *
+   * <p>It covers every package but {@code configuration.security}, and that exemption is the one
+   * place where the ambient read is not a choice. {@code ProblemAccessDeniedHandler} implements a
+   * Spring callback whose signature offers no {@code Authentication}, and it asks a different
+   * question anyway: not "who is acting" but "who was just refused", which it needs in order to say
+   * whether the refusal was a pending password change. Everywhere a parameter exists, the parameter
+   * is used — a controller receives the caller through {@code @AuthenticationPrincipal}, and the
+   * class that turns a verified token into an {@code Actor} is handed the token.
+   *
+   * <p>Watched failing twice: once on the pre-existing read in {@code ProblemAccessDeniedHandler},
+   * which is why that exemption is written down rather than assumed, and once on a deliberate
+   * {@code SecurityContextHolder.getContext()} in {@code AccountController}, which was reverted.
+   */
+  @ArchTest
+  static final ArchRule the_acting_identity_is_never_read_from_the_air =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("..configuration.security..")
+          .should()
+          .dependOnClassesThat()
+          .haveFullyQualifiedName("org.springframework.security.core.context.SecurityContextHolder")
+          .orShould()
+          .dependOnClassesThat()
+          .haveFullyQualifiedName(
+              "org.springframework.security.core.context.SecurityContextHolderStrategy")
+          .orShould()
+          .dependOnClassesThat()
+          .haveFullyQualifiedName(
+              "org.springframework.security.core.context.ReactiveSecurityContextHolder")
+          .because("who is acting is an argument, not an ambient fact about the current thread");
+
+  /**
    * Cycles are checked one level below the context, between a context's own layers.
    *
    * <p>A context-level cycle rule was removed as dead: any cycle between two contexts requires a
