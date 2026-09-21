@@ -4,6 +4,7 @@ import static io.github.naimelijah.hrsched.configuration.persistence.Transaction
 
 import io.github.naimelijah.hrsched.access.application.port.out.AccessTokenIssuer;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
+import io.github.naimelijah.hrsched.access.application.port.out.EmployeeDirectory;
 import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.application.port.out.SessionRepository;
@@ -65,11 +66,16 @@ public class UseCaseConfiguration {
   @Bean
   AccountService accountService(
       AccountRepository accounts,
+      SessionRepository sessions,
+      EmployeeDirectory employees,
       PasswordHasher passwords,
+      PasswordPolicy passwordPolicy,
       io.github.naimelijah.hrsched.access.application.port.out.AuditTrail audit,
       Clock clock,
       PlatformTransactionManager transactions) {
-    return transactional(new AccountService(accounts, passwords, audit, clock), transactions);
+    return transactional(
+        new AccountService(accounts, sessions, employees, passwords, passwordPolicy, audit, clock),
+        transactions);
   }
 
   /**

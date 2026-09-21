@@ -8,6 +8,7 @@ import io.github.naimelijah.hrsched.access.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
 import io.github.naimelijah.hrsched.access.domain.model.PasswordHash;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
 import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -38,8 +39,22 @@ class AccountServiceTest {
   private final StubAccountRepository accounts = new StubAccountRepository();
   private final StubPasswordHasher hasher = new StubPasswordHasher();
   private final RecordingAuditTrail audit = new RecordingAuditTrail();
+
+  /**
+   * Bootstrapping touches neither sessions nor the workforce, and deliberately not the password
+   * policy either: the configured password is the deployment's own choice and is not assessed
+   * (ADR-029). Those three collaborators are therefore wired to doubles that refuse, so that a
+   * bootstrap which started using one would fail here rather than quietly work.
+   */
   private final AccountService service =
-      new AccountService(accounts, hasher, audit, Clock.fixed(NOW, ZoneOffset.UTC));
+      new AccountService(
+          accounts,
+          new RecordingSessionRevocations(),
+          new StubEmployeeDirectory(),
+          hasher,
+          new PasswordPolicy(1, hasher.maximumBytes()),
+          audit,
+          Clock.fixed(NOW, ZoneOffset.UTC));
 
   @Test
   void

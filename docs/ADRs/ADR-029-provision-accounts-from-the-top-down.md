@@ -1,6 +1,6 @@
 # ADR-029: Provision accounts from the top down, with temporary passwords, and bootstrap the operator from configuration
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-16
 
 ## Context

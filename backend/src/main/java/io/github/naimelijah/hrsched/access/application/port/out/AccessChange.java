@@ -18,6 +18,25 @@ public enum AccessChange {
   ACCOUNT_CREATED,
 
   /**
+   * An account's role, or the person it belongs to, changed. One entry for both, because they are
+   * one value: an account is somebody in a role, and changing either changes what it may do.
+   */
+  ACCOUNT_MEMBERSHIP_CHANGED,
+
+  /** An account was disabled by an administrator, ending every session it held. */
+  ACCOUNT_DISABLED,
+
+  /** A disabled account was restored. */
+  ACCOUNT_ENABLED,
+
+  /**
+   * An administrator gave an account a new temporary password. Distinct from {@link
+   * #PASSWORD_CHANGED}: that one is somebody changing their own, this one is somebody else doing it
+   * for them, and only the second is worth asking questions about.
+   */
+  ACCOUNT_PASSWORD_RESET,
+
+  /**
    * The platform operator was created from configuration at startup. Recorded because it is the
    * most privileged account there is, and the one nobody signs in to create.
    */

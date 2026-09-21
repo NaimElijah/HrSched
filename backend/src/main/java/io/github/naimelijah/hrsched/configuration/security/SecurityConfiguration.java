@@ -65,6 +65,12 @@ public class SecurityConfiguration {
   /** One organisation by identity. Readable by any member; the guard decides whose. */
   private static final String ONE_ORGANISATION = "/api/organisations/*";
 
+  /** Account administration, which is an Admin's and happens inside their own organisation. */
+  private static final String ACCOUNTS = "/api/accounts/**";
+
+  /** Administering a tenant's staff, which the operator may not do (ADR-030). */
+  private static final String ADMIN = "ADMIN";
+
   /**
    * Spring Security's own convention drops the {@code ROLE_} prefix in these, and the token adapter
    * grants the prefixed form. The two have to agree, and an HTTP test asserting an operator reaches
@@ -127,6 +133,11 @@ public class SecurityConfiguration {
                     // is the use case's decision, and a tenant naming another gets a 404.
                     .requestMatchers(HttpMethod.GET, ONE_ORGANISATION)
                     .hasAnyRole(EVERY_ROLE)
+                    // Account administration, in the organisation the token names and no other.
+                    // An Admin only: the operator holds no role at all, so this rule refuses it
+                    // before the controller has to (ADR-030).
+                    .requestMatchers(ACCOUNTS)
+                    .hasRole(ADMIN)
                     .anyRequest()
                     .permitAll())
         .build();

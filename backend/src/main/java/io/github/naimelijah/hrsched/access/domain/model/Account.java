@@ -250,6 +250,29 @@ public final class Account {
   }
 
   /**
+   * Clears any lock and the failures behind it, without anybody having signed in.
+   *
+   * <p>Separate from {@link #recordSuccessfulSignIn()} although the state it leaves is the same,
+   * because they are different events: one is the owner proving they know the password, the other
+   * is an administrator deciding they should stop being locked out. Naming them apart is what keeps
+   * a reset from reading like a sign-in nobody made.
+   *
+   * @return the account with its failure count and any lock cleared
+   */
+  public Account unlocked() {
+    return new Account(
+        id,
+        signInName,
+        passwordHash,
+        membership,
+        active,
+        passwordChangeRequired,
+        0,
+        Optional.empty(),
+        createdAt);
+  }
+
+  /**
    * @param chosen the new encoded password, never {@code null}
    * @param changeRequired whether it must be changed again before anything else; true when somebody
    *     other than its owner chose it

@@ -1,9 +1,13 @@
 package io.github.naimelijah.hrsched.access.adapter.in.web;
 
+import io.github.naimelijah.hrsched.access.domain.model.EmployeeAlreadyLinkedException;
 import io.github.naimelijah.hrsched.access.domain.model.InvalidOrganisationNameException;
+import io.github.naimelijah.hrsched.access.domain.model.LastActiveAdminException;
+import io.github.naimelijah.hrsched.access.domain.model.NotAnEmployeeHereException;
 import io.github.naimelijah.hrsched.access.domain.model.NotThePlatformOperatorException;
 import io.github.naimelijah.hrsched.access.domain.model.SignInNameTakenException;
 import io.github.naimelijah.hrsched.access.domain.model.UnacceptablePasswordException;
+import io.github.naimelijah.hrsched.access.domain.model.UnknownAccountException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.micrometer.core.instrument.Counter;
@@ -30,12 +34,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * of them. The caller is told exactly what it was told before; only the operator gains anything.
  * See ADR-018.
  *
- * <p>It covers {@link AuthController} as well, and the reason is narrower than it looks: a body
- * Jackson cannot read is answered here with a message of this handler's own, never the parser's. A
- * parser's message quotes what it choked on, and what it choked on is a request carrying a
- * password.
+ * <p>It covers {@link AuthController} and {@link AccountController} as well, and for the first the
+ * reason is narrower than it looks: a body Jackson cannot read is answered here with a message of
+ * this handler's own, never the parser's. A parser's message quotes what it choked on, and what it
+ * choked on is a request carrying a password.
  */
-@RestControllerAdvice(assignableTypes = {OrganisationController.class, AuthController.class})
+@RestControllerAdvice(
+    assignableTypes = {OrganisationController.class, AuthController.class, AccountController.class})
 public class AccessExceptionHandler {
 
   private static final Logger log = LoggerFactory.getLogger(AccessExceptionHandler.class);
@@ -104,6 +109,62 @@ public class AccessExceptionHandler {
    * Answers with a fixed sentence and never with {@code exception.getMessage()}. Jackson's message
    * quotes the input it failed on, and on the sign-in endpoint that input contains a password.
    */
+  /**
+   * An account named by an Admin that their organisation does not hold. A 404, and the same 404
+   * whether it never existed or belongs to another customer: telling those apart would let an Admin
+   * discover, one identifier at a time, that a colleague holds an account somewhere else.
+   */
+  @ExceptionHandler(UnknownAccountException.class)
+  public ProblemDetail handleUnknownAccount(UnknownAccountException exception) {
+    ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
+    problem.setTitle("Not found");
+    problem.setDetail("No such account.");
+    return problem;
+  }
+
+  /**
+   * A change that would leave an organisation with no active Admin. A 409: the request was well
+   * formed and the organisation said no.
+   *
+   * <p>Refused rather than warned about, because there is no way back. Only an Admin may restore an
+   * account, and the platform operator may not act inside a tenant at all (ADR-030), so an
+   * organisation that lost its last Admin would have nobody who could give it another.
+   */
+  @ExceptionHandler(LastActiveAdminException.class)
+  public ProblemDetail handleLastActiveAdmin(LastActiveAdminException exception) {
+    log.atWarn()
+        .addKeyValue("account", exception.account().value())
+        .log("Refused: a change would have left an organisation with no active Admin");
+    denied("last_admin");
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT,
+            "An organisation must keep at least one active Admin. Give somebody else that role"
+                + " first.");
+    problem.setTitle("Last active Admin");
+    return problem;
+  }
+
+  /** An employee link naming somebody this organisation does not employ. */
+  @ExceptionHandler(NotAnEmployeeHereException.class)
+  public ProblemDetail handleNotAnEmployeeHere(NotAnEmployeeHereException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.UNPROCESSABLE_ENTITY, "No such employee in this organisation.");
+    problem.setTitle("Unknown employee");
+    return problem;
+  }
+
+  /** One person, one account: the employee named already has one (ADR-012). */
+  @ExceptionHandler(EmployeeAlreadyLinkedException.class)
+  public ProblemDetail handleEmployeeAlreadyLinked(EmployeeAlreadyLinkedException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT, "That employee already has an account.");
+    problem.setTitle("Employee already linked");
+    return problem;
+  }
+
   @ExceptionHandler(HttpMessageNotReadableException.class)
   public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException exception) {
     ProblemDetail problem =
