@@ -2,20 +2,16 @@ import { useState } from 'react';
 import { workforce } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
-import { identityKey } from '../api/client';
-import { useActingAs } from '../identity/ActingAs';
+import { useIdentityKey } from '../identity/ActingAs';
 
 /** Admin: who works here, what they hold, and what they are contracted to. */
 export function PeoplePage() {
-  const { identity } = useActingAs();
+  const identityKey = useIdentityKey();
   const [name, setName] = useState('');
   const [failure, setFailure] = useState<unknown>(null);
 
-  const people = useAsync(() => workforce.findEmployees(identity), identityKey(identity));
-  const qualifications = useAsync(
-    () => workforce.findQualifications(identity),
-    identityKey(identity),
-  );
+  const people = useAsync(() => workforce.findEmployees(), identityKey);
+  const qualifications = useAsync(() => workforce.findQualifications(), identityKey);
   const qualificationNames = new Map(
     (qualifications.value ?? []).map((qualification) => [qualification.id, qualification.name]),
   );
@@ -43,7 +39,7 @@ export function PeoplePage() {
         onSubmit={(event) => {
           event.preventDefault();
           void act(async () => {
-            await workforce.addEmployee(identity, name);
+            await workforce.addEmployee(name);
             setName('');
           });
         }}
@@ -105,9 +101,7 @@ export function PeoplePage() {
                   onChange={(event) => {
                     const qualification = event.target.value;
                     if (qualification !== '') {
-                      void act(() =>
-                        workforce.grantQualification(identity, employee.id, qualification),
-                      );
+                      void act(() => workforce.grantQualification(employee.id, qualification));
                     }
                   }}
                 >
@@ -128,9 +122,7 @@ export function PeoplePage() {
                 </p>
                 <ContractField
                   employee={employee.name}
-                  onSubmit={(minutes) =>
-                    act(() => workforce.setContract(identity, employee.id, minutes))
-                  }
+                  onSubmit={(minutes) => act(() => workforce.setContract(employee.id, minutes))}
                 />
               </td>
             </tr>

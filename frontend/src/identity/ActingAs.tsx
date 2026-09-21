@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ROLES } from '../api/client';
+import { identityKey, ROLES, setActingIdentity } from '../api/client';
 import type { ActingIdentity, Role } from '../api/client';
 
 /**
@@ -109,10 +109,16 @@ function initialIdentity(): ActingIdentity {
 }
 
 export function ActingAsProvider({ children }: { children: ReactNode }) {
-  const [identity, setIdentity] = useState<ActingIdentity>(initialIdentity);
+  const [identity, setIdentity] = useState<ActingIdentity>(() => {
+    const first = initialIdentity();
+    // Before anything renders, so the first request of the first paint already claims somebody.
+    setActingIdentity(first);
+    return first;
+  });
 
   const update = useCallback((next: ActingIdentity) => {
     setIdentity(next);
+    setActingIdentity(next);
     store(next);
   }, []);
 
@@ -135,6 +141,17 @@ export function ActingAsProvider({ children }: { children: ReactNode }) {
   );
 
   return <ActingAsContext.Provider value={value}>{children}</ActingAsContext.Provider>;
+}
+
+/**
+ * A key that changes exactly when the acting identity does.
+ *
+ * Every answer on screen depends on who asked for it, so this is what pages hand {@code useAsync}
+ * to say "this is a different question now". It comes from the provider rather than from a page
+ * building one out of an identity it holds, because pages no longer hold one.
+ */
+export function useIdentityKey(): string {
+  return identityKey(useActingAs().identity);
 }
 
 export function useActingAs(): ActingAsContextValue {

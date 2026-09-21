@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { identityKey } from '../api/client';
 import { notifications } from '../api/notifications';
 import type { Notification, NotificationKind } from '../api/notifications';
 import { scheduling } from '../api/scheduling';
@@ -7,7 +6,7 @@ import type { Shift, SwapRequest } from '../api/scheduling';
 import { Busy, Failure } from '../components/Feedback';
 import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
-import { useActingAs } from '../identity/ActingAs';
+import { useActingAs, useIdentityKey } from '../identity/ActingAs';
 import { SWAP_STATUS } from './swapStatus';
 import { useShiftsById } from './useShiftsById';
 
@@ -51,10 +50,11 @@ export function Inbox({
   nameOf: (employee: string) => string;
 }) {
   const { identity } = useActingAs();
+  const identityKey = useIdentityKey();
   const [failure, setFailure] = useState<unknown>(null);
 
-  const inbox = useAsync(() => notifications.findMine(identity), identityKey(identity));
-  const swaps = useAsync(() => scheduling.findSwapRequests(identity), identityKey(identity));
+  const inbox = useAsync(() => notifications.findMine(), identityKey);
+  const swaps = useAsync(() => scheduling.findSwapRequests(), identityKey);
 
   const swapById = new Map((swaps.value ?? []).map((swap) => [swap.id, swap]));
   // Only the shifts its notifications are about. A reader who may see every swap in the organisation
@@ -70,7 +70,7 @@ export function Inbox({
   async function markRead(notification: Notification) {
     setFailure(null);
     try {
-      await notifications.markRead(identity, notification.id);
+      await notifications.markRead(notification.id);
       inbox.reload();
     } catch (error) {
       setFailure(error);

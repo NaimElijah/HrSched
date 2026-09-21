@@ -27,22 +27,42 @@ export type Role = (typeof ROLES)[number];
 const TRACE_ID_HEADER = 'X-Trace-Id';
 
 /**
+ * Who requests are currently made as.
+ *
+ * Module state rather than an argument threaded through every call. It used to be the latter: every
+ * API function took an identity and every page passed one, which meant 56 call sites all had to
+ * agree, and a page could quietly decide to send a different identity from the one on screen.
+ * Holding it here makes who is acting a property of the client rather than of each caller, and
+ * leaves exactly one place to change when the headers go.
+ */
+let acting: ActingIdentity | null = null;
+
+/**
+ * Tells the client who requests are made as from now on.
+ *
+ * Called by whatever owns the acting identity, and by nothing else.
+ *
+ * @param identity who to act as, or null for nobody
+ */
+export function setActingIdentity(identity: ActingIdentity | null): void {
+  acting = identity;
+}
+
+/**
  * The only module in the app that calls fetch, and the only one that knows a header exists.
  *
  * Keeping that in one place is what makes the identity headers deletable in a single edit, and
  * stops a page quietly inventing its own idea of who is acting.
  */
-async function request<T>(
-  identity: ActingIdentity,
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  headers.set('X-Organisation', identity.organisation);
-  headers.set('X-User', identity.user);
-  headers.set('X-Role', identity.role);
-  if (identity.employee) {
-    headers.set('X-Employee', identity.employee);
+  if (acting !== null) {
+    headers.set('X-Organisation', acting.organisation);
+    headers.set('X-User', acting.user);
+    headers.set('X-Role', acting.role);
+    if (acting.employee) {
+      headers.set('X-Employee', acting.employee);
+    }
   }
   if (init.body !== undefined) {
     headers.set('Content-Type', 'application/json');
@@ -121,20 +141,19 @@ export function path(segments: TemplateStringsArray, ...identifiers: readonly st
 }
 
 export const api = {
-  get: <T>(identity: ActingIdentity, path: string): Promise<T> => request<T>(identity, path),
+  get: <T>(path: string): Promise<T> => request<T>(path),
 
-  post: <T>(identity: ActingIdentity, path: string, body?: unknown): Promise<T> =>
-    request<T>(identity, path, {
+  post: <T>(path: string, body?: unknown): Promise<T> =>
+    request<T>(path, {
       method: 'POST',
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
 
-  put: <T>(identity: ActingIdentity, path: string, body?: unknown): Promise<T> =>
-    request<T>(identity, path, {
+  put: <T>(path: string, body?: unknown): Promise<T> =>
+    request<T>(path, {
       method: 'PUT',
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
 
-  delete: <T>(identity: ActingIdentity, path: string): Promise<T> =>
-    request<T>(identity, path, { method: 'DELETE' }),
+  delete: <T>(path: string): Promise<T> => request<T>(path, { method: 'DELETE' }),
 };

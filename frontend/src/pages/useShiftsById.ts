@@ -24,7 +24,7 @@ export function useShiftsById(
 ): { readonly byId: ReadonlyMap<string, Shift>; readonly error: unknown } {
   const wanted = [...new Set(ids)].sort();
   const reads = useAsync(
-    () => Promise.allSettled(wanted.map((id) => scheduling.findShift(identity, id))),
+    () => Promise.allSettled(wanted.map((id) => scheduling.findShift(id))),
     `${identityKey(identity)}|${wanted.join(',')}`,
   );
   const settled = reads.value ?? [];

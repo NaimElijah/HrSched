@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, identityKey, path } from './client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { api, identityKey, path, setActingIdentity } from './client';
 import type { ActingIdentity } from './client';
 import { ApiError } from './problem';
 
@@ -33,15 +33,20 @@ function respondWith(
   return stub;
 }
 
+beforeEach(() => {
+  setActingIdentity(IDENTITY);
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  setActingIdentity(null);
 });
 
 describe('the acting identity', () => {
   it('GivenAnIdentityWithoutAnEmployee_WhenRequesting_ThenTheThreeClaimHeadersAreSent', async () => {
     const stub = respondWith(200, []);
 
-    await api.get(IDENTITY, '/api/shifts');
+    await api.get('/api/shifts');
 
     const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
     expect(headers.get('X-Organisation')).toBe('org-1');
@@ -53,7 +58,9 @@ describe('the acting identity', () => {
   it('GivenAnIdentityCarryingAnEmployee_WhenRequesting_ThenTheEmployeeLinkIsSent', async () => {
     const stub = respondWith(204, null);
 
-    await api.post({ ...IDENTITY, role: 'EMPLOYEE', employee: 'emp-9' }, '/api/x', { a: 1 });
+    setActingIdentity({ ...IDENTITY, role: 'EMPLOYEE', employee: 'emp-9' });
+
+    await api.post('/api/x', { a: 1 });
 
     const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
     expect(headers.get('X-Employee')).toBe('emp-9');
@@ -63,7 +70,7 @@ describe('the acting identity', () => {
   it('GivenADelete_WhenRequesting_ThenItIsSentAsADeleteWithNoBody', async () => {
     const stub = respondWith(200, {});
 
-    await api.delete(IDENTITY, '/api/rosters/1/assignments/s-1/e-1');
+    await api.delete('/api/rosters/1/assignments/s-1/e-1');
 
     const init = stub.mock.calls[0]?.[1] as RequestInit;
     expect(init.method).toBe('DELETE');
@@ -74,7 +81,7 @@ describe('the acting identity', () => {
   it('GivenARequestWithoutABody_WhenRequesting_ThenNoContentTypeIsClaimed', async () => {
     const stub = respondWith(200, {});
 
-    await api.post(IDENTITY, '/api/rosters/1/publication');
+    await api.post('/api/rosters/1/publication');
 
     const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
     expect(headers.get('Content-Type')).toBeNull();
@@ -100,7 +107,7 @@ describe('failures', () => {
       false,
     );
 
-    const failure = await api.post(IDENTITY, '/api/rosters/1/publication').catch((e: unknown) => e);
+    const failure = await api.post('/api/rosters/1/publication').catch((e: unknown) => e);
 
     expect(failure).toBeInstanceOf(ApiError);
     const error = failure as ApiError;
@@ -117,7 +124,7 @@ describe('failures', () => {
     );
 
     const error = (await api
-      .post(IDENTITY, '/api/rosters/1/publication')
+      .post('/api/rosters/1/publication')
       .catch((e: unknown) => e)) as ApiError;
 
     expect(error.violations).toHaveLength(0);
@@ -127,7 +134,7 @@ describe('failures', () => {
   it('GivenACrossTenantRead_WhenRequesting_ThenItIsNotFoundRatherThanForbidden', async () => {
     respondWith(404, { title: 'Not found', detail: 'No such resource.' }, false);
 
-    const error = (await api.get(IDENTITY, '/api/rosters/1').catch((e: unknown) => e)) as ApiError;
+    const error = (await api.get('/api/rosters/1').catch((e: unknown) => e)) as ApiError;
 
     expect(error.isNotFound).toBe(true);
     expect(error.isForbidden).toBe(false);
@@ -136,9 +143,7 @@ describe('failures', () => {
   it('GivenARoleThatMayNotAct_WhenRequesting_ThenItIsForbidden', async () => {
     respondWith(403, { title: 'Not permitted', detail: 'Your role does not permit this.' }, false);
 
-    const error = (await api
-      .post(IDENTITY, '/api/shifts', {})
-      .catch((e: unknown) => e)) as ApiError;
+    const error = (await api.post('/api/shifts', {}).catch((e: unknown) => e)) as ApiError;
 
     expect(error.isForbidden).toBe(true);
     expect(error.message).toBe('Your role does not permit this.');
@@ -155,7 +160,7 @@ describe('failures', () => {
       }),
     );
 
-    const error = (await api.get(IDENTITY, '/api/shifts').catch((e: unknown) => e)) as ApiError;
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
 
     expect(error.status).toBe(500);
     expect(error.message).toContain('Gateway exploded');
@@ -164,7 +169,7 @@ describe('failures', () => {
   it('GivenA204_WhenRequesting_ThenNothingIsParsed', async () => {
     respondWith(204, null);
 
-    await expect(api.put(IDENTITY, '/api/employees/1/contract', { a: 1 })).resolves.toBeUndefined();
+    await expect(api.put('/api/employees/1/contract', { a: 1 })).resolves.toBeUndefined();
   });
 
   it('GivenA200CarryingSomethingOtherThanJson_WhenRequesting_ThenItFailsRatherThanCasting', async () => {
@@ -178,7 +183,7 @@ describe('failures', () => {
       }),
     );
 
-    const error = (await api.get(IDENTITY, '/api/shifts').catch((e: unknown) => e)) as ApiError;
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
 
     expect(error).toBeInstanceOf(ApiError);
     // Casting it would hand a page an object where it expects an array, and the render would throw.
@@ -219,7 +224,9 @@ describe('the reload key', () => {
   it('GivenAnEmptyEmployeeString_WhenRequesting_ThenNoEmployeeHeaderIsSent', async () => {
     const stub = respondWith(200, []);
 
-    await api.get({ ...IDENTITY, employee: '' }, '/api/shifts');
+    setActingIdentity({ ...IDENTITY, employee: '' });
+
+    await api.get('/api/shifts');
 
     const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
     expect(headers.get('X-Employee')).toBeNull();
@@ -257,9 +264,7 @@ describe('the trace reference', () => {
       'X-Trace-Id': '4bf92f3577b34da6a3ce929d0e0e4736',
     });
 
-    await expect(api.post(IDENTITY, '/api/qualifications', { name: 'Forklift' })).rejects.toThrow(
-      ApiError,
-    );
+    await expect(api.post('/api/qualifications', { name: 'Forklift' })).rejects.toThrow(ApiError);
   });
 
   it('GivenARefusalCarryingATraceId_WhenItIsCaught_ThenTheReferenceIsTheTraceId', async () => {
@@ -267,7 +272,7 @@ describe('the trace reference', () => {
       'X-Trace-Id': '4bf92f3577b34da6a3ce929d0e0e4736',
     });
 
-    const failure = await api.get(IDENTITY, '/api/rosters/1').catch((error: unknown) => error);
+    const failure = await api.get('/api/rosters/1').catch((error: unknown) => error);
 
     expect((failure as ApiError).reference).toBe('4bf92f3577b34da6a3ce929d0e0e4736');
   });
@@ -279,7 +284,7 @@ describe('the trace reference', () => {
   it('GivenAResponseWithoutATraceId_WhenItFails_ThenThereIsNoReferenceToQuote', async () => {
     respondWith(500, { detail: 'Something broke.' }, false);
 
-    const failure = await api.get(IDENTITY, '/api/rosters').catch((error: unknown) => error);
+    const failure = await api.get('/api/rosters').catch((error: unknown) => error);
 
     expect((failure as ApiError).reference).toBeNull();
   });
@@ -295,7 +300,7 @@ describe('the trace reference', () => {
       }),
     );
 
-    const failure = await api.get(IDENTITY, '/api/shifts').catch((error: unknown) => error);
+    const failure = await api.get('/api/shifts').catch((error: unknown) => error);
 
     expect((failure as ApiError).reference).toBe('abc123');
   });

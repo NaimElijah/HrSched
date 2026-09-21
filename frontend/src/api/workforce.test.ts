@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setActingIdentity } from './client';
 import type { ActingIdentity } from './client';
 import { workforce } from './workforce';
 
@@ -13,6 +14,10 @@ const IDENTITY: ActingIdentity = {
   role: 'ADMIN',
   employee: null,
 };
+
+beforeEach(() => {
+  setActingIdentity(IDENTITY);
+});
 
 function accepting() {
   const stub = vi.fn().mockResolvedValue({
@@ -33,7 +38,7 @@ describe('addressing an employee', () => {
   it('GivenAnIdentifierContainingASlash_WhenGranting_ThenTheRequestStaysOnThatEmployee', async () => {
     const stub = accepting();
 
-    await workforce.grantQualification(IDENTITY, '../../organisations', 'q-1');
+    await workforce.grantQualification('../../organisations', 'q-1');
 
     expect(stub.mock.calls[0]?.[0]).toBe(
       '/api/employees/..%2F..%2Forganisations/qualifications/q-1',

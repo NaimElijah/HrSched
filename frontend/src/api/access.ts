@@ -1,4 +1,4 @@
-import { api, path, type ActingIdentity } from './client';
+import { api, path } from './client';
 
 /** Mirrors OrganisationResponse. */
 export interface Organisation {
@@ -14,18 +14,18 @@ export interface Organisation {
  * (ADR-020). Listing and reading are checked like every other request, so a claim naming an
  * organisation nobody onboarded is refused with a 404 before either reaches the register.
  *
- * Every call is made as the identity it is given. The identity bar bootstraps a first organisation
- * by claiming OPERATOR for that one request; everything else claims what the bar shows.
+ * Every call is made as whoever the client is currently acting as. The identity bar bootstraps a
+ * first organisation by claiming OPERATOR for that one request; everything else claims what the bar
+ * shows.
  */
 export const access = {
-  onboardOrganisation: (identity: ActingIdentity, name: string): Promise<Organisation> =>
-    api.post<Organisation>(identity, '/api/organisations', { name }),
+  onboardOrganisation: (name: string): Promise<Organisation> =>
+    api.post<Organisation>('/api/organisations', { name }),
 
   /** Every organisation on the platform. The Operator's alone: a tenant role is refused with a 403. */
-  findOrganisations: (identity: ActingIdentity): Promise<Organisation[]> =>
-    api.get<Organisation[]>(identity, '/api/organisations'),
+  findOrganisations: (): Promise<Organisation[]> => api.get<Organisation[]>('/api/organisations'),
 
   /** One organisation: any of them for the Operator, and only its own for a tenant role. */
-  findOrganisation: (identity: ActingIdentity, id: string): Promise<Organisation> =>
-    api.get<Organisation>(identity, path`/api/organisations/${id}`),
+  findOrganisation: (id: string): Promise<Organisation> =>
+    api.get<Organisation>(path`/api/organisations/${id}`),
 };

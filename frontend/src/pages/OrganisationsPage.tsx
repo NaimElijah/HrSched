@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { access } from '../api/access';
-import { identityKey } from '../api/client';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
-import { useActingAs } from '../identity/ActingAs';
+import { useActingAs, useIdentityKey } from '../identity/ActingAs';
 
 /**
  * Operator: the organisations on the platform (F13) — list them, onboard one, read the one being
@@ -18,22 +17,20 @@ import { useActingAs } from '../identity/ActingAs';
  */
 export function OrganisationsPage() {
   const { identity, setOrganisation } = useActingAs();
+  const identityKey = useIdentityKey();
   const [name, setName] = useState('');
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  const organisations = useAsync(() => access.findOrganisations(identity), identityKey(identity));
-  const current = useAsync(
-    () => access.findOrganisation(identity, identity.organisation),
-    identityKey(identity),
-  );
+  const organisations = useAsync(() => access.findOrganisations(), identityKey);
+  const current = useAsync(() => access.findOrganisation(identity.organisation), identityKey);
 
   async function onboard(event: React.FormEvent) {
     event.preventDefault();
     setFailure(null);
     setDone(null);
     try {
-      const onboarded = await access.onboardOrganisation(identity, name);
+      const onboarded = await access.onboardOrganisation(name);
       setName('');
       setDone(`Onboarded ${onboarded.name}.`);
       organisations.reload();

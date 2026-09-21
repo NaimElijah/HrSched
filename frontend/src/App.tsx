@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { identityKey } from './api/client';
 import { ApiError } from './api/problem';
 import { workforce } from './api/workforce';
 import { Failure } from './components/Feedback';
 import { defaultSpan, localDate, startOfLocalDay } from './components/localDates';
 import { useAsync } from './components/useAsync';
 import { ActingAsBar } from './identity/ActingAsBar';
-import { useActingAs } from './identity/ActingAs';
+import { useActingAs, useIdentityKey } from './identity/ActingAs';
 import { MePage } from './pages/MePage';
 import { OrganisationsPage } from './pages/OrganisationsPage';
 import { PeoplePage } from './pages/PeoplePage';
@@ -39,6 +38,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>('People');
   const [span, setSpan] = useState(() => defaultSpan(new Date()));
   const { identity } = useActingAs();
+  const identityKey = useIdentityKey();
 
   // The bar needs the employee list to populate its picker, and an EMPLOYEE is not permitted to
   // read it — that one refusal is expected and is answered with an empty list. Every other failure
@@ -52,13 +52,13 @@ export function App() {
     () =>
       !ready
         ? Promise.resolve([])
-        : workforce.findEmployees(identity).catch((error: unknown) => {
+        : workforce.findEmployees().catch((error: unknown) => {
             if (error instanceof ApiError && error.isForbidden) {
               return [];
             }
             throw error;
           }),
-    identityKey(identity),
+    identityKey,
   );
 
   return (

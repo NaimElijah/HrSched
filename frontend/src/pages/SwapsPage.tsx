@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { identityKey } from '../api/client';
 import { scheduling } from '../api/scheduling';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
-import { useActingAs } from '../identity/ActingAs';
+import { useActingAs, useIdentityKey } from '../identity/ActingAs';
 import { SWAP_STATUS } from './swapStatus';
 import { useShiftsById } from './useShiftsById';
 
@@ -21,12 +20,13 @@ import { useShiftsById } from './useShiftsById';
  */
 export function SwapsPage({ people }: { people: readonly Employee[] }) {
   const { identity } = useActingAs();
+  const identityKey = useIdentityKey();
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
   // One decision at a time: a second approval racing the first could publish a second replacement.
   const [deciding, setDeciding] = useState(false);
 
-  const swaps = useAsync(() => scheduling.findSwapRequests(identity), identityKey(identity));
+  const swaps = useAsync(() => scheduling.findSwapRequests(), identityKey);
   const shifts = useShiftsById(
     identity,
     (swaps.value ?? []).map((swap) => swap.shift),
@@ -104,7 +104,7 @@ export function SwapsPage({ people }: { people: readonly Employee[] }) {
                         aria-label={`Approve: ${what}`}
                         onClick={() =>
                           void decide(
-                            () => scheduling.approveSwap(identity, swap.id),
+                            () => scheduling.approveSwap(swap.id),
                             'Approved. A replacement roster was published, and both of them are told.',
                           )
                         }
@@ -117,7 +117,7 @@ export function SwapsPage({ people }: { people: readonly Employee[] }) {
                         aria-label={`Decline: ${what}`}
                         onClick={() =>
                           void decide(
-                            () => scheduling.rejectSwap(identity, swap.id),
+                            () => scheduling.rejectSwap(swap.id),
                             'Declined. Nothing changed, and both of them are told.',
                           )
                         }

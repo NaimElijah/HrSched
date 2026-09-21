@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { identityKey } from '../api/client';
 import { scheduling } from '../api/scheduling';
 import type { RosteredShift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
@@ -7,7 +6,7 @@ import type { Employee, PreferenceStrength } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
-import { useActingAs } from '../identity/ActingAs';
+import { useActingAs, useIdentityKey } from '../identity/ActingAs';
 import { Inbox } from './Inbox';
 
 /**
@@ -34,6 +33,7 @@ export function MePage({
   people: readonly Employee[];
 }) {
   const { identity } = useActingAs();
+  const identityKey = useIdentityKey();
   const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (colleague: string): string => personById.get(colleague)?.name ?? colleague;
   const [start, setStart] = useState('');
@@ -48,10 +48,8 @@ export function MePage({
   // earn a refusal the page already explains.
   const schedule = useAsync(
     () =>
-      employee === null
-        ? Promise.resolve([])
-        : scheduling.findOwnSchedule(identity, span.from, span.to),
-    `${identityKey(identity)}|${span.from}|${span.to}`,
+      employee === null ? Promise.resolve([]) : scheduling.findOwnSchedule(span.from, span.to),
+    `${identityKey}|${span.from}|${span.to}`,
   );
 
   /**
@@ -108,7 +106,7 @@ export function MePage({
     }
     setFailure(null);
     try {
-      await scheduling.requestSwap(identity, {
+      await scheduling.requestSwap({
         roster: work.roster,
         shift: work.shift,
         requester,
@@ -207,7 +205,7 @@ export function MePage({
           type="button"
           onClick={() =>
             void act(
-              (when) => workforce.declareUnavailability(identity, employee, when.start, when.end),
+              (when) => workforce.declareUnavailability(employee, when.start, when.end),
               'Recorded: you cannot work then.',
             )
           }
@@ -218,8 +216,7 @@ export function MePage({
           type="button"
           onClick={() =>
             void act(
-              (when) =>
-                workforce.statePreference(identity, employee, when.start, when.end, strength),
+              (when) => workforce.statePreference(employee, when.start, when.end, strength),
               'Recorded: a preference, which never blocks a roster.',
             )
           }

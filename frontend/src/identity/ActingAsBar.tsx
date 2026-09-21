@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { access } from '../api/access';
-import { ROLES } from '../api/client';
+import { ROLES, setActingIdentity } from '../api/client';
 import type { Role } from '../api/client';
 import { ApiError } from '../api/problem';
 import type { Employee } from '../api/workforce';
@@ -28,13 +28,16 @@ export function ActingAsBar({ employees }: { employees: readonly Employee[] }) {
     setOnboarding(true);
     setFailure(null);
     try {
-      // Onboarding is the operator's act, whoever the bar is currently acting as. The organisation
-      // on this identity is ignored by the backend for this one request, which is what makes
-      // bootstrapping possible at all.
-      const organisation = await access.onboardOrganisation(
-        { ...identity, role: 'OPERATOR', employee: null },
-        `Organisation ${new Date().toISOString()}`,
-      );
+      // Onboarding is the operator's act, whoever the bar is currently acting as, so this one
+      // request claims OPERATOR and is put back afterwards. The organisation on the identity is
+      // ignored by the backend here, which is what makes bootstrapping possible at all.
+      setActingIdentity({ ...identity, role: 'OPERATOR', employee: null });
+      let organisation;
+      try {
+        organisation = await access.onboardOrganisation(`Organisation ${new Date().toISOString()}`);
+      } finally {
+        setActingIdentity(identity);
+      }
       setOrganisation(organisation.id);
     } catch (error) {
       setFailure(error instanceof ApiError ? error.message : 'Could not create an organisation.');
