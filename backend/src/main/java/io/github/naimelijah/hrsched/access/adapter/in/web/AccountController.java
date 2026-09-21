@@ -94,7 +94,8 @@ public class AccountController {
       @RequestBody SetActiveRequest request) {
     manageAccounts.setAccountActive(
         actor,
-        new SetAccountActiveCommand(organisationOf(actor), new UserId(id), request.active()));
+        new SetAccountActiveCommand(
+            organisationOf(actor), new UserId(id), request.requiredActive()));
     return ResponseEntity.noContent().build();
   }
 

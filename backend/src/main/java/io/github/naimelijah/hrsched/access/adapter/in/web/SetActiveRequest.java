@@ -3,10 +3,24 @@ package io.github.naimelijah.hrsched.access.adapter.in.web;
 /**
  * The body of a request to disable an account or restore one.
  *
- * <p>A primitive {@code boolean}, so an absent field reads as {@code false} and disables. That is
- * the safe way round for this one field: the failure mode of a missing value is an account that
- * cannot act until somebody restores it, not one that can act when it should not.
+ * <p>A boxed {@code Boolean} rather than a primitive, so an absent field is refused rather than
+ * read as {@code false}. A primitive would make a malformed request disable somebody quietly, which
+ * is the one outcome here nobody would attribute to a typo — and it would be the only field in this
+ * adapter that a caller could omit and still be acted on.
  *
  * @param active whether the account may sign in and act
  */
-public record SetActiveRequest(boolean active) {}
+public record SetActiveRequest(Boolean active) {
+
+  /**
+   * @return whether the account may act
+   * @throws MalformedRequestException if the field is absent, which Jackson maps to null rather
+   *     than rejecting
+   */
+  boolean requiredActive() {
+    if (active == null) {
+      throw new MalformedRequestException("active is required");
+    }
+    return active;
+  }
+}

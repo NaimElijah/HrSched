@@ -628,6 +628,25 @@ class AccountHttpTest {
     return afterChoosingTheirOwnPassword(signInName);
   }
 
+  /**
+   * The one field a caller could once omit and still be acted on. A body without it used to read as
+   * {@code false} and disable somebody, which is not an outcome anybody would attribute to a typo.
+   */
+  @Test
+  void GivenNoActiveField_WhenChangingActivation_ThenItIsABadRequestAndNobodyIsDisabled()
+      throws Exception {
+    OrganisationId acme = anOrganisation();
+    String admin = admin(acme);
+    String signInName = anInventedSignInName();
+    String account = create(admin, signInName, Role.SCHEDULER);
+
+    mockMvc
+        .perform(with(put("/api/accounts/%s/activation".formatted(account)), admin).content("{}"))
+        .andExpect(status().isBadRequest());
+
+    mockMvc.perform(signInAs(signInName, A_PASSWORD)).andExpect(status().isOk());
+  }
+
   /** The other door is open to them, and it asks for the password they already know. */
   @Test
   void GivenAnAdmin_WhenResettingTheirOwnPassword_ThenItIsAConflict() throws Exception {

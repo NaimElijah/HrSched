@@ -98,7 +98,7 @@ public class AccessExceptionHandler {
    * them a particular person has an account here.
    */
   @ExceptionHandler(SignInNameTakenException.class)
-  public ProblemDetail handleSignInNameTaken() {
+  public ProblemDetail handleSignInNameTaken(SignInNameTakenException exception) {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.CONFLICT, "That sign-in name is already in use.");
