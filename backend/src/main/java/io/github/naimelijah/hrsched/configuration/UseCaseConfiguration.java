@@ -2,8 +2,20 @@ package io.github.naimelijah.hrsched.configuration;
 
 import static io.github.naimelijah.hrsched.configuration.persistence.TransactionalUseCases.transactional;
 
+import io.github.naimelijah.hrsched.access.application.port.out.AccessTokenIssuer;
+import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
+import io.github.naimelijah.hrsched.access.application.port.out.EmployeeDirectory;
 import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
+import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
+import io.github.naimelijah.hrsched.access.application.port.out.SessionRepository;
+import io.github.naimelijah.hrsched.access.application.port.out.SessionSecrets;
+import io.github.naimelijah.hrsched.access.application.service.AccountService;
 import io.github.naimelijah.hrsched.access.application.service.OrganisationService;
+import io.github.naimelijah.hrsched.access.application.service.SessionService;
+import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
+import io.github.naimelijah.hrsched.access.domain.model.SessionPolicy;
+import io.github.naimelijah.hrsched.configuration.security.SecurityPolicyProperties;
 import io.github.naimelijah.hrsched.notifications.application.port.out.NotificationRepository;
 import io.github.naimelijah.hrsched.notifications.application.service.NotificationService;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
@@ -52,11 +64,89 @@ import org.springframework.transaction.PlatformTransactionManager;
 public class UseCaseConfiguration {
 
   @Bean
+  AccountService accountService(
+      AccountRepository accounts,
+      SessionRepository sessions,
+      EmployeeDirectory employees,
+      PasswordHasher passwords,
+      PasswordPolicy passwordPolicy,
+      io.github.naimelijah.hrsched.access.application.port.out.AuditTrail audit,
+      Clock clock,
+      PlatformTransactionManager transactions) {
+    return transactional(
+        new AccountService(accounts, sessions, employees, passwords, passwordPolicy, audit, clock),
+        transactions);
+  }
+
+  /**
+   * Turns the configured numbers into the policy the domain understands.
+   *
+   * <p>A bean rather than a field read inside the use case, so that what counts as too many
+   * failures is an input a test supplies rather than an ambient fact it has to live with.
+   */
+  @Bean
+  LockoutPolicy lockoutPolicy(SecurityPolicyProperties policies) {
+    return new LockoutPolicy(
+        policies.signIn().lockoutThreshold(), policies.signIn().lockoutDuration());
+  }
+
+  /** As {@link #lockoutPolicy}, for how long a session lives. */
+  @Bean
+  SessionPolicy sessionPolicy(SecurityPolicyProperties policies) {
+    return new SessionPolicy(
+        policies.session().absoluteLifetime(), policies.session().idleLifetime());
+  }
+
+  /**
+   * What a password somebody chooses has to satisfy: a floor from configuration, and a ceiling the
+   * hasher imposes. Asking the hasher for its own limit keeps the two from drifting apart if the
+   * algorithm ever changes.
+   */
+  @Bean
+  PasswordPolicy passwordPolicy(SecurityPolicyProperties policies, PasswordHasher hasher) {
+    return new PasswordPolicy(policies.password().minimumLength(), hasher.maximumBytes());
+  }
+
+  @Bean
+  SessionService sessionService(
+      AccountRepository accounts,
+      SessionRepository sessions,
+      PasswordHasher passwords,
+      AccessTokenIssuer tokens,
+      SessionSecrets secrets,
+      io.github.naimelijah.hrsched.access.application.port.out.AuditTrail audit,
+      Clock clock,
+      LockoutPolicy lockout,
+      SessionPolicy sessionPolicy,
+      PasswordPolicy passwordPolicy,
+      PlatformTransactionManager transactions) {
+    return transactional(
+        new SessionService(
+            accounts,
+            sessions,
+            passwords,
+            tokens,
+            secrets,
+            audit,
+            clock,
+            lockout,
+            sessionPolicy,
+            passwordPolicy),
+        transactions);
+  }
+
+  @Bean
   OrganisationService organisationService(
       OrganisationRepository organisations,
+      AccountRepository accounts,
+      PasswordHasher passwords,
+      PasswordPolicy passwordPolicy,
       io.github.naimelijah.hrsched.access.application.port.out.AuditTrail audit,
+      Clock clock,
       PlatformTransactionManager transactions) {
-    return transactional(new OrganisationService(organisations, audit), transactions);
+    return transactional(
+        new OrganisationService(organisations, accounts, passwords, passwordPolicy, audit, clock),
+        transactions);
   }
 
   /**

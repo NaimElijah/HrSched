@@ -16,6 +16,7 @@ import io.github.naimelijah.hrsched.notifications.domain.model.NotificationId;
 import io.github.naimelijah.hrsched.notifications.domain.model.UnknownNotificationException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
@@ -134,10 +135,14 @@ class NotificationServiceTest {
         .isInstanceOf(NotAddressableException.class);
   }
 
+  /**
+   * Still refused, and now refused sooner and for a better reason: not "you have no inbox" but "you
+   * are not a member of this organisation at all" (ADR-030).
+   */
   @Test
   void GivenTheOperator_WhenReadingNotifications_ThenItIsRefused() {
     assertThatThrownBy(() -> service.findMine(new Operator(UserId.newId()), ACME))
-        .isInstanceOf(NotAddressableException.class);
+        .isInstanceOf(NotATenantMemberException.class);
   }
 
   @Test
@@ -273,5 +278,14 @@ class NotificationServiceTest {
     List<AuditedChange> of(NotificationChange change) {
       return recorded.stream().filter(entry -> entry.change() == change).toList();
     }
+  }
+
+  // --- ADR-030: the platform operator is refused by every tenant use case -------------------
+
+  @Test
+  void GivenTheOperator_WhenMarkingANotificationRead_ThenItIsRefused() {
+    assertThatThrownBy(
+            () -> service.markRead(new Operator(UserId.newId()), ACME, NotificationId.newId()))
+        .isInstanceOf(NotATenantMemberException.class);
   }
 }

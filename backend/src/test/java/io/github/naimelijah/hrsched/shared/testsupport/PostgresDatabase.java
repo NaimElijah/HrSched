@@ -107,6 +107,9 @@ public final class PostgresDatabase {
    * from the catalogue rather than being written out, so a migration that adds a table cannot leave
    * a stale one behind for the next test to trip over. Flyway's own history table is excluded, for
    * the obvious reason.
+   *
+   * <p>That includes every account, the platform operator's among them. A fixture that needs one to
+   * exist cannot assume it survived the previous test, and has to create it again.
    */
   public static void empty() {
     // A table name cannot be a bind parameter, so this one statement is built by concatenation.

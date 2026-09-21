@@ -3,7 +3,8 @@
 **Status: specified, partially built.** Every question that blocked modelling is answered. The
 domain is modelled, and a React user interface offers every capability below — for the three roles
 within an organisation and for the platform Operator — over a PostgreSQL that survives a restart.
-Generation is greedy rather than optimised, and there is no authentication.
+People sign in, and every request is authenticated by a token HrSched signed and authorised
+against the account it names. Generation is greedy rather than optimised.
 
 Nothing in the user interface *enforces* a requirement. The `Enforced by` column below names
 backend classes and tests on purpose: a screen that appears to satisfy a rule is not evidence that
@@ -60,7 +61,9 @@ implemented; the rest are not.
 | F11 | Scheduler | Generate a draft roster covering a period, filling every shift it legally can | `SchedulingService`, `RosteringHttpTest` |
 | F11a | Scheduler | See the rosters their organisation holds | `SchedulingService`, `RosteringHttpTest` |
 | F12 | Scheduler | Publish a draft, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest` |
-| F13 | Operator | Administer organisations across the platform | `OrganisationService`, `OrganisationServiceTest`, `OrganisationHttpTest` ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)). *Onboard, list and read; there is no rename and no closure.* |
+| F13 | Operator | Administer organisations across the platform | `OrganisationService`, `OrganisationServiceTest`, `OrganisationHttpTest` ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)). *Onboard, list and read; there is no rename and no closure. Onboarding creates the organisation's first Admin in the same transaction - the operator is refused everything inside an organisation ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)), so one onboarded without an Admin would have nobody able to add one. That Admin must change the password they were given before anything else (ADR-029).* |
+| F14 | Everyone | Sign in with a sign-in name and password, stay signed in across a reload, sign out, and change their own password | `SessionService`, `SessionServiceTest`, `AuthController`, `AuthHttpTest`, `SessionRefreshHttpTest`, `SessionHttpTest`; token verification: `AccessTokenDecoder`, `AccessTokenDecoderTest`, `ActorAuthenticationConverter`, `ActorAuthenticationConverterTest`, `SecurityConfiguration` ([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-028](../ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md)). *A password somebody else chose must be changed before anything else; an account is never self-created (ADR-029).* |
+| F15 | Admin | Administer the accounts of their own organisation: create one, list them, change what an account is, disable and restore one, and reset somebody's password | `AccountService`, `AccountAdministrationTest`, `AccountController`, `AccountHttpTest` ([ADR-029](../ADRs/ADR-029-provision-accounts-from-the-top-down.md), [ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)). *The organisation is taken from the token, never from the request, so there is no identifier for an Admin to change.* |
 
 **Swaps (F7)** are approved by a **Scheduler**; the other employee is informed rather than asked,
 and being informed means a notification they can go and read. Approving does not edit the published
@@ -117,6 +120,11 @@ a published roster is superseded rather than edited (R6).
 | R10 | A roster assigning a shift that cannot be resolved cannot be published. *`Roster`, `SchedulingServiceTest`* |
 | R11 | Publishing a roster supersedes every published roster of that organisation whose period it overlaps. *`SchedulingService`, `SchedulingServiceTest`; against a publication in flight at the same time, `RosterRepository.lockPublicationsOf` (`SchedulingServiceTest`, `SwapServiceTest`, `JdbcRosterRepositoryTest`) and, behind it, the `roster_one_published_per_moment` constraint (`JdbcRosterRepository`, `JdbcRosterRepositoryTest`)* |
 | R12 | A roster may only be read by an Admin or a Scheduler, because it is personal data about every colleague. *`SchedulingService`, `RosteringHttpTest`* |
+| R13 | A sign-in name identifies one account across the whole platform, so two accounts can never hold the same one. *`AccountRepository`, `JdbcAccountRepositoryTest`, `AccountAdministrationTest`, `AccountHttpTest`* |
+| R14 | An organisation always keeps at least one active Admin: the last one can be neither demoted nor disabled. *`AccountService`, `AccountAdministrationTest`, `AccountHttpTest`* |
+| R15 | An account may be linked only to an employee of its own organisation, and an employee has at most one account. *`AccountService`, `AccountAdministrationTest`, `AccountHttpTest`; the second half also `JdbcAccountRepositoryTest`* |
+| R16 | A password chosen by anybody other than the account's owner must be replaced before that account holds a role. *`Account`, `SessionService`, `ActorAuthentication`, `SessionServiceTest`, `AccountHttpTest`* |
+| R17 | Disabling an account, and resetting its password, end every session it holds. A reset also clears any lockout. An Admin resets other people's passwords, never their own: changing your own takes the current one, and a way around that would undo what it protects. *`AccountService`, `AccountAdministrationTest`, `AccountHttpTest`* |
 
 A roster moves `DRAFT → PUBLISHED → SUPERSEDED`, and no other transition is legal. Exactly one
 roster is authoritative for any given moment, which is what R11 enforces.
@@ -157,19 +165,29 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
 ## Non-functional requirements
 
 - **Authentication and authorisation** — three roles per organisation: **Employee**,
-  **Scheduler**, **Admin**, plus a platform **Operator** belonging to no organisation and the
-  only identity permitted to cross the tenant boundary. Authorisation is enforced in the
-  application services. **Authentication does not exist**: the acting identity currently comes
-  from request headers and any caller can claim any role. The identity provider is `TODO`
-  (ADR-011), and the placeholder must be deleted when it lands.
+  **Scheduler**, **Admin**, plus a platform **Operator** belonging to no organisation. The
+  Operator administers the **register** of organisations across tenants — onboarding, listing and
+  reading them (F13) — and is **refused inside any organisation**
+  ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)), enforced by
+  `Actor.requireAccessTo`, every application service, and their tests. Authorisation is enforced in
+  the application services. Authentication is HrSched's own (F14, ADR-011): signing in issues a
+  signed access token, and the acting identity is resolved from a stored account and a live session
+  on **every** request, so disabling somebody, changing their role or signing them out takes effect
+  on their next call rather than whenever a token happens to expire. The security chain ends in
+  `denyAll`, so a route nobody wrote a rule for is refused
+  ([ADR-032](../ADRs/ADR-032-close-the-security-chain-by-default.md)). There are no identity
+  headers left: the organisation comes from the account
+  ([ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)).
 - **Tenant isolation** — the deployment is shared by independent organisations that must never
   see one another's data. Every aggregate belongs to exactly one organisation, and every query
   is scoped to it. A cross-tenant read is a security incident, not a bug, and isolation must be
-  covered by its own tests rather than assumed. An organisation must also *exist*: a request naming
-  one nobody onboarded is refused at the boundary with the same 404 an unknown record produces, so
-  a tenant can no longer be conjured by inventing an identifier.
-  *Enforced by `KnownOrganisationFilter`, `KnownOrganisationHttpTest`;
-  [ADR-020](../ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md).*
+  covered by its own tests rather than assumed. **A request cannot name an organisation at all**:
+  it acts in the one its own account belongs to, read from a row the caller cannot write, so a
+  tenant can be neither invented nor borrowed.
+  *Enforced by `Actor.requireTenantMembership`, `ActorTest`, and the `actingIn` helper in each web
+  adapter, covered by `EmployeeHttpTest`, `RosteringHttpTest`, `SwapHttpTest`, `NotificationHttpTest`
+  and `AccountHttpTest`;
+  [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md).*
 - **Persistence guarantees** — every accepted write is durable: once a request answers 2xx the
   change has committed and survives a crash or a restart. **A use case is one transaction**, so a
   request refused part-way leaves nothing behind — including the replacement roster a refused swap
@@ -222,7 +240,6 @@ applicant tracking, and being the HR system of record.
 
 | # | Question | Owner | Blocks |
 | --- | --- | --- | --- |
-| Q12 | What identity provider, and how does an Actor get built from a real credential? | NaimElijah | Deleting the header placeholder; ADR-011 |
 | Q13 | How are the generator objectives weighted against one another? | NaimElijah | ADR-010, and introducing a solver |
 | Q14 | Over what reference period is a weekly maximum averaged? | NaimElijah | Whether constraint checking needs history beyond the roster |
 | Q15 | What are the non-goals? | NaimElijah | Deferred deliberately |
@@ -236,6 +253,12 @@ applicant tracking, and being the HR system of record.
 | Q24 | Must roster history be append-only, so that what was authoritative at a past moment can be reconstructed? | NaimElijah | Whether superseding writes a new row rather than changing a status ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) |
 | Q25 | An employee may not list colleagues, so the user interface has them name the colleague taking a shift by pasting that colleague's employee identifier. Is a names-only colleague directory required, and may an employee see a colleague's name at all? | NaimElijah | Choosing a swap counterparty by name; what an employee may learn about colleagues, on the reasoning behind R12 |
 | Q26 | A shift can straddle two roster periods, and both rosters can then carry it without either superseding the other. Which roster governs such a shift, and is R3 judged across every authoritative roster or within one? | NaimElijah | R3 across rosters: today it is enforced within one roster only ([#63](https://github.com/NaimElijah/HrSched/issues/63)) |
+| Q27 | Are the security defaults right? Access token 10 min, session 12 h absolute and 1 h idle, lockout after 10 consecutive failures for 15 min, passwords at least 15 characters and at most 72 bytes, bcrypt strength 12. | NaimElijah | Whether `application.properties` changes; the length floor cites NIST SP 800-63B-4 3.1.1.2 and the lockout ceiling 3.2.2 |
+| Q28 | How does a tenant recover when its only Admin is locked out or has lost their password? The platform operator is confined to the register and cannot help (ADR-030), and R14 only guarantees the account still exists. | NaimElijah | Any recovery path at all: a second Admin by policy, an operator-initiated reset that breaks ADR-030, or an out-of-band process |
+| Q29 | Must a sign-in name be an email address? Today it is any string up to 254 characters, normalised and unique platform-wide. | NaimElijah | Validation in `SignInName`; whether anything may ever be sent to it (Q21) |
+| Q30 | May the platform have more than one operator, and how is an operator's credential rotated? Today configuration creates exactly one, once, and never overwrites it (ADR-029). | NaimElijah | Whether operator accounts get an administration surface of their own |
+| Q31 | Is multi-factor authentication required, and for which roles? | NaimElijah | A second factor in `SignInUseCase`, and what a recovery code would be |
+| Q32 | Must an account holding the EMPLOYEE role always be linked to an employee? Today the link is optional for every role, so an EMPLOYEE account with none can sign in and see nothing of its own. | NaimElijah | Tightening R15; the self-service path in ADR-012 |
 
 **Resolved**
 
@@ -252,6 +275,8 @@ applicant tracking, and being the HR system of record.
 | Q10 | Emergency cover without an override | Supersede with a new compliant roster | 2026-08-30 |
 | Q8 | What a constraint set is attached to | One per organisation; per-person variation is contract terms, held separately | 2026-08-30 |
 | Q11 | Who approves a swap | A Scheduler; the colleague is informed | 2026-08-30 |
+| Q12 | What identity provider, and how an Actor is built from a real credential | None: HrSched holds its own accounts and signs its own access tokens. An `Actor` is built from the stored account and session the token names, on every request — [ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-028](../ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md), [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md) | 2026-09-21 |
 | Q18 | Whether an employee sees their own roster, and what "their own" means | Yes: the assignments naming them, from published rosters only. A narrower capability beside R12, not a widening of it | 2026-09-01 |
 
-Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21; building swaps raised Q22; giving the system a database raised Q23 and Q24; and putting an employee's side of swaps into the user interface raised Q25.
+Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21; building swaps raised Q22; giving the system a database raised Q23 and Q24; putting an employee's side of swaps into the user interface raised Q25; and authentication raised
+Q27 to Q32.

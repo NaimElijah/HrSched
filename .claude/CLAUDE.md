@@ -4,18 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## State of the repository
 
-The domain is modelled and works end to end: define people and shifts, configure working-time
-rules, generate a roster, publish it. Three contexts — `scheduling`, `workforce`, `access` —
-plus a `shared` kernel, with the hexagon and the context boundaries enforced by build-failing
-tests.
+The domain is modelled and works end to end: sign in, define people and shifts, configure
+working-time rules, generate a roster, publish it. Four contexts — `scheduling`, `workforce`,
+`access`, `notifications` — plus a `shared` kernel, with the hexagon and the context boundaries
+enforced by build-failing tests.
 
-Three things are **not** what they look like:
+**Authentication is real, and the header placeholder is gone.** HrSched holds its own accounts and
+signs its own tokens (ADR-011, ADR-028). Every controller takes the acting identity from
+`@AuthenticationPrincipal Actor`, and the organisation from that actor through each adapter's
+`actingIn` helper — never from a header, a path or a body (ADR-031). `X-User`, `X-Role`,
+`X-Organisation` and `X-Employee` are read by nothing; do not reintroduce them.
+**`SecurityConfiguration` ends in `denyAll`** (ADR-032), so a new route is unreachable until it is
+named there — that second edit is the decision about who may call it, not a formality. The URL
+rules are the coarse outer line; the use case behind each route is what decides.
+
+Two things are **not** what they look like:
 
 - **Generation is greedy, not optimised.** Automatic generation is the point of the product and
   a real implementation is a solver; `GreedyRosterGenerator` exists to prove the port (ADR-005).
   It ignores fairness, preferences and disruption entirely.
-- **There is no authentication.** The acting identity comes from request headers, so any caller
-  can claim any role in any organisation. It is a placeholder to be deleted, not extended.
 - **The audit trail is a log stream, not a trail.** Every change and refusal is recorded through
   an `AuditTrail` driven port, but nothing is stored and nothing is queryable: the record lives
   only wherever stdout is collected. Whether an Admin may read it, and for how long it is kept,
@@ -102,7 +109,8 @@ dependency rule — see ADR-003 and ADR-006. Every context repeats the same shap
   touching it would fail the cross-context rule.
 
 Contexts today: `scheduling` (shifts, rosters, constraints, generation), `workforce` (employees,
-qualifications, availability), `access` (organisations). At the root beside them sit
+qualifications, availability), `access` (organisations, accounts, sessions and tokens),
+`notifications` (what somebody has been told). At the root beside them sit
 `configuration/` and `HrSchedApplication`.
 
 A context may reference another context's `application.port.in` package and **nothing else**
@@ -113,9 +121,11 @@ names another context.
 `frontend/` is a React 19 SPA built by Vite (ADR-013):
 
 - `src/api/` — the typed client. `client.ts` is the **only** module that calls `fetch` or names a
-  header; `problem.ts` validates the error body rather than casting it; `scheduling.ts`, `workforce.ts`,
-  `access.ts` and `notifications.ts` mirror the backend DTOs, one module per context.
-- `src/identity/` — the acting-as placeholder, deleted with the backend's when ADR-011 lands.
+  header, and the bearer token is the only identity it sends; `problem.ts` validates the error body
+  rather than casting it; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts`
+  mirror the backend DTOs, one module per context.
+- `src/auth/` — `SessionProvider` and the sign-in, change-password and session-bar screens. It
+  replaced `src/identity/`, the acting-as placeholder, when sign-in landed (ADR-011, ADR-028).
 - `src/pages/` — one screen per capability. Pages never call `fetch` directly.
 
 Also inside `backend/`: `src/main/resources/db/migration/` holds the Flyway migrations — the only
@@ -157,8 +167,8 @@ Outside `backend/`:
 - **`@ParameterizedTest` is an accepted idiom, for data-only rows.** `junit-jupiter-params` comes
   with the Boot BOM; no dependency to add. Use it where the rows differ only in *data* and the
   assertion sentence is identical — null-check batteries, blank-name batteries, the identity
-  records, exception-type lists, and *parsing* a role or header string — `ActorFromHeadersTest`
-  tables its role strings and is right to. Do **not** use it for a permission or tenancy
+  records, exception-type lists, and *parsing* a value out of a request. Do **not** use it for a
+  permission or tenancy
   **decision**: who may do what, and who may see whose data. A parameterised isolation test reads
   as a table and hides which row is the one whose failure is a security incident. Nor for rows
   that differ in setup, or whose comment explains *why* — the comment then belongs to no row. If a
@@ -188,12 +198,15 @@ Outside `backend/`:
   `@SpringBootTest` while working in production; `@AutoConfigureMetrics` opts back in, at the cost
   of a second Spring context. `MetricsHttpTest` is the only test here that does not share the one
   the others use.
-- **When adding an architecture rule, watch it fail first.** All nine rules here have been
+- **When adding an architecture rule, watch it fail first.** All ten rules here have been
   observed failing on a deliberately introduced violation, then reverted. A rule that has only
   ever been green proves nothing — one rule was deleted after it turned out it could no longer
   fail, being fully subsumed by what is now
   `contexts_touch_only_published_ports_of_other_contexts`. The same applies to a test: a fix
   whose test was never seen failing has not been shown to fix anything.
+- **Who is acting is an argument, never an ambient read.** `SecurityContextHolder` is forbidden
+  outside `configuration.security`, where one Spring callback has no parameter to take the caller
+  from. A use case takes an `Actor`; a controller receives one through `@AuthenticationPrincipal`.
 - **Adding a use case:** pick the context → domain concept → port in/out → service (no
   annotation) → register in `UseCaseConfiguration` → adapters → tests. Forgetting the bean
   registration fails at startup, not at compile time.

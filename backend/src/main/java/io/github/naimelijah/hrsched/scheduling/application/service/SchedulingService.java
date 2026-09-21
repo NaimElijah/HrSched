@@ -401,9 +401,6 @@ public class SchedulingService
   }
 
   private void authorise(Actor actor, OrganisationId organisation, Set<Role> permitted) {
-    actor.requireAccessTo(organisation);
-    if (actor instanceof TenantActor tenant) {
-      tenant.requireRoleIn(permitted);
-    }
+    actor.requireAccessTo(organisation).requireRoleIn(permitted);
   }
 }

@@ -1,10 +1,10 @@
 package io.github.naimelijah.hrsched.workforce.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
+import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -90,13 +90,14 @@ class QualificationServiceTest {
         .isInstanceOf(CrossTenantAccessException.class);
   }
 
+  /** Flipped by ADR-030: the operator administers the register of tenants, never a tenant. */
   @Test
-  void GivenAnOperator_WhenDefiningAQualification_ThenItIsPermitted() {
-    assertThatCode(
+  void GivenTheOperator_WhenDefiningAQualification_ThenItIsRefused() {
+    assertThatThrownBy(
             () ->
                 service.defineQualification(
                     new Operator(UserId.newId()), new DefineQualificationCommand(ACME, "Forklift")))
-        .doesNotThrowAnyException();
+        .isInstanceOf(NotATenantMemberException.class);
   }
 
   @Test
@@ -150,11 +151,13 @@ class QualificationServiceTest {
         .isInstanceOf(CrossTenantAccessException.class);
   }
 
+  /** Flipped by ADR-030. */
   @Test
-  void GivenAnOperator_WhenListingAnotherOrganisation_ThenItIsPermitted() {
+  void GivenTheOperator_WhenListingQualifications_ThenItIsRefused() {
     service.defineQualification(admin(ACME), new DefineQualificationCommand(ACME, "Forklift"));
 
-    assertThat(service.findQualifications(new Operator(UserId.newId()), ACME)).hasSize(1);
+    assertThatThrownBy(() -> service.findQualifications(new Operator(UserId.newId()), ACME))
+        .isInstanceOf(NotATenantMemberException.class);
   }
 
   @Test
@@ -245,5 +248,16 @@ class QualificationServiceTest {
         .isInstanceOf(InvalidQualificationNameException.class);
 
     assertThat(audit.changes()).isEmpty();
+  }
+
+  // --- ADR-030: the platform operator is refused by every tenant use case -------------------
+
+  @Test
+  void GivenTheOperator_WhenReadingAQualification_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.findQualification(
+                    new Operator(UserId.newId()), ACME, QualificationId.newId()))
+        .isInstanceOf(NotATenantMemberException.class);
   }
 }

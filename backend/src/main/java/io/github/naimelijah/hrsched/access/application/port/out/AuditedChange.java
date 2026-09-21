@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.access.application.port.out;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -17,13 +18,19 @@ import java.util.UUID;
  * not personal data, but the record has nowhere to put a name and does not acquire one by
  * exception.
  *
- * @param organisation the organisation that was changed, which for an onboarding is the new one
+ * <p>The organisation is optional because one change in this context belongs to no tenant: the
+ * platform operator is a member of none, which is the whole point of it. Empty means "no
+ * organisation", never "not recorded", and the adapter leaves the field out entirely rather than
+ * writing a null a query could not tell apart from a missing one.
+ *
+ * @param organisation the organisation that was changed, which for an onboarding is the new one,
+ *     and which is empty for a change to the platform operator itself
  * @param actor who made the change
  * @param change what kind of change it was
  * @param subject the identifier of what changed, which today is always the organisation itself
  */
 public record AuditedChange(
-    OrganisationId organisation, UserId actor, AccessChange change, UUID subject) {
+    Optional<OrganisationId> organisation, UserId actor, AccessChange change, UUID subject) {
 
   public AuditedChange {
     Objects.requireNonNull(organisation, "organisation must not be null");

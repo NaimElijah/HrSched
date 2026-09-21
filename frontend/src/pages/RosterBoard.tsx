@@ -1,5 +1,4 @@
 import { useId, useState } from 'react';
-import { identityKey } from '../api/client';
 import { scheduling } from '../api/scheduling';
 import type { Roster, Shift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
@@ -7,7 +6,7 @@ import type { Employee } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { dayLabel, localDate, shiftLabel, timeLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
-import { useActingAs } from '../identity/ActingAs';
+import { useSessionKey } from '../auth/SessionProvider';
 
 /** One local day of the board, and the shifts that start on it, earliest first. */
 interface Day {
@@ -54,32 +53,23 @@ export function RosterBoard({
   /** Called once a change is stored, so whatever lists rosters can catch up. */
   onChanged: () => void;
 }) {
-  const { identity } = useActingAs();
+  const sessionKey = useSessionKey();
   const heading = useId();
   const [changed, setChanged] = useState<Roster | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
   // One change at a time: two racing each other could leave the board showing the older answer.
   const [changing, setChanging] = useState(false);
 
-  const loaded = useAsync(
-    () => scheduling.findRoster(identity, id),
-    `${identityKey(identity)}|${id}`,
-  );
+  const loaded = useAsync(() => scheduling.findRoster(id), `${sessionKey}|${id}`);
   const roster = changed ?? loaded.value;
 
   // Over the roster's own period, not the planning span: a roster opened while the span points
   // elsewhere would otherwise resolve none of its shifts.
   const shifts = useAsync(
-    () =>
-      roster === null
-        ? Promise.resolve([])
-        : scheduling.findShifts(identity, roster.start, roster.end),
-    `${identityKey(identity)}|${roster?.start ?? ''}|${roster?.end ?? ''}`,
+    () => (roster === null ? Promise.resolve([]) : scheduling.findShifts(roster.start, roster.end)),
+    `${sessionKey}|${roster?.start ?? ''}|${roster?.end ?? ''}`,
   );
-  const qualifications = useAsync(
-    () => workforce.findQualifications(identity),
-    identityKey(identity),
-  );
+  const qualifications = useAsync(() => workforce.findQualifications(), sessionKey);
 
   const qualificationNames = new Map(
     (qualifications.value ?? []).map((qualification) => [qualification.id, qualification.name]),
@@ -167,10 +157,10 @@ export function RosterBoard({
                     nameOf={nameOf}
                     busy={changing}
                     onAssign={(employee) =>
-                      change(() => scheduling.assign(identity, roster.id, shift.id, employee))
+                      change(() => scheduling.assign(roster.id, shift.id, employee))
                     }
                     onRemove={(employee) =>
-                      change(() => scheduling.unassign(identity, roster.id, shift.id, employee))
+                      change(() => scheduling.unassign(roster.id, shift.id, employee))
                     }
                   />
                 ))}

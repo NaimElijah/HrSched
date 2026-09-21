@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
+import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -45,11 +45,9 @@ class TraceIdHttpTest {
     String body =
         mockMvc
             .perform(
-                post("/api/organisations")
-                    .header("X-User", UUID.randomUUID().toString())
-                    .header("X-Role", "OPERATOR")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content("{\"name\":\"Organisation %s\"}".formatted(UUID.randomUUID())))
+                TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
+                    .content(
+                        TestTenants.onboarding("Organisation %s".formatted(UUID.randomUUID()))))
             .andExpect(status().isCreated())
             .andReturn()
             .getResponse()
@@ -57,12 +55,9 @@ class TraceIdHttpTest {
     organisation = JsonPath.read(body, "$.id");
   }
 
-  private MockHttpServletRequestBuilder as(MockHttpServletRequestBuilder request, String role) {
-    return request
-        .header("X-Organisation", organisation)
-        .header("X-User", UUID.randomUUID().toString())
-        .header("X-Role", role)
-        .contentType(MediaType.APPLICATION_JSON);
+  private MockHttpServletRequestBuilder as(MockHttpServletRequestBuilder request, String role)
+      throws Exception {
+    return TestTenants.as(mockMvc, request, organisation, role);
   }
 
   private String traceIdOf(MockHttpServletRequestBuilder request, int expectedStatus)
@@ -93,7 +88,7 @@ class TraceIdHttpTest {
   @Test
   void GivenAMalformedRequest_WhenItIsRejectedAtTheBoundary_ThenTheResponseCarriesATraceId()
       throws Exception {
-    assertThat(traceIdOf(as(get("/api/qualifications"), "SUPERVISOR"), 400)).isNotBlank();
+    assertThat(traceIdOf(as(get("/api/rosters/not-a-uuid"), "SCHEDULER"), 400)).isNotBlank();
   }
 
   @Test

@@ -8,8 +8,8 @@ package io.github.naimelijah.hrsched.workforce.adapter.in.web;
  * IllegalArgumentException} escape, because those also arise from genuine defects. Translating them
  * wholesale into 400 would report our own bugs to the caller as their mistake.
  *
- * <p>Deliberately duplicated per web adapter, for the same reason {@link ActorFromHeaders} is:
- * sharing it would create a dependency between the plumbing of two contexts.
+ * <p>Deliberately duplicated per web adapter: it is adapter plumbing, and sharing it would create a
+ * dependency between the plumbing of two contexts.
  */
 class MalformedRequestException extends RuntimeException {
 

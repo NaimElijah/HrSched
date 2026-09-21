@@ -3,12 +3,11 @@ import { scheduling } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
-import { identityKey } from '../api/client';
-import { useActingAs } from '../identity/ActingAs';
+import { useSessionKey } from '../auth/SessionProvider';
 
 /** Scheduler: what needs covering, over an explicit span. */
 export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
-  const { identity } = useActingAs();
+  const sessionKey = useSessionKey();
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [headcount, setHeadcount] = useState('1');
@@ -16,13 +15,10 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
   const [failure, setFailure] = useState<unknown>(null);
 
   const shifts = useAsync(
-    () => scheduling.findShifts(identity, span.from, span.to),
-    `${identityKey(identity)}|${span.from}|${span.to}`,
+    () => scheduling.findShifts(span.from, span.to),
+    `${sessionKey}|${span.from}|${span.to}`,
   );
-  const qualifications = useAsync(
-    () => workforce.findQualifications(identity),
-    identityKey(identity),
-  );
+  const qualifications = useAsync(() => workforce.findQualifications(), sessionKey);
   const qualificationNames = new Map(
     (qualifications.value ?? []).map((qualification) => [qualification.id, qualification.name]),
   );
@@ -37,7 +33,7 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
       return;
     }
     try {
-      await scheduling.defineShift(identity, {
+      await scheduling.defineShift({
         start: from.toISOString(),
         end: to.toISOString(),
         requiredHeadcount: Number(headcount),

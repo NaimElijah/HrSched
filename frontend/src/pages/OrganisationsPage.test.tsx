@@ -1,69 +1,53 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ActingAsProvider } from '../identity/ActingAs';
-import { callsTo, routeTo, type Answer } from '../test-support/routeTo';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OrganisationsPage } from './OrganisationsPage';
+import { callsTo, routeTo } from '../test-support/routeTo';
+import type { Answer } from '../test-support/routeTo';
+import { A_TENANT, SignedIn, THE_OPERATOR } from '../test-support/session';
+import type { Session } from '../api/session';
 
 /**
- * The platform Operator's screen (F13): list, onboard and read organisations.
+ * The register of tenants, which is the whole of what the operator administers.
  *
- * Every request goes out as the identity the bar claims, unchanged. A tenant role is therefore
- * refused the listing, and the page shows that refusal rather than hiding the screen: which role may
- * administer the platform is the backend's rule, not the tab bar's.
+ * There is nothing here about acting inside an organisation any more. That used to be a button, and
+ * it only ever worked because the backend believed whatever identity headers it was sent; the
+ * operator is now refused everything inside every tenant (ADR-030), so the button would offer
+ * something that could not happen.
+ *
+ * A tenant role reaching this screen is shown the backend's refusal rather than a hidden tab: which
+ * identity administers the platform is the backend's rule (ADR-019), and a screen that hid itself
+ * would be the UI claiming to enforce it.
  */
 
 const ACME = { id: '22222222-2222-4222-8222-222222222222', name: 'Acme' };
 const BETA = { id: '55555555-5555-4555-8555-555555555555', name: 'Beta' };
-const EMPLOYEE = '11111111-1111-4111-8111-111111111111';
 
-function actingAs(role: string, employee: string | null = null) {
-  window.localStorage.setItem(
-    'hrsched.acting-as',
-    JSON.stringify({
-      organisation: ACME.id,
-      user: '33333333-3333-4333-8333-333333333333',
-      role,
-      employee,
-    }),
-  );
-}
-
-function stored(): { organisation?: string; employee?: string | null } {
-  return JSON.parse(window.localStorage.getItem('hrsched.acting-as') ?? '{}') as {
-    organisation?: string;
-    employee?: string | null;
-  };
-}
+/** Invented for these tests. Nothing here is a suggestion about what a real one should look like. */
+const AN_ADMIN = 'first-admin@example.com';
+const A_PASSWORD = 'an invented temporary password';
 
 function thePlatform(overrides: Record<string, Answer> = {}) {
   return routeTo({
     '/api/organisations': { status: 200, body: [ACME, BETA] },
-    [`/api/organisations/${ACME.id}`]: { status: 200, body: ACME },
     ...overrides,
   });
 }
 
-function show() {
+function show(session: Session = THE_OPERATOR) {
   render(
-    <ActingAsProvider>
+    <SignedIn session={session}>
       <OrganisationsPage />
-    </ActingAsProvider>,
+    </SignedIn>,
   );
 }
 
-beforeEach(() => {
-  window.localStorage.clear();
-});
-
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 describe('reading the platform', () => {
   it('GivenTheOperator_WhenOpened_ThenEveryOrganisationIsListed', async () => {
-    actingAs('OPERATOR');
     thePlatform();
 
     show();
@@ -72,17 +56,7 @@ describe('reading the platform', () => {
     expect(screen.getByRole('cell', { name: 'Acme' })).toBeInTheDocument();
   });
 
-  it('GivenTheActingOrganisation_WhenOpened_ThenItsNameIsReadBack', async () => {
-    actingAs('ADMIN');
-    thePlatform({ '/api/organisations': { status: 403, body: {} } });
-
-    show();
-
-    expect(await screen.findByText('You are acting in Acme.')).toBeInTheDocument();
-  });
-
   it('GivenATenantRole_WhenOpened_ThenTheOperatorRefusalIsShown', async () => {
-    actingAs('ADMIN');
     thePlatform({
       '/api/organisations': {
         status: 403,
@@ -90,79 +64,140 @@ describe('reading the platform', () => {
       },
     });
 
-    show();
+    show(A_TENANT);
 
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
     );
   });
 
-  /** An organisation claim nobody onboarded is refused at the boundary, listing included. */
-  it('GivenAnOrganisationClaimNobodyOnboarded_WhenOpened_ThenTheRefusalIsShown', async () => {
-    actingAs('OPERATOR');
+  it('GivenTheSessionHasEnded_WhenOpened_ThenTheRefusalSaysSo', async () => {
     thePlatform({
-      '/api/organisations': { status: 404, body: { detail: 'No such resource.' } },
-      [`/api/organisations/${ACME.id}`]: { status: 404, body: { detail: 'No such resource.' } },
+      '/api/organisations': { status: 401, body: { detail: 'A valid access token is required.' } },
     });
 
     show();
 
     await waitFor(() =>
-      expect(screen.getAllByRole('alert')[0]).toHaveTextContent(
-        'Nothing here for this organisation.',
-      ),
+      expect(screen.getByRole('alert')).toHaveTextContent('Your session has ended.'),
     );
   });
 });
 
 describe('onboarding', () => {
-  /** Not overridden to OPERATOR, unlike the bar's bootstrap: this screen claims nothing extra. */
-  it('GivenATypedName_WhenOnboarding_ThenItIsSentAsTheActingIdentity', async () => {
-    actingAs('OPERATOR');
+  async function fillIn(organisation: string, admin: string, password: string) {
+    await userEvent.type(await screen.findByLabelText('Name'), organisation);
+    await userEvent.type(screen.getByLabelText('First admin sign-in name'), admin);
+    await userEvent.type(screen.getByLabelText('Temporary password'), password);
+  }
+
+  it('GivenANameAndAFirstAdmin_WhenOnboarding_ThenBothAreSentAsTheSignedInOperator', async () => {
     const stub = thePlatform({ 'POST /api/organisations': { status: 201, body: BETA } });
+    show();
+
+    await fillIn('Beta', AN_ADMIN, A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+
+    await waitFor(() => expect(callsTo(stub, 'POST', '/api/organisations')).toHaveLength(1));
+    const init = callsTo(stub, 'POST', '/api/organisations')[0]?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      name: 'Beta',
+      firstAdmin: { signInName: AN_ADMIN, temporaryPassword: A_PASSWORD },
+    });
+    // Who is acting is the token's business; nothing about it is in the request otherwise.
+    expect((init?.headers as Headers).get('X-Role')).toBeNull();
+    expect((init?.headers as Headers).get('X-Organisation')).toBeNull();
+    expect(await screen.findByText('Onboarded Beta.')).toHaveAttribute('role', 'status');
+  });
+
+  it('GivenABlankName_WhenOnboarding_ThenNothingIsSent', async () => {
+    const stub = thePlatform();
+    show();
+
+    await userEvent.type(await screen.findByLabelText('First admin sign-in name'), AN_ADMIN);
+    await userEvent.type(screen.getByLabelText('Temporary password'), A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+
+    expect(callsTo(stub, 'POST', '/api/organisations')).toHaveLength(0);
+  });
+
+  /**
+   * An organisation nobody can administer is not usable, and the operator cannot act inside one to
+   * add somebody later (ADR-030) — so the backend refuses onboarding without a first Admin, and the
+   * form must not be able to ask for it.
+   */
+  it('GivenNoFirstAdmin_WhenOnboarding_ThenNothingIsSent', async () => {
+    const stub = thePlatform();
     show();
 
     await userEvent.type(await screen.findByLabelText('Name'), 'Beta');
     await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
 
-    await waitFor(() => expect(callsTo(stub, 'POST', '/api/organisations')).toHaveLength(1));
-    const init = callsTo(stub, 'POST', '/api/organisations')[0]?.[1];
-    expect(JSON.parse(String(init?.body))).toEqual({ name: 'Beta' });
-    expect((init?.headers as Headers).get('X-Organisation')).toBe(ACME.id);
-    expect((init?.headers as Headers).get('X-Role')).toBe('OPERATOR');
-    expect(await screen.findByText('Onboarded Beta.')).toHaveAttribute('role', 'status');
+    expect(callsTo(stub, 'POST', '/api/organisations')).toHaveLength(0);
   });
 
-  it('GivenABlankName_WhenOnboarding_ThenNothingIsSent', async () => {
-    actingAs('OPERATOR');
+  it('GivenNoTemporaryPassword_WhenOnboarding_ThenNothingIsSent', async () => {
     const stub = thePlatform();
     show();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Onboard organisation' }));
+    await userEvent.type(await screen.findByLabelText('Name'), 'Beta');
+    await userEvent.type(screen.getByLabelText('First admin sign-in name'), AN_ADMIN);
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
 
     expect(callsTo(stub, 'POST', '/api/organisations')).toHaveLength(0);
   });
-});
 
-describe('acting in an organisation', () => {
-  it('GivenAListedOrganisation_WhenActingInIt_ThenTheIdentitySwitchesAndTheEmployeeLinkClears', async () => {
-    actingAs('SCHEDULER', EMPLOYEE);
+  /** Typed, never suggested, and never left on the screen afterwards. */
+  it('GivenTheForm_WhenShown_ThenTheTemporaryPasswordIsEmptyAndMasked', async () => {
     thePlatform();
     show();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Act in Beta' }));
-
-    await waitFor(() => expect(stored().organisation).toBe(BETA.id));
-    expect(stored().employee).toBeNull();
+    const field = await screen.findByLabelText('Temporary password');
+    expect(field).toHaveAttribute('type', 'password');
+    expect(field).toHaveValue('');
   });
 
-  it('GivenTheOrganisationAlreadyActedIn_WhenListed_ThenItOffersNoSwitch', async () => {
-    actingAs('OPERATOR');
+  it('GivenAnOnboarding_WhenItSucceeds_ThenTheTemporaryPasswordIsCleared', async () => {
+    thePlatform({ 'POST /api/organisations': { status: 201, body: BETA } });
+    show();
+
+    await fillIn('Beta', AN_ADMIN, A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+
+    await screen.findByText('Onboarded Beta.');
+    expect(screen.getByLabelText('Temporary password')).toHaveValue('');
+    expect(screen.getByLabelText('First admin sign-in name')).toHaveValue('');
+  });
+
+  it('GivenATakenSignInName_WhenOnboarding_ThenTheRefusalIsShown', async () => {
+    thePlatform({
+      'POST /api/organisations': {
+        status: 409,
+        body: { detail: 'That sign-in name is already in use.' },
+      },
+    });
+    show();
+
+    await fillIn('Beta', AN_ADMIN, A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('That sign-in name is already in use.'),
+    );
+  });
+});
+
+describe('what is no longer offered', () => {
+  /**
+   * The operator belongs to no organisation and is refused inside every one of them, so offering
+   * to act in one would be offering something the backend would refuse (ADR-030).
+   */
+  it('GivenTheOperator_WhenTheListIsShown_ThenThereIsNoWayToActInsideAnOrganisation', async () => {
     thePlatform();
 
     show();
 
-    await screen.findByRole('button', { name: 'Act in Beta' });
-    expect(screen.queryByRole('button', { name: 'Act in Acme' })).not.toBeInTheDocument();
+    await screen.findByRole('cell', { name: 'Beta' });
+    expect(screen.queryByRole('button', { name: /Act in/ })).not.toBeInTheDocument();
   });
 });

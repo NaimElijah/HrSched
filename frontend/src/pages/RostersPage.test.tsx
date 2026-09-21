@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Employee } from '../api/workforce';
 import { dayLabel, timeLabel } from '../components/localDates';
-import { ActingAsProvider, useActingAs } from '../identity/ActingAs';
+import { A_TENANT, SignedIn } from '../test-support/session';
 import { callsTo, routeTo, type Answer } from '../test-support/routeTo';
 import { RostersPage } from './RostersPage';
 
@@ -70,19 +70,9 @@ function aDraft(overrides: Record<string, Answer> = {}) {
 /** The people come from the shell, as App passes them, so the page itself never asks. */
 function renderPage(people: readonly Employee[] = [ADA, GRACE]) {
   return render(
-    <ActingAsProvider>
+    <SignedIn session={A_TENANT}>
       <RostersPage span={SPAN} people={people} />
-    </ActingAsProvider>,
-  );
-}
-
-/** Changes the acting role from inside the provider, as the identity bar does. */
-function BecomeAnEmployee() {
-  const { setRole } = useActingAs();
-  return (
-    <button type="button" onClick={() => setRole('EMPLOYEE')}>
-      Become an employee
-    </button>
+    </SignedIn>,
   );
 }
 
@@ -373,13 +363,12 @@ describe('the board of a draft', () => {
    * An EMPLOYEE may not read a whole roster (R12). A board that kept what it last showed after the
    * identity changed would put every assignee, and the controls, in front of exactly that role.
    */
-  it('GivenAnEditedBoard_WhenTheActingIdentityChanges_ThenWhatItShowedIsNotKept', async () => {
+  it('GivenAnEditedBoard_WhenTheSessionChanges_ThenWhatItShowedIsNotKept', async () => {
     aDraft({ 'POST /api/rosters/roster-1/assignments': { status: 200, body: WITH_GRACE } });
-    render(
-      <ActingAsProvider>
-        <BecomeAnEmployee />
+    const { rerender } = render(
+      <SignedIn session={A_TENANT}>
         <RostersPage span={SPAN} people={[ADA, GRACE]} />
-      </ActingAsProvider>,
+      </SignedIn>,
     );
     const board = await openBoard();
     await assignGrace(board);
@@ -391,7 +380,17 @@ describe('the board of a draft', () => {
       '/api/employees': refused,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Become an employee' }));
+    rerender(
+      <SignedIn
+        session={{
+          ...A_TENANT,
+          userId: '99999999-9999-4999-8999-999999999999',
+          role: 'EMPLOYEE',
+        }}
+      >
+        <RostersPage span={SPAN} people={[ADA, GRACE]} />
+      </SignedIn>,
+    );
 
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /^Remove/ })).not.toBeInTheDocument(),
