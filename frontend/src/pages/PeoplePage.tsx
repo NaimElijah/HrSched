@@ -31,7 +31,7 @@ export function PeoplePage() {
       <h2>People</h2>
       <p className="hint">
         Listing people returns their unavailability, which is personal data, so it takes an Admin or
-        a Scheduler. Switch to EMPLOYEE above and this list becomes a 403.
+        a Scheduler. An account holding the Employee role is refused this list.
       </p>
 
       <form

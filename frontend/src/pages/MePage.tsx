@@ -21,8 +21,9 @@ import { Inbox } from './Inbox';
  * colleague by their employee identifier, because an employee may not list colleagues and so has no
  * names to choose from (Q25). Asking decides nothing: a Scheduler answers (ADR-022).
  *
- * Acting on your own record requires the acting identity to carry your employee link (ADR-012),
- * which is what the "acting as employee" control above sets.
+ * Acting on your own record requires the signed-in account to carry an employee link (ADR-012).
+ * An Admin sets that link when they create the account; an account without one can sign in and do
+ * its job, but has no record of its own to show.
  */
 export function MePage({
   span,
@@ -127,9 +128,9 @@ export function MePage({
       <section>
         <h2>Me</h2>
         <p className="hint">
-          Choose who you are in <strong>acting as employee</strong> above. A user and an employee
-          are different identities on purpose, so the link has to be stated — without it the backend
-          cannot tell that you are the subject of your own record.
+          Your account is not linked to a personnel record, so there is nothing here that is yours.
+          An account and an employee are different identities on purpose, so the link has to be
+          stated rather than guessed — ask an Admin to set it.
         </p>
       </section>
     );

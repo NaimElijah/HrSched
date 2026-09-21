@@ -120,7 +120,7 @@ describe('without an employee link', () => {
 
     show();
 
-    expect(screen.getByText(/acting as employee/i)).toBeInTheDocument();
+    expect(screen.getByText(/not linked to a personnel record/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'I cannot work this' })).not.toBeInTheDocument();
   });
 

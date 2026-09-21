@@ -247,7 +247,9 @@ describe('deciding', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /^Approve/ }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Already decided.');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That swap request has already been decided.',
+    );
   });
 
   it('GivenAnEmployeeRole_WhenApproving_ThenTheRoleRefusalIsShown', async () => {
