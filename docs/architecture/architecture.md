@@ -155,8 +155,21 @@ A request carrying an invalid token is refused on every route, including the one
 require one — that is the bearer filter's own behaviour, and why a client must send no token rather
 than a stale one.
 
-What is left of the transition is the shape of `SecurityConfiguration` rather than its behaviour:
-it still ends in `permitAll`, so a route nobody wrote a rule for would be open.
+**The chain is closed: it ends in `denyAll`.** Every route this application serves is named by a
+rule, and anything else is refused — including a route somebody adds later and forgets to decide
+about. The rules are the coarse outer line; the use case behind each route is what actually decides
+([ADR-032](../ADRs/ADR-032-close-the-security-chain-by-default.md)).
+
+| Route | Who may reach it |
+| --- | --- |
+| `POST /api/auth/sign-in`, `/refresh`, `/sign-out` | anybody — authentication itself |
+| `/actuator/**` | anybody; what exists there is decided by the exposure list (ADR-017) |
+| `GET /api/auth/session`, `POST /api/auth/password` | any authenticated account, including one whose password change is still pending |
+| `POST`/`GET /api/organisations` | `OPERATOR` |
+| `GET /api/organisations/{id}` | any role; the use case decides whose |
+| `/api/accounts/**` | `ADMIN` |
+| `/api/employees/**`, `/api/qualifications/**`, `/api/shifts/**`, `/api/constraints`, `/api/rosters/**`, `/api/me/**`, `/api/swaps/**`, `/api/notifications/**` | any tenant role |
+| anything else | nobody |
 
 **A verified signature is not enough, and that is the point.** The decoder proves a token is one
 this service signed, for this service, unexpired, of type `at+jwt`, and naming both an account and

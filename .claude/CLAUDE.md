@@ -18,9 +18,10 @@ Three things are **not** what they look like:
   and signs its own tokens (ADR-011, ADR-028). Every controller takes the acting identity from
   `@AuthenticationPrincipal Actor`, and the organisation from that actor through each adapter's
   `actingIn` helper — never from a header, a path or a body (ADR-031). `X-User`, `X-Role`,
-  `X-Organisation` and `X-Employee` are read by nothing; do not reintroduce them. What is left is
-  the shape of `SecurityConfiguration`: it still ends in `permitAll`, so a route nobody wrote a
-  rule for would be open.
+  `X-Organisation` and `X-Employee` are read by nothing; do not reintroduce them.
+  **`SecurityConfiguration` ends in `denyAll`** (ADR-032), so a new route is unreachable until it
+  is named there — that second edit is the decision about who may call it, not a formality. The URL
+  rules are the coarse outer line; the use case behind each route is what decides.
 - **The audit trail is a log stream, not a trail.** Every change and refusal is recorded through
   an `AuditTrail` driven port, but nothing is stored and nothing is queryable: the record lives
   only wherever stdout is collected. Whether an Admin may read it, and for how long it is kept,
@@ -196,12 +197,15 @@ Outside `backend/`:
   `@SpringBootTest` while working in production; `@AutoConfigureMetrics` opts back in, at the cost
   of a second Spring context. `MetricsHttpTest` is the only test here that does not share the one
   the others use.
-- **When adding an architecture rule, watch it fail first.** All nine rules here have been
+- **When adding an architecture rule, watch it fail first.** All ten rules here have been
   observed failing on a deliberately introduced violation, then reverted. A rule that has only
   ever been green proves nothing — one rule was deleted after it turned out it could no longer
   fail, being fully subsumed by what is now
   `contexts_touch_only_published_ports_of_other_contexts`. The same applies to a test: a fix
   whose test was never seen failing has not been shown to fix anything.
+- **Who is acting is an argument, never an ambient read.** `SecurityContextHolder` is forbidden
+  outside `configuration.security`, where one Spring callback has no parameter to take the caller
+  from. A use case takes an `Actor`; a controller receives one through `@AuthenticationPrincipal`.
 - **Adding a use case:** pick the context → domain concept → port in/out → service (no
   annotation) → register in `UseCaseConfiguration` → adapters → tests. Forgetting the bean
   registration fails at startup, not at compile time.

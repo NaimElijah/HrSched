@@ -235,7 +235,6 @@ applicant tracking, and being the HR system of record.
 
 | # | Question | Owner | Blocks |
 | --- | --- | --- | --- |
-| Q12 | What identity provider, and how does an Actor get built from a real credential? | NaimElijah | Deleting the header placeholder; ADR-011 |
 | Q13 | How are the generator objectives weighted against one another? | NaimElijah | ADR-010, and introducing a solver |
 | Q14 | Over what reference period is a weekly maximum averaged? | NaimElijah | Whether constraint checking needs history beyond the roster |
 | Q15 | What are the non-goals? | NaimElijah | Deferred deliberately |
@@ -271,6 +270,8 @@ applicant tracking, and being the HR system of record.
 | Q10 | Emergency cover without an override | Supersede with a new compliant roster | 2026-08-30 |
 | Q8 | What a constraint set is attached to | One per organisation; per-person variation is contract terms, held separately | 2026-08-30 |
 | Q11 | Who approves a swap | A Scheduler; the colleague is informed | 2026-08-30 |
+| Q12 | What identity provider, and how an Actor is built from a real credential | None: HrSched holds its own accounts and signs its own access tokens. An `Actor` is built from the stored account and session the token names, on every request — [ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-028](../ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md), [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md) | 2026-09-21 |
 | Q18 | Whether an employee sees their own roster, and what "their own" means | Yes: the assignments naming them, from published rosters only. A narrower capability beside R12, not a widening of it | 2026-09-01 |
 
-Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21; building swaps raised Q22; giving the system a database raised Q23 and Q24; and putting an employee's side of swaps into the user interface raised Q25.
+Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21; building swaps raised Q22; giving the system a database raised Q23 and Q24; putting an employee's side of swaps into the user interface raised Q25; and authentication raised
+Q27 to Q32.

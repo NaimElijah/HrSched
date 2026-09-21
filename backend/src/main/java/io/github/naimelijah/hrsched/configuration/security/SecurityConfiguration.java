@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.configuration.security;
 
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -23,12 +24,20 @@ import org.springframework.security.web.access.AccessDeniedHandler;
  * 401, on every route, whether or not the route itself requires authentication — that is the bearer
  * filter's own behaviour, and it means a client must send no token rather than a stale one.
  *
- * <p><strong>Every route under {@code /api} now requires a token,</strong> and every controller
- * takes the acting identity from the account that token names. The four identity headers are gone
- * from the backend; nothing reads them, and a request that still sends them is answered as whoever
- * its token says it is. What is left of the transition is the shape of this method rather than its
- * behaviour: it still ends in {@code permitAll}, so a route nobody wrote a rule for would be open.
- * Closing that is the last step ADR-011 asks for.
+ * <p><strong>The chain is closed: it ends in {@code denyAll}.</strong> Every route this application
+ * serves is named by a rule above it, and anything else is refused — including a route somebody
+ * adds later and forgets to decide about. That is the whole point of ending this way: the failure
+ * mode of {@code permitAll} is silent, and a new endpoint open to the world looks exactly like one
+ * that was meant to be (ADR-032).
+ *
+ * <p>Every route under {@code /api} requires a token except the three that are authentication
+ * itself, and every controller takes the acting identity from the account that token names. The
+ * four identity headers are gone; nothing reads them, and a request that still sends them is
+ * answered as whoever its token says it is.
+ *
+ * <p>These rules are the <strong>coarse outer line</strong>, and the use case behind each route is
+ * what actually decides. Stating the fine-grained answer twice would mean two places to keep in
+ * step, and the one that is easy to forget is the one that fails open.
  *
  * <p>The decoder, the converter and the two refusal handlers are all injected <em>by type</em>.
  * Configuration may not name an adapter class (the architecture test fails on it), and that is not
@@ -50,6 +59,20 @@ import org.springframework.security.web.access.AccessDeniedHandler;
  */
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfiguration {
+
+  /** Authentication itself: the three acts somebody with no token has to be able to perform. */
+  private static final String[] AUTHENTICATING = {
+    "/api/auth/sign-in", "/api/auth/refresh", "/api/auth/sign-out"
+  };
+
+  /**
+   * Health, metrics and the rest of the operational surface.
+   *
+   * <p>Open, as ADR-017 decided: whatever is actually reachable here is decided by {@code
+   * management.endpoints.web.exposure.include}, and an endpoint that is not exposed answers 404
+   * rather than 403 — which tells a caller nothing, the same reasoning the tenant 404 rests on.
+   */
+  private static final String ACTUATOR = "/actuator/**";
 
   /**
    * Reading one's own session: the first of the two acts an account with a pending change may do.
@@ -138,6 +161,17 @@ public class SecurityConfiguration {
         .authorizeHttpRequests(
             requests ->
                 requests
+                    // The container's own dispatches rather than requests anybody made. Without
+                    // this, denyAll below turns every 500 into a 403 and hides the real failure.
+                    .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC)
+                    .permitAll()
+                    // Authentication itself. Signing in has no token by definition; refreshing and
+                    // signing out are carried by the refresh cookie, and are defended against
+                    // cross-site use by requiring a header no cross-site request can send.
+                    .requestMatchers(HttpMethod.POST, AUTHENTICATING)
+                    .permitAll()
+                    .requestMatchers(ACTUATOR)
+                    .permitAll()
                     // Reachable with a temporary password still pending: they are the two things
                     // somebody in that state has to be able to do.
                     .requestMatchers(HttpMethod.GET, SESSION)
@@ -167,8 +201,12 @@ public class SecurityConfiguration {
                     // chosen its own (ADR-029).
                     .requestMatchers(TENANT_ROUTES)
                     .hasAnyRole(EVERY_TENANT_ROLE)
+                    // Everything else is refused. A route nobody wrote a rule for is a route
+                    // nobody decided was safe, and the failure mode of the alternative is silent:
+                    // a new controller would be open to the world and no test would say so
+                    // (ADR-032).
                     .anyRequest()
-                    .permitAll())
+                    .denyAll())
         .build();
   }
 }

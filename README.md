@@ -308,8 +308,9 @@ flowchart LR
 These are not conventions — they are **build failures**. `HexagonalArchitectureTest` runs in
 `./mvnw verify` and fails when the domain imports Spring, when the application reaches into an
 adapter, when one context references another, when a context's own layers form a cycle, when
-anything prints to stdout, when a domain class logs, or when a meter or a span appears inward of an
-adapter.
+anything prints to stdout, when a domain class logs, when a meter or a span appears inward of an
+adapter, or when anything reads who is acting out of Spring Security's thread-local instead of
+taking it as an argument.
 
 Every rule has been observed failing on a deliberately introduced violation, then reverted —
 including the cross-context rule in both directions, since it *permits* something it used to
@@ -433,7 +434,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `TraceIdHttpTest` | Observability over HTTP | Every response carries a trace id, including the refusals — which are the ones a person has cause to report. |
 | `MetricsHttpTest` | Operations over HTTP | Both probes answer, the meters are published, and `loggers`, `env` and `heapdump` are **not** exposed. |
 | `SchedulingAuditLogTest`, `WorkforceAuditLogTest` | Driven adapters | Every audit field is an identifier and never a name, the message is a constant, and the counter is not tagged by tenant. |
-| `HexagonalArchitectureTest` | Whole codebase | **Nine** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, layer cycles, no printing, no logging in the domain, and no instrumentation inward of an adapter. |
+| `HexagonalArchitectureTest` | Whole codebase | **Ten** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, layer cycles, no printing, no logging in the domain, no instrumentation inward of an adapter, and no ambient read of who is acting. |
 | `HrSchedApplicationTests` | Spring context | The application starts. |
 
 Naming follows `Given<scenario>_When<action>_Then<result>`. Tests run against the public
@@ -540,9 +541,10 @@ blocked on the same missing environment.
 | [ADR-029](docs/ADRs/ADR-029-provision-accounts-from-the-top-down.md) | Accounts are created from the top down, with temporary passwords; the first operator comes from configuration | Nobody can sign themselves up, and there is no way back into an organisation from outside it when its last Admin is locked out — Q28 |
 | [ADR-030](docs/ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md) | The platform operator administers the register of tenants and is refused everything inside one | Support cannot look at a customer's data, which is the point and also the cost |
 | [ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md) | A request acts in the organisation its account belongs to; no request names one | Somebody working for two customers needs two accounts, and ADR-020's boundary filter was deleted rather than left unable to fire |
+| [ADR-032](docs/ADRs/ADR-032-close-the-security-chain-by-default.md) | The security chain ends in `denyAll`; every open route is named | Adding a route takes a second edit in a file its author may not have opened, which is the point |
 
 Still open and blocking: **ADR-010** (generation objectives). Authentication is settled — ADR-011
-and ADR-028 to ADR-031 are Accepted, and ADR-020 is superseded. See the [ADR index](docs/ADRs/).
+and ADR-028 to ADR-032 are Accepted, and ADR-020 is superseded. See the [ADR index](docs/ADRs/).
 
 ## Documentation
 
