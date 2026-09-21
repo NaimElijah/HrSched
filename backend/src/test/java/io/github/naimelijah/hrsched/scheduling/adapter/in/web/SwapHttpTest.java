@@ -53,7 +53,7 @@ class SwapHttpTest {
   private String addEmployee(String organisation, String name) throws Exception {
     return JsonPath.read(
         created(
-            as(post("/api/employees"), organisation, "ADMIN")
+            as(mockMvc, post("/api/employees"), organisation, "ADMIN")
                 .content("{\"name\":\"%s\"}".formatted(name))),
         "$.id");
   }
@@ -61,7 +61,7 @@ class SwapHttpTest {
   private String defineShift(String organisation, String start, String end) throws Exception {
     return JsonPath.read(
         created(
-            as(post("/api/shifts"), organisation, "SCHEDULER")
+            as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
                 .content(
                     "{\"start\":\"%s\",\"end\":\"%s\",\"requiredHeadcount\":1}"
                         .formatted(start, end))),
@@ -81,18 +81,19 @@ class SwapHttpTest {
     String roster =
         JsonPath.read(
             created(
-                as(post("/api/rosters"), organisation, "SCHEDULER")
+                as(mockMvc, post("/api/rosters"), organisation, "SCHEDULER")
                     .content(
                         "{\"start\":\"2026-12-07T00:00:00Z\",\"end\":\"2026-12-08T00:00:00Z\"}")),
             "$.id");
     String shift = defineShift(organisation, "2026-12-07T08:00:00Z", "2026-12-07T16:00:00Z");
     mockMvc
         .perform(
-            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
                 .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, employee)))
         .andExpect(status().isOk());
     mockMvc
-        .perform(as(post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
         .andExpect(status().isOk());
     return new Rostered(roster, shift);
   }
@@ -118,7 +119,7 @@ class SwapHttpTest {
     String swap =
         JsonPath.read(
             created(
-                asThemself(post("/api/swaps"), organisation, ada)
+                asThemself(mockMvc, post("/api/swaps"), organisation, ada)
                     .content(
                         "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
                             .formatted(rostered.roster(), rostered.shift(), ada, grace))),
@@ -126,13 +127,13 @@ class SwapHttpTest {
     // Invented: ten hours a day, which Grace covering both eight-hour shifts cannot satisfy.
     mockMvc
         .perform(
-            as(put("/api/constraints"), organisation, "ADMIN")
+            as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
                 .content("{\"maximumDailyMinutes\":600}"))
         .andExpect(status().isOk());
     int before = rosterCount(organisation);
 
     mockMvc
-        .perform(as(post("/api/swaps/" + swap + "/approval"), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, post("/api/swaps/" + swap + "/approval"), organisation, "SCHEDULER"))
         .andExpect(status().isUnprocessableEntity());
 
     assertThat(rosterCount(organisation))
@@ -144,7 +145,7 @@ class SwapHttpTest {
     List<Object> rosters =
         JsonPath.read(
             mockMvc
-                .perform(as(get("/api/rosters"), organisation, "SCHEDULER"))
+                .perform(as(mockMvc, get("/api/rosters"), organisation, "SCHEDULER"))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -159,7 +160,7 @@ class SwapHttpTest {
     String roster =
         JsonPath.read(
             created(
-                as(post("/api/rosters"), organisation, "SCHEDULER")
+                as(mockMvc, post("/api/rosters"), organisation, "SCHEDULER")
                     .content(
                         "{\"start\":\"2026-12-07T00:00:00Z\",\"end\":\"2026-12-08T00:00:00Z\"}")),
             "$.id");
@@ -168,7 +169,8 @@ class SwapHttpTest {
     assign(organisation, roster, morning, first);
     assign(organisation, roster, afternoon, second);
     mockMvc
-        .perform(as(post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
         .andExpect(status().isOk());
     return new Rostered(roster, morning);
   }
@@ -177,7 +179,7 @@ class SwapHttpTest {
       throws Exception {
     mockMvc
         .perform(
-            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
                 .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, employee)))
         .andExpect(status().isOk());
   }
@@ -195,7 +197,7 @@ class SwapHttpTest {
     String swap =
         JsonPath.read(
             created(
-                asThemself(post("/api/swaps"), organisation, ada)
+                asThemself(mockMvc, post("/api/swaps"), organisation, ada)
                     .content(
                         "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
                             .formatted(roster, shift, ada, grace))),
@@ -203,7 +205,7 @@ class SwapHttpTest {
 
     // The colleague is informed rather than asked (Q11), and that is a thing they can go and read.
     mockMvc
-        .perform(asThemself(get("/api/notifications"), organisation, grace))
+        .perform(asThemself(mockMvc, get("/api/notifications"), organisation, grace))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1))
         .andExpect(jsonPath("$[0].kind").value("SWAP_REQUESTED"))
@@ -211,7 +213,7 @@ class SwapHttpTest {
         .andExpect(jsonPath("$[0].read").value(false));
 
     mockMvc
-        .perform(as(post("/api/swaps/" + swap + "/approval"), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, post("/api/swaps/" + swap + "/approval"), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("PUBLISHED"))
         .andExpect(jsonPath("$.assignments.length()").value(1))
@@ -220,20 +222,20 @@ class SwapHttpTest {
 
     // R6: the roster people were working to is superseded, not edited, and still says what it said.
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("SUPERSEDED"))
         .andExpect(jsonPath("$.assignments[0].employee").value(ada));
 
     mockMvc
-        .perform(asThemself(get("/api/notifications"), organisation, ada))
+        .perform(asThemself(mockMvc, get("/api/notifications"), organisation, ada))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].kind").value("SWAP_APPROVED"));
 
     // And the person who took it on now sees it as their own work (F5).
     mockMvc
         .perform(
-            asThemself(get("/api/me/schedule"), organisation, grace)
+            asThemself(mockMvc, get("/api/me/schedule"), organisation, grace)
                 .param("from", "2026-12-07T00:00:00Z")
                 .param("to", "2026-12-08T00:00:00Z"))
         .andExpect(status().isOk())
@@ -242,7 +244,7 @@ class SwapHttpTest {
 
     mockMvc
         .perform(
-            asThemself(get("/api/me/schedule"), organisation, ada)
+            asThemself(mockMvc, get("/api/me/schedule"), organisation, ada)
                 .param("from", "2026-12-07T00:00:00Z")
                 .param("to", "2026-12-08T00:00:00Z"))
         .andExpect(status().isOk())
@@ -261,22 +263,22 @@ class SwapHttpTest {
     String swap =
         JsonPath.read(
             created(
-                asThemself(post("/api/swaps"), organisation, ada)
+                asThemself(mockMvc, post("/api/swaps"), organisation, ada)
                     .content(
                         "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
                             .formatted(roster, shift, ada, grace))),
             "$.id");
 
     mockMvc
-        .perform(as(post("/api/swaps/" + swap + "/rejection"), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, post("/api/swaps/" + swap + "/rejection"), organisation, "SCHEDULER"))
         .andExpect(status().isNoContent());
 
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
         .andExpect(jsonPath("$.status").value("PUBLISHED"))
         .andExpect(jsonPath("$.assignments[0].employee").value(ada));
     mockMvc
-        .perform(asThemself(get("/api/notifications"), organisation, ada))
+        .perform(asThemself(mockMvc, get("/api/notifications"), organisation, ada))
         .andExpect(jsonPath("$[0].kind").value("SWAP_REJECTED"));
   }
 
@@ -291,17 +293,17 @@ class SwapHttpTest {
     String swap =
         JsonPath.read(
             created(
-                asThemself(post("/api/swaps"), organisation, ada)
+                asThemself(mockMvc, post("/api/swaps"), organisation, ada)
                     .content(
                         "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
                             .formatted(roster, shift, ada, grace))),
             "$.id");
     mockMvc
-        .perform(as(post("/api/swaps/" + swap + "/rejection"), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, post("/api/swaps/" + swap + "/rejection"), organisation, "SCHEDULER"))
         .andExpect(status().isNoContent());
 
     mockMvc
-        .perform(as(post("/api/swaps/" + swap + "/approval"), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, post("/api/swaps/" + swap + "/approval"), organisation, "SCHEDULER"))
         .andExpect(status().isConflict());
   }
 
@@ -316,14 +318,14 @@ class SwapHttpTest {
     String swap =
         JsonPath.read(
             created(
-                asThemself(post("/api/swaps"), organisation, ada)
+                asThemself(mockMvc, post("/api/swaps"), organisation, ada)
                     .content(
                         "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
                             .formatted(roster, shift, ada, grace))),
             "$.id");
 
     mockMvc
-        .perform(asThemself(post("/api/swaps/" + swap + "/approval"), organisation, grace))
+        .perform(asThemself(mockMvc, post("/api/swaps/" + swap + "/approval"), organisation, grace))
         .andExpect(status().isForbidden());
   }
 
@@ -338,7 +340,7 @@ class SwapHttpTest {
 
     mockMvc
         .perform(
-            asThemself(post("/api/swaps"), organisation, grace)
+            asThemself(mockMvc, post("/api/swaps"), organisation, grace)
                 .content(
                     "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
                         .formatted(roster, shift, ada, grace)))
@@ -355,7 +357,7 @@ class SwapHttpTest {
 
     mockMvc
         .perform(
-            asThemself(post("/api/swaps"), organisation, ada)
+            asThemself(mockMvc, post("/api/swaps"), organisation, ada)
                 .content(
                     "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\"}"
                         .formatted(roster, shift, ada)))
@@ -367,7 +369,7 @@ class SwapHttpTest {
     Rostered rostered = publishedFor(organisation, ada);
     return mockMvc
         .perform(
-            asThemself(post("/api/swaps"), organisation, ada)
+            asThemself(mockMvc, post("/api/swaps"), organisation, ada)
                 .content(
                     "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
                         .formatted(rostered.roster(), rostered.shift(), ada, grace)))
@@ -385,7 +387,7 @@ class SwapHttpTest {
     String location = requestedLocation(organisation, ada, grace);
 
     mockMvc
-        .perform(asThemself(get(location), organisation, ada))
+        .perform(asThemself(mockMvc, get(location), organisation, ada))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.requester").value(ada))
         .andExpect(jsonPath("$.counterparty").value(grace))
@@ -400,7 +402,7 @@ class SwapHttpTest {
     String location = requestedLocation(organisation, ada, grace);
 
     mockMvc
-        .perform(as(get(location), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, get(location), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.requester").value(ada));
   }
@@ -418,7 +420,7 @@ class SwapHttpTest {
     String location = requestedLocation(organisation, ada, grace);
 
     mockMvc
-        .perform(asThemself(get(location), organisation, edsger))
+        .perform(asThemself(mockMvc, get(location), organisation, edsger))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.detail").value("No such resource."));

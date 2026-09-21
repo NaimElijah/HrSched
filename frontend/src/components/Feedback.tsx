@@ -53,6 +53,14 @@ export function Failure({
       </div>
     );
   }
+  if (error instanceof ApiError && error.isUnauthenticated) {
+    return (
+      <div className="failure" role="alert">
+        <strong>Your session has ended.</strong> Sign in again.
+        <Reference of={error} />
+      </div>
+    );
+  }
   if (error instanceof ApiError && error.isForbidden) {
     return (
       <div className="failure" role="alert">
@@ -73,7 +81,13 @@ export function Failure({
   if (error instanceof ApiError && error.isConflict) {
     return (
       <div className="failure" role="alert">
-        <strong>Already decided.</strong> Somebody answered it first. {error.message}
+        {/*
+          The heading invents nothing, because a 409 is no longer only a race. It is also a
+          sign-in name somebody else holds, an employee who already has an account, and a change
+          that would leave an organisation with no Admin. The backend writes a specific, actionable
+          sentence for each, and that sentence is the message below.
+        */}
+        <strong>That cannot be done.</strong> {error.message}
         <Reference of={error} />
       </div>
     );

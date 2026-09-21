@@ -1,4 +1,4 @@
-import { api, path, type ActingIdentity } from './client';
+import { api, path } from './client';
 
 /** The kinds this build knows how to put into words. */
 export type NotificationKind = 'SWAP_REQUESTED' | 'SWAP_APPROVED' | 'SWAP_REJECTED';
@@ -27,9 +27,7 @@ export interface Notification {
  */
 export const notifications = {
   /** The caller's own inbox. Whose it is comes from the employee link, never from a parameter. */
-  findMine: (identity: ActingIdentity): Promise<Notification[]> =>
-    api.get<Notification[]>(identity, '/api/notifications'),
+  findMine: (): Promise<Notification[]> => api.get<Notification[]>('/api/notifications'),
 
-  markRead: (identity: ActingIdentity, id: string): Promise<void> =>
-    api.post<void>(identity, path`/api/notifications/${id}/read`),
+  markRead: (id: string): Promise<void> => api.post<void>(path`/api/notifications/${id}/read`),
 };

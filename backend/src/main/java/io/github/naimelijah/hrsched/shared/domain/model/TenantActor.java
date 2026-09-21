@@ -47,6 +47,7 @@ public record TenantActor(
     return employee.filter(subject::equals).isPresent();
   }
 
+  /** Exactly their own organisation, and no other. */
   @Override
   public boolean mayAccess(OrganisationId other) {
     return organisation.equals(other);

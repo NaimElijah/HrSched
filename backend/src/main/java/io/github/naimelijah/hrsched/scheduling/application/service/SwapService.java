@@ -124,9 +124,9 @@ public class SwapService implements RequestSwapsUseCase {
 
   @Override
   public List<PublishedSwapRequest> findSwapRequests(Actor actor, OrganisationId organisation) {
-    actor.requireAccessTo(organisation);
+    TenantActor member = actor.requireAccessTo(organisation);
     return swaps.findByOrganisation(organisation).stream()
-        .filter(request -> isVisibleTo(actor, request))
+        .filter(request -> isVisibleTo(member, request))
         .map(SwapService::publish)
         .toList();
   }
@@ -134,10 +134,10 @@ public class SwapService implements RequestSwapsUseCase {
   @Override
   public Optional<PublishedSwapRequest> findSwapRequest(
       Actor actor, OrganisationId organisation, SwapRequestId id) {
-    actor.requireAccessTo(organisation);
+    TenantActor member = actor.requireAccessTo(organisation);
     return swaps
         .findById(organisation, id)
-        .filter(request -> isVisibleTo(actor, request))
+        .filter(request -> isVisibleTo(member, request))
         .map(SwapService::publish);
   }
 
@@ -149,11 +149,11 @@ public class SwapService implements RequestSwapsUseCase {
    * <p>One predicate serves both the listing and reading one, so the two cannot disagree about who
    * may see a request.
    */
-  private static boolean isVisibleTo(Actor actor, SwapRequest request) {
-    if (!(actor instanceof TenantActor tenant) || MAY_ACT_FOR_OTHERS.contains(tenant.role())) {
+  private static boolean isVisibleTo(TenantActor actor, SwapRequest request) {
+    if (MAY_ACT_FOR_OTHERS.contains(actor.role())) {
       return true;
     }
-    return tenant.employee().map(request::involves).orElse(false);
+    return actor.employee().map(request::involves).orElse(false);
   }
 
   @Override
@@ -260,17 +260,14 @@ public class SwapService implements RequestSwapsUseCase {
    */
   private static void authoriseSelfOrManager(
       Actor actor, OrganisationId organisation, EmployeeId subject) {
-    actor.requireAccessTo(organisation);
-    if (actor instanceof TenantActor tenant && !tenant.isThemself(subject)) {
+    TenantActor tenant = actor.requireAccessTo(organisation);
+    if (!tenant.isThemself(subject)) {
       tenant.requireRoleIn(MAY_ACT_FOR_OTHERS);
     }
   }
 
   private static void authorise(Actor actor, OrganisationId organisation, Set<Role> permitted) {
-    actor.requireAccessTo(organisation);
-    if (actor instanceof TenantActor tenant) {
-      tenant.requireRoleIn(permitted);
-    }
+    actor.requireAccessTo(organisation).requireRoleIn(permitted);
   }
 
   /** Called after the repository, never before: see ADR-018. */

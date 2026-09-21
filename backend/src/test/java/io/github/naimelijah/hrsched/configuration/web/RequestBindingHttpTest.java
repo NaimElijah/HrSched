@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
+import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,10 +23,11 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /**
  * Specification of the answer to a request Spring cannot bind to a handler's parameters.
  *
- * <p>A missing header, a missing query parameter, or an identifier that does not parse fails before
- * any controller runs, so none of the per-context exception handlers ever sees it. The status was
- * always right; the body was not a problem detail, so a caller reading {@code detail} found nothing
- * to show a person. See ADR-024.
+ * <p>A missing query parameter, or an identifier that does not parse, fails before any controller
+ * runs, so none of the per-context exception handlers ever sees it. A missing header used to be
+ * here too; there are no identity headers left to omit. The status was always right; the body was
+ * not a problem detail, so a caller reading {@code detail} found nothing to show a person. See
+ * ADR-024.
  *
  * <p>Annotated identically to the other HTTP tests so they all share one Spring context.
  */
@@ -43,11 +45,9 @@ class RequestBindingHttpTest {
     String body =
         mockMvc
             .perform(
-                post("/api/organisations")
-                    .header("X-User", UUID.randomUUID().toString())
-                    .header("X-Role", "OPERATOR")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content("{\"name\":\"Organisation %s\"}".formatted(UUID.randomUUID())))
+                TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
+                    .content(
+                        TestTenants.onboarding("Organisation %s".formatted(UUID.randomUUID()))))
             .andExpect(status().isCreated())
             .andReturn()
             .getResponse()
@@ -55,28 +55,9 @@ class RequestBindingHttpTest {
     return JsonPath.read(body, "$.id");
   }
 
-  private static MockHttpServletRequestBuilder as(
-      MockHttpServletRequestBuilder request, String organisation, String role) {
-    return request
-        .header("X-Organisation", organisation)
-        .header("X-User", UUID.randomUUID().toString())
-        .header("X-Role", role)
-        .contentType(MediaType.APPLICATION_JSON);
-  }
-
-  /** Worded as {@code ActorFromHeaders} words a blank one, so absent and empty read the same. */
-  @Test
-  void GivenNoUserHeader_WhenListingQualifications_ThenTheAnswerIsAProblemDetailNamingIt()
-      throws Exception {
-    mockMvc
-        .perform(
-            get("/api/qualifications")
-                .header("X-Organisation", anOrganisation())
-                .header("X-Role", "ADMIN"))
-        .andExpect(status().isBadRequest())
-        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-        .andExpect(jsonPath("$.title").value("Invalid request"))
-        .andExpect(jsonPath("$.detail").value("X-User is required"));
+  private MockHttpServletRequestBuilder as(
+      MockHttpServletRequestBuilder request, String organisation, String role) throws Exception {
+    return TestTenants.as(mockMvc, request, organisation, role);
   }
 
   @Test

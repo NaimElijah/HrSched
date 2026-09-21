@@ -152,10 +152,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
   }
 
   private void authorise(Actor actor, OrganisationId organisation, Set<Role> permitted) {
-    actor.requireAccessTo(organisation);
-    if (actor instanceof TenantActor tenant) {
-      tenant.requireRoleIn(permitted);
-    }
+    actor.requireAccessTo(organisation).requireRoleIn(permitted);
   }
 
   /**
@@ -168,8 +165,8 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
    */
   private void authoriseSelfOrManager(
       Actor actor, OrganisationId organisation, EmployeeId subject) {
-    actor.requireAccessTo(organisation);
-    if (actor instanceof TenantActor tenant && !tenant.isThemself(subject)) {
+    TenantActor tenant = actor.requireAccessTo(organisation);
+    if (!tenant.isThemself(subject)) {
       tenant.requireRoleIn(MAY_SEE_EVERYONE);
     }
   }

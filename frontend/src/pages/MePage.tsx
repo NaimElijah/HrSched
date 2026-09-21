@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { identityKey } from '../api/client';
 import { scheduling } from '../api/scheduling';
 import type { RosteredShift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
@@ -7,7 +6,7 @@ import type { Employee, PreferenceStrength } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
-import { useActingAs } from '../identity/ActingAs';
+import { useSession, useSessionKey } from '../auth/SessionProvider';
 import { Inbox } from './Inbox';
 
 /**
@@ -22,8 +21,9 @@ import { Inbox } from './Inbox';
  * colleague by their employee identifier, because an employee may not list colleagues and so has no
  * names to choose from (Q25). Asking decides nothing: a Scheduler answers (ADR-022).
  *
- * Acting on your own record requires the acting identity to carry your employee link (ADR-012),
- * which is what the "acting as employee" control above sets.
+ * Acting on your own record requires the signed-in account to carry an employee link (ADR-012).
+ * An Admin sets that link when they create the account; an account without one can sign in and do
+ * its job, but has no record of its own to show.
  */
 export function MePage({
   span,
@@ -33,7 +33,8 @@ export function MePage({
   /** Colleagues the acting role may list; empty for an employee, whose inbox then shows identifiers. */
   people: readonly Employee[];
 }) {
-  const { identity } = useActingAs();
+  const { session } = useSession();
+  const sessionKey = useSessionKey();
   const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (colleague: string): string => personById.get(colleague)?.name ?? colleague;
   const [start, setStart] = useState('');
@@ -42,16 +43,16 @@ export function MePage({
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  const employee = identity.employee;
+  // The employee link comes from the session the backend established, never from anything typed:
+  // a user is not an employee, and the two are linked by the account rather than by matching ids.
+  const employee = session?.employee ?? null;
 
   // Without an employee link there is nobody for "my" schedule to be about, and asking would only
   // earn a refusal the page already explains.
   const schedule = useAsync(
     () =>
-      employee === null
-        ? Promise.resolve([])
-        : scheduling.findOwnSchedule(identity, span.from, span.to),
-    `${identityKey(identity)}|${span.from}|${span.to}`,
+      employee === null ? Promise.resolve([]) : scheduling.findOwnSchedule(span.from, span.to),
+    `${sessionKey}|${span.from}|${span.to}`,
   );
 
   /**
@@ -108,7 +109,7 @@ export function MePage({
     }
     setFailure(null);
     try {
-      await scheduling.requestSwap(identity, {
+      await scheduling.requestSwap({
         roster: work.roster,
         shift: work.shift,
         requester,
@@ -127,9 +128,9 @@ export function MePage({
       <section>
         <h2>Me</h2>
         <p className="hint">
-          Choose who you are in <strong>acting as employee</strong> above. A user and an employee
-          are different identities on purpose, so the link has to be stated — without it the backend
-          cannot tell that you are the subject of your own record.
+          Your account is not linked to a personnel record, so there is nothing here that is yours.
+          An account and an employee are different identities on purpose, so the link has to be
+          stated rather than guessed — ask an Admin to set it.
         </p>
       </section>
     );
@@ -207,7 +208,7 @@ export function MePage({
           type="button"
           onClick={() =>
             void act(
-              (when) => workforce.declareUnavailability(identity, employee, when.start, when.end),
+              (when) => workforce.declareUnavailability(employee, when.start, when.end),
               'Recorded: you cannot work then.',
             )
           }
@@ -218,8 +219,7 @@ export function MePage({
           type="button"
           onClick={() =>
             void act(
-              (when) =>
-                workforce.statePreference(identity, employee, when.start, when.end, strength),
+              (when) => workforce.statePreference(employee, when.start, when.end, strength),
               'Recorded: a preference, which never blocks a roster.',
             )
           }

@@ -7,13 +7,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
+import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -38,11 +38,9 @@ class NotificationHttpTest {
     String body =
         mockMvc
             .perform(
-                post("/api/organisations")
-                    .header("X-User", UUID.randomUUID().toString())
-                    .header("X-Role", "OPERATOR")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content("{\"name\":\"Organisation %s\"}".formatted(UUID.randomUUID())))
+                TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
+                    .content(
+                        TestTenants.onboarding("Organisation %s".formatted(UUID.randomUUID()))))
             .andExpect(status().isCreated())
             .andReturn()
             .getResponse()
@@ -50,14 +48,10 @@ class NotificationHttpTest {
     return JsonPath.read(body, "$.id");
   }
 
-  private static MockHttpServletRequestBuilder asThemself(
-      MockHttpServletRequestBuilder request, String organisation, String employee) {
-    return request
-        .header("X-Organisation", organisation)
-        .header("X-User", UUID.randomUUID().toString())
-        .header("X-Role", "EMPLOYEE")
-        .header("X-Employee", employee)
-        .contentType(MediaType.APPLICATION_JSON);
+  private MockHttpServletRequestBuilder asThemself(
+      MockHttpServletRequestBuilder request, String organisation, String employee)
+      throws Exception {
+    return TestTenants.asThemself(mockMvc, request, organisation, employee);
   }
 
   @Test
@@ -72,22 +66,14 @@ class NotificationHttpTest {
   @Test
   void GivenNoPersonnelRecordIsClaimed_WhenReadingAnInbox_ThenItIsForbidden() throws Exception {
     mockMvc
-        .perform(
-            get("/api/notifications")
-                .header("X-Organisation", anOrganisation())
-                .header("X-User", UUID.randomUUID().toString())
-                .header("X-Role", "ADMIN"))
+        .perform(TestTenants.as(mockMvc, get("/api/notifications"), anOrganisation(), "ADMIN"))
         .andExpect(status().isForbidden());
   }
 
   @Test
   void GivenTheOperator_WhenReadingAnInbox_ThenItIsForbidden() throws Exception {
     mockMvc
-        .perform(
-            get("/api/notifications")
-                .header("X-Organisation", anOrganisation())
-                .header("X-User", UUID.randomUUID().toString())
-                .header("X-Role", "OPERATOR"))
+        .perform(TestTenants.as(mockMvc, get("/api/notifications"), anOrganisation(), "OPERATOR"))
         .andExpect(status().isForbidden());
   }
 
@@ -111,17 +97,5 @@ class NotificationHttpTest {
                 anOrganisation(),
                 UUID.randomUUID().toString()))
         .andExpect(status().isBadRequest());
-  }
-
-  @Test
-  void GivenAnOrganisationNobodyOnboarded_WhenReadingAnInbox_ThenThereIsNothingThere()
-      throws Exception {
-    mockMvc
-        .perform(
-            asThemself(
-                get("/api/notifications"),
-                UUID.randomUUID().toString(),
-                UUID.randomUUID().toString()))
-        .andExpect(status().isNotFound());
   }
 }

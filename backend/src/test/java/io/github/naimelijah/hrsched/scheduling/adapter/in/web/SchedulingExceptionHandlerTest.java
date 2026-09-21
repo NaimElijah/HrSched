@@ -19,6 +19,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterExcepti
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
+import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
@@ -319,5 +320,23 @@ class SchedulingExceptionHandlerTest {
     assertThat(registeredFor(SchedulingExceptionHandler.class))
         .isNotEmpty()
         .doesNotContain(Exception.class, RuntimeException.class, Throwable.class);
+  }
+
+  /**
+   * The platform operator reaching inside an organisation: a 403 rather than the 404 a cross-tenant
+   * attempt gets. That 404 exists so a tenant cannot learn another organisation exists; an operator
+   * already knows, because listing them is the job (ADR-030).
+   */
+  @Test
+  void GivenTheOperatorActingInsideAnOrganisation_WhenTranslated_ThenItIsForbiddenAndCounted() {
+    UserId operator = UserId.newId();
+
+    ProblemDetail problem = handler.handleOperatorConfined(new NotATenantMemberException(operator));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+    assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getDetail())
+        .isEqualTo("The platform operator may not act inside an organisation.");
+    assertThat(denied("operator_confined")).isEqualTo(1.0);
   }
 }

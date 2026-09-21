@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ActingAsProvider } from '../identity/ActingAs';
+import { A_TENANT, SignedIn } from '../test-support/session';
 import { RulesPage } from './RulesPage';
 
 /**
@@ -52,9 +52,9 @@ describe('the rules page', () => {
   it('GivenConfiguredRules_WhenOpened_ThenTheFormShowsTheirCurrentValues', async () => {
     routeTo(CONFIGURED);
     render(
-      <ActingAsProvider>
+      <SignedIn session={A_TENANT}>
         <RulesPage />
-      </ActingAsProvider>,
+      </SignedIn>,
     );
 
     const rest = await screen.findByLabelText(/Minimum rest/);
@@ -67,9 +67,9 @@ describe('the rules page', () => {
   it('GivenOneRuleChanged_WhenRevising_ThenTheOtherConfiguredRulesAreResent', async () => {
     const stub = routeTo(CONFIGURED);
     render(
-      <ActingAsProvider>
+      <SignedIn session={A_TENANT}>
         <RulesPage />
-      </ActingAsProvider>,
+      </SignedIn>,
     );
     const daily = await screen.findByLabelText(/Maximum daily/);
     await waitFor(() => expect(daily).toHaveValue(600));
@@ -86,9 +86,9 @@ describe('the rules page', () => {
   it('GivenAClearedField_WhenRevising_ThenThatRuleIsSwitchedOff', async () => {
     const stub = routeTo(CONFIGURED);
     render(
-      <ActingAsProvider>
+      <SignedIn session={A_TENANT}>
         <RulesPage />
-      </ActingAsProvider>,
+      </SignedIn>,
     );
     const rest = await screen.findByLabelText(/Minimum rest/);
     await waitFor(() => expect(rest).toHaveValue(660));

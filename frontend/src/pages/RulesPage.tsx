@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { scheduling } from '../api/scheduling';
 import type { ConstraintSet, ConstraintSetRequest } from '../api/scheduling';
-import { identityKey } from '../api/client';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
-import { useActingAs } from '../identity/ActingAs';
+import { useSessionKey } from '../auth/SessionProvider';
 
 /**
  * Admin: this organisation's working-time rules.
@@ -38,9 +37,9 @@ export function RulesPage() {
   // "switch this rule off", which is why it is distinct from an absent key.
   const [edits, setEdits] = useState<Partial<Record<Field, string>>>({});
   const [failure, setFailure] = useState<unknown>(null);
-  const { identity } = useActingAs();
+  const sessionKey = useSessionKey();
 
-  const current = useAsync(() => scheduling.currentConstraints(identity), identityKey(identity));
+  const current = useAsync(() => scheduling.currentConstraints(), sessionKey);
   const loaded = current.value;
 
   const shown = (key: Field): string => edits[key] ?? configured(loaded, key);
@@ -59,7 +58,7 @@ export function RulesPage() {
       maximumConsecutiveDays: number('maximumConsecutiveDays'),
     };
     try {
-      await scheduling.reviseConstraints(identity, body);
+      await scheduling.reviseConstraints(body);
       setEdits({});
       current.reload();
     } catch (error) {

@@ -18,6 +18,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-007](ADR-007-monorepo-backend-and-frontend.md) | Keep backend and frontend in one repository, as sibling directories | Accepted | 2026-08-29 |
 | [ADR-008](ADR-008-context-integration.md) | Contexts integrate through published ports and a minimal shared kernel | Accepted | 2026-08-30 |
 | [ADR-009](ADR-009-tenant-isolation-in-the-domain.md) | Carry tenancy in the domain and enforce it at the application boundary | Accepted | 2026-08-30 |
+| [ADR-011](ADR-011-issue-our-own-access-tokens.md) | Issue our own signed access tokens, and resolve the actor from the stored account and session on every request | Accepted | 2026-09-16 |
 | [ADR-012](ADR-012-acting-identity-carries-its-employee-record.md) | The acting identity carries the employee record it is | Accepted | 2026-08-30 |
 | [ADR-013](ADR-013-react-typescript-vite-frontend.md) | Build the frontend on React, TypeScript and Vite, talking to the backend over a dev proxy | Accepted | 2026-08-30 |
 | [ADR-014](ADR-014-root-task-runner.md) | Orchestrate both builds from the root with a Node script | Accepted | 2026-08-30 |
@@ -34,6 +35,9 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-025](ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md) | Edit a draft roster through controls on a board, not by drag and drop | Accepted | 2026-09-14 |
 | [ADR-026](ADR-026-make-overlapping-published-rosters-unrepresentable.md) | Make two overlapping published rosters of one organisation unrepresentable in the schema | Accepted | 2026-09-14 |
 | [ADR-027](ADR-027-take-turns-publishing-within-an-organisation.md) | Make publications within one organisation take turns, with a transaction-scoped advisory lock | Accepted | 2026-09-14 |
+| [ADR-028](ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md) | Keep the browser session as an in-memory access token and a rotating refresh cookie | Accepted | 2026-09-16 |
+| [ADR-029](ADR-029-provision-accounts-from-the-top-down.md) | Provision accounts from the top down, with temporary passwords, and bootstrap the operator from configuration | Proposed | 2026-09-16 |
+| [ADR-030](ADR-030-confine-the-operator-to-the-register-of-organisations.md) | Confine the platform operator to the register of organisations | Accepted | 2026-09-16 |
 
 ## Decisions waiting to be recorded
 
@@ -42,7 +46,6 @@ Known-open and blocking work elsewhere. An entry here is a placeholder, **not** 
 | Will be | Decision | Blocks |
 | --- | --- | --- |
 | ADR-010 | Objectives: what makes one legal roster better than another | Introducing a real solver (ADR-005) |
-| ADR-011 | Authentication and the identity provider | Deleting the header-based actor placeholder |
 
 ## Conventions
 

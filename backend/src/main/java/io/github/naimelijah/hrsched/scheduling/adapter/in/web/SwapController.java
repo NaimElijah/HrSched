@@ -6,15 +6,16 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownSwapRequestException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -40,17 +41,12 @@ public class SwapController {
 
   @PostMapping
   public ResponseEntity<SwapRequestResponse> request(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @RequestBody RequestSwapRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+      @AuthenticationPrincipal Actor actor, @RequestBody RequestSwapRequest request) {
     SwapRequestId id =
         requestSwaps.requestSwap(
             actor,
             new RequestSwapCommand(
-                ActorFromHeaders.organisationOf(organisation),
+                actingIn(actor),
                 request.requiredRoster(),
                 request.requiredShift(),
                 request.requiredRequester(),
@@ -67,15 +63,8 @@ public class SwapController {
   }
 
   @GetMapping
-  public List<SwapRequestResponse> list(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
-    return requestSwaps
-        .findSwapRequests(actor, ActorFromHeaders.organisationOf(organisation))
-        .stream()
+  public List<SwapRequestResponse> list(@AuthenticationPrincipal Actor actor) {
+    return requestSwaps.findSwapRequests(actor, actingIn(actor)).stream()
         .map(SwapRequestResponse::from)
         .toList();
   }
@@ -89,43 +78,37 @@ public class SwapController {
    *     request and when the caller is not party to it, so a response cannot tell the two apart
    */
   @GetMapping("/{id}")
-  public SwapRequestResponse find(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @PathVariable UUID id) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+  public SwapRequestResponse find(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
     SwapRequestId request = new SwapRequestId(id);
     return requestSwaps
-        .findSwapRequest(actor, ActorFromHeaders.organisationOf(organisation), request)
+        .findSwapRequest(actor, actingIn(actor), request)
         .map(SwapRequestResponse::from)
         .orElseThrow(() -> new UnknownSwapRequestException(request));
   }
 
   @PostMapping("/{id}/approval")
-  public RosterResponse approve(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @PathVariable UUID id) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+  public RosterResponse approve(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
     return RosterResponse.from(
-        requestSwaps.approveSwap(
-            actor, ActorFromHeaders.organisationOf(organisation), new SwapRequestId(id)));
+        requestSwaps.approveSwap(actor, actingIn(actor), new SwapRequestId(id)));
   }
 
   @PostMapping("/{id}/rejection")
-  public ResponseEntity<Void> reject(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @PathVariable UUID id) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
-    requestSwaps.rejectSwap(
-        actor, ActorFromHeaders.organisationOf(organisation), new SwapRequestId(id));
+  public ResponseEntity<Void> reject(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
+    requestSwaps.rejectSwap(actor, actingIn(actor), new SwapRequestId(id));
     return ResponseEntity.noContent().build();
+  }
+
+  /**
+   * The organisation this request acts in, taken from the acting account and from nowhere else.
+   *
+   * <p>It replaced {@code X-Organisation}, and the difference is the whole point: there is no
+   * longer anything in the request naming an organisation, so there is nothing for a caller to
+   * change. The platform operator is refused here, because it belongs to none (ADR-030).
+   *
+   * @param actor whoever the token named
+   * @return the organisation they belong to
+   */
+  private static OrganisationId actingIn(Actor actor) {
+    return actor.requireTenantMembership().organisation();
   }
 }

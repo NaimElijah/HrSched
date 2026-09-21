@@ -3,13 +3,14 @@ package io.github.naimelijah.hrsched.notifications.adapter.in.web;
 import io.github.naimelijah.hrsched.notifications.application.port.in.ReadNotificationsUseCase;
 import io.github.naimelijah.hrsched.notifications.domain.model.NotificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -35,27 +36,30 @@ public class NotificationController {
   }
 
   @GetMapping
-  public List<NotificationResponse> list(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
-    return readNotifications.findMine(actor, ActorFromHeaders.organisationOf(organisation)).stream()
+  public List<NotificationResponse> list(@AuthenticationPrincipal Actor actor) {
+    return readNotifications.findMine(actor, actingIn(actor)).stream()
         .map(NotificationResponse::from)
         .toList();
   }
 
   @PostMapping("/{id}/read")
   public ResponseEntity<Void> markRead(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @PathVariable UUID id) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
-    readNotifications.markRead(
-        actor, ActorFromHeaders.organisationOf(organisation), new NotificationId(id));
+      @AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
+    readNotifications.markRead(actor, actingIn(actor), new NotificationId(id));
     return ResponseEntity.noContent().build();
+  }
+
+  /**
+   * The organisation this request acts in, taken from the acting account and from nowhere else.
+   *
+   * <p>It replaced {@code X-Organisation}, and the difference is the whole point: there is no
+   * longer anything in the request naming an organisation, so there is nothing for a caller to
+   * change. The platform operator is refused here, because it belongs to none (ADR-030).
+   *
+   * @param actor whoever the token named
+   * @return the organisation they belong to
+   */
+  private static OrganisationId actingIn(Actor actor) {
+    return actor.requireTenantMembership().organisation();
   }
 }

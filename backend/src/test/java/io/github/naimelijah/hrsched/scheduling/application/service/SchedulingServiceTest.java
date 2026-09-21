@@ -38,6 +38,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftExceptio
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -219,8 +220,12 @@ class SchedulingServiceTest {
         .isInstanceOf(CrossTenantAccessException.class);
   }
 
+  /**
+   * Flipped by ADR-030. A roster is personal data about every colleague on it, and the operator is
+   * nobody's colleague; reading one was the sharpest consequence of the old bypass.
+   */
   @Test
-  void GivenAPlatformOperator_WhenReadingAnotherOrganisationsRoster_ThenItIsPermitted() {
+  void GivenTheOperator_WhenReadingARoster_ThenItIsRefused() {
     available(ACME, "Ada");
     service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
     Roster draft =
@@ -228,7 +233,8 @@ class SchedulingServiceTest {
 
     Actor operator = new Operator(UserId.newId());
 
-    assertThat(service.findRoster(operator, ACME, draft.id())).isPresent();
+    assertThatThrownBy(() -> service.findRoster(operator, ACME, draft.id()))
+        .isInstanceOf(NotATenantMemberException.class);
   }
 
   /**
@@ -939,10 +945,14 @@ class SchedulingServiceTest {
         .isInstanceOf(NoEmployeeRecordException.class);
   }
 
+  /**
+   * Still refused, and now refused sooner and for a better reason: not "you have no personnel
+   * record" but "you are not a member of this organisation at all" (ADR-030).
+   */
   @Test
   void GivenTheOperator_WhenReadingTheirOwnSchedule_ThenItIsRefused() {
     assertThatThrownBy(() -> service.findOwnSchedule(new Operator(UserId.newId()), ACME, THE_WEEK))
-        .isInstanceOf(NoEmployeeRecordException.class);
+        .isInstanceOf(NotATenantMemberException.class);
   }
 
   @Test
@@ -965,5 +975,92 @@ class SchedulingServiceTest {
     assertThat(audit.changes())
         .describedAs("reads are not audited, or the writes would be buried under them")
         .isEmpty();
+  }
+
+  // --- ADR-030: the platform operator is refused by every tenant use case -------------------
+  //
+  // One test per driving-port method rather than a table. A parameterised version would read as a
+  // list and hide which row is the one whose failure is a security incident; here every one of them
+  // is, so each gets its own name and its own line in a failure report.
+
+  @Test
+  void GivenTheOperator_WhenDefiningAShift_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.defineShift(
+                    anOperator(), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of())))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenListingShifts_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.findShifts(anOperator(), ACME, THE_WEEK))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingAShift_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.findShift(anOperator(), ACME, ShiftId.newId()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingTheConstraintSet_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.currentConstraints(anOperator(), ACME))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenRevisingTheConstraintSet_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.reviseConstraints(
+                    anOperator(), new ReviseConstraintsCommand(ACME, List.of())))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenGeneratingADraft_ThenItIsRefused() {
+    assertThatThrownBy(
+            () -> service.generateDraft(anOperator(), new GenerateRosterCommand(ACME, THE_WEEK)))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenAssigningSomebodyToAShift_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.assign(
+                    anOperator(),
+                    new AssignToShiftCommand(
+                        ACME, RosterId.newId(), ShiftId.newId(), EmployeeId.newId())))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenRemovingAnAssignment_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.unassign(
+                    anOperator(),
+                    new RemoveAssignmentCommand(
+                        ACME, RosterId.newId(), ShiftId.newId(), EmployeeId.newId())))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenPublishingARoster_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.publish(anOperator(), ACME, RosterId.newId()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenListingRosters_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.findRosters(anOperator(), ACME))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  private static Operator anOperator() {
+    return new Operator(UserId.newId());
   }
 }

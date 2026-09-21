@@ -8,10 +8,10 @@ these choices were made, see the [ADRs](../ADRs/).
 
 > **Current state:** the domain is modelled and works end to end — onboard an organisation, define
 > people and shifts, configure rules, generate a roster, adjust it by hand, publish it, and swap a
-> shift — and it is all stored in PostgreSQL, so it survives a restart. But **generation is greedy,
-> not optimised** (see [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md)) and **there is
-> no authentication**: the acting identity comes from request headers and any caller can claim any
-> role.
+> shift — and it is all stored in PostgreSQL, so it survives a restart. People sign in, and every
+> request is authenticated by a token HrSched signed and authorised against the account it names.
+> What is still unfinished is the part the product is named for: **generation is greedy, not
+> optimised** (see [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md)).
 
 ---
 
@@ -59,7 +59,7 @@ flowchart TB
     subgraph access [access context]
         accWeb["adapter.in.web<br/>OrganisationController"]
         accApp["application<br/>OrganisationService"]
-        accDom["domain.model<br/>Organisation"]
+        accDom["domain.model<br/>Organisation, Account"]
     end
 
     kernel["shared.domain.model<br/>OrganisationId, Actor, TimeRange, EmployeeId"]
@@ -100,8 +100,8 @@ Three rules hold this together, and each fails the build when broken:
 | Component | Responsibility |
 | --- | --- |
 | `shared.domain.model` | The kernel: `OrganisationId`, `UserId`, `EmployeeId`, `QualificationId`, `Role`, `TimeRange`, and the sealed `Actor` (`TenantActor`, `Operator`). Identities and pure values that cross contexts, with no behaviour of their own. A `TenantActor` also carries the `EmployeeId` it is, when it is one ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). |
-| `access.domain.model` | `Organisation` — the tenant itself. Deliberately small: the tenancy *types* live in the kernel because every context needs them. |
-| `access.application` | Onboarding, listing and reading organisations (F13), and the register they live in. Onboarding and listing are the platform `Operator`'s alone — the guard is the inverse of every other one here, asking whether the actor belongs to a tenant rather than which role they hold in it. `KnownOrganisationsUseCase` is this context's **published API**: one question, whether an organisation exists, asked by the boundary check below. See [ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md). |
+| `access.domain.model` | `Organisation` — the tenant itself — and `Account`, what signs in. An account's `Membership` is sealed into one organisation in one role, or the platform operator, so an operator carrying a role or an employee link is unrepresentable. `SignInName` and `PasswordHash` both print as redacted. Otherwise deliberately small: the tenancy *types* live in the kernel because every context needs them. |
+| `access.application` | Signing in, renewing and ending a session, reading one's own session and changing one's own password (F14); bootstrapping the platform operator; administering an organisation's own accounts (F15); and onboarding, listing and reading organisations (F13), with the register they live in. Onboarding creates the organisation and its first Admin account in one transaction, so a refused account leaves no organisation behind; that account is created needing a password change, because the one it was given was typed by somebody else. Account administration takes the organisation's advisory lock before it reads, because R14 — an organisation keeps at least one active Admin — is decided by reading and then writing. Onboarding and listing are the platform `Operator`'s alone — the guard is the inverse of every other one here, asking whether the actor belongs to a tenant rather than which role they hold in it. `KnownOrganisationsUseCase` is this context's **published API**: one question, whether an organisation exists, asked by the boundary check below. See [ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md). |
 | `notifications.domain.model` | `Notification` — something one person has been told, and whether they have seen it. It carries identifiers, a kind, a time and a flag, and **there is nowhere in it to put a sentence or a name** ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `notifications.application` | Raising and reading notifications. `NotifyUseCase` is this context's **published API** and is deliberately not on a controller; `ReadNotificationsUseCase` is strictly self-service, and whose inbox is read comes from the acting identity rather than from any parameter. Takes a `Clock`, so when something happened is an input rather than an ambient fact. |
 | `workforce.domain.model` | `Employee` (aggregate root: qualifications, unavailability, preferences, contract terms), `Qualification`, `ShiftPreference`, `ContractTerms`. |
@@ -111,15 +111,20 @@ Three rules hold this together, and each fails the build when broken:
 | `scheduling.adapter.out.workforce` | An anti-corruption layer: one of **two** classes in scheduling permitted to name another context, and only its published port. |
 | `scheduling.adapter.out.notification` | The other one. Translates "a swap was approved" into the word the `notifications` context uses for it, so nothing inward of the `Notifier` port knows that context exists ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. |
-| `*.adapter.out.persistence` | `Jdbc*Repository` — hand-written SQL through `JdbcClient`, one per driven port, every read carrying its organisation in the `WHERE` clause. No ORM: the domain may not be annotated, so mapping is explicit ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). |
+| `*.adapter.out.persistence` | `Jdbc*Repository` — hand-written SQL through `JdbcClient`, one per driven port, every read carrying its organisation in the `WHERE` clause. The one exception is named as such in its port: `JdbcAccountRepository.findBySignInName`, which sign-in needs because a submitted name is all it has to go on. No ORM: the domain may not be annotated, so mapping is explicit ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). |
 | `*.adapter.out.audit` | `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog` and `NotificationAuditLog` — one per context, each implementing its own context's `AuditTrail` port and turning one recorded change into a structured log event and a counter. All four are named for their contexts because Spring derives a bean name from the simple class name alone, so four classes called `AuditLog` would collide at startup rather than at compile time. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
+| `access.adapter.out.workforce` | `WorkforceEmployeeDirectory` — an anti-corruption layer, and the **only** class in access permitted to name another context. It asks workforce's published port whether an organisation employs somebody and reduces the answer to a boolean on the spot, so a colleague's name never enters the context that writes the access audit trail. |
+| `access.adapter.in.token` | `AccessTokenDecoder` (the application's only `JwtDecoder`), `ActorAuthenticationConverter` and `ActorAuthentication`. Verifying a token and deciding who is acting both live here, in the context that owns accounts, rather than in `configuration` — which may not name an adapter class, so the chain receives them by type. |
+| `access.adapter.out.token` | `AccessTokenKey` (the RSA key pair, or a refusal to start without one), `AccessTokenSigning`, `JwtAccessTokenIssuer` and `SecureRandomSessionSecrets`. |
+| `access.adapter.out.password` | `BCryptPasswordHasher` — a `DelegatingPasswordEncoder`, so every stored hash names the algorithm that made it and a later change needs no migration. |
+| `access.adapter.in.bootstrap` | `OperatorBootstrap` — an `ApplicationRunner` that creates the first platform operator from configuration, and only if no account holds the name ([ADR-029](../ADRs/ADR-029-provision-accounts-from-the-top-down.md)). |
+| `configuration.security` | `SecurityConfiguration` (the one filter chain), `ProblemAuthenticationEntryPoint` and `ProblemAccessDeniedHandler` (which write the 401 and 403 bodies a filter would otherwise leave empty), and `SecurityPolicyProperties`. |
 | `configuration.observability` | Cross-cutting instrumentation that belongs to no context. Today that is `TraceIdResponseFilter`, which puts the request's trace id on the response as `X-Trace-Id`. It reads no request header, so unlike `ActorFromHeaders` it is unaffected by ADR-011. |
-| `configuration.tenancy` | `KnownOrganisationFilter` — checks the claimed `X-Organisation` against the register before any handler runs, and answers the ordinary 404 when nobody onboarded it. Cross-cutting rather than per context, and it outlives ADR-011 ([ADR-020](../ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md)). |
-| `configuration.web` | `RequestBindingExceptionHandler` — answers a request Spring could not bind to a controller's parameters (a missing header or query parameter, an identifier that does not parse) with a 400 problem detail naming what was wrong, whose detail repeats nothing that was sent. It belongs to no context because the failure happens before any controller runs ([ADR-024](../ADRs/ADR-024-answer-unbindable-requests-with-a-problem-detail.md)). |
-| `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists — it writes the four identity claims and reads back `X-Trace-Id`; `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts` mirror the backend DTOs, one module per context. |
-| `frontend/src/identity` | The acting-as context and its warning bar — the placeholder that supplies `X-Organisation`, `X-User`, `X-Role` and `X-Employee`, deleted with the backend placeholder when ADR-011 lands. |
-| `frontend/src/pages` | One screen per capability: People, Qualifications, Rules, Shifts, Rosters, Swaps, Me, Organisations. Organisations is the platform Operator's: it lists and onboards organisations and switches the acting identity into one, sending every request as the identity the bar claims, so a tenant role is shown the 403 rather than a hidden tab. Swaps is where a Scheduler answers requests; approving publishes a replacement roster, so it is refused exactly as any publication is: with every broken working-time rule named, or, if it would put somebody in two places at once, with that. Me shows an employee their identifier, their published work over the planning span, and a way to hand a shift to a colleague named by that colleague's identifier, because an employee may not list colleagues (Q25). Me also holds the employee's `Inbox`. Opening a roster shows `RosterBoard`, which loads that roster by identifier and changes a draft through a picker and buttons per shift rather than by drag and drop ([ADR-025](../ADRs/ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md)). |
+| `configuration.web` | `RequestBindingExceptionHandler` — answers a request Spring could not bind to a controller's parameters (a missing query parameter, an identifier that does not parse) with a 400 problem detail naming what was wrong, whose detail repeats nothing that was sent. It belongs to no context because the failure happens before any controller runs ([ADR-024](../ADRs/ADR-024-answer-unbindable-requests-with-a-problem-detail.md)). |
+| `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists — it attaches the bearer token, renews the session once on a 401 and retries the request exactly once (single-flight within the tab, serialised across tabs by a Web Lock), and reads back `X-Trace-Id`; `session.ts` holds the access token in a module variable and **nowhere a script can read it back**, and notifies the shell when a session ends. It writes no identity claim of any kind: the bearer token is the whole of what says who is acting, and a request carrying a second, weaker answer would be offering one. `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts` mirror the backend DTOs, one module per context. |
+| `frontend/src/auth` | `SessionProvider` (which of four states the app is in, and the handshake every load begins with), `SignInPage`, `ChangePasswordPage` and `SessionBar`. Replaced `frontend/src/identity`, whose bar let anybody claim any role in any organisation because the backend believed whatever headers it was sent. |
+| `frontend/src/pages` | One screen per capability: People, Accounts, Qualifications, Rules, Shifts, Rosters, Swaps, Me, Organisations. Organisations is the platform Operator's: it lists and onboards organisations, and offers no way to act inside one, because the Operator is refused everything inside every tenant ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)). A tenant role reaching it is shown the 403 rather than a hidden tab. Accounts is its mirror for an Admin: it creates accounts, changes what one is, disables and restores one, and resets a colleague's password. Nothing on it names an organisation, because the backend takes that from the token; every temporary password is typed, masked, never defaulted, and cleared once the request it was typed for has succeeded. Swaps is where a Scheduler answers requests; approving publishes a replacement roster, so it is refused exactly as any publication is: with every broken working-time rule named, or, if it would put somebody in two places at once, with that. Me shows an employee their identifier, their published work over the planning span, and a way to hand a shift to a colleague named by that colleague's identifier, because an employee may not list colleagues (Q25). Me also holds the employee's `Inbox`. Opening a roster shows `RosterBoard`, which loads that roster by identifier and changes a draft through a picker and buttons per shift rather than by drag and drop ([ADR-025](../ADRs/ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md)). |
 
 ## Communication
 
@@ -129,6 +134,90 @@ by direct method call. There are no events and no queues.
 The browser talks to the backend over JSON on `/api`. In development that request goes to the Vite
 dev server, which proxies it; in production the built bundle is served however the deployment
 chooses and the same paths apply. The backend is unaware of either arrangement.
+
+## Authentication
+
+**Every route under `/api` requires a token**, except the three that are authentication itself:
+`POST /api/auth/sign-in`, `/refresh` and `/sign-out`. Who is acting is the account the token names,
+and every controller takes it from `@AuthenticationPrincipal Actor`
+([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md)).
+
+**The organisation comes from the account, never from the request.** Each web adapter has one
+`actingIn(actor)` helper over `Actor.requireTenantMembership()`, and that helper is the only way an
+organisation enters a request — there is no identifier in a path, body or header for a caller to
+change ([ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)). That also makes the
+platform operator's refusal structural rather than a check: it belongs to no organisation, so there
+is nothing inside one for it to act in ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)).
+The one exception is `GET /api/organisations/{id}`, where the target is in the path because the
+register is what the operator administers.
+
+A request carrying an invalid token is refused on every route, including the ones that do not
+require one — that is the bearer filter's own behaviour, and why a client must send no token rather
+than a stale one.
+
+**The chain is closed: it ends in `denyAll`.** Every route this application serves is named by a
+rule, and anything else is refused — including a route somebody adds later and forgets to decide
+about. The rules are the coarse outer line; the use case behind each route is what actually decides
+([ADR-032](../ADRs/ADR-032-close-the-security-chain-by-default.md)).
+
+| Route | Who may reach it |
+| --- | --- |
+| `POST /api/auth/sign-in`, `/refresh`, `/sign-out` | anybody — authentication itself |
+| `/actuator/**` | anybody; what exists there is decided by the exposure list (ADR-017) |
+| `GET /api/auth/session`, `POST /api/auth/password` | any authenticated account, including one whose password change is still pending |
+| `POST`/`GET /api/organisations` | `OPERATOR` |
+| `GET /api/organisations/{id}` | any role; the use case decides whose |
+| `/api/accounts/**` | `ADMIN` |
+| `/api/employees/**`, `/api/qualifications/**`, `/api/shifts/**`, `/api/constraints`, `/api/rosters/**`, `/api/me/**`, `/api/swaps/**`, `/api/notifications/**` | any tenant role |
+| anything else | nobody |
+
+**A verified signature is not enough, and that is the point.** The decoder proves a token is one
+this service signed, for this service, unexpired, of type `at+jwt`, and naming both an account and
+a session. It cannot know whether the account has since been disabled, whether its role changed, or
+whether the session was signed out a second ago — so every authenticated request asks the database,
+and a token whose account or session no longer stands is refused. That is what makes disabling,
+demoting and signing out take effect on the next request rather than whenever a token happens to
+expire, and it costs one read per request.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as AuthController
+    participant S as SessionService
+    participant D as AccessTokenDecoder
+    participant V as ActorAuthenticationConverter
+    participant DB as PostgreSQL
+
+    B->>A: POST /api/auth/sign-in
+    A->>S: signIn(name, password)
+    S->>DB: account by sign-in name, then open a session
+    S-->>A: access token + refresh token
+    A-->>B: 200 {accessToken} + Set-Cookie __Secure-hrsched-refresh
+
+    B->>D: GET /api/auth/session, Authorization: Bearer …
+    D->>D: RS256 pinned, typ/iss/aud/exp/iat/sub/sid checked
+    D->>V: verified Jwt
+    V->>S: findActor(sub, sid)
+    S->>DB: one query joining account and sign_in_session
+    S-->>V: Actor, or nothing
+    V-->>B: 401 if nothing, otherwise the request proceeds
+
+    B->>A: POST /api/auth/refresh (cookie + X-Requested-With)
+    A->>S: refresh(token)
+    S->>DB: mark replaced WHERE replaced_at IS NULL, then issue a successor
+    S-->>A: new access token + rotated refresh token
+    A-->>B: 200 + rotated cookie, or 401 and the cookie cleared
+
+    B->>A: POST /api/auth/sign-out (cookie + X-Requested-With)
+    A->>S: signOut(token)
+    S->>DB: revoke the session
+    A-->>B: 204 + cookie cleared
+```
+
+Signing in, renewing and signing out are open by design: the credential for each is what the caller
+presents. The session endpoints are reachable by an account whose temporary password is still
+pending, because they are the two things such an account has to be able to do — it holds
+`PASSWORD_CHANGE_REQUIRED` and no role at all, so every rule written in terms of a role refuses it.
 
 ## Data flow
 
@@ -179,6 +268,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 | --- | --- | --- |
 | `spring-boot-starter-webmvc` | HTTP boundary, embedded Tomcat | ADR-001. Boot 4.x renamed this from `spring-boot-starter-web`. |
 | `spring-boot-starter-actuator` | Health and readiness probes | Required of every service by the project baseline. A `db` health contributor now appears with the datasource. |
+| `spring-boot-starter-security-oauth2-resource-server` | The security filter chain in front of every request, and signing and verifying the access tokens | [ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md). Pulls in Spring Security and Nimbus JOSE+JWT, both Apache-2.0 and maintained on Boot's release train. Authentication is security-critical code nobody should hand-roll. `SecurityConfiguration` declares the one chain; a bearer token is verified on every request that carries one, and two endpoints require one. |
 | `spring-boot-starter-jdbc` | `JdbcClient`, the connection pool, and the transaction manager | [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md). Chosen over JPA because the domain may not carry `jakarta.persistence` annotations. |
 | `spring-boot-starter-flyway` + `flyway-database-postgresql` | Versioned schema migrations, applied on startup | ADR-004. New in Boot 4.x; 3.x had no Flyway starter. |
 | `postgresql` | The JDBC driver | ADR-004. Runtime scope; nothing compiles against it. |
@@ -206,30 +296,33 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   [ADR-009](../ADRs/ADR-009-tenant-isolation-in-the-domain.md).
 - **A cross-tenant attempt returns 404, never 403.** A 403 would confirm the resource exists in
   another organisation.
-- **Over HTTP that 404 is produced by the repositories, not by the tenant guard.**
-  `ActorFromHeaders` builds a `TenantActor`'s organisation from the same `X-Organisation` header
-  the operation targets, so `Actor.requireAccessTo` compares an organisation with itself and can
-  never fail for a caller arriving over HTTP. Isolation there comes from every repository read
-  filtering by organisation and returning nothing, which surfaces as an unknown-record 404.
-  `CrossTenantAccessException` still guards every direct caller, and every exception handler still
-  translates it. Worth knowing before anyone concludes the guard is dead code and deletes it.
-- **An organisation must exist before anything can be done in its name.** `KnownOrganisationFilter`
-  checks `X-Organisation` against the register on every `/api/**` request and answers the ordinary
-  404 when it names an organisation nobody onboarded. Before it, a caller could invent a tenant with
-  `uuidgen` and get a working private corner of the system that no operator could see. Onboarding is
-  exempt, or the platform could never be bootstrapped; a missing or malformed header passes through
-  to the 400 it already earned. It is a filter in `configuration` rather than three copies in the web
-  adapters, and it outlives ADR-011 — whether a tenant exists is a different question from who the
-  caller is. It is **not** authentication: anyone who learns a real identifier can still claim any
-  role inside it ([ADR-020](../ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md)).
-- **The two servlet filters are explicitly ordered, and the numbers matter.**
+- **Over HTTP that 404 is produced by the repositories, not by the tenant guard.** A request acts
+  in the organisation its own account belongs to (ADR-031), so `Actor.requireAccessTo` compares an
+  organisation with itself and cannot fail for a caller arriving over HTTP. Isolation there comes
+  from every repository read filtering by organisation and returning nothing, which surfaces as an
+  unknown-record 404. `CrossTenantAccessException` still guards every direct caller, and every
+  exception handler still translates it. Worth knowing before anyone concludes the guard is dead
+  code and deletes it.
+- **The platform operator is refused inside an organisation, with a 403 rather than that 404.** The
+  404 exists so a tenant cannot learn another organisation exists; an operator already knows,
+  because listing them is the job. `NotATenantMemberException` carries that refusal and every
+  exception handler translates it, counting it as `hrsched.access.denied{kind="operator_confined"}`.
+  Reading one organisation from the register is the single documented exemption (ADR-030).
+- **An organisation cannot be named at all, so it cannot be invented.** A request acts in the
+  organisation of the account its token names, read from a row the caller cannot write. There used
+  to be a boundary filter checking a claimed `X-Organisation` against the register; it was deleted
+  when the last route stopped sending one, because a check that can never fire reads like
+  protection and is not
+  ([ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md), superseding ADR-020).
+- **The servlet filters are explicitly ordered, and the numbers matter.**
   `TraceIdResponseFilter` must run after Boot's observation filter (registered at
   `HIGHEST_PRECEDENCE + 1`), which opens the span it reads — ordered any earlier, `currentSpan()` is
-  null and `X-Trace-Id` silently disappears from every response. `KnownOrganisationFilter` runs
-  immediately after it, so a request it refuses still carries an id the caller can quote.
-- **There is now one endpoint where that guard genuinely fires over HTTP.** On `GET
-  /api/organisations/{id}` the acting identity comes from `X-Organisation` and the target comes from
-  the path, so unlike every other route the two can differ, and a tenant naming somebody else's
+  null and `X-Trace-Id` silently disappears from every response. Spring Security's chain runs after
+  it, at its own default order (`spring.security.filter.order`, −100), which is why a 401 from the
+  security chain still carries a trace id.
+- **There is one endpoint where that guard genuinely fires over HTTP.** On `GET
+  /api/organisations/{id}` the acting identity comes from the token and the target comes from the
+  path, so unlike every other route the two can differ, and a tenant naming somebody else's
   organisation is refused by the guard rather than by an empty repository read. It is the only place
   the branch is exercised outside a unit test
   ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)).
@@ -272,9 +365,14 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 - **Coverage is measured and never enforced.** `./mvnw verify` writes `target/site/jacoco/`; the
   frontend reports only under `npm run test:coverage`. No threshold exists, on purpose
   ([ADR-015](../ADRs/ADR-015-report-coverage-without-a-threshold.md)).
-- **`Actor` is sealed.** The set of things that can cross a tenant boundary is closed and lives
-  in one file; `Operator` is the only member that can, and it is a named type rather than an
-  implicit privilege.
+- **`Actor` is sealed, and the tenancy guard returns what it proved.**
+  `Actor.requireAccessTo(organisation)` hands back the `TenantActor` that may act there, decided by
+  a `switch` over the sealed type. That shape is deliberate: the guard used to be a statement, and
+  callers followed it with `if (actor instanceof TenantActor t)` before checking a role — an idiom
+  that silently *skipped* the role check for an `Operator`. Returning the member leaves nothing to
+  skip, and a third kind of actor cannot be added without deciding, in that one file, what it may
+  reach. `Operator` reaches no organisation at all
+  ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)).
 - **Aggregates are immutable.** Every change returns a new instance, so nothing is ever observed
   half-updated and invariants are checked in exactly one place.
 - **Entities are classes, value objects are records.** `Shift`, `Roster`, `Employee`,
@@ -323,13 +421,12 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   and a superseded one is no longer authoritative. It exists so that R12 does not have to be relaxed
   to satisfy F5. An actor with no personnel record is refused rather than shown an empty week: "you
   have no record" and "you are rostered for nothing" are different answers.
-- **The header-based actor is insecure by design** and must be deleted when authentication
-  arrives. It exists so the use cases can be exercised, not as a step towards a real one.
-  `X-Organisation` names the organisation being acted *on* and is always required; `X-Role:
-  OPERATOR` claims the platform operator, which is how the one identity permitted to cross tenants
-  is reachable over HTTP at all rather than only from unit tests. `X-Employee` supplies the
-  employee link. Every header is validated at the boundary, so a malformed one is a 400 and never
-  a 500.
+- **The acting identity comes from the access token and from nowhere else.** `X-User`, `X-Role`,
+  `X-Organisation` and `X-Employee` are gone: no controller reads them, no filter checks them, and
+  a request that sends them anyway is answered as whoever its token says it is. Each web adapter
+  has one `actingIn(actor)` helper over `Actor.requireTenantMembership()`, which is the only way an
+  organisation enters a request
+  ([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)).
 - **Every constraint version is stored, but only the current one can be read back.** The table is
   keyed `(organisation_id, version)`, so revising no longer discards what came before — which is
   what makes a published roster's record of the version that approved it worth anything. The port

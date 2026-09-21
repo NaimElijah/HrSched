@@ -95,6 +95,19 @@
 			<optional>true</optional>
 		</dependency>
 
+		<!--
+		  Spring Security's filter chain, plus JWT signing and verification (Nimbus JOSE+JWT) for
+		  the access tokens ADR-011 issues. Added now, ahead of any token, because putting Spring
+		  Security on the classpath locks every request behind authentication by default;
+		  SecurityConfiguration replaces that default with one chain that permits every request, so
+		  the dependency and the tightening it enables can land separately. Apache-2.0,
+		  version-managed by the Boot BOM. See ADR-011.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
@@ -149,9 +162,32 @@
 
 	<build>
 		<plugins>
+			<!--
+			  The ephemeral signing key is permitted for `spring-boot:run` and nowhere else.
+			  Bound to default-cli, so it reaches goals invoked from the command line and never
+			  the repackage goal that builds the jar: a packaged artifact therefore carries no
+			  permission to invent a key, and a deployment that forgot HRSCHED_SECURITY_TOKEN_-
+			  PRIVATEKEY fails to start rather than signing tokens no other instance can verify.
+			  The same mechanism supplies a throwaway local operator to sign in as, following
+			  compose.yaml's precedent for the local database: local-only credentials that never
+			  reach a packaged jar, and that must be changed at first sign-in anyway. See ADR-011
+			  and ADR-029.
+			-->
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>default-cli</id>
+						<configuration>
+							<systemPropertyVariables>
+								<hrsched.security.token.ephemeral>true</hrsched.security.token.ephemeral>
+								<hrsched.bootstrap.operator.sign-in-name>operator</hrsched.bootstrap.operator.sign-in-name>
+								<hrsched.bootstrap.operator.password>local-development-only</hrsched.bootstrap.operator.password>
+							</systemPropertyVariables>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 
 			<!--

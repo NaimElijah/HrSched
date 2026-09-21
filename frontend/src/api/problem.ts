@@ -69,6 +69,16 @@ export class ApiError extends Error {
     return this.status === 422 && this.violations.length === 0;
   }
 
+  /**
+   * True when the backend does not believe the caller is signed in.
+   *
+   * Distinct from forbidden: that one means "you, but not this"; this one means "who are you?" and
+   * is the answer a session that has ended produces on every request afterwards.
+   */
+  get isUnauthenticated(): boolean {
+    return this.status === 401;
+  }
+
   get isForbidden(): boolean {
     return this.status === 403;
   }

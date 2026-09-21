@@ -1,6 +1,6 @@
-import { identityKey, type ActingIdentity } from '../api/client';
 import { scheduling } from '../api/scheduling';
 import type { Shift } from '../api/scheduling';
+import { useSessionKey } from '../auth/SessionProvider';
 import { useAsync } from '../components/useAsync';
 
 /**
@@ -14,18 +14,18 @@ import { useAsync } from '../components/useAsync';
  * The reads settle independently: a shift that cannot be read costs its own row its time, not every
  * row, and the failure is still returned to be shown.
  *
- * @param identity who is asking
  * @param ids the shifts wanted; a repeated identity is read once
  * @returns the shifts read, by identity, and the first failure among the reads, if there was one
  */
-export function useShiftsById(
-  identity: ActingIdentity,
-  ids: readonly string[],
-): { readonly byId: ReadonlyMap<string, Shift>; readonly error: unknown } {
+export function useShiftsById(ids: readonly string[]): {
+  readonly byId: ReadonlyMap<string, Shift>;
+  readonly error: unknown;
+} {
+  const sessionKey = useSessionKey();
   const wanted = [...new Set(ids)].sort();
   const reads = useAsync(
-    () => Promise.allSettled(wanted.map((id) => scheduling.findShift(identity, id))),
-    `${identityKey(identity)}|${wanted.join(',')}`,
+    () => Promise.allSettled(wanted.map((id) => scheduling.findShift(id))),
+    `${sessionKey}|${wanted.join(',')}`,
   );
   const settled = reads.value ?? [];
   const byId = new Map<string, Shift>();

@@ -2,25 +2,21 @@ import { useState } from 'react';
 import { workforce } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
-import { identityKey } from '../api/client';
-import { useActingAs } from '../identity/ActingAs';
+import { useSessionKey } from '../auth/SessionProvider';
 
 /** Admin: the qualifications this organisation recognises. Defining one takes an Admin. */
 export function QualificationsPage() {
-  const { identity } = useActingAs();
+  const sessionKey = useSessionKey();
   const [name, setName] = useState('');
   const [failure, setFailure] = useState<unknown>(null);
 
-  const qualifications = useAsync(
-    () => workforce.findQualifications(identity),
-    identityKey(identity),
-  );
+  const qualifications = useAsync(() => workforce.findQualifications(), sessionKey);
 
   async function define(event: React.FormEvent) {
     event.preventDefault();
     setFailure(null);
     try {
-      await workforce.defineQualification(identity, name);
+      await workforce.defineQualification(name);
       setName('');
       qualifications.reload();
     } catch (error) {

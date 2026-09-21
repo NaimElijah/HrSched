@@ -19,9 +19,9 @@
 > [!WARNING]
 > **The domain is real; the product is not finished.** You can onboard an organisation, define
 > people and shifts, configure working-time rules, generate a roster, adjust it by hand, publish
-> it, and swap a shift, and all of it is stored in PostgreSQL — but **generation is greedy, not
-> optimised**, and **there is no authentication** (the acting identity comes from a header, so any
-> caller can claim any role).
+> it, and swap a shift, and all of it is stored in PostgreSQL. People sign in, and every request
+> is authenticated by a token HrSched signed and authorised against the account it names. What is
+> still unfinished is the part the product is named for: **generation is greedy, not optimised**.
 
 This README is ordered for a **contributor**, not an evaluator: there is not yet anything to
 evaluate, so Quick start comes before Architecture.
@@ -114,8 +114,10 @@ you and stops it afterwards, and `verify` starts its own throwaway database thro
 There is deliberately no in-memory fallback and no skip-when-Docker-is-absent: a check that quietly
 does not run still reports green ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)).
 
-There is no seed data, and no credentials are needed locally: the database in `compose.yaml` has
-throwaway ones, and there is no authentication yet.
+There is no seed data. No credentials are needed locally either: the database in `compose.yaml`
+has throwaway ones, and `./mvnw spring-boot:run` bootstraps a local platform operator —
+`operator` / `local-development-only` — which you are made to change at first sign-in. A real
+deployment sets `HRSCHED_BOOTSTRAP_OPERATOR_*` instead; see Configuration below.
 
 To run the user interface as well, from the repository root:
 
@@ -135,43 +137,69 @@ ever sees one origin and there is no CORS configuration anywhere in this reposit
 > [ADR-002](docs/ADRs/ADR-002-single-command-build-gate.md) and
 > [ADR-014](docs/ADRs/ADR-014-root-task-runner.md).
 
-> [!WARNING]
-> The UI shows a permanent red banner where you choose the organisation, user and role every
-> request claims. That is not a placeholder for a login screen — it *is* the authentication story
-> today. Switch the role and writes become 403s; switch the organisation and reads become 404s.
+> [!NOTE]
+> The UI signs in. A session lives in memory and survives a reload through a refresh cookie the
+> page cannot read ([ADR-028](docs/ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md)),
+> and which tabs appear follows the kind of account rather than the role — a role's refusal is
+> shown as the 403 it is, because the UI enforces nothing.
 
 ## Usage
 
-Every request carries the acting identity in headers. **This is a placeholder and is insecure**:
-any caller can claim any role. It exists so the API can be exercised before an identity provider
-is chosen.
+Every request carries an access token this service signed, and who is acting is the account that
+token names — resolved from stored state on every request, so disabling somebody or changing their
+role takes effect on their next call ([ADR-011](docs/ADRs/ADR-011-issue-our-own-access-tokens.md)).
+**The organisation is never in the request.** It comes from the account, so there is nothing for a
+caller to change ([ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md)).
 
-The organisation must be onboarded first. Inventing one with `uuidgen` used to work, which was the
-bug [ADR-020](docs/ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md) closed: an
-organisation nobody onboarded does not exist, and every request naming one is refused with 404.
+Accounts are created from the top down and nobody signs themselves up
+([ADR-029](docs/ADRs/ADR-029-provision-accounts-from-the-top-down.md)). The platform operator comes
+from configuration, onboarding creates an organisation's first Admin, and that Admin creates
+everybody else. A password somebody else chose must be replaced before the account holds any role
+at all, which is why every sign-in below is followed by a password change.
+
+Passwords come from the environment so that none of them lands in shell history.
 
 ```bash
-ME=$(uuidgen)
+api() { curl -s -H "Authorization: Bearer $1" -H 'Content-Type: application/json' "${@:2}"; }
 
-# 0. Onboard the organisation (Operator — belongs to no organisation, so sends no X-Organisation)
-ORG=$(curl -s -X POST localhost:8080/api/organisations \
-  -H "X-User: $ME" -H 'X-Role: OPERATOR' -H 'Content-Type: application/json' \
-  -d '{"name":"Acme"}' | jq -r .id)
+# Sign in, replace the password whoever created the account chose, and print a usable token.
+enter() {
+  local pending
+  pending=$(curl -s -X POST localhost:8080/api/auth/sign-in -H 'Content-Type: application/json' \
+    -d "{\"signInName\":\"$1\",\"password\":\"$2\"}" | jq -r .accessToken)
+  api "$pending" -X POST localhost:8080/api/auth/password \
+    -d "{\"currentPassword\":\"$2\",\"newPassword\":\"$3\"}" | jq -r .accessToken
+}
 
-H=(-H "X-Organisation: $ORG" -H "X-User: $ME" -H "Content-Type: application/json")
+# 0. The operator onboards an organisation together with its first Admin. It is refused everything
+#    inside one (ADR-030), so an organisation without an Admin would have nobody able to add one.
+OPERATOR=$(enter "$HRSCHED_BOOTSTRAP_OPERATOR_SIGNINNAME" \
+  "$HRSCHED_BOOTSTRAP_OPERATOR_PASSWORD" "$OPERATOR_PASSWORD")
 
-# 1. Add someone (Admin)
-curl -s -X POST localhost:8080/api/employees "${H[@]}" -H 'X-Role: ADMIN'      -d '{"name":"Ada Lovelace"}'
+api "$OPERATOR" -X POST localhost:8080/api/organisations \
+  -d "{\"name\":\"Acme\",\"firstAdmin\":{\"signInName\":\"admin@acme.example\",\"temporaryPassword\":\"$ADMIN_TEMPORARY\"}}"
 
-# 2. Configure the rules (Admin). These numbers are yours, not any statute's.
-curl -s -X PUT localhost:8080/api/constraints "${H[@]}" -H 'X-Role: ADMIN'      -d '{"minimumRestMinutes":660,"maximumDailyMinutes":600,"maximumConsecutiveDays":6}'
+ADMIN=$(enter admin@acme.example "$ADMIN_TEMPORARY" "$ADMIN_PASSWORD")
 
-# 3. Define the work (Scheduler)
-curl -s -X POST localhost:8080/api/shifts "${H[@]}" -H 'X-Role: SCHEDULER'      -d '{"start":"2026-10-05T08:00:00Z","end":"2026-10-05T16:00:00Z","requiredHeadcount":1}'
+# 1. The Admin adds someone, and gives a colleague an account that can build rosters.
+api "$ADMIN" -X POST localhost:8080/api/employees -d '{"name":"Ada Lovelace"}'
+api "$ADMIN" -X POST localhost:8080/api/accounts \
+  -d "{\"signInName\":\"scheduler@acme.example\",\"temporaryPassword\":\"$SCHEDULER_TEMPORARY\",\"role\":\"SCHEDULER\"}"
 
-# 4. Generate a draft, then publish it (Scheduler)
-ROSTER=$(curl -s -X POST localhost:8080/api/rosters "${H[@]}" -H 'X-Role: SCHEDULER'      -d '{"start":"2026-10-05T00:00:00Z","end":"2026-10-06T00:00:00Z"}' | jq -r .id)
-curl -s -X POST "localhost:8080/api/rosters/$ROSTER/publication" "${H[@]}" -H 'X-Role: SCHEDULER'
+# 2. The Admin configures the rules. These numbers are yours, not any statute's.
+api "$ADMIN" -X PUT localhost:8080/api/constraints \
+  -d '{"minimumRestMinutes":660,"maximumDailyMinutes":600,"maximumConsecutiveDays":6}'
+
+SCHEDULER=$(enter scheduler@acme.example "$SCHEDULER_TEMPORARY" "$SCHEDULER_PASSWORD")
+
+# 3. The Scheduler defines the work.
+api "$SCHEDULER" -X POST localhost:8080/api/shifts \
+  -d '{"start":"2026-10-05T08:00:00Z","end":"2026-10-05T16:00:00Z","requiredHeadcount":1}'
+
+# 4. Generate a draft, then publish it. Only a Scheduler may.
+ROSTER=$(api "$SCHEDULER" -X POST localhost:8080/api/rosters \
+  -d '{"start":"2026-10-05T00:00:00Z","end":"2026-10-06T00:00:00Z"}' | jq -r .id)
+api "$SCHEDULER" -X POST "localhost:8080/api/rosters/$ROSTER/publication"
 ```
 
 A roster that breaks the rules is refused with 422 and every violation listed, because a
@@ -201,6 +229,12 @@ be a default that travels somewhere it is wrong.
 | `management.endpoint.health.probes.enabled` | Exposes `health/liveness` and `health/readiness` | `true` (set explicitly; Spring defaults it off outside Kubernetes) |
 | `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info,metrics,prometheus`. An allow list: `loggers`, `env` and `heapdump` are deliberately absent while there is no authentication ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md)) |
 | `server.port` | HTTP port | `8080` (Spring default, not overridden) |
+| `hrsched.security.token.issuer` | The `iss` claim put in an access token, and required of one | `hrsched` ([ADR-011](docs/ADRs/ADR-011-issue-our-own-access-tokens.md)) |
+| `hrsched.security.token.audience` | The `aud` claim put in an access token, and required of one | `hrsched-api` |
+| `hrsched.security.token.lifetime` | How long an issued access token stays valid | `10m`. Short on purpose: a stolen token is useful only until it expires. The number is open for review (Q29) |
+| `HRSCHED_SECURITY_TOKEN_PRIVATEKEY` | The RSA private key tokens are signed with, as a PKCS#8 PEM of at least 2048 bits | None, and **startup fails without it**. See [`.env.example`](.env.example). `./mvnw spring-boot:run` is the exception: it permits a throwaway key generated at startup, so local development needs no secret |
+| `hrsched.security.password.bcrypt-strength` | Bcrypt's work factor for hashing passwords | `12` (tests use `4`). Reviewed by the owner against the hardware in use (Q29) |
+| `HRSCHED_BOOTSTRAP_OPERATOR_SIGNINNAME` / `_PASSWORD` | Creates the first platform operator at startup, once | Unset. Set both or neither; setting one fails startup. The password must be changed at first sign-in ([ADR-029](docs/ADRs/ADR-029-provision-accounts-from-the-top-down.md)). `./mvnw spring-boot:run` supplies throwaway local values |
 | `SPRING_DATASOURCE_URL` / `_USERNAME` / `_PASSWORD` | Where the database is, and who connects to it | **Deliberately unset.** Supplied by `compose.yaml` locally and by the environment in a deployment; see [`.env.example`](.env.example) |
 | `logging.structured.format.console` | Log format on stdout | `ecs` — Elastic Common Schema JSON, always, with no profile that turns it off ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
 | `logging.structured.ecs.service.name` / `.version` | Identify the emitting service in every line | `HrSched` / the Maven project version, filtered in at build time |
@@ -276,8 +310,9 @@ flowchart LR
 These are not conventions — they are **build failures**. `HexagonalArchitectureTest` runs in
 `./mvnw verify` and fails when the domain imports Spring, when the application reaches into an
 adapter, when one context references another, when a context's own layers form a cycle, when
-anything prints to stdout, when a domain class logs, or when a meter or a span appears inward of an
-adapter.
+anything prints to stdout, when a domain class logs, when a meter or a span appears inward of an
+adapter, or when anything reads who is acting out of Spring Security's thread-local instead of
+taking it as an argument.
 
 Every rule has been observed failing on a deliberately introduced violation, then reverted —
 including the cross-context rule in both directions, since it *permits* something it used to
@@ -394,14 +429,14 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `RosterCandidateTest`, `PublishedLanguageTest` | Published language | What one context tells another, and nothing more. |
 | `WorkforceDirectoryAdapterTest` | Anti-corruption layer | The only class in scheduling permitted to name another context, including that contracted hours do not cross. |
 | `Jdbc*RepositoryTest` (×8) | Driven adapters | Every read filters by organisation in the query before returning anything, the ordering each one promises, and that a save leaves the owned rows agreeing with the aggregate rather than accumulating. Run against a real PostgreSQL. |
-| `ActorFromHeadersTest` (×2) | Driving adapters | The header placeholder in both contexts, including every malformed header. |
+| `AccountHttpTest`, `OrganisationHttpTest`, `SessionHttpTest` | Driving adapters | Who a token makes somebody, what each kind of account may reach, and that an identity header claiming otherwise changes nothing. |
 | `SchedulingExceptionHandlerTest`, `WorkforceExceptionHandlerTest` | Driving adapters | Which failure earns which status, the structured 422, and that there is no catch-all. |
 | `GreedyRosterGeneratorTest` | Driven adapter | The placeholder generator never breaks a rule, and leaves a shift short rather than filling it illegally. |
 | `RosteringHttpTest`, `EmployeeHttpTest`, `QualificationHttpTest` | End to end | Every endpoint through the real hexagon and the real adapters. |
 | `TraceIdHttpTest` | Observability over HTTP | Every response carries a trace id, including the refusals — which are the ones a person has cause to report. |
 | `MetricsHttpTest` | Operations over HTTP | Both probes answer, the meters are published, and `loggers`, `env` and `heapdump` are **not** exposed. |
 | `SchedulingAuditLogTest`, `WorkforceAuditLogTest` | Driven adapters | Every audit field is an identifier and never a name, the message is a constant, and the counter is not tagged by tenant. |
-| `HexagonalArchitectureTest` | Whole codebase | **Nine** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, layer cycles, no printing, no logging in the domain, and no instrumentation inward of an adapter. |
+| `HexagonalArchitectureTest` | Whole codebase | **Ten** ArchUnit rules: dependency direction, framework-free application, published-port integration, kernel independence, layer cycles, no printing, no logging in the domain, no instrumentation inward of an adapter, and no ambient read of who is acting. |
 | `HrSchedApplicationTests` | Spring context | The application starts. |
 
 Naming follows `Given<scenario>_When<action>_Then<result>`. Tests run against the public
@@ -425,7 +460,7 @@ npm run test:coverage  # the same tests, plus coverage/index.html
 | `components/localDates.test.ts` | The local-day round trip, the documented timezone hazard, and the day and time labels a roster board is read by — all asserted relatively so they hold in any zone. |
 | `components/Feedback.test.tsx` | Every refusal branch, including a 422 that lists no broken rules — a refusal, not a working-time breach — and the 404 that may also mean another tenant owns it. |
 | `components/ErrorBoundary.test.tsx` | One broken render does not become a blank page, and "Try again" recovers. |
-| `identity/ActingAs.test.tsx`, `identity/ActingAsBar.test.tsx` | The acting-as placeholder: persistence, validation, the synthetic option, and the operator rule that clears the employee link. |
+| `auth/session.test.tsx` | Signing in, the restore handshake every load begins with, the single-flight refresh, and that the access token is held where no script can read it back. |
 | `pages/*.test.tsx` (×9) | One per screen: what is sent, what is refused before sending, and what the user is told. |
 | `App.test.tsx` | Tab navigation, and the one 403 the shell deliberately swallows — with the proof that nothing else is. |
 
@@ -496,7 +531,7 @@ blocked on the same missing environment.
 | [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) | Metrics pulled from `/actuator/prometheus`; no monitoring stack committed | The endpoint is unauthenticated, like everything else here; nothing scrapes it yet |
 | [ADR-018](docs/ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md) | Changes and refusals recorded through a port, as log events | The trail is only as durable as the log; every new use case must remember to call the port |
 | [ADR-019](docs/ADRs/ADR-019-an-application-layer-for-the-access-context.md) | The access context gets an application layer; an organisation is a real record | A register held in memory, which after ADR-020 makes a restart a total outage rather than an empty start |
-| [ADR-020](docs/ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md) | An unknown `X-Organisation` is refused at the boundary, with the ordinary 404 | An oracle for whether an identifier names a real tenant, cheap only because the identifier is a random UUID; and it is still not authentication |
+| [ADR-020](docs/ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md) | An unknown `X-Organisation` is refused at the boundary, with the ordinary 404 | Superseded by ADR-031: there is no claimed organisation left to check, and the filter was deleted rather than left unable to fire |
 | [ADR-021](docs/ADRs/ADR-021-notifications-as-a-bounded-context.md) | Notifications are their own context, and hold no words | Delivery is pull-only, so somebody is informed when they next open the app; a lost notification means they were never told while the system believes they were |
 | [ADR-022](docs/ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md) | Approving a swap publishes a replacement roster rather than editing one | A refused approval left the replacement behind as a draft, which ADR-023 fixed |
 | [ADR-023](docs/ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md) | A use case is one transaction, applied at the composition root | A proxy nothing in the service hints at; an audit entry can now outlive the change it records |
@@ -504,9 +539,14 @@ blocked on the same missing environment.
 | [ADR-025](docs/ADRs/ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md) | A draft roster is edited through a picker and buttons on a board, not by drag and drop | Moving somebody is two actions; the picker offers people the backend will refuse |
 | [ADR-026](docs/ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md) | Two overlapping published rosters of one organisation cannot be stored: an exclusion constraint, refused with 409 | The database needs the `btree_gist` extension; a database already holding such a pair fails to migrate |
 | [ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md) | Publications within one organisation take turns, under a transaction-scoped advisory lock | Publications in one tenant serialise; a port gained a method, and the lock is a convention the constraint stands behind |
+| [ADR-028](docs/ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md) | The access token lives in memory and the session outlives it through a rotating refresh cookie | A reload costs one refresh round trip, and two tabs have to take turns or reuse detection ends the session for both |
+| [ADR-029](docs/ADRs/ADR-029-provision-accounts-from-the-top-down.md) | Accounts are created from the top down, with temporary passwords; the first operator comes from configuration | Nobody can sign themselves up, and there is no way back into an organisation from outside it when its last Admin is locked out — Q28 |
+| [ADR-030](docs/ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md) | The platform operator administers the register of tenants and is refused everything inside one | Support cannot look at a customer's data, which is the point and also the cost |
+| [ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md) | A request acts in the organisation its account belongs to; no request names one | Somebody working for two customers needs two accounts, and ADR-020's boundary filter was deleted rather than left unable to fire |
+| [ADR-032](docs/ADRs/ADR-032-close-the-security-chain-by-default.md) | The security chain ends in `denyAll`; every open route is named | Adding a route takes a second edit in a file its author may not have opened, which is the point |
 
-Still open and blocking: **ADR-010** (objectives) and **ADR-011** (authentication). See the
-[ADR index](docs/ADRs/).
+Still open and blocking: **ADR-010** (generation objectives). Authentication is settled — ADR-011
+and ADR-028 to ADR-032 are Accepted, and ADR-020 is superseded. See the [ADR index](docs/ADRs/).
 
 ## Documentation
 

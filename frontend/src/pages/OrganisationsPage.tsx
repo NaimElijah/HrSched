@@ -1,40 +1,44 @@
 import { useState } from 'react';
 import { access } from '../api/access';
-import { identityKey } from '../api/client';
+import { useSessionKey } from '../auth/SessionProvider';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
-import { useActingAs } from '../identity/ActingAs';
 
 /**
- * Operator: the organisations on the platform (F13) — list them, onboard one, read the one being
- * acted in, and switch the acting identity into another.
+ * Operator: the organisations on the platform (F13) — list them and onboard one.
  *
- * Every request goes out as the identity the bar above claims, unchanged. A tenant role is refused
- * the listing and onboarding, and this page shows that refusal: which role administers the platform
- * is the backend's rule (ADR-019), not something to decide by hiding a tab.
+ * There is no longer a way to act inside one from here. The operator belongs to no organisation and
+ * is refused everything inside every one of them (ADR-030); the button that used to switch an
+ * "acting identity" only worked because the backend believed whatever headers it was sent.
  *
- * Switching organisation clears the employee link, because a personnel record belongs to one
- * organisation and would otherwise be claimed inside another.
+ * A tenant role is refused the listing and onboarding, and this page shows that refusal rather than
+ * hiding itself: which identity administers the platform is the backend's rule (ADR-019), not
+ * something to decide by hiding a tab.
  */
 export function OrganisationsPage() {
-  const { identity, setOrganisation } = useActingAs();
+  const sessionKey = useSessionKey();
   const [name, setName] = useState('');
+  const [adminSignInName, setAdminSignInName] = useState('');
+  const [temporaryPassword, setTemporaryPassword] = useState('');
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  const organisations = useAsync(() => access.findOrganisations(identity), identityKey(identity));
-  const current = useAsync(
-    () => access.findOrganisation(identity, identity.organisation),
-    identityKey(identity),
-  );
+  const organisations = useAsync(() => access.findOrganisations(), sessionKey);
 
   async function onboard(event: React.FormEvent) {
     event.preventDefault();
     setFailure(null);
     setDone(null);
     try {
-      const onboarded = await access.onboardOrganisation(identity, name);
+      const onboarded = await access.onboardOrganisation(name, {
+        signInName: adminSignInName,
+        temporaryPassword,
+      });
       setName('');
+      setAdminSignInName('');
+      // Cleared on success and kept on failure: a refused onboarding is retyped, and retyping a
+      // password nobody can read is the one thing that would push somebody towards a weaker one.
+      setTemporaryPassword('');
       setDone(`Onboarded ${onboarded.name}.`);
       organisations.reload();
     } catch (error) {
@@ -46,17 +50,36 @@ export function OrganisationsPage() {
     <section>
       <h2>Organisations</h2>
       <p className="hint">
-        The platform operator&apos;s screen. Every request here is made as the identity above, so in
-        any other role listing and onboarding are refused.
+        The platform operator&apos;s screen: the register of tenants, and nothing inside one. In any
+        other role, listing and onboarding are refused.
       </p>
 
-      <Failure error={current.error} />
-      {current.value === null ? null : <p>{`You are acting in ${current.value.name}.`}</p>}
+      <p className="hint">
+        An organisation is onboarded together with its first Admin, who is made to choose their own
+        password the first time they sign in.
+      </p>
 
       <form className="row" onSubmit={(event) => void onboard(event)}>
         <label>
           Name
           <input value={name} onChange={(event) => setName(event.target.value)} required />
+        </label>
+        <label>
+          First admin sign-in name
+          <input
+            value={adminSignInName}
+            onChange={(event) => setAdminSignInName(event.target.value)}
+            required
+          />
+        </label>
+        <label>
+          Temporary password
+          <input
+            type="password"
+            value={temporaryPassword}
+            onChange={(event) => setTemporaryPassword(event.target.value)}
+            required
+          />
         </label>
         <button type="submit">Onboard organisation</button>
       </form>
@@ -73,9 +96,6 @@ export function OrganisationsPage() {
           <tr>
             <th>Name</th>
             <th>Identifier</th>
-            <th>
-              <span className="visually-hidden">Actions</span>
-            </th>
           </tr>
         </thead>
         <tbody>
@@ -84,15 +104,6 @@ export function OrganisationsPage() {
               <td>{organisation.name}</td>
               <td>
                 <code>{organisation.id}</code>
-              </td>
-              <td>
-                {organisation.id === identity.organisation ? (
-                  'Acting in this one'
-                ) : (
-                  <button type="button" onClick={() => setOrganisation(organisation.id)}>
-                    {`Act in ${organisation.name}`}
-                  </button>
-                )}
               </td>
             </tr>
           ))}

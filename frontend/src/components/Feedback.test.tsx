@@ -118,12 +118,27 @@ describe('the other refusals', () => {
     );
   });
 
-  it('GivenAConflict_WhenRendering_ThenItSaysItWasAlreadyDecided', () => {
+  it('GivenAConflict_WhenRendering_ThenTheBackendsOwnReasonIsShown', () => {
     render(<Failure error={new ApiError(409, 'That swap request has already been decided.')} />);
 
     const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent('Already decided.');
+    expect(alert).toHaveTextContent('That cannot be done.');
     expect(alert).toHaveTextContent('That swap request has already been decided.');
+  });
+
+  /**
+   * A 409 used to mean one thing — somebody decided a swap first — and the heading said so. It now
+   * also carries rules that have nothing to do with a race, so the heading must not explain the
+   * cause; only the backend knows it.
+   */
+  it('GivenAConflictThatIsARuleRatherThanARace_WhenRendering_ThenNothingClaimsSomebodyWasFirst', () => {
+    render(
+      <Failure error={new ApiError(409, 'An organisation must keep at least one active Admin.')} />,
+    );
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('An organisation must keep at least one active Admin.');
+    expect(alert).not.toHaveTextContent(/first/);
   });
 
   it('GivenAPlainError_WhenRendering_ThenItsMessageIsShown', () => {

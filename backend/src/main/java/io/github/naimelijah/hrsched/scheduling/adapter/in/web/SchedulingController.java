@@ -16,6 +16,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.net.URI;
@@ -24,13 +25,13 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -62,21 +63,13 @@ public class SchedulingController {
 
   @PostMapping("/shifts")
   public ResponseEntity<ShiftResponse> defineShift(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @RequestBody DefineShiftRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+      @AuthenticationPrincipal Actor actor, @RequestBody DefineShiftRequest request) {
     Set<QualificationId> required = request.toRequiredQualifications();
     ShiftId id =
         manageShifts.defineShift(
             actor,
             new DefineShiftCommand(
-                ActorFromHeaders.organisationOf(organisation),
-                request.toPeriod(),
-                request.requiredHeadcount(),
-                required));
+                actingIn(actor), request.toPeriod(), request.requiredHeadcount(), required));
     return ResponseEntity.created(URI.create("/api/shifts/" + id.value()))
         .body(
             new ShiftResponse(
@@ -94,16 +87,8 @@ public class SchedulingController {
    */
   @GetMapping("/shifts")
   public List<ShiftResponse> findShifts(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @RequestParam Instant from,
-      @RequestParam Instant to) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
-    return manageShifts
-        .findShifts(actor, ActorFromHeaders.organisationOf(organisation), new TimeRange(from, to))
-        .stream()
+      @AuthenticationPrincipal Actor actor, @RequestParam Instant from, @RequestParam Instant to) {
+    return manageShifts.findShifts(actor, actingIn(actor), new TimeRange(from, to)).stream()
         .map(ShiftResponse::from)
         .toList();
   }
@@ -118,73 +103,42 @@ public class SchedulingController {
    *     shift by that identity
    */
   @GetMapping("/shifts/{id}")
-  public ShiftResponse findShift(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @PathVariable UUID id) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+  public ShiftResponse findShift(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
     ShiftId shift = new ShiftId(id);
     return manageShifts
-        .findShift(actor, ActorFromHeaders.organisationOf(organisation), shift)
+        .findShift(actor, actingIn(actor), shift)
         .map(ShiftResponse::from)
         .orElseThrow(() -> new UnknownShiftException(shift));
   }
 
   @PutMapping("/constraints")
   public ConstraintSetResponse reviseConstraints(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @RequestBody ConstraintSetRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+      @AuthenticationPrincipal Actor actor, @RequestBody ConstraintSetRequest request) {
     ConstraintSet revised =
         configureConstraints.reviseConstraints(
-            actor,
-            new ReviseConstraintsCommand(
-                ActorFromHeaders.organisationOf(organisation), request.toConstraints()));
+            actor, new ReviseConstraintsCommand(actingIn(actor), request.toConstraints()));
     return ConstraintSetResponse.from(revised);
   }
 
   @GetMapping("/constraints")
-  public ConstraintSetResponse currentConstraints(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+  public ConstraintSetResponse currentConstraints(@AuthenticationPrincipal Actor actor) {
     return ConstraintSetResponse.from(
-        configureConstraints.currentConstraints(
-            actor, ActorFromHeaders.organisationOf(organisation)));
+        configureConstraints.currentConstraints(actor, actingIn(actor)));
   }
 
   @PostMapping("/rosters")
   public ResponseEntity<RosterResponse> generate(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @RequestBody PeriodRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+      @AuthenticationPrincipal Actor actor, @RequestBody PeriodRequest request) {
     Roster draft =
         planRosters.generateDraft(
-            actor,
-            new GenerateRosterCommand(
-                ActorFromHeaders.organisationOf(organisation), request.toPeriod()));
+            actor, new GenerateRosterCommand(actingIn(actor), request.toPeriod()));
     return ResponseEntity.created(URI.create("/api/rosters/" + draft.id().value()))
         .body(RosterResponse.from(draft));
   }
 
   @GetMapping("/rosters")
-  public List<RosterResponse> findRosters(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
-    return planRosters.findRosters(actor, ActorFromHeaders.organisationOf(organisation)).stream()
+  public List<RosterResponse> findRosters(@AuthenticationPrincipal Actor actor) {
+    return planRosters.findRosters(actor, actingIn(actor)).stream()
         .map(RosterResponse::from)
         .toList();
   }
@@ -201,35 +155,22 @@ public class SchedulingController {
    */
   @GetMapping("/me/schedule")
   public List<RosteredShiftResponse> findOwnSchedule(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @RequestParam Instant from,
-      @RequestParam Instant to) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
-    return viewOwnSchedule
-        .findOwnSchedule(
-            actor, ActorFromHeaders.organisationOf(organisation), new TimeRange(from, to))
-        .stream()
+      @AuthenticationPrincipal Actor actor, @RequestParam Instant from, @RequestParam Instant to) {
+    return viewOwnSchedule.findOwnSchedule(actor, actingIn(actor), new TimeRange(from, to)).stream()
         .map(RosteredShiftResponse::from)
         .toList();
   }
 
   @PostMapping("/rosters/{id}/assignments")
   public RosterResponse assign(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @AuthenticationPrincipal Actor actor,
       @PathVariable UUID id,
       @RequestBody AssignmentRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     return RosterResponse.from(
         planRosters.assign(
             actor,
             new AssignToShiftCommand(
-                ActorFromHeaders.organisationOf(organisation),
+                actingIn(actor),
                 new RosterId(id),
                 request.requiredShift(),
                 request.requiredEmployee())));
@@ -237,49 +178,43 @@ public class SchedulingController {
 
   @DeleteMapping("/rosters/{id}/assignments/{shift}/{employee}")
   public RosterResponse unassign(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @AuthenticationPrincipal Actor actor,
       @PathVariable UUID id,
       @PathVariable UUID shift,
       @PathVariable UUID employee) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     return RosterResponse.from(
         planRosters.unassign(
             actor,
             new RemoveAssignmentCommand(
-                ActorFromHeaders.organisationOf(organisation),
-                new RosterId(id),
-                new ShiftId(shift),
-                new EmployeeId(employee))));
+                actingIn(actor), new RosterId(id), new ShiftId(shift), new EmployeeId(employee))));
   }
 
   @PostMapping("/rosters/{id}/publication")
-  public RosterResponse publish(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @PathVariable UUID id) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
-    return RosterResponse.from(
-        planRosters.publish(
-            actor, ActorFromHeaders.organisationOf(organisation), new RosterId(id)));
+  public RosterResponse publish(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
+    return RosterResponse.from(planRosters.publish(actor, actingIn(actor), new RosterId(id)));
   }
 
   @GetMapping("/rosters/{id}")
   public ResponseEntity<RosterResponse> find(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @PathVariable UUID id) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+      @AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
     return planRosters
-        .findRoster(actor, ActorFromHeaders.organisationOf(organisation), new RosterId(id))
+        .findRoster(actor, actingIn(actor), new RosterId(id))
         .map(RosterResponse::from)
         .map(ResponseEntity::ok)
         .orElseGet(() -> ResponseEntity.notFound().build());
+  }
+
+  /**
+   * The organisation this request acts in, taken from the acting account and from nowhere else.
+   *
+   * <p>It replaced {@code X-Organisation}, and the difference is the whole point: there is no
+   * longer anything in the request naming an organisation, so there is nothing for a caller to
+   * change. The platform operator is refused here, because it belongs to none (ADR-030).
+   *
+   * @param actor whoever the token named
+   * @return the organisation they belong to
+   */
+  private static OrganisationId actingIn(Actor actor) {
+    return actor.requireTenantMembership().organisation();
   }
 }
