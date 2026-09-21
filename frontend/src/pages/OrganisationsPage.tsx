@@ -18,6 +18,8 @@ import { useAsync } from '../components/useAsync';
 export function OrganisationsPage() {
   const sessionKey = useSessionKey();
   const [name, setName] = useState('');
+  const [adminSignInName, setAdminSignInName] = useState('');
+  const [temporaryPassword, setTemporaryPassword] = useState('');
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
 
@@ -28,8 +30,15 @@ export function OrganisationsPage() {
     setFailure(null);
     setDone(null);
     try {
-      const onboarded = await access.onboardOrganisation(name);
+      const onboarded = await access.onboardOrganisation(name, {
+        signInName: adminSignInName,
+        temporaryPassword,
+      });
       setName('');
+      setAdminSignInName('');
+      // Cleared on success and kept on failure: a refused onboarding is retyped, and retyping a
+      // password nobody can read is the one thing that would push somebody towards a weaker one.
+      setTemporaryPassword('');
       setDone(`Onboarded ${onboarded.name}.`);
       organisations.reload();
     } catch (error) {
@@ -45,10 +54,32 @@ export function OrganisationsPage() {
         other role, listing and onboarding are refused.
       </p>
 
+      <p className="hint">
+        An organisation is onboarded together with its first Admin, who is made to choose their own
+        password the first time they sign in.
+      </p>
+
       <form className="row" onSubmit={(event) => void onboard(event)}>
         <label>
           Name
           <input value={name} onChange={(event) => setName(event.target.value)} required />
+        </label>
+        <label>
+          First admin sign-in name
+          <input
+            value={adminSignInName}
+            onChange={(event) => setAdminSignInName(event.target.value)}
+            required
+          />
+        </label>
+        <label>
+          Temporary password
+          <input
+            type="password"
+            value={temporaryPassword}
+            onChange={(event) => setTemporaryPassword(event.target.value)}
+            required
+          />
         </label>
         <button type="submit">Onboard organisation</button>
       </form>

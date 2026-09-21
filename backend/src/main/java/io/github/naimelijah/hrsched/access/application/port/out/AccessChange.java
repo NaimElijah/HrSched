@@ -12,6 +12,12 @@ public enum AccessChange {
   ORGANISATION_ONBOARDED,
 
   /**
+   * An account was created for somebody. Recorded separately from the organisation it belongs to,
+   * because who may act inside a tenant is a different question from which tenants exist.
+   */
+  ACCOUNT_CREATED,
+
+  /**
    * The platform operator was created from configuration at startup. Recorded because it is the
    * most privileged account there is, and the one nobody signs in to create.
    */

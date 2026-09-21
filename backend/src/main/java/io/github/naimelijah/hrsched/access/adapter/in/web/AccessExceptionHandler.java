@@ -2,6 +2,8 @@ package io.github.naimelijah.hrsched.access.adapter.in.web;
 
 import io.github.naimelijah.hrsched.access.domain.model.InvalidOrganisationNameException;
 import io.github.naimelijah.hrsched.access.domain.model.NotThePlatformOperatorException;
+import io.github.naimelijah.hrsched.access.domain.model.SignInNameTakenException;
+import io.github.naimelijah.hrsched.access.domain.model.UnacceptablePasswordException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.micrometer.core.instrument.Counter;
@@ -63,6 +65,38 @@ public class AccessExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     problem.setTitle("Invalid request");
+    return problem;
+  }
+
+  /**
+   * A temporary password the policy refuses. A 422 naming the rule, because whoever typed it has to
+   * know what would satisfy it; the password itself is never echoed.
+   */
+  @ExceptionHandler(UnacceptablePasswordException.class)
+  public ProblemDetail handleUnacceptablePassword(UnacceptablePasswordException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "That temporary password does not satisfy the policy.");
+    problem.setTitle("Password not accepted");
+    problem.setProperty("reason", exception.reason().name());
+    return problem;
+  }
+
+  /**
+   * A sign-in name somebody else already holds. A 409 rather than a 400: the request was well
+   * formed and the world said no.
+   *
+   * <p>The detail never repeats the name. Uniqueness is platform-wide, so this can be raised by a
+   * collision with an account in an organisation the caller cannot see, and echoing it would tell
+   * them a particular person has an account here.
+   */
+  @ExceptionHandler(SignInNameTakenException.class)
+  public ProblemDetail handleSignInNameTaken() {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT, "That sign-in name is already in use.");
+    problem.setTitle("Sign-in name taken");
     return problem;
   }
 

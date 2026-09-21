@@ -132,9 +132,15 @@ public class UseCaseConfiguration {
   @Bean
   OrganisationService organisationService(
       OrganisationRepository organisations,
+      AccountRepository accounts,
+      PasswordHasher passwords,
+      PasswordPolicy passwordPolicy,
       io.github.naimelijah.hrsched.access.application.port.out.AuditTrail audit,
+      Clock clock,
       PlatformTransactionManager transactions) {
-    return transactional(new OrganisationService(organisations, audit), transactions);
+    return transactional(
+        new OrganisationService(organisations, accounts, passwords, passwordPolicy, audit, clock),
+        transactions);
   }
 
   /**

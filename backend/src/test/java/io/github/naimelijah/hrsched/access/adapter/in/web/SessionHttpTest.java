@@ -289,7 +289,7 @@ class SessionHttpTest {
                     .header("X-User", UUID.randomUUID().toString())
                     .header("X-Role", "OPERATOR")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content("{\"name\":\"Acme %s\"}".formatted(UUID.randomUUID())))
+                    .content(TestTenants.onboarding("Acme %s".formatted(UUID.randomUUID()))))
             .andReturn()
             .getResponse();
 
@@ -303,7 +303,7 @@ class SessionHttpTest {
         mockMvc
             .perform(
                 TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
-                    .content("{\"name\":\"Acme %s\"}".formatted(UUID.randomUUID())))
+                    .content(TestTenants.onboarding("Acme %s".formatted(UUID.randomUUID()))))
             .andReturn()
             .getResponse();
 

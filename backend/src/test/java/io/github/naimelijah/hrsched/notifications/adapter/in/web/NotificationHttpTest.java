@@ -40,7 +40,8 @@ class NotificationHttpTest {
         mockMvc
             .perform(
                 TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
-                    .content("{\"name\":\"Organisation %s\"}".formatted(UUID.randomUUID())))
+                    .content(
+                        TestTenants.onboarding("Organisation %s".formatted(UUID.randomUUID()))))
             .andExpect(status().isCreated())
             .andReturn()
             .getResponse()

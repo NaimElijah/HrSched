@@ -6,21 +6,31 @@ export interface Organisation {
   readonly name: string;
 }
 
+/** Who will administer a newly onboarded organisation. */
+export interface FirstAdmin {
+  readonly signInName: string;
+  readonly temporaryPassword: string;
+}
+
 /**
  * The organisation register (F13).
  *
- * Onboarding is the one request the backend does not check `X-Organisation` on, because requiring
- * an organisation to create the first organisation would leave the platform unbootstrappable
- * (ADR-020). Listing and reading are checked like every other request, so a claim naming an
- * organisation nobody onboarded is refused with a 404 before either reaches the register.
- *
- * Every call is made as whoever the client is currently acting as. The identity bar bootstraps a
- * first organisation by claiming OPERATOR for that one request; everything else claims what the bar
- * shows.
+ * Every call is made as whoever holds the session, which for all three of these is the platform
+ * operator: a tenant role is refused onboarding and listing, and may read only its own.
  */
 export const access = {
-  onboardOrganisation: (name: string): Promise<Organisation> =>
-    api.post<Organisation>('/api/organisations', { name }),
+  /**
+   * Onboards an organisation and the account that will administer it, in one request.
+   *
+   * The first Admin is not optional. The operator is refused everything inside an organisation
+   * (ADR-030), so one onboarded without an Admin would have nobody able to add one.
+   *
+   * @param name what to call the organisation
+   * @param firstAdmin the account to create alongside it, which must change its password at first
+   *   sign-in
+   */
+  onboardOrganisation: (name: string, firstAdmin: FirstAdmin): Promise<Organisation> =>
+    api.post<Organisation>('/api/organisations', { name, firstAdmin }),
 
   /** Every organisation on the platform. The Operator's alone: a tenant role is refused with a 403. */
   findOrganisations: (): Promise<Organisation[]> => api.get<Organisation[]>('/api/organisations'),

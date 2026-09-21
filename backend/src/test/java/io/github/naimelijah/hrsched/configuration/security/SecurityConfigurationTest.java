@@ -55,7 +55,8 @@ class SecurityConfigurationTest {
     mockMvc
         .perform(
             TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
-                .content("{\"name\":\"Acme Security Test %s\"}".formatted(UUID.randomUUID())))
+                .content(
+                    TestTenants.onboarding("Acme Security Test %s".formatted(UUID.randomUUID()))))
         .andExpect(status().isCreated());
   }
 }

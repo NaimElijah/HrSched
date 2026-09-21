@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.access.adapter.in.web;
 
 import static io.github.naimelijah.hrsched.shared.testsupport.TestTenants.with;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -20,6 +21,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * Drives the organisation API over HTTP (requirement F13).
@@ -56,8 +58,7 @@ class OrganisationHttpTest {
     String body =
         mockMvc
             .perform(
-                with(post("/api/organisations"), operator())
-                    .content("{\"name\":\"%s\"}".formatted(name)))
+                with(post("/api/organisations"), operator()).content(TestTenants.onboarding(name)))
             .andExpect(status().isCreated())
             .andReturn()
             .getResponse()
@@ -69,7 +70,8 @@ class OrganisationHttpTest {
   void GivenTheOperator_WhenOnboardingAnOrganisation_ThenItIsCreatedAndAddressable()
       throws Exception {
     mockMvc
-        .perform(with(post("/api/organisations"), operator()).content("{\"name\":\"Acme\"}"))
+        .perform(
+            with(post("/api/organisations"), operator()).content(TestTenants.onboarding("Acme")))
         .andExpect(status().isCreated())
         .andExpect(header().exists("Location"))
         .andExpect(jsonPath("$.name").value("Acme"));
@@ -123,7 +125,7 @@ class OrganisationHttpTest {
     String admin = TestTenants.tokenFor(mockMvc, organisation(onboard("Acme")), Role.ADMIN);
 
     mockMvc
-        .perform(with(post("/api/organisations"), admin).content("{\"name\":\"Beta\"}"))
+        .perform(with(post("/api/organisations"), admin).content(TestTenants.onboarding("Beta")))
         .andExpect(status().isForbidden());
   }
 
@@ -154,7 +156,7 @@ class OrganisationHttpTest {
         .perform(
             post("/api/organisations")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"Acme\"}"))
+                .content(TestTenants.onboarding("Acme")))
         .andExpect(status().isUnauthorized());
   }
 
@@ -176,7 +178,7 @@ class OrganisationHttpTest {
                 .header("X-User", UUID.randomUUID().toString())
                 .header("X-Role", "OPERATOR")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"Acme\"}"))
+                .content(TestTenants.onboarding("Acme")))
         .andExpect(status().isUnauthorized());
   }
 
@@ -190,14 +192,14 @@ class OrganisationHttpTest {
         .perform(
             with(post("/api/organisations"), admin)
                 .header("X-Role", "OPERATOR")
-                .content("{\"name\":\"Beta\"}"))
+                .content(TestTenants.onboarding("Beta")))
         .andExpect(status().isForbidden());
   }
 
   @Test
   void GivenABlankName_WhenOnboarding_ThenItIsABadRequest() throws Exception {
     mockMvc
-        .perform(with(post("/api/organisations"), operator()).content("{\"name\":\"  \"}"))
+        .perform(with(post("/api/organisations"), operator()).content(TestTenants.onboarding("  ")))
         .andExpect(status().isBadRequest());
   }
 
@@ -228,6 +230,143 @@ class OrganisationHttpTest {
     mockMvc
         .perform(with(get("/api/organisations/not-a-uuid"), operator()))
         .andExpect(status().isBadRequest());
+  }
+
+  /**
+   * The whole point of onboarding the two together. The operator is refused everything inside an
+   * organisation (ADR-030), so one onboarded without an Admin would have nobody able to add one.
+   */
+  @Test
+  void
+      GivenTheOperator_WhenOnboardingWithAFirstAdmin_ThenThatAdminSignsInAndMustChangeTheirPassword()
+          throws Exception {
+    String admin = anInventedSignInName();
+    String body =
+        mockMvc
+            .perform(
+                with(post("/api/organisations"), operator())
+                    .content(TestTenants.onboarding(aName(), admin)))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String id = JsonPath.read(body, "$.id");
+
+    mockMvc
+        .perform(signInAs(admin, TestTenants.password()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.session.kind").value("TENANT"))
+        .andExpect(jsonPath("$.session.organisation").value(id))
+        .andExpect(jsonPath("$.session.role").value("ADMIN"))
+        .andExpect(jsonPath("$.session.passwordChangeRequired").value(true));
+  }
+
+  /**
+   * A 409, and nothing left behind. The two are created in one transaction on purpose: an
+   * organisation whose Admin was refused is one nobody can ever reach.
+   */
+  @Test
+  void GivenASignInNameAlreadyTaken_WhenOnboarding_ThenItIsAConflictAndNoOrganisationIsCreated()
+      throws Exception {
+    String admin = anInventedSignInName();
+    mockMvc
+        .perform(
+            with(post("/api/organisations"), operator())
+                .content(TestTenants.onboarding(aName(), admin)))
+        .andExpect(status().isCreated());
+    String refused = aName();
+
+    mockMvc
+        .perform(
+            with(post("/api/organisations"), operator())
+                .content(TestTenants.onboarding(refused, admin)))
+        .andExpect(status().isConflict());
+
+    assertThatNoOrganisationIsCalled(refused);
+  }
+
+  /** Whoever typed it is told which rule it broke, because otherwise they cannot fix it. */
+  @Test
+  void GivenATemporaryPasswordThePolicyRefuses_WhenOnboarding_ThenNothingIsCreated()
+      throws Exception {
+    String refused = aName();
+
+    mockMvc
+        .perform(
+            with(post("/api/organisations"), operator())
+                .content(
+                    "{\"name\":\"%s\",\"firstAdmin\":{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\"}}"
+                        .formatted(refused, anInventedSignInName(), "short")))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.reason").value("TOO_SHORT"));
+
+    assertThatNoOrganisationIsCalled(refused);
+  }
+
+  @Test
+  void GivenNoFirstAdmin_WhenOnboarding_ThenItIsABadRequest() throws Exception {
+    mockMvc
+        .perform(with(post("/api/organisations"), operator()).content(ONLY_A_NAME))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void GivenNoTemporaryPassword_WhenOnboarding_ThenItIsABadRequest() throws Exception {
+    mockMvc
+        .perform(
+            with(post("/api/organisations"), operator())
+                .content(
+                    "{\"name\":\"Acme\",\"firstAdmin\":{\"signInName\":\"%s\"}}"
+                        .formatted(anInventedSignInName())))
+        .andExpect(status().isBadRequest());
+  }
+
+  /** A credential that came in must not go back out, where a proxy or a log would keep it. */
+  @Test
+  void GivenAnOnboarding_WhenAnswered_ThenTheTemporaryPasswordIsNotEchoed() throws Exception {
+    String admin = anInventedSignInName();
+
+    String answer =
+        mockMvc
+            .perform(
+                with(post("/api/organisations"), operator())
+                    .content(TestTenants.onboarding(aName(), admin)))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(answer).doesNotContain(TestTenants.password()).doesNotContain(admin);
+  }
+
+  private MockHttpServletRequestBuilder signInAs(String signInName, String password) {
+    return post("/api/auth/sign-in")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("{\"signInName\":\"%s\",\"password\":\"%s\"}".formatted(signInName, password));
+  }
+
+  /**
+   * Asserts through the operator's own listing rather than the database, because what matters is
+   * that the organisation is not there to be administered.
+   */
+  private void assertThatNoOrganisationIsCalled(String name) throws Exception {
+    mockMvc
+        .perform(with(get("/api/organisations"), operator()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[?(@.name=='%s')]".formatted(name)).isEmpty());
+  }
+
+  /**
+   * A body of the shape onboarding used to take, which no longer names anybody who can administer.
+   */
+  private static final String ONLY_A_NAME = "{\"name\":\"Acme\"}";
+
+  private static String aName() {
+    return "Acme %s".formatted(UUID.randomUUID());
+  }
+
+  private static String anInventedSignInName() {
+    return "admin-%s@example.com".formatted(UUID.randomUUID());
   }
 
   private static OrganisationId organisation(String id) {

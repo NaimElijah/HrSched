@@ -23,6 +23,10 @@ import type { Session } from '../api/session';
 const ACME = { id: '22222222-2222-4222-8222-222222222222', name: 'Acme' };
 const BETA = { id: '55555555-5555-4555-8555-555555555555', name: 'Beta' };
 
+/** Invented for these tests. Nothing here is a suggestion about what a real one should look like. */
+const AN_ADMIN = 'first-admin@example.com';
+const A_PASSWORD = 'an invented temporary password';
+
 function thePlatform(overrides: Record<string, Answer> = {}) {
   return routeTo({
     '/api/organisations': { status: 200, body: [ACME, BETA] },
@@ -81,16 +85,25 @@ describe('reading the platform', () => {
 });
 
 describe('onboarding', () => {
-  it('GivenATypedName_WhenOnboarding_ThenItIsSentAsTheSignedInOperator', async () => {
+  async function fillIn(organisation: string, admin: string, password: string) {
+    await userEvent.type(await screen.findByLabelText('Name'), organisation);
+    await userEvent.type(screen.getByLabelText('First admin sign-in name'), admin);
+    await userEvent.type(screen.getByLabelText('Temporary password'), password);
+  }
+
+  it('GivenANameAndAFirstAdmin_WhenOnboarding_ThenBothAreSentAsTheSignedInOperator', async () => {
     const stub = thePlatform({ 'POST /api/organisations': { status: 201, body: BETA } });
     show();
 
-    await userEvent.type(await screen.findByLabelText('Name'), 'Beta');
+    await fillIn('Beta', AN_ADMIN, A_PASSWORD);
     await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
 
     await waitFor(() => expect(callsTo(stub, 'POST', '/api/organisations')).toHaveLength(1));
     const init = callsTo(stub, 'POST', '/api/organisations')[0]?.[1];
-    expect(JSON.parse(String(init?.body))).toEqual({ name: 'Beta' });
+    expect(JSON.parse(String(init?.body))).toEqual({
+      name: 'Beta',
+      firstAdmin: { signInName: AN_ADMIN, temporaryPassword: A_PASSWORD },
+    });
     expect((init?.headers as Headers).get('X-Role')).toBe('OPERATOR');
     // The operator belongs to none, so there is no organisation to claim.
     expect((init?.headers as Headers).get('X-Organisation')).toBeNull();
@@ -101,9 +114,76 @@ describe('onboarding', () => {
     const stub = thePlatform();
     show();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Onboard organisation' }));
+    await userEvent.type(await screen.findByLabelText('First admin sign-in name'), AN_ADMIN);
+    await userEvent.type(screen.getByLabelText('Temporary password'), A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
 
     expect(callsTo(stub, 'POST', '/api/organisations')).toHaveLength(0);
+  });
+
+  /**
+   * An organisation nobody can administer is not usable, and the operator cannot act inside one to
+   * add somebody later (ADR-030) — so the backend refuses onboarding without a first Admin, and the
+   * form must not be able to ask for it.
+   */
+  it('GivenNoFirstAdmin_WhenOnboarding_ThenNothingIsSent', async () => {
+    const stub = thePlatform();
+    show();
+
+    await userEvent.type(await screen.findByLabelText('Name'), 'Beta');
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+
+    expect(callsTo(stub, 'POST', '/api/organisations')).toHaveLength(0);
+  });
+
+  it('GivenNoTemporaryPassword_WhenOnboarding_ThenNothingIsSent', async () => {
+    const stub = thePlatform();
+    show();
+
+    await userEvent.type(await screen.findByLabelText('Name'), 'Beta');
+    await userEvent.type(screen.getByLabelText('First admin sign-in name'), AN_ADMIN);
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+
+    expect(callsTo(stub, 'POST', '/api/organisations')).toHaveLength(0);
+  });
+
+  /** Typed, never suggested, and never left on the screen afterwards. */
+  it('GivenTheForm_WhenShown_ThenTheTemporaryPasswordIsEmptyAndMasked', async () => {
+    thePlatform();
+    show();
+
+    const field = await screen.findByLabelText('Temporary password');
+    expect(field).toHaveAttribute('type', 'password');
+    expect(field).toHaveValue('');
+  });
+
+  it('GivenAnOnboarding_WhenItSucceeds_ThenTheTemporaryPasswordIsCleared', async () => {
+    thePlatform({ 'POST /api/organisations': { status: 201, body: BETA } });
+    show();
+
+    await fillIn('Beta', AN_ADMIN, A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+
+    await screen.findByText('Onboarded Beta.');
+    expect(screen.getByLabelText('Temporary password')).toHaveValue('');
+    expect(screen.getByLabelText('First admin sign-in name')).toHaveValue('');
+  });
+
+  it('GivenATakenSignInName_WhenOnboarding_ThenTheRefusalIsShown', async () => {
+    thePlatform({
+      'POST /api/organisations': {
+        status: 409,
+        body: { detail: 'That sign-in name is already in use.' },
+      },
+    });
+    show();
+
+    await fillIn('Beta', AN_ADMIN, A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('That sign-in name is already in use.'),
+    );
   });
 });
 

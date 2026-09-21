@@ -46,7 +46,11 @@ public class OrganisationController {
       @AuthenticationPrincipal Actor actor, @RequestBody OnboardOrganisationRequest request) {
     OrganisationId id =
         manageOrganisations.onboardOrganisation(
-            actor, new OnboardOrganisationCommand(request.requiredName()));
+            actor,
+            new OnboardOrganisationCommand(
+                request.requiredName(),
+                request.requiredFirstAdminSignInName(),
+                request.requiredFirstAdminTemporaryPassword()));
     return ResponseEntity.created(URI.create("/api/organisations/" + id.value()))
         .body(new OrganisationResponse(id.value(), request.requiredName()));
   }

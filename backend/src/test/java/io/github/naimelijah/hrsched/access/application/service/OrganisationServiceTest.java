@@ -2,25 +2,37 @@ package io.github.naimelijah.hrsched.access.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.InstanceOfAssertFactories.throwable;
 
 import io.github.naimelijah.hrsched.access.application.port.in.OnboardOrganisationCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.PublishedOrganisation;
 import io.github.naimelijah.hrsched.access.application.port.out.AccessChange;
 import io.github.naimelijah.hrsched.access.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
+import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.InvalidOrganisationNameException;
 import io.github.naimelijah.hrsched.access.domain.model.NotThePlatformOperatorException;
 import io.github.naimelijah.hrsched.access.domain.model.Organisation;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordRejection;
+import io.github.naimelijah.hrsched.access.domain.model.SignInName;
+import io.github.naimelijah.hrsched.access.domain.model.SignInNameTakenException;
+import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
+import io.github.naimelijah.hrsched.access.domain.model.UnacceptablePasswordException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -41,9 +53,36 @@ import org.junit.jupiter.api.Test;
  */
 class OrganisationServiceTest {
 
+  /** Invented for these tests, and short enough that a shorter one is easy to write. */
+  private static final int MINIMUM_PASSWORD_LENGTH = 12;
+
+  /** Invented, and long enough to satisfy the policy above. */
+  private static final String TEMPORARY_PASSWORD = "an invented temporary password";
+
   private final StubOrganisationRepository organisations = new StubOrganisationRepository();
+  private final StubAccountRepository accounts = new StubAccountRepository();
+  private final StubPasswordHasher passwords = new StubPasswordHasher();
   private final RecordingAuditTrail audit = new RecordingAuditTrail();
-  private final OrganisationService service = new OrganisationService(organisations, audit);
+  private final OrganisationService service =
+      new OrganisationService(
+          organisations,
+          accounts,
+          passwords,
+          new PasswordPolicy(MINIMUM_PASSWORD_LENGTH, passwords.maximumBytes()),
+          audit,
+          Clock.fixed(Instant.parse("2026-03-01T09:00:00Z"), ZoneOffset.UTC));
+
+  /**
+   * @param name what to call the organisation
+   * @return a command onboarding it with a first Admin no other test shares
+   */
+  private static OnboardOrganisationCommand onboarding(String name) {
+    return new OnboardOrganisationCommand(name, anInventedSignInName(), TEMPORARY_PASSWORD);
+  }
+
+  private static String anInventedSignInName() {
+    return "admin-%s@example.com".formatted(UUID.randomUUID());
+  }
 
   private static Operator operator() {
     return new Operator(UserId.newId());
@@ -55,8 +94,7 @@ class OrganisationServiceTest {
 
   @Test
   void GivenTheOperator_WhenOnboardingAnOrganisation_ThenItExistsUnderAFreshIdentity() {
-    OrganisationId id =
-        service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Acme"));
+    OrganisationId id = service.onboardOrganisation(operator(), onboarding("Acme"));
 
     assertThat(organisations.findById(id)).isPresent();
     assertThat(service.isKnown(id)).isTrue();
@@ -64,10 +102,8 @@ class OrganisationServiceTest {
 
   @Test
   void GivenTwoOrganisationsOfTheSameName_WhenOnboarded_ThenTheyAreStillDifferentTenants() {
-    OrganisationId first =
-        service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Acme"));
-    OrganisationId second =
-        service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Acme"));
+    OrganisationId first = service.onboardOrganisation(operator(), onboarding("Acme"));
+    OrganisationId second = service.onboardOrganisation(operator(), onboarding("Acme"));
 
     assertThat(first).isNotEqualTo(second);
     assertThat(service.findOrganisations(operator())).hasSize(2);
@@ -78,8 +114,7 @@ class OrganisationServiceTest {
     assertThatThrownBy(
             () ->
                 service.onboardOrganisation(
-                    actor(OrganisationId.newId(), Role.ADMIN),
-                    new OnboardOrganisationCommand("Acme")))
+                    actor(OrganisationId.newId(), Role.ADMIN), onboarding("Acme")))
         .isInstanceOf(NotThePlatformOperatorException.class);
   }
 
@@ -88,8 +123,7 @@ class OrganisationServiceTest {
     assertThatThrownBy(
             () ->
                 service.onboardOrganisation(
-                    actor(OrganisationId.newId(), Role.SCHEDULER),
-                    new OnboardOrganisationCommand("Acme")))
+                    actor(OrganisationId.newId(), Role.SCHEDULER), onboarding("Acme")))
         .isInstanceOf(NotThePlatformOperatorException.class);
   }
 
@@ -98,15 +132,13 @@ class OrganisationServiceTest {
     assertThatThrownBy(
             () ->
                 service.onboardOrganisation(
-                    actor(OrganisationId.newId(), Role.EMPLOYEE),
-                    new OnboardOrganisationCommand("Acme")))
+                    actor(OrganisationId.newId(), Role.EMPLOYEE), onboarding("Acme")))
         .isInstanceOf(NotThePlatformOperatorException.class);
   }
 
   @Test
   void GivenABlankName_WhenOnboarding_ThenNothingIsSaved() {
-    assertThatThrownBy(
-            () -> service.onboardOrganisation(operator(), new OnboardOrganisationCommand(" ")))
+    assertThatThrownBy(() -> service.onboardOrganisation(operator(), onboarding(" ")))
         .isInstanceOf(InvalidOrganisationNameException.class);
 
     assertThat(service.findOrganisations(operator())).isEmpty();
@@ -114,8 +146,8 @@ class OrganisationServiceTest {
 
   @Test
   void GivenSeveralOrganisations_WhenTheOperatorLists_ThenEveryTenantIsReturned() {
-    service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Acme"));
-    service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Rival"));
+    service.onboardOrganisation(operator(), onboarding("Acme"));
+    service.onboardOrganisation(operator(), onboarding("Rival"));
 
     assertThat(service.findOrganisations(operator()))
         .extracting(PublishedOrganisation::name)
@@ -128,9 +160,8 @@ class OrganisationServiceTest {
    */
   @Test
   void GivenAnAdminOfOneOrganisation_WhenListingOrganisations_ThenItIsRefused() {
-    OrganisationId acme =
-        service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Acme"));
-    service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Rival"));
+    OrganisationId acme = service.onboardOrganisation(operator(), onboarding("Acme"));
+    service.onboardOrganisation(operator(), onboarding("Rival"));
 
     assertThatThrownBy(() -> service.findOrganisations(actor(acme, Role.ADMIN)))
         .isInstanceOf(NotThePlatformOperatorException.class);
@@ -138,8 +169,7 @@ class OrganisationServiceTest {
 
   @Test
   void GivenAnOrganisation_WhenItsOwnAdminReadsIt_ThenItIsReturned() {
-    OrganisationId acme =
-        service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Acme"));
+    OrganisationId acme = service.onboardOrganisation(operator(), onboarding("Acme"));
 
     assertThat(service.findOrganisation(actor(acme, Role.ADMIN), acme))
         .contains(new PublishedOrganisation(acme, "Acme"));
@@ -147,18 +177,15 @@ class OrganisationServiceTest {
 
   @Test
   void GivenAnOrganisation_WhenItsOwnEmployeeReadsIt_ThenItIsReturned() {
-    OrganisationId acme =
-        service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Acme"));
+    OrganisationId acme = service.onboardOrganisation(operator(), onboarding("Acme"));
 
     assertThat(service.findOrganisation(actor(acme, Role.EMPLOYEE), acme)).isPresent();
   }
 
   @Test
   void GivenAnAdminOfAnotherOrganisation_WhenReadingOurs_ThenItIsRefused() {
-    OrganisationId acme =
-        service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Acme"));
-    OrganisationId rival =
-        service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Rival"));
+    OrganisationId acme = service.onboardOrganisation(operator(), onboarding("Acme"));
+    OrganisationId rival = service.onboardOrganisation(operator(), onboarding("Rival"));
 
     assertThatThrownBy(() -> service.findOrganisation(actor(rival, Role.ADMIN), acme))
         .isInstanceOf(CrossTenantAccessException.class);
@@ -166,8 +193,7 @@ class OrganisationServiceTest {
 
   @Test
   void GivenTheOperator_WhenReadingAnyOrganisation_ThenItIsPermitted() {
-    OrganisationId acme =
-        service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Acme"));
+    OrganisationId acme = service.onboardOrganisation(operator(), onboarding("Acme"));
 
     assertThat(service.findOrganisation(operator(), acme)).isPresent();
   }
@@ -183,7 +209,7 @@ class OrganisationServiceTest {
    */
   @Test
   void GivenAnOrganisationNobodyOnboarded_WhenAskedWhetherItIsKnown_ThenItIsNot() {
-    service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Acme"));
+    service.onboardOrganisation(operator(), onboarding("Acme"));
 
     assertThat(service.isKnown(OrganisationId.newId())).isFalse();
   }
@@ -202,8 +228,7 @@ class OrganisationServiceTest {
   void GivenTheOperator_WhenOnboarding_ThenTheChangeIsRecordedAgainstThem() {
     Operator operator = operator();
 
-    OrganisationId onboarded =
-        service.onboardOrganisation(operator, new OnboardOrganisationCommand("Acme"));
+    OrganisationId onboarded = service.onboardOrganisation(operator, onboarding("Acme"));
 
     assertThat(audit.of(AccessChange.ORGANISATION_ONBOARDED))
         .containsExactly(
@@ -219,8 +244,7 @@ class OrganisationServiceTest {
     assertThatThrownBy(
             () ->
                 service.onboardOrganisation(
-                    actor(OrganisationId.newId(), Role.ADMIN),
-                    new OnboardOrganisationCommand("Acme")))
+                    actor(OrganisationId.newId(), Role.ADMIN), onboarding("Acme")))
         .isInstanceOf(NotThePlatformOperatorException.class);
 
     assertThat(audit.changes()).isEmpty();
@@ -228,8 +252,7 @@ class OrganisationServiceTest {
 
   @Test
   void GivenABlankName_WhenOnboardingFails_ThenNoChangeIsRecordedForIt() {
-    assertThatThrownBy(
-            () -> service.onboardOrganisation(operator(), new OnboardOrganisationCommand(" ")))
+    assertThatThrownBy(() -> service.onboardOrganisation(operator(), onboarding(" ")))
         .isInstanceOf(InvalidOrganisationNameException.class);
 
     assertThat(audit.changes()).isEmpty();
@@ -237,8 +260,7 @@ class OrganisationServiceTest {
 
   @Test
   void GivenAnOrganisation_WhenItIsMerelyRead_ThenNothingIsRecorded() {
-    OrganisationId acme =
-        service.onboardOrganisation(operator(), new OnboardOrganisationCommand("Acme"));
+    OrganisationId acme = service.onboardOrganisation(operator(), onboarding("Acme"));
 
     service.findOrganisation(operator(), acme);
     service.findOrganisations(operator());
@@ -246,7 +268,116 @@ class OrganisationServiceTest {
 
     assertThat(audit.changes())
         .describedAs("reads are not audited, or the writes would be buried under them")
-        .containsExactly(AccessChange.ORGANISATION_ONBOARDED);
+        .containsExactly(AccessChange.ORGANISATION_ONBOARDED, AccessChange.ACCOUNT_CREATED);
+  }
+
+  /**
+   * Onboarding creates the account that will administer the organisation, and creates it needing a
+   * new password: the one supplied was typed by whoever did the onboarding, so its owner has never
+   * chosen it and somebody else knows it.
+   */
+  @Test
+  void GivenTheOperator_WhenOnboarding_ThenTheFirstAdminIsCreatedAndMustChangeTheirPassword() {
+    String signInName = anInventedSignInName();
+
+    OrganisationId onboarded =
+        service.onboardOrganisation(
+            operator(), new OnboardOrganisationCommand("Acme", signInName, TEMPORARY_PASSWORD));
+
+    Account admin = accounts.findBySignInName(new SignInName(signInName)).orElseThrow();
+    assertThat(admin.membership())
+        .isEqualTo(new TenantMembership(onboarded, Role.ADMIN, Optional.empty()));
+    assertThat(admin.passwordChangeRequired()).isTrue();
+  }
+
+  @Test
+  void GivenTheOperator_WhenOnboarding_ThenTheFirstAdminsPasswordIsStoredHashed() {
+    String signInName = anInventedSignInName();
+
+    service.onboardOrganisation(
+        operator(), new OnboardOrganisationCommand("Acme", signInName, TEMPORARY_PASSWORD));
+
+    assertThat(accounts.findBySignInName(new SignInName(signInName)).orElseThrow().passwordHash())
+        .isEqualTo(passwords.hash(TEMPORARY_PASSWORD));
+  }
+
+  /**
+   * The organisation row left behind is undone by the transaction the use case runs in, which is
+   * Spring's job rather than this service's and is asserted through HTTP in {@code
+   * OrganisationHttpTest}. What belongs here is that the refusal propagates and records nothing.
+   */
+  @Test
+  void GivenASignInNameAlreadyTaken_WhenOnboarding_ThenItIsRefusedAndNothingIsRecorded() {
+    String taken = anInventedSignInName();
+    service.onboardOrganisation(
+        operator(), new OnboardOrganisationCommand("Acme", taken, TEMPORARY_PASSWORD));
+    audit.forget();
+
+    assertThatThrownBy(
+            () ->
+                service.onboardOrganisation(
+                    operator(), new OnboardOrganisationCommand("Rival", taken, TEMPORARY_PASSWORD)))
+        .isInstanceOf(SignInNameTakenException.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /** Assessed before anything is stored, so this one leaves nothing behind without a rollback. */
+  @Test
+  void GivenATemporaryPasswordBelowThePolicy_WhenOnboarding_ThenNothingIsCreated() {
+    assertThatThrownBy(
+            () ->
+                service.onboardOrganisation(
+                    operator(),
+                    new OnboardOrganisationCommand("Acme", anInventedSignInName(), "short")))
+        .isInstanceOf(UnacceptablePasswordException.class);
+
+    assertThat(service.findOrganisations(operator())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /** Whoever typed it has to be told which rule they broke, or they cannot supply a better one. */
+  @Test
+  void GivenATemporaryPasswordBelowThePolicy_WhenOnboarding_ThenTheRuleItBrokeIsNamed() {
+    assertThatThrownBy(
+            () ->
+                service.onboardOrganisation(
+                    operator(),
+                    new OnboardOrganisationCommand("Acme", anInventedSignInName(), "short")))
+        .asInstanceOf(throwable(UnacceptablePasswordException.class))
+        .returns(PasswordRejection.TOO_SHORT, UnacceptablePasswordException::reason);
+  }
+
+  /** The password is never in the message, whatever the message says about the rule. */
+  @Test
+  void GivenATemporaryPasswordBelowThePolicy_WhenRefused_ThenItIsNotInTheMessage() {
+    assertThatThrownBy(
+            () ->
+                service.onboardOrganisation(
+                    operator(),
+                    new OnboardOrganisationCommand("Acme", anInventedSignInName(), "abbreviated")))
+        .isInstanceOf(UnacceptablePasswordException.class)
+        .hasMessageNotContaining("abbreviated");
+  }
+
+  @Test
+  void
+      GivenTheOperator_WhenOnboarding_ThenTheAccountIsRecordedAgainstThemUnderTheNewOrganisation() {
+    Operator operator = operator();
+    String signInName = anInventedSignInName();
+
+    OrganisationId onboarded =
+        service.onboardOrganisation(
+            operator, new OnboardOrganisationCommand("Acme", signInName, TEMPORARY_PASSWORD));
+
+    UserId admin = accounts.findBySignInName(new SignInName(signInName)).orElseThrow().id();
+    assertThat(audit.of(AccessChange.ACCOUNT_CREATED))
+        .containsExactly(
+            new AuditedChange(
+                Optional.of(onboarded),
+                operator.id(),
+                AccessChange.ACCOUNT_CREATED,
+                admin.value()));
   }
 
   /** Hand-written, like every other double here: the repository is our own port. */

@@ -153,10 +153,21 @@ organisation nobody onboarded does not exist, and every request naming one is re
 ```bash
 ME=$(uuidgen)
 
-# 0. Onboard the organisation (Operator — belongs to no organisation, so sends no X-Organisation)
+# 0. Sign in as the platform operator, then onboard an organisation together with its first
+#    Admin. The operator is refused everything inside an organisation (ADR-030), so one onboarded
+#    without an Admin would have nobody able to add one. Both passwords come from the environment,
+#    so neither ends up in shell history.
+OPERATOR=$(curl -s -X POST localhost:8080/api/auth/sign-in \
+  -H 'Content-Type: application/json' \
+  -d "{\"signInName\":\"$HRSCHED_BOOTSTRAP_OPERATOR_SIGNINNAME\",\"password\":\"$HRSCHED_BOOTSTRAP_OPERATOR_PASSWORD\"}" \
+  | jq -r .accessToken)
+
 ORG=$(curl -s -X POST localhost:8080/api/organisations \
-  -H "X-User: $ME" -H 'X-Role: OPERATOR' -H 'Content-Type: application/json' \
-  -d '{"name":"Acme"}' | jq -r .id)
+  -H "Authorization: Bearer $OPERATOR" -H 'Content-Type: application/json' \
+  -d "{\"name\":\"Acme\",\"firstAdmin\":{\"signInName\":\"admin@acme.example\",\"temporaryPassword\":\"$ACME_ADMIN_PASSWORD\"}}" \
+  | jq -r .id)
+
+# That Admin must choose their own password before they can do anything else (F14).
 
 H=(-H "X-Organisation: $ORG" -H "X-User: $ME" -H "Content-Type: application/json")
 

@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.access.application.service;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
+import io.github.naimelijah.hrsched.access.domain.model.SignInNameTakenException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.util.ArrayList;
@@ -12,9 +13,9 @@ import java.util.Optional;
 /**
  * Stores accounts in a list, and keeps the two rules a service depends on.
  *
- * <p>Hand-written rather than mocked, like every other double here: insert-if-absent and the tenant
- * predicate are rules this has to keep for a test to mean anything, and a mock would only replay
- * whatever it was told.
+ * <p>Hand-written rather than mocked, like every other double here: unique sign-in names,
+ * insert-if-absent and the tenant predicate are rules this has to keep for a test to mean anything,
+ * and a mock would only replay whatever it was told.
  *
  * <p>Named without a {@code Test} suffix so Surefire does not try to run it.
  */
@@ -33,6 +34,16 @@ final class StubAccountRepository implements AccountRepository {
 
   @Override
   public void save(Account account) {
+    findBySignInName(account.signInName())
+        .filter(existing -> !existing.id().equals(account.id()))
+        .ifPresent(
+            existing -> {
+              // The exception carries a cause because the real adapter has one - the integrity
+              // violation the driver reported. Here the collision is found by looking, so the
+              // cause says that rather than pretending to be a database.
+              throw new SignInNameTakenException(
+                  new IllegalStateException("this fake already holds that sign-in name"));
+            });
     stored.removeIf(existing -> existing.id().equals(account.id()));
     stored.add(account);
   }

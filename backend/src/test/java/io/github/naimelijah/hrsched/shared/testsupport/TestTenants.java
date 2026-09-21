@@ -94,6 +94,31 @@ public final class TestTenants {
   }
 
   /**
+   * @param name what to call the organisation
+   * @return an onboarding body with a fresh, invented first Admin
+   */
+  public static String onboarding(String name) {
+    return onboarding(name, "first-admin-%s@example.com".formatted(UUID.randomUUID()));
+  }
+
+  /**
+   * @param name what to call the organisation
+   * @param firstAdmin the sign-in name its first Admin will have
+   * @return an onboarding body naming that admin, with the suite's password
+   */
+  public static String onboarding(String name, String firstAdmin) {
+    return "{\"name\":\"%s\",\"firstAdmin\":{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\"}}"
+        .formatted(name, firstAdmin, PASSWORD);
+  }
+
+  /**
+   * @return the password every account this fixture creates is given
+   */
+  public static String password() {
+    return PASSWORD;
+  }
+
+  /**
    * @param request the request being built
    * @param token the bearer token to present
    * @return the request, carrying that token and a JSON content type
