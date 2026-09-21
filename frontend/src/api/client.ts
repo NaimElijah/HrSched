@@ -1,5 +1,5 @@
 import { ApiError, toApiError } from './problem';
-import { currentAccessToken, currentSession, endSession, holdSession } from './session';
+import { currentAccessToken, endSession, holdSession } from './session';
 import type { SignedIn } from './session';
 
 /**
@@ -37,8 +37,9 @@ let refreshing: Promise<boolean> | null = null;
 /**
  * The only module in the app that calls fetch, and the only one that knows a header exists.
  *
- * Keeping that in one place is what makes the identity headers deletable in a single edit, and
- * stops a page quietly inventing its own idea of who is acting.
+ * Keeping that in one place is what made the identity headers deletable in a single edit, and what
+ * stops a page quietly inventing its own idea of who is acting. The bearer token is now the whole
+ * of what says who that is.
  */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const first = await send(path, init);
@@ -66,7 +67,6 @@ async function send(path: string, init: RequestInit): Promise<Answered> {
   if (token !== null) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  claimIdentity(headers);
   if (init.body !== undefined) {
     headers.set('Content-Type', 'application/json');
   }
@@ -77,29 +77,6 @@ async function send(path: string, init: RequestInit): Promise<Answered> {
     text: await response.text(),
     reference: response.headers.get(TRACE_ID_HEADER),
   };
-}
-
-/**
- * TRANSITIONAL: the header identity, derived from the session rather than typed by anybody.
- *
- * Most routes still take who is acting from these headers, which any caller can write — that is the
- * placeholder ADR-011 exists to delete. Sending them from the session keeps those routes working
- * while they are moved onto the token one family at a time. **This whole function goes when the
- * last route stops reading them**, and nothing else has to change when it does.
- */
-function claimIdentity(headers: Headers): void {
-  const session = currentSession();
-  if (session === null) {
-    return;
-  }
-  headers.set('X-User', session.userId);
-  headers.set('X-Role', session.kind === 'OPERATOR' ? 'OPERATOR' : (session.role ?? 'EMPLOYEE'));
-  if (session.organisation !== null) {
-    headers.set('X-Organisation', session.organisation);
-  }
-  if (session.employee !== null) {
-    headers.set('X-Employee', session.employee);
-  }
 }
 
 function interpret<T>(path: string, answered: Answered): T {

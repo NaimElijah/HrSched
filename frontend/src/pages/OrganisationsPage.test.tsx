@@ -104,8 +104,8 @@ describe('onboarding', () => {
       name: 'Beta',
       firstAdmin: { signInName: AN_ADMIN, temporaryPassword: A_PASSWORD },
     });
-    expect((init?.headers as Headers).get('X-Role')).toBe('OPERATOR');
-    // The operator belongs to none, so there is no organisation to claim.
+    // Who is acting is the token's business; nothing about it is in the request otherwise.
+    expect((init?.headers as Headers).get('X-Role')).toBeNull();
     expect((init?.headers as Headers).get('X-Organisation')).toBeNull();
     expect(await screen.findByText('Onboarded Beta.')).toHaveAttribute('role', 'status');
   });

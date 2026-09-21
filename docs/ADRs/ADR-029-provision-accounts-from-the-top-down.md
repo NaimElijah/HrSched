@@ -70,7 +70,7 @@ neat one; it is the price of having no outbound channel yet.
 
 A tenant whose only Admin is locked out or has forgotten their password cannot be helped by the
 operator, who is deliberately confined to the register of organisations
-([ADR-030](ADR-030-confine-the-platform-operator.md)). That is recorded as **Q27** and is not solved
+([ADR-030](ADR-030-confine-the-operator-to-the-register-of-organisations.md)). That is recorded as **Q27** and is not solved
 here.
 
 The bootstrap credentials sit in a deployment's environment for as long as they are configured. They

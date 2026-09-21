@@ -119,8 +119,9 @@ names another context.
 `frontend/` is a React 19 SPA built by Vite (ADR-013):
 
 - `src/api/` — the typed client. `client.ts` is the **only** module that calls `fetch` or names a
-  header; `problem.ts` validates the error body rather than casting it; `scheduling.ts`, `workforce.ts`,
-  `access.ts` and `notifications.ts` mirror the backend DTOs, one module per context.
+  header, and the bearer token is the only identity it sends; `problem.ts` validates the error body
+  rather than casting it; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts`
+  mirror the backend DTOs, one module per context.
 - `src/auth/` — `SessionProvider` and the sign-in, change-password and session-bar screens. It
   replaced `src/identity/`, the acting-as placeholder, when sign-in landed (ADR-011, ADR-028).
 - `src/pages/` — one screen per capability. Pages never call `fetch` directly.

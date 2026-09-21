@@ -95,41 +95,22 @@ describe('what a request carries', () => {
   });
 
   /**
-   * The one test for the transitional headers, so that deleting them is a deliberate, visible
-   * change to this file rather than something that quietly stops being asserted. Most routes still
-   * take who is acting from these, and they are derived from the session rather than typed.
+   * The headers are gone, and this is the test that says so. Every route took who is acting from
+   * them until the backend moved onto the token, and a client that kept sending them would be
+   * offering a second, weaker answer to a question that now has one.
    */
-  it('GivenASignedInTenant_WhenRequesting_ThenTheTransitionalIdentityHeadersAreDerivedFromTheSession', async () => {
+  it('GivenASignedInTenant_WhenRequesting_ThenNoIdentityHeaderIsSent', async () => {
     signedIn({ ...A_SESSION, employee: 'emp-9' });
     const stub = respondWith(200, []);
 
     await api.get('/api/shifts');
 
     const headers = headersOf(stub.mock.calls[0]);
-    expect(headers.get('X-User')).toBe('user-1');
-    expect(headers.get('X-Role')).toBe('SCHEDULER');
-    expect(headers.get('X-Organisation')).toBe('org-1');
-    expect(headers.get('X-Employee')).toBe('emp-9');
-  });
-
-  it('GivenTheOperator_WhenRequesting_ThenNoOrganisationOrEmployeeIsClaimed', async () => {
-    signedIn({
-      userId: 'user-2',
-      kind: 'OPERATOR',
-      organisation: null,
-      role: null,
-      employee: null,
-      signInName: 'operator@example.com',
-      passwordChangeRequired: false,
-    });
-    const stub = respondWith(200, []);
-
-    await api.get('/api/organisations');
-
-    const headers = headersOf(stub.mock.calls[0]);
-    expect(headers.get('X-Role')).toBe('OPERATOR');
+    expect(headers.get('X-User')).toBeNull();
+    expect(headers.get('X-Role')).toBeNull();
     expect(headers.get('X-Organisation')).toBeNull();
     expect(headers.get('X-Employee')).toBeNull();
+    expect(headers.get('Authorization')).toBe('Bearer token-1');
   });
 
   it('GivenADelete_WhenRequesting_ThenItIsSentAsADeleteWithNoBody', async () => {

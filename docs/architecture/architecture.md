@@ -122,7 +122,7 @@ Three rules hold this together, and each fails the build when broken:
 | `configuration.security` | `SecurityConfiguration` (the one filter chain), `ProblemAuthenticationEntryPoint` and `ProblemAccessDeniedHandler` (which write the 401 and 403 bodies a filter would otherwise leave empty), and `SecurityPolicyProperties`. |
 | `configuration.observability` | Cross-cutting instrumentation that belongs to no context. Today that is `TraceIdResponseFilter`, which puts the request's trace id on the response as `X-Trace-Id`. It reads no request header, so unlike `ActorFromHeaders` it is unaffected by ADR-011. |
 | `configuration.web` | `RequestBindingExceptionHandler` — answers a request Spring could not bind to a controller's parameters (a missing query parameter, an identifier that does not parse) with a 400 problem detail naming what was wrong, whose detail repeats nothing that was sent. It belongs to no context because the failure happens before any controller runs ([ADR-024](../ADRs/ADR-024-answer-unbindable-requests-with-a-problem-detail.md)). |
-| `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists — it attaches the bearer token, renews the session once on a 401 and retries the request exactly once (single-flight within the tab, serialised across tabs by a Web Lock), and reads back `X-Trace-Id`; `session.ts` holds the access token in a module variable and **nowhere a script can read it back**, and notifies the shell when a session ends; it still writes the four identity claims, derived from the session, for the routes that have not moved onto the token yet; `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts` mirror the backend DTOs, one module per context. |
+| `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists — it attaches the bearer token, renews the session once on a 401 and retries the request exactly once (single-flight within the tab, serialised across tabs by a Web Lock), and reads back `X-Trace-Id`; `session.ts` holds the access token in a module variable and **nowhere a script can read it back**, and notifies the shell when a session ends. It writes no identity claim of any kind: the bearer token is the whole of what says who is acting, and a request carrying a second, weaker answer would be offering one. `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts` mirror the backend DTOs, one module per context. |
 | `frontend/src/auth` | `SessionProvider` (which of four states the app is in, and the handshake every load begins with), `SignInPage`, `ChangePasswordPage` and `SessionBar`. Replaced `frontend/src/identity`, whose bar let anybody claim any role in any organisation because the backend believed whatever headers it was sent. |
 | `frontend/src/pages` | One screen per capability: People, Accounts, Qualifications, Rules, Shifts, Rosters, Swaps, Me, Organisations. Organisations is the platform Operator's: it lists and onboards organisations, and offers no way to act inside one, because the Operator is refused everything inside every tenant ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)). A tenant role reaching it is shown the 403 rather than a hidden tab. Accounts is its mirror for an Admin: it creates accounts, changes what one is, disables and restores one, and resets a colleague's password. Nothing on it names an organisation, because the backend takes that from the token; every temporary password is typed, masked, never defaulted, and cleared once the request it was typed for has succeeded. Swaps is where a Scheduler answers requests; approving publishes a replacement roster, so it is refused exactly as any publication is: with every broken working-time rule named, or, if it would put somebody in two places at once, with that. Me shows an employee their identifier, their published work over the planning span, and a way to hand a shift to a colleague named by that colleague's identifier, because an employee may not list colleagues (Q25). Me also holds the employee's `Inbox`. Opening a roster shows `RosterBoard`, which loads that roster by identifier and changes a draft through a picker and buttons per shift rather than by drag and drop ([ADR-025](../ADRs/ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md)). |
 
@@ -137,24 +137,26 @@ chooses and the same paths apply. The backend is unaware of either arrangement.
 
 ## Authentication
 
-A request carrying `Authorization: Bearer …` is authenticated. A request without one is not, and
-today that is still allowed almost everywhere: only `GET /api/auth/session` and
-`POST /api/auth/password` require a token, and every other route still takes its acting identity
-from `X-User`, `X-Role`, `X-Organisation` and `X-Employee`, which any caller can write. That
-placeholder is being deleted one route family at a time
+**Every route under `/api` requires a token**, except the three that are authentication itself:
+`POST /api/auth/sign-in`, `/refresh` and `/sign-out`. Who is acting is the account the token names,
+and every controller takes it from `@AuthenticationPrincipal Actor`
 ([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md)).
 
-**The organisation and account routes take their identity from the token.**
-`POST`/`GET /api/organisations` are the operator's, `GET /api/organisations/{id}` is any member's,
-and everything under `/api/accounts` is an Admin's. All of them read the acting identity from the
-account a token names rather than from headers. Every other route still reads the headers, and a
-request carrying an invalid token is refused there too — which is the bearer filter's own
-behaviour, and why a client must send no token rather than a stale one.
+**The organisation comes from the account, never from the request.** Each web adapter has one
+`actingIn(actor)` helper over `Actor.requireTenantMembership()`, and that helper is the only way an
+organisation enters a request — there is no identifier in a path, body or header for a caller to
+change ([ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)). That also makes the
+platform operator's refusal structural rather than a check: it belongs to no organisation, so there
+is nothing inside one for it to act in ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)).
+The one exception is `GET /api/organisations/{id}`, where the target is in the path because the
+register is what the operator administers.
 
-`/api/accounts` goes one step further: it takes the *organisation* from the token as well, so there
-is no identifier anywhere in a path or body for an Admin to change. That also makes the platform
-operator's refusal structural rather than a check — it belongs to no organisation, so there is
-nothing for those routes to act in ([ADR-030](../ADRs/ADR-030-confine-the-platform-operator-to-the-register.md)).
+A request carrying an invalid token is refused on every route, including the ones that do not
+require one — that is the bearer filter's own behaviour, and why a client must send no token rather
+than a stale one.
+
+What is left of the transition is the shape of `SecurityConfiguration` rather than its behaviour:
+it still ends in `permitAll`, so a route nobody wrote a rule for would be open.
 
 **A verified signature is not enough, and that is the point.** The decoder proves a token is one
 this service signed, for this service, unexpired, of type `at+jwt`, and naming both an account and
