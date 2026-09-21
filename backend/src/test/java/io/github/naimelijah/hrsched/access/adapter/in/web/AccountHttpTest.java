@@ -14,6 +14,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -645,6 +647,38 @@ class AccountHttpTest {
         .andExpect(status().isBadRequest());
 
     mockMvc.perform(signInAs(signInName, A_PASSWORD)).andExpect(status().isOk());
+  }
+
+  /**
+   * A single mistyped identifier is a mistake; a hundred of them is somebody looking for accounts
+   * that are not theirs. The 404 is deliberately indistinguishable from "that one is somebody
+   * else's", which is exactly what makes enumeration the way to find out — so it is counted, the
+   * way a cross-tenant attempt is.
+   */
+  @Test
+  void GivenAnAccountThatIsNotTheirs_WhenNamed_ThenTheRefusalIsCounted() throws Exception {
+    String admin = admin(anOrganisation());
+    double before = refusalsOfKind("unknown_account");
+
+    mockMvc
+        .perform(
+            with(put("/api/accounts/%s/membership".formatted(UUID.randomUUID())), admin)
+                .content("{\"role\":\"ADMIN\"}"))
+        .andExpect(status().isNotFound());
+
+    assertThat(refusalsOfKind("unknown_account")).isEqualTo(before + 1);
+  }
+
+  private double refusalsOfKind(String kind) {
+    Counter counter =
+        mockMvc
+            .getDispatcherServlet()
+            .getWebApplicationContext()
+            .getBean(MeterRegistry.class)
+            .find("hrsched.access.denied")
+            .tag("kind", kind)
+            .counter();
+    return counter == null ? 0 : counter.count();
   }
 
   /** The other door is open to them, and it asks for the password they already know. */

@@ -8,6 +8,7 @@ import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
+import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
 import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
@@ -18,6 +19,7 @@ import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import jakarta.servlet.http.Cookie;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -64,6 +66,11 @@ class SessionHttpTest {
   private static final String PASSWORD = "an invented password for a test";
   private static final String ANOTHER_PASSWORD = "a different invented password";
   private static final String REQUESTED_WITH = "X-Requested-With";
+
+  /** Invented, and set to one so a single failure is enough to arrange a locked account. */
+  private static final LockoutPolicy LOCK_ON_THE_FIRST_FAILURE =
+      new LockoutPolicy(1, Duration.ofMinutes(15));
+
   private static final String SESSION = "/api/auth/session";
 
   @Autowired private MockMvc mockMvc;
@@ -136,6 +143,31 @@ class SessionHttpTest {
 
     assertThat(readSessionWith(token).getStatus())
         .describedAs("the token is still valid; the account is not")
+        .isEqualTo(401);
+  }
+
+  /**
+   * A lockout stops a sign-in, and nothing else.
+   *
+   * <p>An account is locked because somebody is guessing at its password, and the person guessing
+   * is not the person holding this session. Ending it would turn an attack on somebody into an
+   * outage for them, and would hand anybody a way to sign a colleague out by mistyping their
+   * password ten times. {@code SessionService.findActor} therefore does not filter on the lock, and
+   * this is the test that stops somebody adding the filter believing it to be a tightening.
+   */
+  @Test
+  void GivenATokenForALockedAccount_WhenReadingTheSession_ThenTheSessionSurvivesTheLock()
+      throws Exception {
+    Account operator = anOperator(PASSWORD, false);
+    String token = bearerFor(operator);
+    Account stored = accounts.findForAuthentication(operator.id()).orElseThrow();
+    accounts.save(stored.recordFailedSignIn(Instant.now(), LOCK_ON_THE_FIRST_FAILURE));
+
+    assertThat(readSessionWith(token).getStatus())
+        .describedAs("the session they already hold")
+        .isEqualTo(200);
+    assertThat(signIn(operator, PASSWORD).getStatus())
+        .describedAs("the sign-in the lock is actually for")
         .isEqualTo(401);
   }
 

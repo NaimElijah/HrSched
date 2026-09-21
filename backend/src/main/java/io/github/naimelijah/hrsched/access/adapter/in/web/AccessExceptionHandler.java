@@ -117,6 +117,14 @@ public class AccessExceptionHandler {
    */
   @ExceptionHandler(UnknownAccountException.class)
   public ProblemDetail handleUnknownAccount(UnknownAccountException exception) {
+    // Counted, like a cross-tenant attempt and for the same reason. One mistyped identifier is a
+    // mistake; a hundred is somebody looking for accounts that are not theirs, and the 404 is
+    // deliberately indistinguishable from "that one is somebody else's" - which is exactly what
+    // makes trying the way to find out.
+    log.atWarn()
+        .addKeyValue("account", exception.account().value())
+        .log("Refused: an account this organisation does not hold was named");
+    denied("unknown_account");
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
     problem.setDetail("No such account.");
