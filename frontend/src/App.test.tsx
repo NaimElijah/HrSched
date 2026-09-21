@@ -119,6 +119,19 @@ describe('what each kind of account sees', () => {
     expect(screen.queryByRole('button', { name: 'Rosters' })).not.toBeInTheDocument();
   });
 
+  /**
+   * Account administration is a tenant Admin's, and the operator is refused everything inside an
+   * organisation (ADR-030), so the tab would offer something that could not happen.
+   */
+  it('GivenTheOperator_WhenSignedIn_ThenThereIsNoAccountsTab', async () => {
+    loadingAs(THE_OPERATOR);
+
+    show();
+
+    await screen.findByRole('button', { name: 'Organisations' });
+    expect(screen.queryByRole('button', { name: 'Accounts' })).not.toBeInTheDocument();
+  });
+
   it('GivenATenant_WhenSignedIn_ThenTheTenantTabsAreShown', async () => {
     loadingAs(A_TENANT);
 

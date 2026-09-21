@@ -14,8 +14,11 @@ Three things are **not** what they look like:
 - **Generation is greedy, not optimised.** Automatic generation is the point of the product and
   a real implementation is a solver; `GreedyRosterGenerator` exists to prove the port (ADR-005).
   It ignores fairness, preferences and disruption entirely.
-- **There is no authentication.** The acting identity comes from request headers, so any caller
-  can claim any role in any organisation. It is a placeholder to be deleted, not extended.
+- **Authentication is half-migrated.** HrSched holds its own accounts and signs its own tokens
+  (ADR-011, ADR-028), and `/api/auth/**`, `/api/organisations` and `/api/accounts` take the acting
+  identity from the access token. **Every other route still reads `X-User`, `X-Role`,
+  `X-Organisation` and `X-Employee`, which any caller can write.** That placeholder is being
+  deleted one route family at a time; do not extend it, and do not add a route that reads it.
 - **The audit trail is a log stream, not a trail.** Every change and refusal is recorded through
   an `AuditTrail` driven port, but nothing is stored and nothing is queryable: the record lives
   only wherever stdout is collected. Whether an Admin may read it, and for how long it is kept,

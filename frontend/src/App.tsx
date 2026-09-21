@@ -8,6 +8,7 @@ import { useSession } from './auth/SessionProvider';
 import { Failure } from './components/Feedback';
 import { defaultSpan, localDate, startOfLocalDay } from './components/localDates';
 import { useAsync } from './components/useAsync';
+import { AccountsPage } from './pages/AccountsPage';
 import { MePage } from './pages/MePage';
 import { OrganisationsPage } from './pages/OrganisationsPage';
 import { PeoplePage } from './pages/PeoplePage';
@@ -19,6 +20,7 @@ import { SwapsPage } from './pages/SwapsPage';
 
 const TENANT_TABS = [
   'People',
+  'Accounts',
   'Qualifications',
   'Rules',
   'Shifts',
@@ -169,6 +171,7 @@ export function App() {
 
       <main>
         {current === 'People' ? <PeoplePage /> : null}
+        {current === 'Accounts' ? <AccountsPage /> : null}
         {current === 'Qualifications' ? <QualificationsPage /> : null}
         {current === 'Rules' ? <RulesPage /> : null}
         {current === 'Shifts' ? <ShiftsPage span={span} /> : null}
