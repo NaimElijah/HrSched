@@ -154,6 +154,19 @@ describe('what each kind of account sees', () => {
 });
 
 describe('the one deliberate swallow', () => {
+  /**
+   * The shell's own failures, which are the only ones these tests are about.
+   *
+   * The screen inside `main` asks the backend the same question the shell does and shows its own
+   * refusal, so "is this message on the page?" cannot tell the two apart — and asserting it was
+   * absent only held until that screen's request came back, which made the test a race it lost on
+   * CI rather than a statement about the shell.
+   */
+  function shellAlerts() {
+    const main = screen.getByRole('main');
+    return screen.queryAllByRole('alert').filter((alert) => !main.contains(alert));
+  }
+
   it('GivenTheEmployeeRoleAndA403_WhenRendered_ThenNoFailureIsShownForThePickerList', async () => {
     loadingAs(
       { ...A_TENANT, role: 'EMPLOYEE' },
@@ -162,10 +175,10 @@ describe('the one deliberate swallow', () => {
 
     show();
 
-    await screen.findByRole('button', { name: 'People' });
-    await waitFor(() =>
-      expect(screen.queryByText('Your role does not permit this.')).not.toBeInTheDocument(),
-    );
+    // Waiting for the screen's own refusal is what makes the assertion below deterministic: by the
+    // time it is there, every request this render makes has come back.
+    await within(await screen.findByRole('main')).findByRole('alert');
+    expect(shellAlerts()).toHaveLength(0);
   });
 
   it('GivenAServerFailureOnTheEmployeeList_WhenRendered_ThenItIsSurfacedRatherThanSwallowed', async () => {
@@ -173,9 +186,8 @@ describe('the one deliberate swallow', () => {
 
     show();
 
-    await waitFor(() =>
-      expect(screen.getAllByRole('alert')[0]).toHaveTextContent('The database is on fire.'),
-    );
+    await waitFor(() => expect(shellAlerts()).toHaveLength(1));
+    expect(shellAlerts()[0]).toHaveTextContent('The database is on fire.');
   });
 
   it('GivenANotFoundOnTheEmployeeList_WhenRendered_ThenItIsSurfacedRatherThanSwallowed', async () => {
@@ -183,10 +195,9 @@ describe('the one deliberate swallow', () => {
 
     show();
 
+    await waitFor(() => expect(shellAlerts()).toHaveLength(1));
     await waitFor(() =>
-      expect(screen.getAllByRole('alert')[0]).toHaveTextContent(
-        'Nothing here for this organisation.',
-      ),
+      expect(shellAlerts()[0]).toHaveTextContent('Nothing here for this organisation.'),
     );
   });
 });
