@@ -3,7 +3,7 @@ import { scheduling } from '../api/scheduling';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
-import { useIdentityKey } from '../identity/ActingAs';
+import { useSessionKey } from '../auth/SessionProvider';
 import { RosterBoard } from './RosterBoard';
 
 /**
@@ -27,14 +27,14 @@ export function RostersPage({
   /** Everybody the acting role may list, to name assignees and offer on the board. */
   people: readonly Employee[];
 }) {
-  const identityKey = useIdentityKey();
+  const sessionKey = useSessionKey();
   const [failure, setFailure] = useState<unknown>(null);
   const [selected, setSelected] = useState<string | null>(null);
   // Bumped whenever the list changes a roster, so an open board is rebuilt from what is now stored.
   // A change made on the board does not bump it: the board already holds what the server returned.
   const [revision, setRevision] = useState(0);
 
-  const rosters = useAsync(() => scheduling.findRosters(), identityKey);
+  const rosters = useAsync(() => scheduling.findRosters(), sessionKey);
   const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (employee: string): string | undefined => personById.get(employee)?.name;
 
@@ -115,7 +115,7 @@ export function RostersPage({
         <RosterBoard
           // Rebuilt for a different acting identity as well: what one identity was shown, and the
           // roster it had changed, must not stay on screen for another that may not read it.
-          key={`${identityKey}#${selected}#${revision}`}
+          key={`${sessionKey}#${selected}#${revision}`}
           roster={selected}
           people={people}
           onChanged={rosters.reload}

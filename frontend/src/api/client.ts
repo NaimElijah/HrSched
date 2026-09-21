@@ -1,22 +1,6 @@
 import { ApiError, toApiError } from './problem';
-
-/**
- * Who the caller claims to be.
- *
- * There is no authentication in HrSched: the backend takes the acting identity from these headers
- * and believes it. This type exists so that the claim is explicit in the code rather than hidden,
- * and so that deleting it when an identity provider lands is a compiler-guided change.
- */
-export interface ActingIdentity {
-  readonly organisation: string;
-  readonly user: string;
-  readonly role: Role;
-  /** The personnel record this user is, when they are one. Sent as X-Employee. */
-  readonly employee: string | null;
-}
-
-export const ROLES = ['EMPLOYEE', 'SCHEDULER', 'ADMIN', 'OPERATOR'] as const;
-export type Role = (typeof ROLES)[number];
+import { currentAccessToken, currentSession, endSession, holdSession } from './session';
+import type { SignedIn } from './session';
 
 /**
  * The header the backend puts the request's trace id on.
@@ -27,26 +11,28 @@ export type Role = (typeof ROLES)[number];
 const TRACE_ID_HEADER = 'X-Trace-Id';
 
 /**
- * Who requests are currently made as.
+ * Required by the endpoints whose credential is the refresh cookie.
  *
- * Module state rather than an argument threaded through every call. It used to be the latter: every
- * API function took an identity and every page passed one, which meant 56 call sites all had to
- * agree, and a page could quietly decide to send a different identity from the one on screen.
- * Holding it here makes who is acting a property of the client rather than of each caller, and
- * leaves exactly one place to change when the headers go.
+ * Its presence is the whole check; the value is never read. A browser will not attach a header like
+ * this to a cross-site request without a CORS preflight, and the backend configures no CORS, so a
+ * page on another origin cannot cause a renewal or a sign-out (ADR-028).
  */
-let acting: ActingIdentity | null = null;
+const REQUESTED_WITH = 'XMLHttpRequest';
+
+/** Everything under here is authentication itself, and a 401 from it is never worth retrying. */
+const AUTH_PREFIX = '/api/auth/';
 
 /**
- * Tells the client who requests are made as from now on.
+ * Serialises refreshes across tabs.
  *
- * Called by whatever owns the acting identity, and by nothing else.
- *
- * @param identity who to act as, or null for nobody
+ * Two tabs renewing with one cookie is exactly the pattern reuse detection is built to punish: the
+ * second would present a token the first had already exchanged, and the backend would — correctly —
+ * conclude the token had been stolen and end the session. A Web Lock makes the tabs take turns.
  */
-export function setActingIdentity(identity: ActingIdentity | null): void {
-  acting = identity;
-}
+const REFRESH_LOCK = 'hrsched.refresh';
+
+/** One in-flight refresh at a time within this tab, shared by every request waiting on it. */
+let refreshing: Promise<boolean> | null = null;
 
 /**
  * The only module in the app that calls fetch, and the only one that knows a header exists.
@@ -55,41 +41,129 @@ export function setActingIdentity(identity: ActingIdentity | null): void {
  * stops a page quietly inventing its own idea of who is acting.
  */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (acting !== null) {
-    headers.set('X-Organisation', acting.organisation);
-    headers.set('X-User', acting.user);
-    headers.set('X-Role', acting.role);
-    if (acting.employee) {
-      headers.set('X-Employee', acting.employee);
-    }
+  const first = await send(path, init);
+  if (first.status !== 401 || path.startsWith(AUTH_PREFIX)) {
+    return interpret<T>(path, first);
   }
+  // One renewal, then one retry, and never more. A second 401 means the session is genuinely over,
+  // and retrying past that would be a loop that looks like an outage.
+  if (!(await refreshOnce())) {
+    return interpret<T>(path, first);
+  }
+  return interpret<T>(path, await send(path, init));
+}
+
+interface Answered {
+  readonly status: number;
+  readonly ok: boolean;
+  readonly text: string;
+  readonly reference: string | null;
+}
+
+async function send(path: string, init: RequestInit): Promise<Answered> {
+  const headers = new Headers(init.headers);
+  const token = currentAccessToken();
+  if (token !== null) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  claimIdentity(headers);
   if (init.body !== undefined) {
     headers.set('Content-Type', 'application/json');
   }
+  const response = await fetch(path, { ...init, headers, credentials: 'same-origin' });
+  return {
+    status: response.status,
+    ok: response.ok,
+    text: await response.text(),
+    reference: response.headers.get(TRACE_ID_HEADER),
+  };
+}
 
-  const response = await fetch(path, { ...init, headers });
-  const text = await response.text();
-  const reference = response.headers.get(TRACE_ID_HEADER);
-
-  if (!response.ok) {
-    throw toApiError(response.status, parseOrNull(text) ?? { detail: text }, reference);
+/**
+ * TRANSITIONAL: the header identity, derived from the session rather than typed by anybody.
+ *
+ * Most routes still take who is acting from these headers, which any caller can write — that is the
+ * placeholder ADR-011 exists to delete. Sending them from the session keeps those routes working
+ * while they are moved onto the token one family at a time. **This whole function goes when the
+ * last route stops reading them**, and nothing else has to change when it does.
+ */
+function claimIdentity(headers: Headers): void {
+  const session = currentSession();
+  if (session === null) {
+    return;
   }
-  if (response.status === 204 || text.length === 0) {
+  headers.set('X-User', session.userId);
+  headers.set('X-Role', session.kind === 'OPERATOR' ? 'OPERATOR' : (session.role ?? 'EMPLOYEE'));
+  if (session.organisation !== null) {
+    headers.set('X-Organisation', session.organisation);
+  }
+  if (session.employee !== null) {
+    headers.set('X-Employee', session.employee);
+  }
+}
+
+function interpret<T>(path: string, answered: Answered): T {
+  if (!answered.ok) {
+    throw toApiError(
+      answered.status,
+      parseOrNull(answered.text) ?? { detail: answered.text },
+      answered.reference,
+    );
+  }
+  if (answered.status === 204 || answered.text.length === 0) {
     return undefined as T;
   }
-  const body = parseOrNull(text);
+  const body = parseOrNull(answered.text);
   if (body === null) {
     // A 200 carrying something other than JSON is a broken deployment, not a value. Casting it
     // would hand a page an object where it expects an array, and the render would throw.
     throw new ApiError(
-      response.status,
+      answered.status,
       `Expected JSON from ${path} but the body was not JSON.`,
       [],
-      reference,
+      answered.reference,
     );
   }
   return body as T;
+}
+
+/**
+ * Renews the session at most once, however many requests are waiting.
+ *
+ * Single-flight within the tab, and serialised across tabs by a Web Lock where the browser has one.
+ * A failed renewal ends the session rather than being retried: the cookie is either good or gone.
+ *
+ * @returns whether there is a usable token afterwards
+ */
+async function refreshOnce(): Promise<boolean> {
+  refreshing ??= (async () => {
+    try {
+      return await underRefreshLock(async () => {
+        const answered = await send('/api/auth/refresh', {
+          method: 'POST',
+          headers: { 'X-Requested-With': REQUESTED_WITH },
+        });
+        if (!answered.ok) {
+          endSession();
+          return false;
+        }
+        holdSession(interpret<SignedIn>('/api/auth/refresh', answered));
+        return true;
+      });
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
+async function underRefreshLock<T>(run: () => Promise<T>): Promise<T> {
+  // navigator.locks is absent in older browsers and in jsdom. Without it the tabs simply do not
+  // take turns, which is the behaviour this app had before — degraded, not broken.
+  if (typeof navigator === 'undefined' || navigator.locks === undefined) {
+    return run();
+  }
+  return navigator.locks.request(REFRESH_LOCK, run);
 }
 
 function parseOrNull(text: string): unknown {
@@ -101,16 +175,6 @@ function parseOrNull(text: string): unknown {
   } catch {
     return null;
   }
-}
-
-/**
- * A stable string identifying who is acting.
- *
- * Every response depends on all four claims, so a change to any of them invalidates every answer
- * already on screen. Used as the reload key by useAsync.
- */
-export function identityKey(identity: ActingIdentity): string {
-  return `${identity.organisation}|${identity.user}|${identity.role}|${identity.employee ?? ''}`;
 }
 
 /**
@@ -156,4 +220,68 @@ export const api = {
     }),
 
   delete: <T>(path: string): Promise<T> => request<T>(path, { method: 'DELETE' }),
+};
+
+/**
+ * The authentication endpoints, which are the only ones whose credential is not the access token.
+ *
+ * They live here rather than in a module of their own because they are the one place `fetch` is
+ * called with something other than a bearer token, and this module is the only one allowed to call
+ * `fetch` at all.
+ */
+export const auth = {
+  /**
+   * @param signInName the name submitted
+   * @param password the password submitted
+   * @returns who is now signed in
+   */
+  signIn: async (signInName: string, password: string): Promise<SignedIn> => {
+    const signedIn = await request<SignedIn>('/api/auth/sign-in', {
+      method: 'POST',
+      body: JSON.stringify({ signInName, password }),
+    });
+    holdSession(signedIn);
+    return signedIn;
+  },
+
+  /**
+   * Restores a session from the refresh cookie, which is how a reload keeps somebody signed in.
+   *
+   * @returns whether a session was restored
+   */
+  restore: (): Promise<boolean> => refreshOnce(),
+
+  /**
+   * Ends the session here and at the backend. Always forgets locally, even if the request fails:
+   * somebody who asked to sign out must not be left signed in because the network was down.
+   */
+  signOut: async (): Promise<void> => {
+    try {
+      await request<void>('/api/auth/sign-out', {
+        method: 'POST',
+        headers: { 'X-Requested-With': REQUESTED_WITH },
+      });
+    } finally {
+      endSession();
+    }
+  },
+
+  /**
+   * @returns the caller's own session, read fresh from the backend
+   */
+  readSession: (): Promise<SignedIn['session']> => api.get('/api/auth/session'),
+
+  /**
+   * @param currentPassword the password in use
+   * @param newPassword the password wanted instead
+   * @returns the new session the change begins
+   */
+  changePassword: async (currentPassword: string, newPassword: string): Promise<SignedIn> => {
+    const signedIn = await request<SignedIn>('/api/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    holdSession(signedIn);
+    return signedIn;
+  },
 };

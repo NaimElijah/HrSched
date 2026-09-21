@@ -3,7 +3,7 @@ import { scheduling } from '../api/scheduling';
 import type { ConstraintSet, ConstraintSetRequest } from '../api/scheduling';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
-import { useIdentityKey } from '../identity/ActingAs';
+import { useSessionKey } from '../auth/SessionProvider';
 
 /**
  * Admin: this organisation's working-time rules.
@@ -37,9 +37,9 @@ export function RulesPage() {
   // "switch this rule off", which is why it is distinct from an absent key.
   const [edits, setEdits] = useState<Partial<Record<Field, string>>>({});
   const [failure, setFailure] = useState<unknown>(null);
-  const identityKey = useIdentityKey();
+  const sessionKey = useSessionKey();
 
-  const current = useAsync(() => scheduling.currentConstraints(), identityKey);
+  const current = useAsync(() => scheduling.currentConstraints(), sessionKey);
   const loaded = current.value;
 
   const shown = (key: Field): string => edits[key] ?? configured(loaded, key);

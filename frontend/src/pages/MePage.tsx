@@ -6,7 +6,7 @@ import type { Employee, PreferenceStrength } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
-import { useActingAs, useIdentityKey } from '../identity/ActingAs';
+import { useSession, useSessionKey } from '../auth/SessionProvider';
 import { Inbox } from './Inbox';
 
 /**
@@ -32,8 +32,8 @@ export function MePage({
   /** Colleagues the acting role may list; empty for an employee, whose inbox then shows identifiers. */
   people: readonly Employee[];
 }) {
-  const { identity } = useActingAs();
-  const identityKey = useIdentityKey();
+  const { session } = useSession();
+  const sessionKey = useSessionKey();
   const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (colleague: string): string => personById.get(colleague)?.name ?? colleague;
   const [start, setStart] = useState('');
@@ -42,14 +42,16 @@ export function MePage({
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  const employee = identity.employee;
+  // The employee link comes from the session the backend established, never from anything typed:
+  // a user is not an employee, and the two are linked by the account rather than by matching ids.
+  const employee = session?.employee ?? null;
 
   // Without an employee link there is nobody for "my" schedule to be about, and asking would only
   // earn a refusal the page already explains.
   const schedule = useAsync(
     () =>
       employee === null ? Promise.resolve([]) : scheduling.findOwnSchedule(span.from, span.to),
-    `${identityKey}|${span.from}|${span.to}`,
+    `${sessionKey}|${span.from}|${span.to}`,
   );
 
   /**

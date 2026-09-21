@@ -4,7 +4,7 @@ import type { Employee } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
-import { useActingAs, useIdentityKey } from '../identity/ActingAs';
+import { useSessionKey } from '../auth/SessionProvider';
 import { SWAP_STATUS } from './swapStatus';
 import { useShiftsById } from './useShiftsById';
 
@@ -19,18 +19,14 @@ import { useShiftsById } from './useShiftsById';
  * the page deciding from the role's name who is allowed to see what.
  */
 export function SwapsPage({ people }: { people: readonly Employee[] }) {
-  const { identity } = useActingAs();
-  const identityKey = useIdentityKey();
+  const sessionKey = useSessionKey();
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
   // One decision at a time: a second approval racing the first could publish a second replacement.
   const [deciding, setDeciding] = useState(false);
 
-  const swaps = useAsync(() => scheduling.findSwapRequests(), identityKey);
-  const shifts = useShiftsById(
-    identity,
-    (swaps.value ?? []).map((swap) => swap.shift),
-  );
+  const swaps = useAsync(() => scheduling.findSwapRequests(), sessionKey);
+  const shifts = useShiftsById((swaps.value ?? []).map((swap) => swap.shift));
   const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (employee: string): string => personById.get(employee)?.name ?? employee;
 

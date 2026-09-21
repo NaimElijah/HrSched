@@ -3,11 +3,11 @@ import { scheduling } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
-import { useIdentityKey } from '../identity/ActingAs';
+import { useSessionKey } from '../auth/SessionProvider';
 
 /** Scheduler: what needs covering, over an explicit span. */
 export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
-  const identityKey = useIdentityKey();
+  const sessionKey = useSessionKey();
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [headcount, setHeadcount] = useState('1');
@@ -16,9 +16,9 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
 
   const shifts = useAsync(
     () => scheduling.findShifts(span.from, span.to),
-    `${identityKey}|${span.from}|${span.to}`,
+    `${sessionKey}|${span.from}|${span.to}`,
   );
-  const qualifications = useAsync(() => workforce.findQualifications(), identityKey);
+  const qualifications = useAsync(() => workforce.findQualifications(), sessionKey);
   const qualificationNames = new Map(
     (qualifications.value ?? []).map((qualification) => [qualification.id, qualification.name]),
   );

@@ -2,16 +2,16 @@ import { useState } from 'react';
 import { workforce } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
-import { useIdentityKey } from '../identity/ActingAs';
+import { useSessionKey } from '../auth/SessionProvider';
 
 /** Admin: who works here, what they hold, and what they are contracted to. */
 export function PeoplePage() {
-  const identityKey = useIdentityKey();
+  const sessionKey = useSessionKey();
   const [name, setName] = useState('');
   const [failure, setFailure] = useState<unknown>(null);
 
-  const people = useAsync(() => workforce.findEmployees(), identityKey);
-  const qualifications = useAsync(() => workforce.findQualifications(), identityKey);
+  const people = useAsync(() => workforce.findEmployees(), sessionKey);
+  const qualifications = useAsync(() => workforce.findQualifications(), sessionKey);
   const qualificationNames = new Map(
     (qualifications.value ?? []).map((qualification) => [qualification.id, qualification.name]),
   );

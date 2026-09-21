@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dayLabel, timeLabel } from '../components/localDates';
-import { ActingAsProvider } from '../identity/ActingAs';
+import { A_TENANT, SignedIn } from '../test-support/session';
 import { Inbox } from './Inbox';
 
 /**
@@ -76,19 +76,10 @@ function serving(inbox: ReturnType<typeof told>[], swaps: unknown[] = [SWAP]) {
 }
 
 function show() {
-  window.localStorage.setItem(
-    'hrsched.acting-as',
-    JSON.stringify({
-      organisation: '22222222-2222-4222-8222-222222222222',
-      user: '33333333-3333-4333-8333-333333333333',
-      role: 'EMPLOYEE',
-      employee: GRACE,
-    }),
-  );
   render(
-    <ActingAsProvider>
+    <SignedIn session={A_TENANT}>
       <Inbox employee={GRACE} nameOf={(employee) => (employee === ADA ? 'Ada' : employee)} />
-    </ActingAsProvider>,
+    </SignedIn>,
   );
 }
 

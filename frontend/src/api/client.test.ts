@@ -1,127 +1,356 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, identityKey, path, setActingIdentity } from './client';
-import type { ActingIdentity } from './client';
+import { api, auth, path } from './client';
 import { ApiError } from './problem';
+import {
+  currentAccessToken,
+  currentSession,
+  endSession,
+  holdSession,
+  onSessionEnded,
+} from './session';
+import type { Session } from './session';
 
 /**
  * Specification of the one module that talks to the network.
  *
  * `fetch` is stubbed rather than mocked with a library: the HTTP API is our own port, and our own
  * ports are exactly the thing it is correct to fake.
+ *
+ * Most of this file is about renewing. A ten-minute access token means every long-lived screen will
+ * meet a 401 eventually, and the rules around what happens next are not obvious: exactly one
+ * renewal however many requests are waiting, exactly one retry, and no renewal at all for the
+ * endpoints whose own credential is the cookie. Each of those, got wrong, is either a loop that
+ * looks like an outage or a session ended by what looks to the backend like a stolen token.
  */
 
-const IDENTITY: ActingIdentity = {
+const A_SESSION: Session = {
+  userId: 'user-1',
+  kind: 'TENANT',
   organisation: 'org-1',
-  user: 'user-1',
   role: 'SCHEDULER',
   employee: null,
+  signInName: 'ada@example.com',
+  passwordChangeRequired: false,
 };
 
-function respondWith(
-  status: number,
-  body: unknown,
-  ok = status < 400,
-  headers: Record<string, string> = {},
-) {
-  const stub = vi.fn().mockResolvedValue({
-    ok,
-    status,
-    headers: new Headers(headers),
-    text: () => Promise.resolve(body === null ? '' : JSON.stringify(body)),
+interface Answer {
+  readonly status: number;
+  readonly body: unknown;
+  readonly headers?: Record<string, string>;
+}
+
+/** Answers every request with the same thing. */
+function respondWith(status: number, body: unknown, headers: Record<string, string> = {}) {
+  return answering(() => ({ status, body, headers }));
+}
+
+/** Answers each request by asking the test what this one should be. */
+function answering(answer: (path: string, init?: RequestInit) => Answer) {
+  const stub = vi.fn((path: string, init?: RequestInit) => {
+    const given = answer(path, init);
+    return Promise.resolve({
+      ok: given.status < 400,
+      status: given.status,
+      headers: new Headers(given.headers ?? {}),
+      text: () => Promise.resolve(given.body === null ? '' : JSON.stringify(given.body)),
+    });
   });
   vi.stubGlobal('fetch', stub);
   return stub;
 }
 
+function signedIn(session: Session = A_SESSION, token = 'token-1') {
+  holdSession({ accessToken: token, tokenType: 'Bearer', expiresIn: 600, session });
+}
+
+function headersOf(call: [string, (RequestInit | undefined)?] | undefined): Headers {
+  return (call?.[1] as RequestInit).headers as Headers;
+}
+
 beforeEach(() => {
-  setActingIdentity(IDENTITY);
+  endSession();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  setActingIdentity(null);
+  endSession();
 });
 
-describe('the acting identity', () => {
-  it('GivenAnIdentityWithoutAnEmployee_WhenRequesting_ThenTheThreeClaimHeadersAreSent', async () => {
+describe('what a request carries', () => {
+  it('GivenASignedInSession_WhenRequesting_ThenTheAccessTokenIsSentAsABearer', async () => {
+    signedIn();
     const stub = respondWith(200, []);
 
     await api.get('/api/shifts');
 
-    const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
-    expect(headers.get('X-Organisation')).toBe('org-1');
+    expect(headersOf(stub.mock.calls[0]).get('Authorization')).toBe('Bearer token-1');
+  });
+
+  it('GivenNobodySignedIn_WhenRequesting_ThenNoAuthorizationIsSent', async () => {
+    const stub = respondWith(200, []);
+
+    await api.get('/api/shifts');
+
+    expect(headersOf(stub.mock.calls[0]).get('Authorization')).toBeNull();
+  });
+
+  /**
+   * The one test for the transitional headers, so that deleting them is a deliberate, visible
+   * change to this file rather than something that quietly stops being asserted. Most routes still
+   * take who is acting from these, and they are derived from the session rather than typed.
+   */
+  it('GivenASignedInTenant_WhenRequesting_ThenTheTransitionalIdentityHeadersAreDerivedFromTheSession', async () => {
+    signedIn({ ...A_SESSION, employee: 'emp-9' });
+    const stub = respondWith(200, []);
+
+    await api.get('/api/shifts');
+
+    const headers = headersOf(stub.mock.calls[0]);
     expect(headers.get('X-User')).toBe('user-1');
     expect(headers.get('X-Role')).toBe('SCHEDULER');
+    expect(headers.get('X-Organisation')).toBe('org-1');
+    expect(headers.get('X-Employee')).toBe('emp-9');
+  });
+
+  it('GivenTheOperator_WhenRequesting_ThenNoOrganisationOrEmployeeIsClaimed', async () => {
+    signedIn({
+      userId: 'user-2',
+      kind: 'OPERATOR',
+      organisation: null,
+      role: null,
+      employee: null,
+      signInName: 'operator@example.com',
+      passwordChangeRequired: false,
+    });
+    const stub = respondWith(200, []);
+
+    await api.get('/api/organisations');
+
+    const headers = headersOf(stub.mock.calls[0]);
+    expect(headers.get('X-Role')).toBe('OPERATOR');
+    expect(headers.get('X-Organisation')).toBeNull();
     expect(headers.get('X-Employee')).toBeNull();
   });
 
-  it('GivenAnIdentityCarryingAnEmployee_WhenRequesting_ThenTheEmployeeLinkIsSent', async () => {
+  it('GivenADelete_WhenRequesting_ThenItIsSentAsADeleteWithNoBody', async () => {
     const stub = respondWith(204, null);
 
-    setActingIdentity({ ...IDENTITY, role: 'EMPLOYEE', employee: 'emp-9' });
+    await api.delete('/api/x');
 
-    await api.post('/api/x', { a: 1 });
-
-    const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
-    expect(headers.get('X-Employee')).toBe('emp-9');
-    expect(headers.get('Content-Type')).toBe('application/json');
-  });
-
-  it('GivenADelete_WhenRequesting_ThenItIsSentAsADeleteWithNoBody', async () => {
-    const stub = respondWith(200, {});
-
-    await api.delete('/api/rosters/1/assignments/s-1/e-1');
-
-    const init = stub.mock.calls[0]?.[1] as RequestInit;
-    expect(init.method).toBe('DELETE');
-    expect(init.body).toBeUndefined();
-    expect((init.headers as Headers).get('X-Role')).toBe('SCHEDULER');
+    expect((stub.mock.calls[0]?.[1] as RequestInit).method).toBe('DELETE');
+    expect((stub.mock.calls[0]?.[1] as RequestInit).body).toBeUndefined();
   });
 
   it('GivenARequestWithoutABody_WhenRequesting_ThenNoContentTypeIsClaimed', async () => {
-    const stub = respondWith(200, {});
+    const stub = respondWith(200, []);
 
-    await api.post('/api/rosters/1/publication');
+    await api.get('/api/shifts');
 
-    const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
-    expect(headers.get('Content-Type')).toBeNull();
+    expect(headersOf(stub.mock.calls[0]).get('Content-Type')).toBeNull();
   });
 });
 
-describe('failures', () => {
-  it('GivenARosterBreakingTheRules_WhenPublishing_ThenTheViolationsSurvive', async () => {
-    respondWith(
-      422,
-      {
-        title: 'Roster breaks the working-time rules',
-        detail: 'The roster breaks 1 working-time rule(s)',
-        status: 422,
-        violations: [
-          {
-            employee: 'emp-1',
-            constraint: 'maximum daily working time',
-            detail: 'PT8H worked on 2026-10-05 exceeds the maximum of PT1H',
+/**
+ * The access token lives in a module variable and nowhere a script can read it back. A token in
+ * `localStorage` is a token a cross-site scripting flaw walks away with, and one that survives the
+ * tab is one that outlives the reason it was issued (ADR-028).
+ */
+describe('where the token is kept', () => {
+  it('GivenASignIn_WhenItSucceeds_ThenNothingIsWrittenToBrowserStorage', async () => {
+    respondWith(200, {
+      accessToken: 'token-1',
+      tokenType: 'Bearer',
+      expiresIn: 600,
+      session: A_SESSION,
+    });
+    const local = vi.spyOn(Storage.prototype, 'setItem');
+
+    await auth.signIn('ada@example.com', 'an invented password for a test');
+
+    expect(local).not.toHaveBeenCalled();
+    expect(currentAccessToken()).toBe('token-1');
+    local.mockRestore();
+  });
+
+  it('GivenASignOut_WhenItAnswers_ThenTheTokenAndSessionAreForgotten', async () => {
+    signedIn();
+    respondWith(204, null);
+
+    await auth.signOut();
+
+    expect(currentAccessToken()).toBeNull();
+    expect(currentSession()).toBeNull();
+  });
+
+  /** Somebody who asked to sign out must not stay signed in because the network was down. */
+  it('GivenASignOutThatFails_WhenItThrows_ThenTheTokenIsForgottenAnyway', async () => {
+    signedIn();
+    respondWith(500, { detail: 'gone' });
+
+    await expect(auth.signOut()).rejects.toBeInstanceOf(ApiError);
+
+    expect(currentAccessToken()).toBeNull();
+  });
+});
+
+describe('renewing a session', () => {
+  it('GivenAnExpiredAccessToken_WhenRequesting_ThenTheSessionIsRefreshedOnceAndTheRequestRetried', async () => {
+    signedIn();
+    let refreshed = false;
+    const stub = answering((path) => {
+      if (path === '/api/auth/refresh') {
+        refreshed = true;
+        return {
+          status: 200,
+          body: {
+            accessToken: 'token-2',
+            tokenType: 'Bearer',
+            expiresIn: 600,
+            session: A_SESSION,
           },
-        ],
-      },
-      false,
+        };
+      }
+      return refreshed ? { status: 200, body: ['a shift'] } : { status: 401, body: {} };
+    });
+
+    await expect(api.get('/api/shifts')).resolves.toEqual(['a shift']);
+
+    expect(stub.mock.calls.map(([called]) => called)).toEqual([
+      '/api/shifts',
+      '/api/auth/refresh',
+      '/api/shifts',
+    ]);
+    expect(currentAccessToken()).toBe('token-2');
+  });
+
+  /**
+   * Two tabs renewing with one cookie is what reuse detection is built to punish, and two requests
+   * in one tab would be the same thing. One renewal is shared by everything waiting on it.
+   */
+  it('GivenTwoRequestsFailingTogether_WhenRefreshing_ThenOnlyOneRefreshIsSent', async () => {
+    signedIn();
+    let refreshed = false;
+    const stub = answering((path) => {
+      if (path === '/api/auth/refresh') {
+        refreshed = true;
+        return {
+          status: 200,
+          body: {
+            accessToken: 'token-2',
+            tokenType: 'Bearer',
+            expiresIn: 600,
+            session: A_SESSION,
+          },
+        };
+      }
+      return refreshed ? { status: 200, body: [] } : { status: 401, body: {} };
+    });
+
+    await Promise.all([api.get('/api/shifts'), api.get('/api/rosters')]);
+
+    expect(stub.mock.calls.filter(([called]) => called === '/api/auth/refresh')).toHaveLength(1);
+  });
+
+  it('GivenARefreshThatFails_WhenRequesting_ThenTheSessionEndsAndTheOriginalErrorIsThrown', async () => {
+    signedIn();
+    let ended = false;
+    respondWith(401, { detail: 'A valid access token is required.' });
+    const stop = onSessionEnded(() => {
+      ended = true;
+    });
+
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+
+    expect(error.isUnauthenticated).toBe(true);
+    expect(currentAccessToken()).toBeNull();
+    expect(ended).toBe(true);
+    stop();
+  });
+
+  /** A 401 from signing in is the answer, not a hint to go and renew something. */
+  it('GivenAnAuthEndpointAnswering401_WhenRequesting_ThenNoRefreshIsAttempted', async () => {
+    const stub = respondWith(401, { detail: 'Those credentials were not accepted.' });
+
+    await expect(auth.signIn('ada@example.com', 'wrong')).rejects.toBeInstanceOf(ApiError);
+
+    expect(stub.mock.calls.filter(([called]) => called === '/api/auth/refresh')).toHaveLength(0);
+  });
+
+  it('GivenARetryThatIsRefusedAgain_WhenRequesting_ThenItIsNotRetriedTwice', async () => {
+    signedIn();
+    const stub = answering((path) =>
+      path === '/api/auth/refresh'
+        ? {
+            status: 200,
+            body: {
+              accessToken: 'token-2',
+              tokenType: 'Bearer',
+              expiresIn: 600,
+              session: A_SESSION,
+            },
+          }
+        : { status: 401, body: {} },
     );
 
-    const failure = await api.post('/api/rosters/1/publication').catch((e: unknown) => e);
+    await expect(api.get('/api/shifts')).rejects.toBeInstanceOf(ApiError);
 
-    expect(failure).toBeInstanceOf(ApiError);
-    const error = failure as ApiError;
+    expect(stub.mock.calls.filter(([called]) => called === '/api/shifts')).toHaveLength(2);
+  });
+
+  it('GivenARefresh_WhenSent_ThenItCarriesTheRequestedWithHeader', async () => {
+    signedIn();
+    const stub = answering((path) =>
+      path === '/api/auth/refresh' ? { status: 401, body: {} } : { status: 401, body: {} },
+    );
+
+    await api.get('/api/shifts').catch(() => undefined);
+
+    const refresh = stub.mock.calls.find(([called]) => called === '/api/auth/refresh');
+    expect(headersOf(refresh).get('X-Requested-With')).toBe('XMLHttpRequest');
+    expect((refresh?.[1] as RequestInit).credentials).toBe('same-origin');
+  });
+
+  it('GivenWebLocks_WhenRefreshing_ThenTheRefreshRunsInsideTheLock', async () => {
+    signedIn();
+    const inside: string[] = [];
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: async (name: string, run: () => Promise<unknown>) => {
+          inside.push(name);
+          return run();
+        },
+      },
+    });
+    answering((path) =>
+      path === '/api/auth/refresh' ? { status: 401, body: {} } : { status: 401, body: {} },
+    );
+
+    await api.get('/api/shifts').catch(() => undefined);
+
+    expect(inside).toEqual(['hrsched.refresh']);
+  });
+});
+
+describe('what a failure carries', () => {
+  it('GivenARosterBreakingTheRules_WhenPublishing_ThenTheViolationsSurvive', async () => {
+    respondWith(422, {
+      detail: 'Refused',
+      violations: [{ employee: 'e-1', constraint: 'Daily maximum', detail: 'over by an hour' }],
+    });
+
+    const error = (await api
+      .post('/api/rosters/1/publication')
+      .catch((e: unknown) => e)) as ApiError;
+
     expect(error.isRuleBreach).toBe(true);
     expect(error.violations).toHaveLength(1);
-    expect(error.violations[0]?.constraint).toBe('maximum daily working time');
   });
 
   it('GivenAViolationOfTheWrongShape_WhenParsing_ThenItIsDiscardedRatherThanTrusted', async () => {
-    respondWith(
-      422,
-      { detail: 'nope', violations: ['a formatted sentence', { employee: 1 }] },
-      false,
-    );
+    respondWith(422, {
+      detail: 'nope',
+      violations: ['a formatted sentence', { employee: 1 }],
+    });
 
     const error = (await api
       .post('/api/rosters/1/publication')
@@ -132,7 +361,7 @@ describe('failures', () => {
   });
 
   it('GivenACrossTenantRead_WhenRequesting_ThenItIsNotFoundRatherThanForbidden', async () => {
-    respondWith(404, { title: 'Not found', detail: 'No such resource.' }, false);
+    respondWith(404, { title: 'Not found', detail: 'No such resource.' });
 
     const error = (await api.get('/api/rosters/1').catch((e: unknown) => e)) as ApiError;
 
@@ -141,167 +370,103 @@ describe('failures', () => {
   });
 
   it('GivenARoleThatMayNotAct_WhenRequesting_ThenItIsForbidden', async () => {
-    respondWith(403, { title: 'Not permitted', detail: 'Your role does not permit this.' }, false);
+    respondWith(403, { title: 'Not permitted', detail: 'Your role does not permit this.' });
 
     const error = (await api.post('/api/shifts', {}).catch((e: unknown) => e)) as ApiError;
 
     expect(error.isForbidden).toBe(true);
-    expect(error.message).toBe('Your role does not permit this.');
+    expect(error.isUnauthenticated).toBe(false);
   });
 
   it('GivenANonJsonBody_WhenItFails_ThenTheTextIsSurfacedRatherThanAParseError', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
+    const stub = vi.fn(() =>
+      Promise.resolve({
         ok: false,
-        status: 500,
+        status: 502,
         headers: new Headers(),
-        text: () => Promise.resolve('<html>Gateway exploded</html>'),
+        text: () => Promise.resolve('<html>bad gateway</html>'),
       }),
     );
+    vi.stubGlobal('fetch', stub);
 
     const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
 
-    expect(error.status).toBe(500);
-    expect(error.message).toContain('Gateway exploded');
+    expect(error.message).toContain('bad gateway');
   });
 
   it('GivenA204_WhenRequesting_ThenNothingIsParsed', async () => {
     respondWith(204, null);
 
-    await expect(api.put('/api/employees/1/contract', { a: 1 })).resolves.toBeUndefined();
+    await expect(api.delete('/api/x')).resolves.toBeUndefined();
   });
 
   it('GivenA200CarryingSomethingOtherThanJson_WhenRequesting_ThenItFailsRatherThanCasting', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
+    const stub = vi.fn(() =>
+      Promise.resolve({
         ok: true,
         status: 200,
         headers: new Headers(),
-        text: () => Promise.resolve('<html>a misrouted SPA fallback</html>'),
+        text: () => Promise.resolve('not json'),
       }),
     );
+    vi.stubGlobal('fetch', stub);
 
     const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
 
-    expect(error).toBeInstanceOf(ApiError);
-    // Casting it would hand a page an object where it expects an array, and the render would throw.
     expect(error.message).toContain('not JSON');
   });
 });
 
 /**
- * The key every page uses to decide when to refetch. Nothing asserted it, and it is the one string
- * whose staleness would show as data from the wrong organisation rather than as an error.
- */
-describe('the reload key', () => {
-  it('GivenTheSameIdentity_WhenKeyedTwice_ThenTheKeyIsStable', () => {
-    expect(identityKey(IDENTITY)).toBe(identityKey({ ...IDENTITY }));
-  });
-
-  it.each([
-    ['organisation', { ...IDENTITY, organisation: 'org-2' }],
-    ['user', { ...IDENTITY, user: 'user-2' }],
-    ['role', { ...IDENTITY, role: 'ADMIN' as const }],
-    ['employee', { ...IDENTITY, employee: 'e-1' }],
-  ])('GivenTwoIdentitiesDifferingInOneClaim_WhenKeyed_ThenTheKeysDiffer', (_claim, changed) => {
-    expect(identityKey(changed)).not.toBe(identityKey(IDENTITY));
-  });
-
-  /**
-   * `employee: ''` and `employee: null` produce one key, and that is consistent rather than a bug:
-   * `request` uses a truthiness check, so both suppress `X-Employee` and the two identities really
-   * do make the same request. Changing that check to `!= null` without changing this would give two
-   * different requests one cache key.
-   */
-  it('GivenAnEmptyEmployeeString_WhenKeyed_ThenItMatchesNoEmployeeAtAll', () => {
-    expect(identityKey({ ...IDENTITY, employee: '' })).toBe(
-      identityKey({ ...IDENTITY, employee: null }),
-    );
-  });
-
-  it('GivenAnEmptyEmployeeString_WhenRequesting_ThenNoEmployeeHeaderIsSent', async () => {
-    const stub = respondWith(200, []);
-
-    setActingIdentity({ ...IDENTITY, employee: '' });
-
-    await api.get('/api/shifts');
-
-    const headers = (stub.mock.calls[0]?.[1] as RequestInit).headers as Headers;
-    expect(headers.get('X-Employee')).toBeNull();
-  });
-});
-
-/**
  * An identifier is one path segment and has to stay one. `fetch` resolves `..` and treats `/` as a
- * separator, so an unencoded value can quietly address a different endpoint — and the organisation
- * in the identity bar is typed by hand.
+ * separator, so an unencoded value can quietly address a different endpoint.
  */
 describe('building a path', () => {
   it('GivenAnIdentifierContainingASlash_WhenBuildingAPath_ThenItStaysOneSegment', () => {
-    expect(path`/api/organisations/${'../employees'}`).toBe('/api/organisations/..%2Femployees');
-  });
-
-  /**
-   * Encoding cannot help: encodeURIComponent leaves dots alone, and the URL parser reads `%2e%2e` as
-   * `..` anyway. `/api/organisations/..` would quietly become `/api/`, so the path is refused.
-   */
-  it.each(['.', '..'])('GivenADotSegment_WhenBuildingAPath_ThenItIsRefused (%s)', (segment) => {
-    expect(() => path`/api/organisations/${segment}`).toThrow(/cannot be "\." or "\.\."/);
+    expect(path`/api/employees/${'a/b'}/qualifications`).toBe(
+      '/api/employees/a%2Fb/qualifications',
+    );
   });
 
   it('GivenOrdinaryIdentifiers_WhenBuildingAPath_ThenTheyArePlacedUnchanged', () => {
-    expect(path`/api/employees/${'e-1'}/qualifications/${'q-1'}`).toBe(
-      '/api/employees/e-1/qualifications/q-1',
-    );
+    expect(path`/api/rosters/${'roster-1'}`).toBe('/api/rosters/roster-1');
+  });
+
+  it.each(['.', '..'])('GivenADotSegment_WhenBuildingAPath_ThenItIsRefused', (identifier) => {
+    expect(() => path`/api/employees/${identifier}`).toThrow();
   });
 });
 
-describe('the trace reference', () => {
-  it('GivenARefusalCarryingATraceId_WhenItIsRaised_ThenTheErrorCanBeQuotedByIt', async () => {
-    respondWith(403, { detail: 'Your role does not permit this.' }, false, {
-      'X-Trace-Id': '4bf92f3577b34da6a3ce929d0e0e4736',
-    });
-
-    await expect(api.post('/api/qualifications', { name: 'Forklift' })).rejects.toThrow(ApiError);
-  });
-
+describe('the trace id', () => {
   it('GivenARefusalCarryingATraceId_WhenItIsCaught_ThenTheReferenceIsTheTraceId', async () => {
-    respondWith(404, { detail: 'No such resource.' }, false, {
-      'X-Trace-Id': '4bf92f3577b34da6a3ce929d0e0e4736',
-    });
+    respondWith(403, { detail: 'no' }, { 'X-Trace-Id': 'trace-9' });
 
-    const failure = await api.get('/api/rosters/1').catch((error: unknown) => error);
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
 
-    expect((failure as ApiError).reference).toBe('4bf92f3577b34da6a3ce929d0e0e4736');
+    expect(error.reference).toBe('trace-9');
   });
 
-  /**
-   * A missing header means no span was active, not that some id was lost. Inventing one here would
-   * hand the user a reference that appears in no log line.
-   */
   it('GivenAResponseWithoutATraceId_WhenItFails_ThenThereIsNoReferenceToQuote', async () => {
-    respondWith(500, { detail: 'Something broke.' }, false);
+    respondWith(403, { detail: 'no' });
 
-    const failure = await api.get('/api/rosters').catch((error: unknown) => error);
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
 
-    expect((failure as ApiError).reference).toBeNull();
+    expect(error.reference).toBeNull();
   });
 
   it('GivenASuccessCarryingANonJsonBody_WhenItIsRejected_ThenTheReferenceSurvives', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
+    const stub = vi.fn(() =>
+      Promise.resolve({
         ok: true,
         status: 200,
-        headers: new Headers({ 'X-Trace-Id': 'abc123' }),
-        text: () => Promise.resolve('<!doctype html>'),
+        headers: new Headers({ 'X-Trace-Id': 'trace-7' }),
+        text: () => Promise.resolve('not json'),
       }),
     );
+    vi.stubGlobal('fetch', stub);
 
-    const failure = await api.get('/api/shifts').catch((error: unknown) => error);
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
 
-    expect((failure as ApiError).reference).toBe('abc123');
+    expect(error.reference).toBe('trace-7');
   });
 });

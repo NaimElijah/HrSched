@@ -53,6 +53,14 @@ export function Failure({
       </div>
     );
   }
+  if (error instanceof ApiError && error.isUnauthenticated) {
+    return (
+      <div className="failure" role="alert">
+        <strong>Your session has ended.</strong> Sign in again.
+        <Reference of={error} />
+      </div>
+    );
+  }
   if (error instanceof ApiError && error.isForbidden) {
     return (
       <div className="failure" role="alert">

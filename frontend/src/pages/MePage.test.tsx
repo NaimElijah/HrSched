@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dayLabel, timeLabel } from '../components/localDates';
-import { ActingAsProvider } from '../identity/ActingAs';
+import { A_TENANT, SignedIn } from '../test-support/session';
 import { MePage } from './MePage';
 
 /**
@@ -74,23 +74,24 @@ function bodyOfFirstWrite(stub: ReturnType<typeof stubbed>): Record<string, unkn
   return JSON.parse(init.body) as Record<string, unknown>;
 }
 
+/**
+ * Which personnel record the signed-in account is, if any.
+ *
+ * It comes from the session rather than from anything typed: a user is not an employee, and the
+ * two are linked by the account (ADR-012). An account with no link has nobody for "my" schedule to
+ * be about, which is the case several tests below are here for.
+ */
+let employeeLink: string | null = null;
+
 function actingAsEmployee(employee: string | null) {
-  window.localStorage.setItem(
-    'hrsched.acting-as',
-    JSON.stringify({
-      organisation: '22222222-2222-4222-8222-222222222222',
-      user: '33333333-3333-4333-8333-333333333333',
-      role: 'EMPLOYEE',
-      employee,
-    }),
-  );
+  employeeLink = employee;
 }
 
 function show() {
   render(
-    <ActingAsProvider>
+    <SignedIn session={{ ...A_TENANT, role: 'EMPLOYEE', employee: employeeLink }}>
       <MePage span={SPAN} people={[]} />
-    </ActingAsProvider>,
+    </SignedIn>,
   );
 }
 

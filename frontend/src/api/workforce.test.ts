@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setActingIdentity } from './client';
-import type { ActingIdentity } from './client';
+import { endSession, holdSession } from './session';
+import type { Session } from './session';
 import { workforce } from './workforce';
 
 /**
@@ -8,15 +8,23 @@ import { workforce } from './workforce';
  * call site, rather than trusted to be a UUID because the server happened to send one.
  */
 
-const IDENTITY: ActingIdentity = {
+const A_SESSION: Session = {
+  userId: 'user-1',
+  kind: 'TENANT',
   organisation: 'org-1',
-  user: 'user-1',
   role: 'ADMIN',
   employee: null,
+  signInName: 'ada@example.com',
+  passwordChangeRequired: false,
 };
 
 beforeEach(() => {
-  setActingIdentity(IDENTITY);
+  holdSession({
+    accessToken: 'a-test-access-token',
+    tokenType: 'Bearer',
+    expiresIn: 600,
+    session: A_SESSION,
+  });
 });
 
 function accepting() {
@@ -32,6 +40,7 @@ function accepting() {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  endSession();
 });
 
 describe('addressing an employee', () => {

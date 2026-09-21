@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ActingAsProvider } from '../identity/ActingAs';
+import { A_TENANT, SignedIn } from '../test-support/session';
 import { QualificationsPage } from './QualificationsPage';
 
 /**
@@ -43,9 +43,9 @@ function routeTo(handlers: {
 
 function show() {
   render(
-    <ActingAsProvider>
+    <SignedIn session={A_TENANT}>
       <QualificationsPage />
-    </ActingAsProvider>,
+    </SignedIn>,
   );
 }
 

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Employee } from '../api/workforce';
 import { dayLabel, timeLabel } from '../components/localDates';
-import { ActingAsProvider } from '../identity/ActingAs';
+import { A_TENANT, SignedIn } from '../test-support/session';
 import { callsTo, routeTo, type Answer } from '../test-support/routeTo';
 import { SwapsPage } from './SwapsPage';
 
@@ -54,19 +54,10 @@ function aQueue(overrides: Record<string, Answer> = {}) {
 }
 
 function show(people: readonly Employee[] = [ADA, GRACE]) {
-  window.localStorage.setItem(
-    'hrsched.acting-as',
-    JSON.stringify({
-      organisation: '22222222-2222-4222-8222-222222222222',
-      user: '33333333-3333-4333-8333-333333333333',
-      role: 'SCHEDULER',
-      employee: null,
-    }),
-  );
   render(
-    <ActingAsProvider>
+    <SignedIn session={A_TENANT}>
       <SwapsPage people={people} />
-    </ActingAsProvider>,
+    </SignedIn>,
   );
 }
 
