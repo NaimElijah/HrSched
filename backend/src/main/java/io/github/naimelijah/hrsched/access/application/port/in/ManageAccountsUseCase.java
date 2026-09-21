@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.access.application.port.in;
 
+import io.github.naimelijah.hrsched.access.domain.model.CannotResetOwnPasswordException;
 import io.github.naimelijah.hrsched.access.domain.model.LastActiveAdminException;
 import io.github.naimelijah.hrsched.access.domain.model.NotAnEmployeeHereException;
 import io.github.naimelijah.hrsched.access.domain.model.SignInNameTakenException;
@@ -83,7 +84,12 @@ public interface ManageAccountsUseCase {
   void setAccountActive(Actor actor, SetAccountActiveCommand command);
 
   /**
-   * Gives an account a new temporary password, which its owner must then replace.
+   * Gives <em>somebody else's</em> account a new temporary password, which its owner must then
+   * replace.
+   *
+   * <p>Never one's own. Changing your own password takes the current one (F14), which is what stops
+   * a stolen token being turned into a password its owner does not know; an Admin able to reset
+   * themselves here would hold that protection and a way around it at the same time.
    *
    * <p>Also clears any lockout and ends every session the account holds. Clearing the lockout is
    * the point as much as the password is: an Admin resetting a colleague who is locked out is how
@@ -94,6 +100,7 @@ public interface ManageAccountsUseCase {
    * @param command which account, and the password to give it
    * @throws CrossTenantAccessException if the actor may not act in that organisation
    * @throws UnknownAccountException if that organisation holds no such account
+   * @throws CannotResetOwnPasswordException if the actor aimed it at their own account
    * @throws UnacceptablePasswordException if the temporary password does not satisfy the policy
    */
   void resetPassword(Actor actor, ResetPasswordCommand command);

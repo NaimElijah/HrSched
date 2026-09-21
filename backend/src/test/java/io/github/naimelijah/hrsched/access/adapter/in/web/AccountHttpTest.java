@@ -628,6 +628,18 @@ class AccountHttpTest {
     return afterChoosingTheirOwnPassword(signInName);
   }
 
+  /** The other door is open to them, and it asks for the password they already know. */
+  @Test
+  void GivenAnAdmin_WhenResettingTheirOwnPassword_ThenItIsAConflict() throws Exception {
+    String admin = admin(anOrganisation());
+
+    mockMvc
+        .perform(
+            with(post("/api/accounts/%s/password".formatted(whoAmI(admin))), admin)
+                .content("{\"temporaryPassword\":\"%s\"}".formatted(A_PASSWORD)))
+        .andExpect(status().isConflict());
+  }
+
   /**
    * @return the account identity the token names, read back from the session endpoint
    */

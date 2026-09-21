@@ -16,6 +16,7 @@ import io.github.naimelijah.hrsched.access.application.port.out.EmployeeDirector
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.application.port.out.SessionRepository;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
+import io.github.naimelijah.hrsched.access.domain.model.CannotResetOwnPasswordException;
 import io.github.naimelijah.hrsched.access.domain.model.LastActiveAdminException;
 import io.github.naimelijah.hrsched.access.domain.model.NotAnEmployeeHereException;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorBelongsToNoOrganisationException;
@@ -185,6 +186,9 @@ public class AccountService implements BootstrapOperatorUseCase, ManageAccountsU
   public void resetPassword(Actor actor, ResetPasswordCommand command) {
     Objects.requireNonNull(command, "command must not be null");
     authorise(actor, command.organisation());
+    if (actor.id().equals(command.account())) {
+      throw new CannotResetOwnPasswordException(actor.id());
+    }
     requirePasswordSatisfiesPolicy(command.temporaryPassword());
     Account account = load(command.organisation(), command.account());
     accounts.save(

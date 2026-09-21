@@ -11,6 +11,7 @@ import io.github.naimelijah.hrsched.access.application.port.in.SetAccountActiveC
 import io.github.naimelijah.hrsched.access.application.port.out.AccessChange;
 import io.github.naimelijah.hrsched.access.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
+import io.github.naimelijah.hrsched.access.domain.model.CannotResetOwnPasswordException;
 import io.github.naimelijah.hrsched.access.domain.model.EmployeeAlreadyLinkedException;
 import io.github.naimelijah.hrsched.access.domain.model.LastActiveAdminException;
 import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
@@ -603,6 +604,41 @@ class AccountAdministrationTest {
                     actor(acme, Role.SCHEDULER),
                     new ResetPasswordCommand(acme, account.id(), A_PASSWORD)))
         .isInstanceOf(NotPermittedException.class);
+  }
+
+  /**
+   * Changing your own password takes the current one (F14). An Admin able to reset themselves here
+   * would hold that protection and a way around it in the same session, so this door is closed to
+   * them — and closing it costs nothing, because the other one is open to anybody signed in.
+   */
+  @Test
+  void GivenAnAdmin_WhenResettingTheirOwnPassword_ThenItIsRefused() {
+    Account theirs = existing(acme, Role.ADMIN, true);
+    TenantActor themself = new TenantActor(theirs.id(), acme, Role.ADMIN);
+
+    assertThatThrownBy(
+            () ->
+                service.resetPassword(
+                    themself, new ResetPasswordCommand(acme, theirs.id(), A_PASSWORD)))
+        .isInstanceOf(CannotResetOwnPasswordException.class);
+
+    assertThat(accounts.find(acme, theirs.id()).orElseThrow().passwordHash())
+        .isEqualTo(passwords.hash(A_PASSWORD));
+    assertThat(sessions.everySessionEndedFor(theirs.id())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /** A colleague's is the whole point, including another Admin's. */
+  @Test
+  void GivenTwoAdmins_WhenOneResetsTheOther_ThenItIsAllowed() {
+    Account other = existing(acme, Role.ADMIN, true);
+    TenantActor themself = new TenantActor(UserId.newId(), acme, Role.ADMIN);
+    String replacement = "another invented password";
+
+    service.resetPassword(themself, new ResetPasswordCommand(acme, other.id(), replacement));
+
+    assertThat(accounts.find(acme, other.id()).orElseThrow().passwordHash())
+        .isEqualTo(passwords.hash(replacement));
   }
 
   // What is recorded

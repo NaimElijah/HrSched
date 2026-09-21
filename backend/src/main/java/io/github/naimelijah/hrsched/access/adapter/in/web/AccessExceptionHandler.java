@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.access.adapter.in.web;
 
+import io.github.naimelijah.hrsched.access.domain.model.CannotResetOwnPasswordException;
 import io.github.naimelijah.hrsched.access.domain.model.EmployeeAlreadyLinkedException;
 import io.github.naimelijah.hrsched.access.domain.model.InvalidOrganisationNameException;
 import io.github.naimelijah.hrsched.access.domain.model.LastActiveAdminException;
@@ -142,6 +143,20 @@ public class AccessExceptionHandler {
             "An organisation must keep at least one active Admin. Give somebody else that role"
                 + " first.");
     problem.setTitle("Last active Admin");
+    return problem;
+  }
+
+  /**
+   * An Admin resetting their own password here. A 409 rather than a 403: they are permitted to
+   * reset passwords, and this particular one is refused because there is a better door for it.
+   */
+  @ExceptionHandler(CannotResetOwnPasswordException.class)
+  public ProblemDetail handleSelfReset(CannotResetOwnPasswordException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT,
+            "Change your own password at /api/auth/password, which asks for the current one.");
+    problem.setTitle("Not your own password");
     return problem;
   }
 
