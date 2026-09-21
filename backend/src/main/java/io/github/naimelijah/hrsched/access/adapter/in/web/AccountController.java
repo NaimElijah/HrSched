@@ -7,10 +7,7 @@ import io.github.naimelijah.hrsched.access.application.port.in.PublishedAccount;
 import io.github.naimelijah.hrsched.access.application.port.in.ResetPasswordCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.SetAccountActiveCommand;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
-import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
-import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
-import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.net.URI;
 import java.util.List;
@@ -116,15 +113,12 @@ public class AccountController {
   /**
    * The organisation these routes act in, taken from the acting account and from nowhere else.
    *
-   * <p>A {@code switch} over the sealed actor rather than a cast, so an operator is refused here by
-   * the same reasoning as everywhere else: it belongs to no organisation, so there is no
-   * organisation for it to administer accounts in (ADR-030).
+   * <p>An operator is refused by the kernel's own guard, for the same reason as everywhere else: it
+   * belongs to no organisation, so there is no organisation for it to administer accounts in
+   * (ADR-030).
    */
   private static OrganisationId organisationOf(Actor actor) {
-    return switch (actor) {
-      case TenantActor tenant -> tenant.organisation();
-      case Operator operator -> throw new NotATenantMemberException(operator.id());
-    };
+    return actor.requireTenantMembership().organisation();
   }
 
   private static AccountResponse respond(PublishedAccount account) {

@@ -23,12 +23,12 @@ import org.springframework.security.web.access.AccessDeniedHandler;
  * 401, on every route, whether or not the route itself requires authentication — that is the bearer
  * filter's own behaviour, and it means a client must send no token rather than a stale one.
  *
- * <p><strong>Still transitional.</strong> The session endpoints and the organisation routes require
- * a token; every other route is permitted and still takes its acting identity from {@code X-User},
- * {@code X-Role} and {@code X-Organisation}, which any caller can write. That placeholder is what
- * ADR-011 exists to delete, and it goes one route family at a time: each controller moves onto the
- * access token, one rule is added here per move, and the last change makes every request that no
- * rule permits be refused. This chain is on its way there, not there.
+ * <p><strong>Every route under {@code /api} now requires a token,</strong> and every controller
+ * takes the acting identity from the account that token names. The four identity headers are gone
+ * from the backend; nothing reads them, and a request that still sends them is answered as whoever
+ * its token says it is. What is left of the transition is the shape of this method rather than its
+ * behaviour: it still ends in {@code permitAll}, so a route nobody wrote a rule for would be open.
+ * Closing that is the last step ADR-011 asks for.
  *
  * <p>The decoder, the converter and the two refusal handlers are all injected <em>by type</em>.
  * Configuration may not name an adapter class (the architecture test fails on it), and that is not
@@ -70,6 +70,28 @@ public class SecurityConfiguration {
 
   /** Administering a tenant's staff, which the operator may not do (ADR-030). */
   private static final String ADMIN = "ADMIN";
+
+  /**
+   * Everything a member of an organisation does, which is every context but this one.
+   *
+   * <p>One list rather than a rule per capability, because these rules are the coarse outer line
+   * and the use case behind each route is what actually decides. Writing the fine-grained answer
+   * twice would mean two places to keep in step, and the one that is easy to forget is the one that
+   * fails open.
+   */
+  private static final String[] TENANT_ROUTES = {
+    "/api/employees/**",
+    "/api/qualifications/**",
+    "/api/shifts/**",
+    "/api/constraints",
+    "/api/rosters/**",
+    "/api/me/**",
+    "/api/swaps/**",
+    "/api/notifications/**"
+  };
+
+  /** Any member of an organisation. Deliberately excludes the operator, which belongs to none. */
+  private static final String[] EVERY_TENANT_ROLE = {"ADMIN", "SCHEDULER", "EMPLOYEE"};
 
   /**
    * Spring Security's own convention drops the {@code ROLE_} prefix in these, and the token adapter
@@ -138,6 +160,13 @@ public class SecurityConfiguration {
                     // before the controller has to (ADR-030).
                     .requestMatchers(ACCOUNTS)
                     .hasRole(ADMIN)
+                    // Everything inside an organisation. A role rather than merely being
+                    // authenticated, which refuses two callers at once: the operator, which holds
+                    // no role because it belongs to no organisation (ADR-030), and an account
+                    // whose temporary password is still pending, which holds none until it has
+                    // chosen its own (ADR-029).
+                    .requestMatchers(TENANT_ROUTES)
+                    .hasAnyRole(EVERY_TENANT_ROLE)
                     .anyRequest()
                     .permitAll())
         .build();

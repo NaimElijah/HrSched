@@ -2,6 +2,7 @@ package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.anOrganisation;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.as;
+import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.asThemself;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -43,7 +44,7 @@ class RosteringHttpTest {
     String body =
         mockMvc
             .perform(
-                as(post("/api/employees"), organisation, "ADMIN")
+                as(mockMvc, post("/api/employees"), organisation, "ADMIN")
                     .content("{\"name\":\"%s\"}".formatted(name)))
             .andExpect(status().isCreated())
             .andReturn()
@@ -57,7 +58,7 @@ class RosteringHttpTest {
     String body =
         mockMvc
             .perform(
-                as(post("/api/shifts"), organisation, "SCHEDULER")
+                as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
                     .content(
                         "{\"start\":\"%s\",\"end\":\"%s\",\"requiredHeadcount\":%d}"
                             .formatted(start, end, headcount)))
@@ -72,7 +73,7 @@ class RosteringHttpTest {
     String body =
         mockMvc
             .perform(
-                as(post("/api/qualifications"), organisation, "ADMIN")
+                as(mockMvc, post("/api/qualifications"), organisation, "ADMIN")
                     .content("{\"name\":\"%s\"}".formatted(name)))
             .andExpect(status().isCreated())
             .andReturn()
@@ -85,7 +86,7 @@ class RosteringHttpTest {
     String body =
         mockMvc
             .perform(
-                as(post("/api/rosters"), organisation, "SCHEDULER")
+                as(mockMvc, post("/api/rosters"), organisation, "SCHEDULER")
                     .content("{\"start\":\"%s\",\"end\":\"%s\"}".formatted(start, end)))
             .andExpect(status().isCreated())
             .andReturn()
@@ -101,13 +102,13 @@ class RosteringHttpTest {
     String shift = defineShift(organisation, "2026-11-09T08:00:00Z", "2026-11-09T16:00:00Z", 1);
     String roster = generateRoster(organisation, "2026-11-09T00:00:00Z", "2026-11-10T00:00:00Z");
     mockMvc
-        .perform(as(post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
         .andExpect(status().isOk());
 
     mockMvc
         .perform(
-            as(get("/api/me/schedule"), organisation, "EMPLOYEE")
-                .header("X-Employee", ada)
+            asThemself(mockMvc, get("/api/me/schedule"), organisation, ada)
                 .param("from", "2026-11-09T00:00:00Z")
                 .param("to", "2026-11-10T00:00:00Z"))
         .andExpect(status().isOk())
@@ -127,8 +128,7 @@ class RosteringHttpTest {
 
     mockMvc
         .perform(
-            as(get("/api/me/schedule"), organisation, "EMPLOYEE")
-                .header("X-Employee", ada)
+            asThemself(mockMvc, get("/api/me/schedule"), organisation, ada)
                 .param("from", "2026-11-10T00:00:00Z")
                 .param("to", "2026-11-11T00:00:00Z"))
         .andExpect(status().isOk())
@@ -142,7 +142,7 @@ class RosteringHttpTest {
 
     mockMvc
         .perform(
-            as(get("/api/me/schedule"), organisation, "EMPLOYEE")
+            as(mockMvc, get("/api/me/schedule"), organisation, "EMPLOYEE")
                 .param("from", "2026-11-09T00:00:00Z")
                 .param("to", "2026-11-10T00:00:00Z"))
         .andExpect(status().isForbidden());
@@ -160,8 +160,7 @@ class RosteringHttpTest {
     String roster = generateRoster(organisation, "2026-11-11T00:00:00Z", "2026-11-12T00:00:00Z");
 
     mockMvc
-        .perform(
-            as(get("/api/rosters/" + roster), organisation, "EMPLOYEE").header("X-Employee", ada))
+        .perform(asThemself(mockMvc, get("/api/rosters/" + roster), organisation, ada))
         .andExpect(status().isForbidden());
   }
 
@@ -174,7 +173,7 @@ class RosteringHttpTest {
 
     mockMvc
         .perform(
-            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
                 .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, ada)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.assignments.length()").value(1))
@@ -183,6 +182,7 @@ class RosteringHttpTest {
     mockMvc
         .perform(
             as(
+                mockMvc,
                 delete("/api/rosters/%s/assignments/%s/%s".formatted(roster, shift, ada)),
                 organisation,
                 "SCHEDULER"))
@@ -199,7 +199,7 @@ class RosteringHttpTest {
 
     mockMvc
         .perform(
-            as(post("/api/rosters/" + roster + "/assignments"), organisation, "ADMIN")
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "ADMIN")
                 .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, ada)))
         .andExpect(status().isForbidden());
   }
@@ -217,7 +217,7 @@ class RosteringHttpTest {
     String shift =
         mockMvc
             .perform(
-                as(post("/api/shifts"), organisation, "SCHEDULER")
+                as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
                     .content(
                         ("{\"start\":\"2026-11-04T08:00:00Z\",\"end\":\"2026-11-04T16:00:00Z\","
                                 + "\"requiredHeadcount\":1,\"requiredQualifications\":[\"%s\"]}")
@@ -230,7 +230,7 @@ class RosteringHttpTest {
 
     mockMvc
         .perform(
-            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
                 .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, ada)))
         .andExpect(status().isUnprocessableEntity());
   }
@@ -249,13 +249,13 @@ class RosteringHttpTest {
     String afternoon = defineShift(organisation, "2026-11-16T12:00:00Z", "2026-11-16T20:00:00Z", 1);
     mockMvc
         .perform(
-            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
                 .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(day, ada)))
         .andExpect(status().isOk());
 
     mockMvc
         .perform(
-            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
                 .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(afternoon, ada)))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -272,7 +272,7 @@ class RosteringHttpTest {
 
     mockMvc
         .perform(
-            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
                 .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, stranger)))
         .andExpect(status().isNotFound());
   }
@@ -285,7 +285,7 @@ class RosteringHttpTest {
 
     mockMvc
         .perform(
-            as(post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
                 .content("{\"shift\":\"%s\"}".formatted(shift)))
         .andExpect(status().isBadRequest());
   }
@@ -300,7 +300,7 @@ class RosteringHttpTest {
     String roster = generateRoster(organisation, "2026-10-05T00:00:00Z", "2026-10-06T00:00:00Z");
 
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("DRAFT"))
         .andExpect(jsonPath("$.assignments.length()").value(1));
@@ -313,7 +313,7 @@ class RosteringHttpTest {
     defineShift(organisation, "2026-10-06T08:00:00Z", "2026-10-06T16:00:00Z", 1);
     mockMvc
         .perform(
-            as(put("/api/constraints"), organisation, "ADMIN")
+            as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
                 .content("{\"maximumDailyMinutes\":600}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.version").value(2));
@@ -321,7 +321,8 @@ class RosteringHttpTest {
     String roster = generateRoster(organisation, "2026-10-06T00:00:00Z", "2026-10-07T00:00:00Z");
 
     mockMvc
-        .perform(as(post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("PUBLISHED"))
         .andExpect(jsonPath("$.validatedAgainstConstraintVersion").value(2));
@@ -333,7 +334,7 @@ class RosteringHttpTest {
     String ada = addEmployee(organisation, "Ada");
     mockMvc
         .perform(
-            as(post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+            as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-10-07T00:00:00Z\",\"end\":\"2026-10-08T00:00:00Z\"}"))
         .andExpect(status().isNoContent());
     defineShift(organisation, "2026-10-07T08:00:00Z", "2026-10-07T16:00:00Z", 1);
@@ -341,7 +342,7 @@ class RosteringHttpTest {
     String roster = generateRoster(organisation, "2026-10-07T00:00:00Z", "2026-10-08T00:00:00Z");
 
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.assignments.length()").value(0));
   }
@@ -356,7 +357,7 @@ class RosteringHttpTest {
     String roster = generateRoster(ours, "2026-10-08T00:00:00Z", "2026-10-09T00:00:00Z");
 
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), ours, "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/rosters/" + roster), ours, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.assignments.length()").value(0));
   }
@@ -369,7 +370,7 @@ class RosteringHttpTest {
     String roster = generateRoster(organisation, "2026-10-09T00:00:00Z", "2026-10-10T00:00:00Z");
 
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), anOrganisation(mockMvc), "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/rosters/" + roster), anOrganisation(mockMvc), "SCHEDULER"))
         .andExpect(status().isNotFound());
   }
 
@@ -377,7 +378,7 @@ class RosteringHttpTest {
   void GivenAnEmployeeRole_WhenDefiningAShift_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/shifts"), anOrganisation(mockMvc), "EMPLOYEE")
+            as(mockMvc, post("/api/shifts"), anOrganisation(mockMvc), "EMPLOYEE")
                 .content(
                     "{\"start\":\"2026-10-10T08:00:00Z\",\"end\":\"2026-10-10T16:00:00Z\","
                         + "\"requiredHeadcount\":1}"))
@@ -388,7 +389,7 @@ class RosteringHttpTest {
   void GivenAnInvertedPeriod_WhenDefiningAShift_ThenItIsRejected() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
+            as(mockMvc, post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
                 .content(
                     "{\"start\":\"2026-10-11T16:00:00Z\",\"end\":\"2026-10-11T08:00:00Z\","
                         + "\"requiredHeadcount\":1}"))
@@ -401,7 +402,7 @@ class RosteringHttpTest {
     String organisation = anOrganisation(mockMvc);
 
     mockMvc
-        .perform(as(get("/api/constraints"), organisation, "ADMIN"))
+        .perform(as(mockMvc, get("/api/constraints"), organisation, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.version").value(1))
         .andExpect(jsonPath("$.constraints.length()").value(0));
@@ -414,7 +415,7 @@ class RosteringHttpTest {
     addEmployee(organisation, "Ada");
     mockMvc
         .perform(
-            as(put("/api/constraints"), organisation, "ADMIN")
+            as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
                 .content("{\"maximumDailyMinutes\":60}"))
         .andExpect(status().isOk());
     defineShift(organisation, "2026-10-12T08:00:00Z", "2026-10-12T16:00:00Z", 1);
@@ -422,7 +423,7 @@ class RosteringHttpTest {
     String roster = generateRoster(organisation, "2026-10-12T00:00:00Z", "2026-10-13T00:00:00Z");
 
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         // An eight-hour shift cannot be filled under a one-hour daily cap.
         .andExpect(jsonPath("$.assignments.length()").value(0));
@@ -432,7 +433,7 @@ class RosteringHttpTest {
   void GivenAScheduler_WhenConfiguringConstraints_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(
-            as(put("/api/constraints"), anOrganisation(mockMvc), "SCHEDULER")
+            as(mockMvc, put("/api/constraints"), anOrganisation(mockMvc), "SCHEDULER")
                 .content("{\"maximumDailyMinutes\":600}"))
         .andExpect(status().isForbidden());
   }
@@ -441,7 +442,7 @@ class RosteringHttpTest {
   void GivenAnEmployee_WhenConfiguringConstraints_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(
-            as(put("/api/constraints"), anOrganisation(mockMvc), "EMPLOYEE")
+            as(mockMvc, put("/api/constraints"), anOrganisation(mockMvc), "EMPLOYEE")
                 .content("{\"maximumDailyMinutes\":600}"))
         .andExpect(status().isForbidden());
   }
@@ -453,11 +454,13 @@ class RosteringHttpTest {
     defineShift(organisation, "2026-10-13T08:00:00Z", "2026-10-13T16:00:00Z", 1);
     String roster = generateRoster(organisation, "2026-10-13T00:00:00Z", "2026-10-14T00:00:00Z");
     mockMvc
-        .perform(as(post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
         .andExpect(status().isOk());
 
     mockMvc
-        .perform(as(post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
         .andExpect(status().isBadRequest());
   }
 
@@ -467,11 +470,12 @@ class RosteringHttpTest {
     String second = anOrganisation(mockMvc);
     mockMvc
         .perform(
-            as(put("/api/constraints"), first, "ADMIN").content("{\"maximumConsecutiveDays\":3}"))
+            as(mockMvc, put("/api/constraints"), first, "ADMIN")
+                .content("{\"maximumConsecutiveDays\":3}"))
         .andExpect(status().isOk());
 
     mockMvc
-        .perform(as(get("/api/constraints"), second, "ADMIN"))
+        .perform(as(mockMvc, get("/api/constraints"), second, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.constraints.length()").value(0));
 
@@ -488,12 +492,13 @@ class RosteringHttpTest {
     // Invented: one hour a day, which the eight-hour shift already assigned cannot satisfy.
     mockMvc
         .perform(
-            as(put("/api/constraints"), organisation, "ADMIN")
+            as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
                 .content("{\"maximumDailyMinutes\":60}"))
         .andExpect(status().isOk());
 
     mockMvc
-        .perform(as(post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.violations.length()").value(1))
         // Structured, so a caller can resolve the employee to a name without parsing prose.
@@ -509,7 +514,7 @@ class RosteringHttpTest {
 
     mockMvc
         .perform(
-            as(get("/api/shifts"), organisation, "SCHEDULER")
+            as(mockMvc, get("/api/shifts"), organisation, "SCHEDULER")
                 .param("from", "2026-10-21T00:00:00Z")
                 .param("to", "2026-10-22T00:00:00Z"))
         .andExpect(status().isOk())
@@ -523,7 +528,7 @@ class RosteringHttpTest {
 
     mockMvc
         .perform(
-            as(get("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
+            as(mockMvc, get("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
                 .param("from", "2026-10-22T00:00:00Z")
                 .param("to", "2026-10-23T00:00:00Z"))
         .andExpect(status().isOk())
@@ -533,7 +538,7 @@ class RosteringHttpTest {
   @Test
   void GivenNoSpan_WhenListingShifts_ThenItIsABadRequest() throws Exception {
     mockMvc
-        .perform(as(get("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER"))
         .andExpect(status().isBadRequest());
   }
 
@@ -545,7 +550,7 @@ class RosteringHttpTest {
     generateRoster(organisation, "2026-10-23T00:00:00Z", "2026-10-24T00:00:00Z");
 
     mockMvc
-        .perform(as(get("/api/rosters"), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/rosters"), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1))
         .andExpect(jsonPath("$[0].status").value("DRAFT"));
@@ -559,7 +564,7 @@ class RosteringHttpTest {
     generateRoster(organisation, "2026-10-24T00:00:00Z", "2026-10-25T00:00:00Z");
 
     mockMvc
-        .perform(as(get("/api/rosters"), anOrganisation(mockMvc), "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/rosters"), anOrganisation(mockMvc), "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(0));
   }
@@ -571,12 +576,12 @@ class RosteringHttpTest {
     // Invented values, chosen to be recognisable in the response. They are not any statute's.
     mockMvc
         .perform(
-            as(put("/api/constraints"), organisation, "ADMIN")
+            as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
                 .content("{\"minimumRestMinutes\":661,\"maximumConsecutiveDays\":5}"))
         .andExpect(status().isOk());
 
     mockMvc
-        .perform(as(get("/api/constraints"), organisation, "ADMIN"))
+        .perform(as(mockMvc, get("/api/constraints"), organisation, "ADMIN"))
         .andExpect(status().isOk())
         // Revising replaces the whole set, so a caller changing one rule must be able to read the
         // others back or it will silently delete them.
@@ -594,10 +599,10 @@ class RosteringHttpTest {
 
     // A roster says who works when, which is personal data about every colleague.
     mockMvc
-        .perform(as(get("/api/rosters"), organisation, "EMPLOYEE"))
+        .perform(as(mockMvc, get("/api/rosters"), organisation, "EMPLOYEE"))
         .andExpect(status().isForbidden());
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), organisation, "EMPLOYEE"))
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "EMPLOYEE"))
         .andExpect(status().isForbidden());
   }
 
@@ -610,7 +615,7 @@ class RosteringHttpTest {
 
     // Without the period a caller cannot resolve the roster's assignments against the right shifts.
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.start").value("2026-10-27T00:00:00Z"))
         .andExpect(jsonPath("$.end").value("2026-10-28T00:00:00Z"));
@@ -621,29 +626,8 @@ class RosteringHttpTest {
       throws Exception {
     mockMvc
         .perform(
-            as(post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
+            as(mockMvc, post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
                 .content("{\"requiredHeadcount\":1}"))
-        .andExpect(status().isBadRequest());
-  }
-
-  @Test
-  void GivenAnOrganisationHeaderThatIsNotAUuid_WhenGenerating_ThenItIsABadRequest()
-      throws Exception {
-    mockMvc
-        .perform(
-            as(post("/api/rosters"), "not-a-uuid", "SCHEDULER")
-                .content("{\"start\":\"2026-10-05T00:00:00Z\",\"end\":\"2026-10-06T00:00:00Z\"}"))
-        .andExpect(status().isBadRequest());
-  }
-
-  @Test
-  void GivenARoleNobodyDefined_WhenDefiningAShift_ThenItIsABadRequest() throws Exception {
-    mockMvc
-        .perform(
-            as(post("/api/shifts"), anOrganisation(mockMvc), "SUPREME_LEADER")
-                .content(
-                    "{\"start\":\"2026-10-05T08:00:00Z\",\"end\":\"2026-10-05T16:00:00Z\","
-                        + "\"requiredHeadcount\":1}"))
         .andExpect(status().isBadRequest());
   }
 
@@ -651,7 +635,7 @@ class RosteringHttpTest {
   void GivenAQualificationNobodyDefined_WhenDefiningAShift_ThenItIsRejected() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
+            as(mockMvc, post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
                 .content(
                     "{\"start\":\"2026-10-05T08:00:00Z\",\"end\":\"2026-10-05T16:00:00Z\","
                         + "\"requiredHeadcount\":1,\"requiredQualifications\":[\"%s\"]}"
@@ -667,7 +651,7 @@ class RosteringHttpTest {
     String roster = generateRoster(organisation, "2026-10-19T00:00:00Z", "2026-10-20T00:00:00Z");
 
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), organisation, "OPERATOR"))
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "OPERATOR"))
         .andExpect(status().isForbidden());
   }
 
@@ -679,7 +663,7 @@ class RosteringHttpTest {
     String roster = generateRoster(organisation, "2026-10-20T00:00:00Z", "2026-10-21T00:00:00Z");
 
     mockMvc
-        .perform(as(get("/api/rosters/" + roster), anOrganisation(mockMvc), "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/rosters/" + roster), anOrganisation(mockMvc), "SCHEDULER"))
         .andExpect(status().isNotFound());
   }
 
@@ -689,7 +673,7 @@ class RosteringHttpTest {
     String location =
         mockMvc
             .perform(
-                as(post("/api/shifts"), organisation, "SCHEDULER")
+                as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
                     .content(
                         "{\"start\":\"2026-11-16T08:00:00Z\",\"end\":\"2026-11-16T16:00:00Z\",\"requiredHeadcount\":2}"))
             .andExpect(status().isCreated())
@@ -699,7 +683,7 @@ class RosteringHttpTest {
 
     // Any member, as for the listing: a shift is work that needs covering, not a person.
     mockMvc
-        .perform(as(get(location), organisation, "EMPLOYEE"))
+        .perform(as(mockMvc, get(location), organisation, "EMPLOYEE"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.start").value("2026-11-16T08:00:00Z"))
         .andExpect(jsonPath("$.requiredHeadcount").value(2));
@@ -712,7 +696,7 @@ class RosteringHttpTest {
         defineShift(anOrganisation(mockMvc), "2026-11-16T08:00:00Z", "2026-11-16T16:00:00Z", 1);
 
     mockMvc
-        .perform(as(get("/api/shifts/" + theirs), anOrganisation(mockMvc), "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/shifts/" + theirs), anOrganisation(mockMvc), "SCHEDULER"))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }

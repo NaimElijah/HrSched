@@ -16,6 +16,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpHeaders;
@@ -59,6 +60,9 @@ public final class TestTenants {
    */
   private static final String PASSWORD = "an invented password for the test suite";
 
+  /** Claimed by a test that wants to act as the platform operator rather than as a tenant role. */
+  private static final String OPERATOR_ROLE = "OPERATOR";
+
   private TestTenants() {}
 
   /**
@@ -79,6 +83,45 @@ public final class TestTenants {
   public static String tokenFor(MockMvc mockMvc, OrganisationId organisation, Role role)
       throws Exception {
     return tenantToken(mockMvc, new TenantMembership(organisation, role, Optional.empty()));
+  }
+
+  /**
+   * @param mockMvc the test's own client
+   * @param organisation the organisation being acted in
+   * @param role what the caller may do there, or {@code OPERATOR} for the platform operator
+   * @return the request, carrying a token for such an account
+   */
+  public static MockHttpServletRequestBuilder as(
+      MockMvc mockMvc, MockHttpServletRequestBuilder request, String organisation, String role)
+      throws Exception {
+    return with(
+        request,
+        OPERATOR_ROLE.equals(role)
+            ? operatorToken(mockMvc)
+            : tokenFor(mockMvc, organisationOf(organisation), Role.valueOf(role)));
+  }
+
+  /**
+   * As {@link #as}, but as the account linked to a particular personnel record — which is what
+   * makes self-service reachable at all (ADR-012).
+   *
+   * @param mockMvc the test's own client
+   * @param request the request being built
+   * @param organisation the organisation being acted in
+   * @param employee the personnel record the caller is
+   * @return the request, carrying a token for that person's account
+   */
+  public static MockHttpServletRequestBuilder asThemself(
+      MockMvc mockMvc, MockHttpServletRequestBuilder request, String organisation, String employee)
+      throws Exception {
+    return with(
+        request,
+        tokenForEmployee(
+            mockMvc, organisationOf(organisation), new EmployeeId(UUID.fromString(employee))));
+  }
+
+  private static OrganisationId organisationOf(String organisation) {
+    return new OrganisationId(UUID.fromString(organisation));
   }
 
   /**
@@ -131,13 +174,32 @@ public final class TestTenants {
   }
 
   /**
-   * A fresh account every time. Sign-in names are unique platform-wide, so reusing one across tests
-   * would have two tests sharing an account's password and its lockout counter.
+   * One account per membership, not one per call.
+   *
+   * <p>The name is derived from what the membership <em>is</em> rather than invented, and the
+   * reason is a rule rather than tidiness: an employee may hold at most one account, so a fresh
+   * account per call would make the second request of any test that acts as the same person fail
+   * with a link conflict. Deriving it makes the second call a no-op instead.
+   *
+   * <p>Two tests still never share one, because they never share an organisation: every test
+   * onboards its own, and an employee identity is unique across all of them.
    */
-  private static String tenantToken(MockMvc mockMvc, Membership membership) throws Exception {
-    String name = "suite-%s@example.com".formatted(UUID.randomUUID());
+  private static String tenantToken(MockMvc mockMvc, TenantMembership membership) throws Exception {
+    String name = nameFor(membership);
     ensure(mockMvc, name, membership);
     return signIn(mockMvc, name);
+  }
+
+  private static String nameFor(TenantMembership membership) {
+    return membership
+        .employee()
+        .map(employee -> "suite-employee-%s@example.com".formatted(employee.value()))
+        .orElseGet(
+            () ->
+                "suite-%s-%s@example.com"
+                    .formatted(
+                        membership.role().name().toLowerCase(Locale.ROOT),
+                        membership.organisation().value()));
   }
 
   /** Stores the account only if its name is free, so calling this again changes nothing. */

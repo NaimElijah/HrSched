@@ -176,11 +176,13 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
 - **Tenant isolation** — the deployment is shared by independent organisations that must never
   see one another's data. Every aggregate belongs to exactly one organisation, and every query
   is scoped to it. A cross-tenant read is a security incident, not a bug, and isolation must be
-  covered by its own tests rather than assumed. An organisation must also *exist*: a request naming
-  one nobody onboarded is refused at the boundary with the same 404 an unknown record produces, so
-  a tenant can no longer be conjured by inventing an identifier.
-  *Enforced by `KnownOrganisationFilter`, `KnownOrganisationHttpTest`;
-  [ADR-020](../ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md).*
+  covered by its own tests rather than assumed. **A request cannot name an organisation at all**:
+  it acts in the one its own account belongs to, read from a row the caller cannot write, so a
+  tenant can be neither invented nor borrowed.
+  *Enforced by `Actor.requireTenantMembership`, `ActorTest`, and the `actingIn` helper in each web
+  adapter, covered by `EmployeeHttpTest`, `RosteringHttpTest`, `SwapHttpTest`, `NotificationHttpTest`
+  and `AccountHttpTest`;
+  [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md).*
 - **Persistence guarantees** — every accepted write is durable: once a request answers 2xx the
   change has committed and survives a crash or a restart. **A use case is one transaction**, so a
   request refused part-way leaves nothing behind — including the replacement roster a refused swap

@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -44,7 +45,7 @@ class EmployeeHttpTest {
     String body =
         mockMvc
             .perform(
-                as(post("/api/employees"), organisation, "ADMIN")
+                as(mockMvc, post("/api/employees"), organisation, "ADMIN")
                     .content("{\"name\":\"%s\"}".formatted(name)))
             .andExpect(status().isCreated())
             .andReturn()
@@ -57,7 +58,7 @@ class EmployeeHttpTest {
     String body =
         mockMvc
             .perform(
-                as(post("/api/qualifications"), organisation, "ADMIN")
+                as(mockMvc, post("/api/qualifications"), organisation, "ADMIN")
                     .content("{\"name\":\"%s\"}".formatted(name)))
             .andExpect(status().isCreated())
             .andReturn()
@@ -79,7 +80,7 @@ class EmployeeHttpTest {
         JsonPath.read(
             mockMvc
                 .perform(
-                    as(post("/api/employees"), organisation, "ADMIN")
+                    as(mockMvc, post("/api/employees"), organisation, "ADMIN")
                         .content("{\"name\":\"Ada Lovelace\"}"))
                 .andExpect(status().isCreated())
                 .andReturn()
@@ -88,17 +89,17 @@ class EmployeeHttpTest {
             "$.id");
     mockMvc
         .perform(
-            as(post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+            as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-10-07T00:00:00Z\",\"end\":\"2026-10-08T00:00:00Z\"}"))
         .andExpect(status().isNoContent());
     mockMvc
         .perform(
-            as(put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
+            as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
                 .content("{\"weeklyContractedMinutes\":2100}"))
         .andExpect(status().isNoContent());
 
     mockMvc
-        .perform(as(get("/api/employees"), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/employees"), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].unavailability.length()").value(1))
         .andExpect(jsonPath("$[0].unavailability[0].start").value("2026-10-07T00:00:00Z"))
@@ -111,14 +112,14 @@ class EmployeeHttpTest {
     String organisation = anOrganisation(mockMvc);
     mockMvc
         .perform(
-            as(post("/api/employees"), organisation, "ADMIN")
+            as(mockMvc, post("/api/employees"), organisation, "ADMIN")
                 .content("{\"name\":\"Ada Lovelace\"}"))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.unavailability.length()").value(0))
         .andExpect(jsonPath("$.weeklyContractedMinutes").doesNotExist());
 
     mockMvc
-        .perform(as(get("/api/employees"), organisation, "ADMIN"))
+        .perform(as(mockMvc, get("/api/employees"), organisation, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].unavailability.length()").value(0));
   }
@@ -128,13 +129,15 @@ class EmployeeHttpTest {
     String organisation = anOrganisation(mockMvc);
 
     mockMvc
-        .perform(as(post("/api/employees"), organisation, "ADMIN").content("{\"name\":\"Ada\"}"))
+        .perform(
+            as(mockMvc, post("/api/employees"), organisation, "ADMIN")
+                .content("{\"name\":\"Ada\"}"))
         .andExpect(status().isCreated())
         .andExpect(header().exists("Location"))
         .andExpect(jsonPath("$.name").value("Ada"));
 
     mockMvc
-        .perform(as(get("/api/employees"), organisation, "ADMIN"))
+        .perform(as(mockMvc, get("/api/employees"), organisation, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1))
         .andExpect(jsonPath("$[0].name").value("Ada"));
@@ -144,7 +147,7 @@ class EmployeeHttpTest {
   void GivenASchedulerRole_WhenAddingAnEmployee_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/employees"), anOrganisation(mockMvc), "SCHEDULER")
+            as(mockMvc, post("/api/employees"), anOrganisation(mockMvc), "SCHEDULER")
                 .content("{\"name\":\"Ada\"}"))
         .andExpect(status().isForbidden());
   }
@@ -152,7 +155,7 @@ class EmployeeHttpTest {
   @Test
   void GivenAnEmployeeRole_WhenListingColleagues_ThenItIsForbidden() throws Exception {
     mockMvc
-        .perform(as(get("/api/employees"), anOrganisation(mockMvc), "EMPLOYEE"))
+        .perform(as(mockMvc, get("/api/employees"), anOrganisation(mockMvc), "EMPLOYEE"))
         .andExpect(status().isForbidden());
   }
 
@@ -162,7 +165,7 @@ class EmployeeHttpTest {
     addEmployee(organisation, "Ada");
 
     mockMvc
-        .perform(as(get("/api/employees"), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, get("/api/employees"), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1));
   }
@@ -174,7 +177,7 @@ class EmployeeHttpTest {
     addEmployee(anOrganisation(mockMvc), "Their Employee");
 
     mockMvc
-        .perform(as(get("/api/employees"), ours, "ADMIN"))
+        .perform(as(mockMvc, get("/api/employees"), ours, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1))
         .andExpect(jsonPath("$[0].name").value("Ada"));
@@ -187,7 +190,7 @@ class EmployeeHttpTest {
     addEmployee(theirs, "Ada");
 
     mockMvc
-        .perform(as(get("/api/employees"), theirs, "OPERATOR"))
+        .perform(as(mockMvc, get("/api/employees"), theirs, "OPERATOR"))
         .andExpect(status().isForbidden());
   }
 
@@ -199,11 +202,15 @@ class EmployeeHttpTest {
 
     mockMvc
         .perform(
-            as(put("/api/employees/" + ada + "/qualifications/" + forklift), organisation, "ADMIN"))
+            as(
+                mockMvc,
+                put("/api/employees/" + ada + "/qualifications/" + forklift),
+                organisation,
+                "ADMIN"))
         .andExpect(status().isNoContent());
 
     mockMvc
-        .perform(as(get("/api/employees"), organisation, "ADMIN"))
+        .perform(as(mockMvc, get("/api/employees"), organisation, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].qualifications.length()").value(1))
         .andExpect(jsonPath("$[0].qualifications[0]").value(forklift));
@@ -220,6 +227,7 @@ class EmployeeHttpTest {
     mockMvc
         .perform(
             as(
+                mockMvc,
                 put("/api/employees/" + theirEmployee + "/qualifications/" + forklift),
                 ours,
                 "ADMIN"))
@@ -235,6 +243,7 @@ class EmployeeHttpTest {
     mockMvc
         .perform(
             as(
+                mockMvc,
                 put("/api/employees/" + ada + "/qualifications/" + theirQualification),
                 ours,
                 "ADMIN"))
@@ -249,6 +258,7 @@ class EmployeeHttpTest {
     mockMvc
         .perform(
             as(
+                mockMvc,
                 put("/api/employees/" + UUID.randomUUID() + "/qualifications/" + forklift),
                 organisation,
                 "ADMIN"))
@@ -262,7 +272,7 @@ class EmployeeHttpTest {
 
     mockMvc
         .perform(
-            as(put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
+            as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
                 .content("{\"weeklyContractedMinutes\":2400}"))
         .andExpect(status().isNoContent());
   }
@@ -274,7 +284,7 @@ class EmployeeHttpTest {
 
     mockMvc
         .perform(
-            as(put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
+            as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
                 .content("{\"weeklyContractedMinutes\":0}"))
         .andExpect(status().isBadRequest());
   }
@@ -295,7 +305,8 @@ class EmployeeHttpTest {
 
     mockMvc
         .perform(
-            as(put("/api/employees/" + ada + "/contract"), organisation, "ADMIN").content("{}"))
+            as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
+                .content("{}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.title").value("Malformed request"))
         .andExpect(jsonPath("$.detail").value(containsString("missing required fields")));
@@ -309,7 +320,7 @@ class EmployeeHttpTest {
 
     mockMvc
         .perform(
-            as(put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
+            as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
                 .content("{\"weeklyContractedMinutes\":0}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.detail").value(containsString("positive")));
@@ -322,7 +333,8 @@ class EmployeeHttpTest {
 
     mockMvc
         .perform(
-            asThemself(post("/api/employees/" + ada + "/unavailability"), organisation, ada)
+            asThemself(
+                    mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, ada)
                 .content("{\"start\":\"2026-11-02T00:00:00Z\",\"end\":\"2026-11-03T00:00:00Z\"}"))
         .andExpect(status().isNoContent());
   }
@@ -336,7 +348,8 @@ class EmployeeHttpTest {
 
     mockMvc
         .perform(
-            asThemself(post("/api/employees/" + ada + "/unavailability"), organisation, grace)
+            asThemself(
+                    mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, grace)
                 .content("{\"start\":\"2026-11-04T00:00:00Z\",\"end\":\"2026-11-05T00:00:00Z\"}"))
         .andExpect(status().isForbidden());
   }
@@ -347,13 +360,13 @@ class EmployeeHttpTest {
     String ada = addEmployee(organisation, "Ada");
     mockMvc
         .perform(
-            as(post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+            as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-11-06T00:00:00Z\",\"end\":\"2026-11-08T00:00:00Z\"}"))
         .andExpect(status().isNoContent());
 
     mockMvc
         .perform(
-            as(post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+            as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-11-07T00:00:00Z\",\"end\":\"2026-11-09T00:00:00Z\"}"))
         .andExpect(status().isBadRequest());
   }
@@ -365,7 +378,7 @@ class EmployeeHttpTest {
 
     mockMvc
         .perform(
-            as(post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+            as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-11-10T00:00:00Z\",\"end\":\"2026-11-09T00:00:00Z\"}"))
         .andExpect(status().isBadRequest());
   }
@@ -377,7 +390,7 @@ class EmployeeHttpTest {
 
     mockMvc
         .perform(
-            as(post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+            as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-11-11T00:00:00Z\"}"))
         .andExpect(status().isBadRequest());
   }
@@ -389,7 +402,7 @@ class EmployeeHttpTest {
 
     mockMvc
         .perform(
-            asThemself(post("/api/employees/" + ada + "/preferences"), organisation, ada)
+            asThemself(mockMvc, post("/api/employees/" + ada + "/preferences"), organisation, ada)
                 .content(
                     "{\"start\":\"2026-11-12T08:00:00Z\",\"end\":\"2026-11-12T16:00:00Z\","
                         + "\"strength\":\"PREFERS\"}"))
@@ -403,7 +416,7 @@ class EmployeeHttpTest {
 
     mockMvc
         .perform(
-            as(post("/api/employees/" + ada + "/preferences"), organisation, "ADMIN")
+            as(mockMvc, post("/api/employees/" + ada + "/preferences"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-11-13T08:00:00Z\",\"end\":\"2026-11-13T16:00:00Z\"}"))
         .andExpect(status().isBadRequest());
   }
@@ -411,7 +424,8 @@ class EmployeeHttpTest {
   @Test
   void GivenNoName_WhenAddingAnEmployee_ThenItIsRejected() throws Exception {
     mockMvc
-        .perform(as(post("/api/employees"), anOrganisation(mockMvc), "ADMIN").content("{}"))
+        .perform(
+            as(mockMvc, post("/api/employees"), anOrganisation(mockMvc), "ADMIN").content("{}"))
         .andExpect(status().isBadRequest());
   }
 
@@ -419,7 +433,7 @@ class EmployeeHttpTest {
   void GivenABlankName_WhenAddingAnEmployee_ThenItIsRejected() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/employees"), anOrganisation(mockMvc), "ADMIN")
+            as(mockMvc, post("/api/employees"), anOrganisation(mockMvc), "ADMIN")
                 .content("{\"name\":\"  \"}"))
         .andExpect(status().isBadRequest());
   }
@@ -427,23 +441,9 @@ class EmployeeHttpTest {
   @Test
   void GivenAMalformedBody_WhenAddingAnEmployee_ThenItIsRejected() throws Exception {
     mockMvc
-        .perform(as(post("/api/employees"), anOrganisation(mockMvc), "ADMIN").content("{\"name\":"))
-        .andExpect(status().isBadRequest());
-  }
-
-  @Test
-  void GivenAnUnknownRole_WhenAddingAnEmployee_ThenItIsRejected() throws Exception {
-    mockMvc
         .perform(
-            as(post("/api/employees"), anOrganisation(mockMvc), "SUPERVISOR")
-                .content("{\"name\":\"Ada\"}"))
-        .andExpect(status().isBadRequest());
-  }
-
-  @Test
-  void GivenANonUuidOrganisation_WhenListingEmployees_ThenItIsRejected() throws Exception {
-    mockMvc
-        .perform(as(get("/api/employees"), "not-a-uuid", "ADMIN"))
+            as(mockMvc, post("/api/employees"), anOrganisation(mockMvc), "ADMIN")
+                .content("{\"name\":"))
         .andExpect(status().isBadRequest());
   }
 
@@ -457,14 +457,15 @@ class EmployeeHttpTest {
     String location =
         mockMvc
             .perform(
-                as(post("/api/employees"), organisation, "ADMIN").content("{\"name\":\"Ada\"}"))
+                as(mockMvc, post("/api/employees"), organisation, "ADMIN")
+                    .content("{\"name\":\"Ada\"}"))
             .andExpect(status().isCreated())
             .andReturn()
             .getResponse()
             .getHeader("Location");
 
     mockMvc
-        .perform(as(get(location), organisation, "SCHEDULER"))
+        .perform(as(mockMvc, get(location), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.name").value("Ada"))
         .andExpect(jsonPath("$.qualifications.length()").value(0))
@@ -478,7 +479,7 @@ class EmployeeHttpTest {
     String ada = addEmployee(organisation, "Ada");
 
     mockMvc
-        .perform(as(get("/api/employees/" + ada), organisation, "EMPLOYEE"))
+        .perform(as(mockMvc, get("/api/employees/" + ada), organisation, "EMPLOYEE"))
         .andExpect(status().isForbidden());
   }
 
@@ -488,8 +489,61 @@ class EmployeeHttpTest {
     String theirs = addEmployee(anOrganisation(mockMvc), "Mole");
 
     mockMvc
-        .perform(as(get("/api/employees/" + theirs), anOrganisation(mockMvc), "ADMIN"))
+        .perform(as(mockMvc, get("/api/employees/" + theirs), anOrganisation(mockMvc), "ADMIN"))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  /**
+   * The headers are no longer believed here, and these three are the tests that say so. Before this
+   * change the first request added an employee, the second added one as an Admin, and the third
+   * read somebody else's schedule.
+   */
+  @Test
+  void GivenTheIdentityHeadersWithoutAToken_WhenAddingAnEmployee_ThenItIsUnauthorised()
+      throws Exception {
+    mockMvc
+        .perform(
+            post("/api/employees")
+                .header("X-Organisation", anOrganisation(mockMvc))
+                .header("X-User", UUID.randomUUID().toString())
+                .header("X-Role", "ADMIN")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Ada Lovelace\"}"))
+        .andExpect(status().isUnauthorized());
+  }
+
+  /** Claiming a role in a header does not add one: the token decides, and it says EMPLOYEE. */
+  @Test
+  void GivenAnEmployeeTokenAndAnXRoleAdminHeader_WhenAddingAnEmployee_ThenItIsForbidden()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/employees"), organisation, "EMPLOYEE")
+                .header("X-Role", "ADMIN")
+                .content("{\"name\":\"Ada Lovelace\"}"))
+        .andExpect(status().isForbidden());
+  }
+
+  /**
+   * Claiming somebody else's personnel record does not become them. The link is carried by the
+   * account the token names (ADR-012), so the header is read by nothing and the request is answered
+   * for whoever is really signed in.
+   */
+  @Test
+  void
+      GivenAnEmployeeTokenAndAnXEmployeeHeaderNamingSomebodyElse_WhenReadingAPerson_ThenItIsStillTheirOwnRefusal()
+          throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada Lovelace");
+    String grace = addEmployee(organisation, "Grace Hopper");
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, get("/api/employees/" + grace), organisation, ada)
+                .header("X-Employee", grace))
+        .andExpect(status().isForbidden());
   }
 }

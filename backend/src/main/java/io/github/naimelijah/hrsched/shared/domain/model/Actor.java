@@ -26,6 +26,26 @@ public sealed interface Actor permits TenantActor, Operator {
   boolean mayAccess(OrganisationId organisation);
 
   /**
+   * Hands back the member this actor is, whichever organisation that turns out to be.
+   *
+   * <p>The question {@link #requireAccessTo} asks minus the organisation, and it exists because a
+   * web adapter has to ask it in the other order: the route acts in whatever organisation the
+   * caller belongs to, so there is no identifier to check against — the caller's own membership
+   * <em>is</em> the answer. That is strictly safer than naming one, because there is then nothing
+   * in the request for anybody to change.
+   *
+   * @return this actor as a member of their own organisation
+   * @throws NotATenantMemberException if this actor belongs to no organisation at all, which is the
+   *     platform operator and is exactly the refusal ADR-030 describes
+   */
+  default TenantActor requireTenantMembership() {
+    return switch (this) {
+      case TenantActor tenant -> tenant;
+      case Operator operator -> throw new NotATenantMemberException(id());
+    };
+  }
+
+  /**
    * Guards an operation on an organisation's data, and hands back the member who may perform it.
    *
    * <p><strong>Returning the {@link TenantActor} is the point.</strong> The guard used to be a

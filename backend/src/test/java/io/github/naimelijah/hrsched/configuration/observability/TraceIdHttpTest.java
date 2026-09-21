@@ -15,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -56,12 +55,9 @@ class TraceIdHttpTest {
     organisation = JsonPath.read(body, "$.id");
   }
 
-  private MockHttpServletRequestBuilder as(MockHttpServletRequestBuilder request, String role) {
-    return request
-        .header("X-Organisation", organisation)
-        .header("X-User", UUID.randomUUID().toString())
-        .header("X-Role", role)
-        .contentType(MediaType.APPLICATION_JSON);
+  private MockHttpServletRequestBuilder as(MockHttpServletRequestBuilder request, String role)
+      throws Exception {
+    return TestTenants.as(mockMvc, request, organisation, role);
   }
 
   private String traceIdOf(MockHttpServletRequestBuilder request, int expectedStatus)
@@ -92,7 +88,7 @@ class TraceIdHttpTest {
   @Test
   void GivenAMalformedRequest_WhenItIsRejectedAtTheBoundary_ThenTheResponseCarriesATraceId()
       throws Exception {
-    assertThat(traceIdOf(as(get("/api/qualifications"), "SUPERVISOR"), 400)).isNotBlank();
+    assertThat(traceIdOf(as(get("/api/rosters/not-a-uuid"), "SCHEDULER"), 400)).isNotBlank();
   }
 
   @Test

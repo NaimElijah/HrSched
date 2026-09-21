@@ -87,16 +87,12 @@ class AccountHttpTest {
         .formatted(signInName, A_PASSWORD, employee);
   }
 
-  /** The transitional header path, still how an employee is added (requirement F8). */
+  /** Added through the workforce API, as an Admin, because that is the only way one exists. */
   private String anEmployee(OrganisationId organisation) throws Exception {
     String body =
         mockMvc
             .perform(
-                post("/api/employees")
-                    .header("X-Organisation", organisation.value().toString())
-                    .header("X-User", UUID.randomUUID().toString())
-                    .header("X-Role", "ADMIN")
-                    .contentType(MediaType.APPLICATION_JSON)
+                with(post("/api/employees"), admin(organisation))
                     .content("{\"name\":\"Ada Lovelace\"}"))
             .andExpect(status().isCreated())
             .andReturn()

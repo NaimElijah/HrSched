@@ -17,12 +17,12 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -47,13 +47,8 @@ public class EmployeeController {
 
   @PostMapping
   public ResponseEntity<EmployeeResponse> add(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @RequestBody AddEmployeeRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
-    OrganisationId org = ActorFromHeaders.organisationOf(organisation);
+      @AuthenticationPrincipal Actor actor, @RequestBody AddEmployeeRequest request) {
+    OrganisationId org = actingIn(actor);
     EmployeeId id =
         manageEmployees.addEmployee(actor, new AddEmployeeCommand(org, request.requiredName()));
     return ResponseEntity.created(URI.create("/api/employees/" + id.value()))
@@ -61,15 +56,8 @@ public class EmployeeController {
   }
 
   @GetMapping
-  public List<EmployeeResponse> list(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
-    return findEmployees
-        .findRosterable(actor, ActorFromHeaders.organisationOf(organisation))
-        .stream()
+  public List<EmployeeResponse> list(@AuthenticationPrincipal Actor actor) {
+    return findEmployees.findRosterable(actor, actingIn(actor)).stream()
         .map(EmployeeResponse::from)
         .toList();
   }
@@ -83,51 +71,35 @@ public class EmployeeController {
    *     nobody by that identity; a role that may not list people is answered 403 before that
    */
   @GetMapping("/{id}")
-  public EmployeeResponse find(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
-      @PathVariable UUID id) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
+  public EmployeeResponse find(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
     EmployeeId employee = new EmployeeId(id);
     return manageEmployees
-        .findEmployee(actor, ActorFromHeaders.organisationOf(organisation), employee)
+        .findEmployee(actor, actingIn(actor), employee)
         .map(EmployeeResponse::from)
         .orElseThrow(() -> new UnknownEmployeeException(employee));
   }
 
   @PutMapping("/{id}/qualifications/{qualification}")
   public ResponseEntity<Void> grantQualification(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @AuthenticationPrincipal Actor actor,
       @PathVariable UUID id,
       @PathVariable UUID qualification) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     manageEmployees.grantQualification(
         actor,
         new GrantQualificationCommand(
-            ActorFromHeaders.organisationOf(organisation),
-            new EmployeeId(id),
-            new QualificationId(qualification)));
+            actingIn(actor), new EmployeeId(id), new QualificationId(qualification)));
     return ResponseEntity.noContent().build();
   }
 
   @PutMapping("/{id}/contract")
   public ResponseEntity<Void> setContract(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @AuthenticationPrincipal Actor actor,
       @PathVariable UUID id,
       @RequestBody ContractRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     manageEmployees.setContractTerms(
         actor,
         new SetContractTermsCommand(
-            ActorFromHeaders.organisationOf(organisation),
+            actingIn(actor),
             new EmployeeId(id),
             Duration.ofMinutes(request.weeklyContractedMinutes())));
     return ResponseEntity.noContent().build();
@@ -135,36 +107,38 @@ public class EmployeeController {
 
   @PostMapping("/{id}/unavailability")
   public ResponseEntity<Void> declareUnavailability(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @AuthenticationPrincipal Actor actor,
       @PathVariable UUID id,
       @RequestBody PeriodRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     manageEmployees.declareUnavailability(
         actor,
-        new DeclareUnavailabilityCommand(
-            ActorFromHeaders.organisationOf(organisation), new EmployeeId(id), request.toPeriod()));
+        new DeclareUnavailabilityCommand(actingIn(actor), new EmployeeId(id), request.toPeriod()));
     return ResponseEntity.noContent().build();
   }
 
   @PostMapping("/{id}/preferences")
   public ResponseEntity<Void> statePreference(
-      @RequestHeader("X-Organisation") String organisation,
-      @RequestHeader("X-User") String user,
-      @RequestHeader("X-Role") String role,
-      @RequestHeader(value = "X-Employee", required = false) String actingAs,
+      @AuthenticationPrincipal Actor actor,
       @PathVariable UUID id,
       @RequestBody PreferenceRequest request) {
-    Actor actor = ActorFromHeaders.resolve(organisation, user, role, actingAs);
     manageEmployees.statePreference(
         actor,
         new StatePreferenceCommand(
-            ActorFromHeaders.organisationOf(organisation),
-            new EmployeeId(id),
-            request.toPeriod(),
-            request.requiredStrength()));
+            actingIn(actor), new EmployeeId(id), request.toPeriod(), request.requiredStrength()));
     return ResponseEntity.noContent().build();
+  }
+
+  /**
+   * The organisation this request acts in, taken from the acting account and from nowhere else.
+   *
+   * <p>It replaced {@code X-Organisation}, and the difference is the whole point: there is no
+   * longer anything in the request naming an organisation, so there is nothing for a caller to
+   * change. The platform operator is refused here, because it belongs to none (ADR-030).
+   *
+   * @param actor whoever the token named
+   * @return the organisation they belong to
+   */
+  private static OrganisationId actingIn(Actor actor) {
+    return actor.requireTenantMembership().organisation();
   }
 }

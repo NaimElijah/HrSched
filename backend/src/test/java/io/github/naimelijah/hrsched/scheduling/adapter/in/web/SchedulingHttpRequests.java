@@ -6,7 +6,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import java.util.UUID;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -14,8 +13,9 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * Request scaffolding shared by the scheduling HTTP tests.
  *
  * <p>Extracted rather than duplicated because both callers live in this package, so a shared helper
- * crosses no boundary — the same arrangement {@code WorkforceHttpRequests} uses, and the same
- * distinction from {@code ActorFromHeaders}, which stays duplicated per context on purpose.
+ * crosses no boundary — the same arrangement {@code WorkforceHttpRequests} uses. Both request
+ * builders now delegate to {@code TestTenants}: since the identity comes from a token, minting one
+ * needs the Spring context that signed it, and there is no per-context version of that.
  *
  * <p>The onboarding step is the reason this is worth sharing: it encodes what a caller must do
  * before anything else works, and when that contract moves, one place changes rather than several
@@ -53,31 +53,31 @@ final class SchedulingHttpRequests {
   }
 
   /**
+   * @param mockMvc the client whose Spring context issues the token
    * @param request the request being built
-   * @param organisation the organisation being acted on
-   * @param role the role being claimed
-   * @return the request, carrying a complete acting identity
+   * @param organisation the organisation being acted in
+   * @param role the role to act with
+   * @return the request, carrying a token for an account of that organisation and role
    */
   static MockHttpServletRequestBuilder as(
-      MockHttpServletRequestBuilder request, String organisation, String role) {
-    return request
-        .header("X-Organisation", organisation)
-        .header("X-User", UUID.randomUUID().toString())
-        .header("X-Role", role)
-        .contentType(MediaType.APPLICATION_JSON);
+      MockMvc mockMvc, MockHttpServletRequestBuilder request, String organisation, String role)
+      throws Exception {
+    return TestTenants.as(mockMvc, request, organisation, role);
   }
 
   /**
-   * As {@link #as}, but claiming to be a particular personnel record — which is what makes
-   * self-service reachable at all (ADR-012).
+   * As {@link #as}, but as the account linked to a particular personnel record — which is what
+   * makes self-service reachable at all (ADR-012).
    *
+   * @param mockMvc the client whose Spring context issues the token
    * @param request the request being built
-   * @param organisation the organisation being acted on
-   * @param employee the personnel record the caller claims to be
-   * @return the request, carrying an employee-linked acting identity
+   * @param organisation the organisation being acted in
+   * @param employee the personnel record the caller is
+   * @return the request, carrying a token for that person's account
    */
   static MockHttpServletRequestBuilder asThemself(
-      MockHttpServletRequestBuilder request, String organisation, String employee) {
-    return as(request, organisation, "EMPLOYEE").header("X-Employee", employee);
+      MockMvc mockMvc, MockHttpServletRequestBuilder request, String organisation, String employee)
+      throws Exception {
+    return TestTenants.asThemself(mockMvc, request, organisation, employee);
   }
 }

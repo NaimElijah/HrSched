@@ -14,11 +14,13 @@ Three things are **not** what they look like:
 - **Generation is greedy, not optimised.** Automatic generation is the point of the product and
   a real implementation is a solver; `GreedyRosterGenerator` exists to prove the port (ADR-005).
   It ignores fairness, preferences and disruption entirely.
-- **Authentication is half-migrated.** HrSched holds its own accounts and signs its own tokens
-  (ADR-011, ADR-028), and `/api/auth/**`, `/api/organisations` and `/api/accounts` take the acting
-  identity from the access token. **Every other route still reads `X-User`, `X-Role`,
-  `X-Organisation` and `X-Employee`, which any caller can write.** That placeholder is being
-  deleted one route family at a time; do not extend it, and do not add a route that reads it.
+- **Authentication is real, and the header placeholder is gone.** HrSched holds its own accounts
+  and signs its own tokens (ADR-011, ADR-028). Every controller takes the acting identity from
+  `@AuthenticationPrincipal Actor`, and the organisation from that actor through each adapter's
+  `actingIn` helper — never from a header, a path or a body (ADR-031). `X-User`, `X-Role`,
+  `X-Organisation` and `X-Employee` are read by nothing; do not reintroduce them. What is left is
+  the shape of `SecurityConfiguration`: it still ends in `permitAll`, so a route nobody wrote a
+  rule for would be open.
 - **The audit trail is a log stream, not a trail.** Every change and refusal is recorded through
   an `AuditTrail` driven port, but nothing is stored and nothing is queryable: the record lives
   only wherever stdout is collected. Whether an Admin may read it, and for how long it is kept,
@@ -105,7 +107,8 @@ dependency rule — see ADR-003 and ADR-006. Every context repeats the same shap
   touching it would fail the cross-context rule.
 
 Contexts today: `scheduling` (shifts, rosters, constraints, generation), `workforce` (employees,
-qualifications, availability), `access` (organisations). At the root beside them sit
+qualifications, availability), `access` (organisations, accounts, sessions and tokens),
+`notifications` (what somebody has been told). At the root beside them sit
 `configuration/` and `HrSchedApplication`.
 
 A context may reference another context's `application.port.in` package and **nothing else**
@@ -161,8 +164,8 @@ Outside `backend/`:
 - **`@ParameterizedTest` is an accepted idiom, for data-only rows.** `junit-jupiter-params` comes
   with the Boot BOM; no dependency to add. Use it where the rows differ only in *data* and the
   assertion sentence is identical — null-check batteries, blank-name batteries, the identity
-  records, exception-type lists, and *parsing* a role or header string — `ActorFromHeadersTest`
-  tables its role strings and is right to. Do **not** use it for a permission or tenancy
+  records, exception-type lists, and *parsing* a value out of a request. Do **not** use it for a
+  permission or tenancy
   **decision**: who may do what, and who may see whose data. A parameterised isolation test reads
   as a table and hides which row is the one whose failure is a security incident. Nor for rows
   that differ in setup, or whose comment explains *why* — the comment then belongs to no row. If a

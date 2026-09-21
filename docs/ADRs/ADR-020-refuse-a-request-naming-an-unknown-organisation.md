@@ -1,6 +1,6 @@
 # ADR-020: Refuse a request naming an organisation nobody onboarded, at the boundary
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-031](ADR-031-take-the-organisation-from-the-account.md)
 - **Date:** 2026-09-01
 
 ## Context

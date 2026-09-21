@@ -36,7 +36,7 @@ class QualificationHttpTest {
   private String define(String organisation, String name) throws Exception {
     return mockMvc
         .perform(
-            as(post("/api/qualifications"), organisation, "ADMIN")
+            as(mockMvc, post("/api/qualifications"), organisation, "ADMIN")
                 .content("{\"name\":\"%s\"}".formatted(name)))
         .andExpect(status().isCreated())
         .andReturn()
@@ -50,14 +50,14 @@ class QualificationHttpTest {
 
     mockMvc
         .perform(
-            as(post("/api/qualifications"), organisation, "ADMIN")
+            as(mockMvc, post("/api/qualifications"), organisation, "ADMIN")
                 .content("{\"name\":\"Forklift\"}"))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.name").value("Forklift"))
         .andExpect(jsonPath("$.id").isNotEmpty());
 
     mockMvc
-        .perform(as(get("/api/qualifications"), organisation, "ADMIN"))
+        .perform(as(mockMvc, get("/api/qualifications"), organisation, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1))
         .andExpect(jsonPath("$[0].name").value("Forklift"));
@@ -67,7 +67,7 @@ class QualificationHttpTest {
   void GivenASchedulerRole_WhenDefiningAQualification_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/qualifications"), anOrganisation(mockMvc), "SCHEDULER")
+            as(mockMvc, post("/api/qualifications"), anOrganisation(mockMvc), "SCHEDULER")
                 .content("{\"name\":\"Forklift\"}"))
         .andExpect(status().isForbidden());
   }
@@ -76,7 +76,7 @@ class QualificationHttpTest {
   void GivenAnEmployeeRole_WhenDefiningAQualification_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/qualifications"), anOrganisation(mockMvc), "EMPLOYEE")
+            as(mockMvc, post("/api/qualifications"), anOrganisation(mockMvc), "EMPLOYEE")
                 .content("{\"name\":\"Forklift\"}"))
         .andExpect(status().isForbidden());
   }
@@ -87,7 +87,7 @@ class QualificationHttpTest {
     define(organisation, "Forklift");
 
     mockMvc
-        .perform(as(get("/api/qualifications"), organisation, "EMPLOYEE"))
+        .perform(as(mockMvc, get("/api/qualifications"), organisation, "EMPLOYEE"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1));
   }
@@ -100,7 +100,7 @@ class QualificationHttpTest {
     define(anOrganisation(mockMvc), "Their Qualification");
 
     mockMvc
-        .perform(as(get("/api/qualifications"), ours, "ADMIN"))
+        .perform(as(mockMvc, get("/api/qualifications"), ours, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1))
         .andExpect(jsonPath("$[0].name").value("Forklift"));
@@ -113,7 +113,7 @@ class QualificationHttpTest {
     define(organisation, "Forklift");
 
     mockMvc
-        .perform(as(get("/api/qualifications"), organisation, "ADMIN"))
+        .perform(as(mockMvc, get("/api/qualifications"), organisation, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].name").value("Forklift"))
         .andExpect(jsonPath("$[1].name").value("Welding"));
@@ -127,7 +127,7 @@ class QualificationHttpTest {
     define(theirs, "Forklift");
 
     mockMvc
-        .perform(as(get("/api/qualifications"), theirs, "OPERATOR"))
+        .perform(as(mockMvc, get("/api/qualifications"), theirs, "OPERATOR"))
         .andExpect(status().isForbidden());
   }
 
@@ -135,7 +135,7 @@ class QualificationHttpTest {
   void GivenABlankName_WhenDefiningAQualification_ThenItIsRejected() throws Exception {
     mockMvc
         .perform(
-            as(post("/api/qualifications"), anOrganisation(mockMvc), "ADMIN")
+            as(mockMvc, post("/api/qualifications"), anOrganisation(mockMvc), "ADMIN")
                 .content("{\"name\":\"  \"}"))
         .andExpect(status().isBadRequest());
   }
@@ -143,23 +143,9 @@ class QualificationHttpTest {
   @Test
   void GivenNoName_WhenDefiningAQualification_ThenItIsRejected() throws Exception {
     mockMvc
-        .perform(as(post("/api/qualifications"), anOrganisation(mockMvc), "ADMIN").content("{}"))
-        .andExpect(status().isBadRequest());
-  }
-
-  @Test
-  void GivenAnUnknownRole_WhenDefiningAQualification_ThenItIsRejected() throws Exception {
-    mockMvc
         .perform(
-            as(post("/api/qualifications"), anOrganisation(mockMvc), "SUPERVISOR")
-                .content("{\"name\":\"Forklift\"}"))
-        .andExpect(status().isBadRequest());
-  }
-
-  @Test
-  void GivenANonUuidOrganisation_WhenListingQualifications_ThenItIsRejected() throws Exception {
-    mockMvc
-        .perform(as(get("/api/qualifications"), "not-a-uuid", "ADMIN"))
+            as(mockMvc, post("/api/qualifications"), anOrganisation(mockMvc), "ADMIN")
+                .content("{}"))
         .andExpect(status().isBadRequest());
   }
 
@@ -169,7 +155,7 @@ class QualificationHttpTest {
     String location = define(organisation, "Forklift");
 
     mockMvc
-        .perform(as(get(location), organisation, "ADMIN"))
+        .perform(as(mockMvc, get(location), organisation, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.name").value("Forklift"))
         .andExpect(jsonPath("$.id").isNotEmpty());
@@ -181,7 +167,7 @@ class QualificationHttpTest {
     String location = define(organisation, "Forklift");
 
     mockMvc
-        .perform(as(get(location), organisation, "EMPLOYEE"))
+        .perform(as(mockMvc, get(location), organisation, "EMPLOYEE"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.name").value("Forklift"));
   }
@@ -192,7 +178,7 @@ class QualificationHttpTest {
     String theirs = define(anOrganisation(mockMvc), "Their Qualification");
 
     mockMvc
-        .perform(as(get(theirs), anOrganisation(mockMvc), "ADMIN"))
+        .perform(as(mockMvc, get(theirs), anOrganisation(mockMvc), "ADMIN"))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }

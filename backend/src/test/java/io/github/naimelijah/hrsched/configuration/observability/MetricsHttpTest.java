@@ -88,10 +88,8 @@ class MetricsHttpTest {
 
     mockMvc
         .perform(
-            get("/api/qualifications")
-                .header("X-Organisation", JsonPath.read(body, "$.id").toString())
-                .header("X-User", UUID.randomUUID().toString())
-                .header("X-Role", "ADMIN"))
+            TestTenants.as(
+                mockMvc, get("/api/qualifications"), JsonPath.read(body, "$.id"), "ADMIN"))
         .andExpect(status().isOk());
 
     mockMvc
