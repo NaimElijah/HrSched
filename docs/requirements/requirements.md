@@ -41,31 +41,49 @@ three roles: **Employee**, **Scheduler**, and **Admin**.
 Each requirement is stated as something a user or caller can *do*, and names the test or
 class that enforces it once one exists — so this table can be checked rather than trusted.
 
-`TODO`: this table was derived from the confirmed role definitions rather than stated directly,
-so each row is **proposed until reviewed line by line**. Rows naming a class and a test are
-implemented; the rest are not.
+Every row was reviewed with the repository owner on 2026-09-22
+([#50](https://github.com/NaimElijah/HrSched/issues/50)). A row naming a class and a test is
+implemented; `not yet` means the requirement is decided and the linked issue tracks building it.
+*Any member* means any of the three roles within an organisation. The Operator is not a member
+([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)).
 
 | ID | Role | Requirement | Enforced by |
 | --- | --- | --- | --- |
 | F1 | Scheduler | Define the shifts that need covering, with headcount and qualifications | `SchedulingService`, `RosteringHttpTest` |
-| F1a | Scheduler | See the shifts needing covering over a span | `SchedulingService`, `SchedulingServiceTest` |
+| F1a | Any member | See the shifts needing covering over a span | `SchedulingService`, `SchedulingServiceTest` |
 | F2 | Scheduler | Assign an employee to a shift, and remove that assignment | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *Drafts only: a published roster is superseded, never edited (R6).* |
-| F3 | Scheduler | Publish a roster, after it passes the organisation rules | `SchedulingService`, `RosteringHttpTest` |
-| F4 | Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest`. *Availability, qualifications and contracted hours are on the listing; the roster half is served by F11a rather than repeated here.* |
-| F5 | Employee | See their own published roster | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *The assignments naming them, from published rosters only — the whole roster stays Admin and Scheduler (R12).* |
-| F6 | Employee | Declare when they cannot work, and state soft preferences | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)) |
-| F7 | Employee | Request a swap of one of their assignments with another employee | `SwapService`, `SwapServiceTest`, `SwapHttpTest` ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)). *Modelled as a transfer rather than a two-way exchange — Q22.* |
+| F3 | Scheduler | Publish a draft roster, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest`. *Absorbed F12, which restated it.* |
+| F4 | Admin, Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest`. *Availability, qualifications and contracted hours are on the listing; the roster half is served by F11a rather than repeated here.* |
+| F5 | Any member linked to an employee | See their own published roster | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *The assignments naming them, from published rosters only — the whole roster stays Admin and Scheduler (R12). Tested for the Employee role only ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
+| F6 | Employee, or an Admin or Scheduler on their behalf | Declare when they cannot work, and state soft preferences, and see what they declared | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). *Seeing what they declared: not yet — [#81](https://github.com/NaimElijah/HrSched/issues/81). Preferences shaping generation: not yet — an objective, weighted under Q13 ([#27](https://github.com/NaimElijah/HrSched/issues/27)). Acting on somebody's behalf is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
+| F7 | Employee, or an Admin or Scheduler on their behalf | Request a swap of one of their assignments with another employee: a transfer of that shift, or a two-way exchange of two | `SwapService`, `SwapServiceTest`, `SwapHttpTest` ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)). *The transfer is built; the exchange: not yet — [#82](https://github.com/NaimElijah/HrSched/issues/82). Acting on somebody's behalf is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
 | F8 | Admin | Add employees | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` |
 | F9 | Admin | Define qualifications, and grant them to employees | `QualificationService`, `QualificationServiceTest`, `QualificationHttpTest`; granting: `EmployeeService`, `EmployeeServiceTest` |
 | F10 | Admin | Configure the organisation's working-time constraint set | `SchedulingService`, `RosteringHttpTest` |
-| F11 | Scheduler | Generate a draft roster covering a period, filling every shift it legally can | `SchedulingService`, `RosteringHttpTest` |
-| F11a | Scheduler | See the rosters their organisation holds | `SchedulingService`, `RosteringHttpTest` |
-| F12 | Scheduler | Publish a draft, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest` |
-| F13 | Operator | Administer organisations across the platform | `OrganisationService`, `OrganisationServiceTest`, `OrganisationHttpTest` ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)). *Onboard, list and read; there is no rename and no closure. Onboarding creates the organisation's first Admin in the same transaction - the operator is refused everything inside an organisation ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)), so one onboarded without an Admin would have nobody able to add one. That Admin must change the password they were given before anything else (ADR-029).* |
+| F11 | Scheduler | Generate a draft roster covering a period, filling every shift it legally can | `SchedulingService`, `RosteringHttpTest`. *Partly met: the greedy generator can use somebody up early and strand a later shift that a better assignment would have covered ([ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md)). A solver is [#28](https://github.com/NaimElijah/HrSched/issues/28).* |
+| F11a | Admin, Scheduler | See the rosters their organisation holds | `SchedulingService`, `RosteringHttpTest`. *No test reads them as an Admin yet ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
+| F12 | — | *Retired on 2026-09-22: it restated F3. The number is not reused.* | — |
+| F13 | Operator | Administer organisations across the platform | `OrganisationService`, `OrganisationServiceTest`, `OrganisationHttpTest` ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)). *Onboard, list and read. Any member may also read their own organisation's record, which is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)). Renaming is F30 and closing is F31. Onboarding creates the organisation's first Admin in the same transaction - the operator is refused everything inside an organisation ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)), so one onboarded without an Admin would have nobody able to add one. That Admin must change the password they were given before anything else (ADR-029).* |
 | F14 | Everyone | Sign in with a sign-in name and password, stay signed in across a reload, sign out, and change their own password | `SessionService`, `SessionServiceTest`, `AuthController`, `AuthHttpTest`, `SessionRefreshHttpTest`, `SessionHttpTest`; token verification: `AccessTokenDecoder`, `AccessTokenDecoderTest`, `ActorAuthenticationConverter`, `ActorAuthenticationConverterTest`, `SecurityConfiguration` ([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-028](../ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md)). *A password somebody else chose must be changed before anything else; an account is never self-created (ADR-029).* |
 | F15 | Admin | Administer the accounts of their own organisation: create one, list them, change what an account is, disable and restore one, and reset somebody's password | `AccountService`, `AccountAdministrationTest`, `AccountController`, `AccountHttpTest` ([ADR-029](../ADRs/ADR-029-provision-accounts-from-the-top-down.md), [ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)). *The organisation is taken from the token, never from the request, so there is no identifier for an Admin to change.* |
+| F16 | Any member linked to an employee | Read the notifications meant for them, and mark one read | `NotificationService`, `NotificationServiceTest`, `NotificationHttpTest` ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)) |
+| F17 | Scheduler | Approve or reject a pending swap | `SwapService`, `SwapServiceTest`, `SwapHttpTest` ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)) |
+| F18 | Any member | See swap requests: every one for an Admin or a Scheduler, and only those they are party to for anybody else | `SwapService`, `SwapServiceTest`, `SwapHttpTest` |
+| F19 | Admin | Set an employee's contracted hours, and clear them | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest`. *Clearing: not yet — [#83](https://github.com/NaimElijah/HrSched/issues/83).* |
+| F20 | Any member | See the organisation's qualifications | `QualificationService`, `QualificationServiceTest`, `QualificationHttpTest` |
+| F21 | Any member | See the organisation's working-time rules, with their thresholds | `SchedulingService`, `RosteringHttpTest`. *Tested as an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
+| F22 | Admin | Remove an employee who leaves | not yet — [#84](https://github.com/NaimElijah/HrSched/issues/84) |
+| F23 | Admin | Correct an employee's name | not yet — [#85](https://github.com/NaimElijah/HrSched/issues/85) |
+| F24 | Admin | Revoke a qualification from an employee | not yet — [#86](https://github.com/NaimElijah/HrSched/issues/86) |
+| F25 | Admin | Retire a qualification | not yet — [#87](https://github.com/NaimElijah/HrSched/issues/87) |
+| F26 | Employee, or an Admin or Scheduler on their behalf | Withdraw declared unavailability or a stated preference | not yet — [#88](https://github.com/NaimElijah/HrSched/issues/88) |
+| F27 | Scheduler | Change or delete a shift | not yet — [#89](https://github.com/NaimElijah/HrSched/issues/89) |
+| F28 | Scheduler | Discard a draft roster | not yet — [#90](https://github.com/NaimElijah/HrSched/issues/90) |
+| F29 | The employee who raised it | Withdraw a pending swap request | not yet — [#91](https://github.com/NaimElijah/HrSched/issues/91) |
+| F30 | Admin | Rename their own organisation | not yet — [#92](https://github.com/NaimElijah/HrSched/issues/92) |
+| F31 | Operator | Close an organisation | not yet — [#93](https://github.com/NaimElijah/HrSched/issues/93) |
 
-**Swaps (F7)** are approved by a **Scheduler**; the other employee is informed rather than asked,
+**Swaps (F7, F17)** are approved by a **Scheduler**; the other employee is informed rather than asked,
 and being informed means a notification they can go and read. Approving does not edit the published
 roster — R6 forbids that — it publishes a replacement that supersedes it, through the same
 publication every other roster goes through, so a swap breaking a working-time rule is refused with
@@ -250,7 +268,6 @@ applicant tracking, and being the HR system of record.
 | Q19 | Which observability backend receives the OpenTelemetry export, and at what sampling rate? | NaimElijah | Turning OTLP export on; sampling below 1.0 |
 | Q20 | Should an Admin be able to read their organisation's audit trail, and under what retention and erasure obligations? | NaimElijah | An `audit` bounded context; ADR-018's revisit trigger; part of the Compliance TODO |
 | Q21 | By what channel is a colleague actually informed, and how quickly must that happen? | NaimElijah | Anything beyond the in-app inbox: email, push, an unread badge. Today somebody is informed when they next open the application, which for a rota change may be too late ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)) |
-| Q22 | Is a swap a transfer of one shift, or a two-way exchange of two? | NaimElijah | Whether `SwapRequest` gains a second shift; today it is a transfer ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)) |
 | Q23 | How long is each kind of record kept, and what is erased on request? | NaimElijah | A retention policy and a purge; part of the Compliance TODO, and it constrains Q20 |
 | Q24 | Must roster history be append-only, so that what was authoritative at a past moment can be reconstructed? | NaimElijah | Whether superseding writes a new row rather than changing a status ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) |
 | Q25 | An employee may not list colleagues, so the user interface has them name the colleague taking a shift by pasting that colleague's employee identifier. Is a names-only colleague directory required, and may an employee see a colleague's name at all? | NaimElijah | Choosing a swap counterparty by name; what an employee may learn about colleagues, on the reasoning behind R12 |
@@ -279,6 +296,7 @@ applicant tracking, and being the HR system of record.
 | Q11 | Who approves a swap | A Scheduler; the colleague is informed | 2026-08-30 |
 | Q12 | What identity provider, and how an Actor is built from a real credential | None: HrSched holds its own accounts and signs its own access tokens. An `Actor` is built from the stored account and session the token names, on every request — [ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-028](../ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md), [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md) | 2026-09-21 |
 | Q18 | Whether an employee sees their own roster, and what "their own" means | Yes: the assignments naming them, from published rosters only. A narrower capability beside R12, not a widening of it | 2026-09-01 |
+| Q22 | Is a swap a transfer of one shift, or a two-way exchange of two? | Both: an employee may offer either (F7). The exchange is [#82](https://github.com/NaimElijah/HrSched/issues/82) | 2026-09-22 |
 
 Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21; building swaps raised Q22; giving the system a database raised Q23 and Q24; putting an employee's side of swaps into the user interface raised Q25; and authentication raised
 Q27 to Q32.
