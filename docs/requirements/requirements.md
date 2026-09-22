@@ -63,7 +63,7 @@ implemented; `not yet` means the requirement is decided and the linked issue tra
 | F11 | Scheduler | Generate a draft roster covering a period, filling every shift it legally can | `SchedulingService`, `RosteringHttpTest`. *Partly met: the greedy generator can use somebody up early and strand a later shift that a better assignment would have covered ([ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md)). A solver is [#28](https://github.com/NaimElijah/HrSched/issues/28).* |
 | F11a | Admin, Scheduler | See the rosters their organisation holds | `SchedulingService`, `RosteringHttpTest`. *No test reads them as an Admin yet ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
 | F12 | — | *Retired on 2026-09-22: it restated F3. The number is not reused.* | — |
-| F13 | Operator | Administer organisations across the platform | `OrganisationService`, `OrganisationServiceTest`, `OrganisationHttpTest` ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)). *Onboard, list and read. Any member may also read their own organisation's record, which is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)). Renaming is F30 and closing is F31. Onboarding creates the organisation's first Admin in the same transaction - the operator is refused everything inside an organisation ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)), so one onboarded without an Admin would have nobody able to add one. That Admin must change the password they were given before anything else (ADR-029).* |
+| F13 | Operator | Administer organisations across the platform | `OrganisationService`, `OrganisationServiceTest`, `OrganisationHttpTest` ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)). *Onboard, list and read. Any member may also read their own organisation's record, which is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)). Renaming is F30 and closing is F31. Onboarding creates the organisation's first Admin in the same transaction - the operator is refused everything inside an organisation but F33 ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)), so one onboarded without an Admin would have nobody able to add one. That Admin must change the password they were given before anything else (ADR-029).* |
 | F14 | Everyone | Sign in with a sign-in name and password, stay signed in across a reload, sign out, and change their own password | `SessionService`, `SessionServiceTest`, `AuthController`, `AuthHttpTest`, `SessionRefreshHttpTest`, `SessionHttpTest`; token verification: `AccessTokenDecoder`, `AccessTokenDecoderTest`, `ActorAuthenticationConverter`, `ActorAuthenticationConverterTest`, `SecurityConfiguration` ([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-028](../ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md)). *A password somebody else chose must be changed before anything else; an account is never self-created (ADR-029).* |
 | F15 | Admin | Administer the accounts of their own organisation: create one, list them, change what an account is, disable and restore one, and reset somebody's password | `AccountService`, `AccountAdministrationTest`, `AccountController`, `AccountHttpTest` ([ADR-029](../ADRs/ADR-029-provision-accounts-from-the-top-down.md), [ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)). *The organisation is taken from the token, never from the request, so there is no identifier for an Admin to change.* |
 | F16 | Any member linked to an employee | Read the notifications meant for them, and mark one read | `NotificationService`, `NotificationServiceTest`, `NotificationHttpTest` ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)) |
@@ -83,6 +83,7 @@ implemented; `not yet` means the requirement is decided and the linked issue tra
 | F30 | Admin | Rename their own organisation | not yet — [#92](https://github.com/NaimElijah/HrSched/issues/92) |
 | F31 | Operator | Close an organisation | not yet — [#93](https://github.com/NaimElijah/HrSched/issues/93) |
 | F32 | Admin | Apply a jurisdiction preset shipped with HrSched to their organisation's constraint set | not yet — [#105](https://github.com/NaimElijah/HrSched/issues/105) |
+| F33 | Operator | Reset an organisation's Admin password, after verifying the request outside the application | not yet — [#107](https://github.com/NaimElijah/HrSched/issues/107). *A deliberate exception to [ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md), needing an ADR of its own (Q28).* |
 
 **Swaps (F7, F17)** are approved by a **Scheduler**; the other employee is informed rather than asked,
 and being informed means a notification they can go and read. Approving does not edit the published
@@ -168,6 +169,9 @@ a published roster is superseded rather than edited (R6).
 | R34 | An account holding the Employee role is always linked to an employee of its own organisation. One that is not is disabled until it is linked. *Not yet — [#97](https://github.com/NaimElijah/HrSched/issues/97)* |
 | R35 | A shift straddling two roster periods may be carried by either roster, and R3 is judged across every authoritative roster rather than within one. *Not yet — [#98](https://github.com/NaimElijah/HrSched/issues/98)* |
 | R36 | Working-time rules count days in each shift's own time zone. *Not yet — [#29](https://github.com/NaimElijah/HrSched/issues/29): days are counted in UTC today* |
+| R37 | Roster history is append-only: what was authoritative at any past moment can be reconstructed exactly. *Not yet — [#106](https://github.com/NaimElijah/HrSched/issues/106)* |
+| R38 | A sign-in name is an email address. *Not yet — [#108](https://github.com/NaimElijah/HrSched/issues/108)* |
+| R39 | Operators and Admins sign in with a second factor as well as a password. *Not yet — [#109](https://github.com/NaimElijah/HrSched/issues/109)* |
 
 A roster moves `DRAFT → PUBLISHED → SUPERSEDED`, and no other transition is legal. Exactly one
 roster is authoritative for any given moment, which is what R11 enforces.
@@ -236,6 +240,15 @@ now owed ([#27](https://github.com/NaimElijah/HrSched/issues/27)).
   ([ADR-032](../ADRs/ADR-032-close-the-security-chain-by-default.md)). There are no identity
   headers left: the organisation comes from the account
   ([ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)).
+  There is one exception to the Operator's confinement, decided on 2026-09-22: the Operator may
+  reset an organisation's Admin password after verifying the request outside the application, so
+  an organisation whose only Admin cannot sign in can recover (F33, Q28). It needs a new ADR amending
+  ADR-030. There may be more than one Operator (Q30); what creates a second one is still open.
+  Operators and Admins must sign in with a second factor (R39, Q31). The shipped security defaults
+  are confirmed (Q27): an access token lives 10 minutes; a session lasts 12 hours at most and ends
+  after 1 hour idle; 10 consecutive failures lock an account for 15 minutes; a password is at least
+  15 characters and at most 72 bytes; bcrypt strength is 12. Each is configuration a deployment may
+  override.
 - **Tenant isolation** — the deployment is shared by independent organisations that must never
   see one another's data. Every aggregate belongs to exactly one organisation, and every query
   is scoped to it. A cross-tenant read is a security incident, not a bug, and isolation must be
@@ -251,15 +264,24 @@ now owed ([#27](https://github.com/NaimElijah/HrSched/issues/27)).
   change has committed and survives a crash or a restart. **A use case is one transaction**, so a
   request refused part-way leaves nothing behind — including the replacement roster a refused swap
   approval used to strand. Every aggregate lives in PostgreSQL, and the schema is changed only by a
-  versioned migration. Roster history is kept but is **not** append-only: superseding a roster
-  changes its status in place — Q24. Nothing is purged and no retention period is set — Q23.
+  versioned migration. Roster history must be **append-only**, so that what was authoritative at any
+  past moment can be reconstructed (R37, Q24); today superseding a roster still changes its status
+  in place. Nothing is purged and no retention period is set — Q23.
   *Enforced by `Jdbc*Repository` (×10) and their adapter tests, `TransactionalUseCases`,
   `SwapHttpTest`; [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md),
   [ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md).*
-- **Performance and scale** — `TODO`: state as measurable numbers per organisation (employees,
-  shifts per planning period, concurrent schedulers), plus expected number of organisations.
-- **Availability** — `TODO`: is this business-hours tooling, or must it be up when a 04:00
-  shift starts? Selling it to third parties raises the bar.
+- **Performance and scale** — one deployment holds up to **100 organisations**; one organisation
+  has up to **1,000 employees**; one planning period holds up to **500 shifts**; up to **10
+  Schedulers** work in one organisation at once. Interactive requests answer within **300 ms at the
+  95th percentile**. Generating a draft at the largest size takes at most **10 minutes**, so it may
+  run as a background job ([#28](https://github.com/NaimElijah/HrSched/issues/28)). Decided on
+  2026-09-22 ([#36](https://github.com/NaimElijah/HrSched/issues/36)). *Nothing measures any of
+  these yet.*
+- **Availability** — HrSched is up around the clock, because people read their roster before a
+  shift at any hour: **99.9%** of each month. A disaster loses **no committed write**, and service
+  is restored within **1 hour**. Decided on 2026-09-22
+  ([#36](https://github.com/NaimElijah/HrSched/issues/36)). *Nothing measures or provides this yet;
+  there is no production deployment ([#38](https://github.com/NaimElijah/HrSched/issues/38)).*
 - **Deployment** — containerised with externalised configuration; the provider is deliberately
   deferred to its own ADR so the choice does not leak into the design.
 - **Observability** — every request is traced, and the trace id appears in every log line it
@@ -274,16 +296,22 @@ now owed ([#27](https://github.com/NaimElijah/HrSched/issues/27)).
 - **Auditability** — every state change records who made it, in which organisation, and the
   identifier of what changed; every refusal, including a cross-tenant attempt, is recorded too. The
   record carries identifiers only and never a name, so the trail says who to ask rather than the
-  answer. `TODO`: whether that trail must be durable, readable by an Admin, and for how long it is
-  retained — Q20. ADR-004 no longer blocks it: there is now somewhere durable to put a trail, and
-  what stays open is whether one should exist and under what obligations.
+  answer. The trail must be **durable**, stored in the same transaction as the change it records,
+  and an Admin may read their own organisation's trail and nobody else's (Q20). That is not built
+  yet ([#31](https://github.com/NaimElijah/HrSched/issues/31)): today the record exists only in the
+  log stream, and a log line cannot be rolled back. How long it is kept is Q23.
   *Enforced by `SchedulingService`, `EmployeeService`, `QualificationService` and their tests;
   `SchedulingAuditLogTest`, `WorkforceAuditLogTest`, `SchedulingExceptionHandlerTest`,
   `WorkforceExceptionHandlerTest`;
   [ADR-018](../ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md).*
 - **Compliance** — availability, absence, and qualification records are personal data across
-  multiple client organisations. `TODO`: confirm the obligations, including which regime
-  applies and whether data location is constrained.
+  multiple client organisations. HrSched must satisfy both Israel's **Protection of Privacy Law,
+  5741-1981**, and the **EU GDPR** (Regulation (EU) 2016/679). Each organisation owns its data, and
+  HrSched is its **processor** (under Israeli law, its *holder*). Where the data is stored is not
+  constrained. Decided on 2026-09-22 ([#36](https://github.com/NaimElijah/HrSched/issues/36)).
+  `TODO`: the specific obligations each regime places on a processor, and how long each kind of
+  record is kept and what is erased on request — Q23
+  ([#41](https://github.com/NaimElijah/HrSched/issues/41)).
 
 ---
 
@@ -301,15 +329,9 @@ applicant tracking, and being the HR system of record.
 | --- | --- | --- | --- |
 | Q15 | What are the non-goals? | NaimElijah | Deferred deliberately |
 | Q19 | Which observability backend receives the OpenTelemetry export, and at what sampling rate? | NaimElijah | Turning OTLP export on; sampling below 1.0 |
-| Q20 | Should an Admin be able to read their organisation's audit trail, and under what retention and erasure obligations? | NaimElijah | An `audit` bounded context; ADR-018's revisit trigger; part of the Compliance TODO |
 | Q21 | By what channel is a colleague actually informed, and how quickly must that happen? | NaimElijah | Anything beyond the in-app inbox: email, push, an unread badge. Today somebody is informed when they next open the application, which for a rota change may be too late ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)) |
 | Q23 | How long is each kind of record kept, and what is erased on request? | NaimElijah | A retention policy and a purge; part of the Compliance TODO, and it constrains Q20 |
-| Q24 | Must roster history be append-only, so that what was authoritative at a past moment can be reconstructed? | NaimElijah | Whether superseding writes a new row rather than changing a status ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) |
-| Q27 | Are the security defaults right? Access token 10 min, session 12 h absolute and 1 h idle, lockout after 10 consecutive failures for 15 min, passwords at least 15 characters and at most 72 bytes, bcrypt strength 12. | NaimElijah | Whether `application.properties` changes; the length floor cites NIST SP 800-63B-4 3.1.1.2 and the lockout ceiling 3.2.2 ([#72](https://github.com/NaimElijah/HrSched/issues/72)) |
-| Q28 | How does a tenant recover when its only Admin is locked out or has lost their password? The platform operator is confined to the register and cannot help (ADR-030), and R14 only guarantees the account still exists. | NaimElijah | Any recovery path at all: a second Admin by policy, an operator-initiated reset that breaks ADR-030, or an out-of-band process ([#73](https://github.com/NaimElijah/HrSched/issues/73)) |
-| Q29 | Must a sign-in name be an email address? Today it is any string up to 254 characters, normalised and unique platform-wide. | NaimElijah | Validation in `SignInName`; whether anything may ever be sent to it (Q21) ([#74](https://github.com/NaimElijah/HrSched/issues/74)) |
-| Q30 | May the platform have more than one operator, and how is an operator's credential rotated? Today configuration creates exactly one, once, and never overwrites it (ADR-029). | NaimElijah | Whether operator accounts get an administration surface of their own ([#75](https://github.com/NaimElijah/HrSched/issues/75)) |
-| Q31 | Is multi-factor authentication required, and for which roles? | NaimElijah | A second factor in `SignInUseCase`, and what a recovery code would be ([#76](https://github.com/NaimElijah/HrSched/issues/76)) |
+| Q30 | What creates a second operator, and how is a lost operator credential rotated? That there may be more than one was decided on 2026-09-22; today configuration creates exactly one, once, and never overwrites it (ADR-029). | NaimElijah | Whether operator accounts get an administration surface of their own ([#75](https://github.com/NaimElijah/HrSched/issues/75)) |
 
 **Resolved**
 
@@ -337,6 +359,12 @@ applicant tracking, and being the HR system of record.
 | Q13 | How are the generator objectives weighted against one another? | Each organisation weights them itself, as configuration. ADR-010 is now owed — [#27](https://github.com/NaimElijah/HrSched/issues/27) | 2026-09-22 |
 | Q14 | Over what reference period is a weekly maximum averaged? | A reference period configured in the constraint set — [#104](https://github.com/NaimElijah/HrSched/issues/104) | 2026-09-22 |
 | Q17 | Which time zone are working-time rules evaluated in? | Each shift's own — R36, [#29](https://github.com/NaimElijah/HrSched/issues/29) | 2026-09-22 |
+| Q20 | Should an Admin be able to read their organisation's audit trail? | Yes: the trail is durable, stored with the change it records, and an Admin reads their own organisation's only — [#31](https://github.com/NaimElijah/HrSched/issues/31). Its retention is Q23 | 2026-09-22 |
+| Q24 | Must roster history be append-only? | Yes — R37, [#106](https://github.com/NaimElijah/HrSched/issues/106) | 2026-09-22 |
+| Q27 | Are the security defaults right? | Yes, all of them, as stated under *Authentication and authorisation* | 2026-09-22 |
+| Q28 | How does a tenant recover when its only Admin cannot sign in? | The Operator resets that Admin's password after verifying the request outside the application, as a deliberate exception to ADR-030 — F33, [#107](https://github.com/NaimElijah/HrSched/issues/107) | 2026-09-22 |
+| Q29 | Must a sign-in name be an email address? | Yes — R38, [#108](https://github.com/NaimElijah/HrSched/issues/108) | 2026-09-22 |
+| Q31 | Is multi-factor authentication required, and for which roles? | Yes, for Operators and Admins — R39, [#109](https://github.com/NaimElijah/HrSched/issues/109) | 2026-09-22 |
 
 Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21; building swaps raised Q22; giving the system a database raised Q23 and Q24; putting an employee's side of swaps into the user interface raised Q25; authentication raised
 Q27 to Q32; and Q33 numbers the two questions [#55](https://github.com/NaimElijah/HrSched/issues/55)
