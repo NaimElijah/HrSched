@@ -83,7 +83,7 @@ implemented; `not yet` means the requirement is decided and the linked issue tra
 | F30 | Admin | Rename their own organisation | not yet — [#92](https://github.com/NaimElijah/HrSched/issues/92) |
 | F31 | Operator | Close an organisation | not yet — [#93](https://github.com/NaimElijah/HrSched/issues/93) |
 | F32 | Admin | Apply a jurisdiction preset shipped with HrSched to their organisation's constraint set | not yet — [#105](https://github.com/NaimElijah/HrSched/issues/105) |
-| F33 | Operator | Reset an organisation's Admin password, after verifying the request outside the application | not yet — [#107](https://github.com/NaimElijah/HrSched/issues/107). *A deliberate exception to [ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md), needing an ADR of its own (Q28).* |
+| F33 | Operator | Reset an organisation's Admin password, after verifying the request outside the application | not yet — [#107](https://github.com/NaimElijah/HrSched/issues/107). *A deliberate exception to [ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md), needing an ADR of its own (Q28, [#114](https://github.com/NaimElijah/HrSched/issues/114)).* |
 
 **Swaps (F7, F17)** are approved by a **Scheduler**; the other employee is informed rather than asked,
 and being informed means a notification they can go and read. Approving does not edit the published
@@ -309,7 +309,8 @@ now owed ([#27](https://github.com/NaimElijah/HrSched/issues/27)).
   5741-1981**, and the **EU GDPR** (Regulation (EU) 2016/679). Each organisation owns its data, and
   HrSched is its **processor** (under Israeli law, its *holder*). Where the data is stored is not
   constrained. Decided on 2026-09-22 ([#36](https://github.com/NaimElijah/HrSched/issues/36)).
-  `TODO`: the specific obligations each regime places on a processor, and how long each kind of
+  `TODO`: the specific obligations each regime places on a processor
+  ([#113](https://github.com/NaimElijah/HrSched/issues/113)), and how long each kind of
   record is kept and what is erased on request — Q23
   ([#41](https://github.com/NaimElijah/HrSched/issues/41)).
 
@@ -327,8 +328,8 @@ applicant tracking, and being the HR system of record.
 
 | # | Question | Owner | Blocks |
 | --- | --- | --- | --- |
-| Q15 | What are the non-goals? | NaimElijah | Deferred deliberately |
-| Q19 | Which observability backend receives the OpenTelemetry export, and at what sampling rate? | NaimElijah | Turning OTLP export on; sampling below 1.0 |
+| Q15 | What are the non-goals? | NaimElijah | Deferred deliberately ([#111](https://github.com/NaimElijah/HrSched/issues/111)) |
+| Q19 | Which observability backend receives the OpenTelemetry export, and at what sampling rate? | NaimElijah | Turning OTLP export on; sampling below 1.0 ([#112](https://github.com/NaimElijah/HrSched/issues/112)) |
 | Q21 | By what channel is a colleague actually informed, and how quickly must that happen? | NaimElijah | Anything beyond the in-app inbox: email, push, an unread badge. Today somebody is informed when they next open the application, which for a rota change may be too late ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)) |
 | Q23 | How long is each kind of record kept, and what is erased on request? | NaimElijah | A retention policy and a purge; part of the Compliance TODO, and it constrains Q20 |
 | Q30 | What creates a second operator, and how is a lost operator credential rotated? That there may be more than one was decided on 2026-09-22; today configuration creates exactly one, once, and never overwrites it (ADR-029). | NaimElijah | Whether operator accounts get an administration surface of their own ([#75](https://github.com/NaimElijah/HrSched/issues/75)) |
