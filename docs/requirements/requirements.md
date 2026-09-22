@@ -82,6 +82,7 @@ implemented; `not yet` means the requirement is decided and the linked issue tra
 | F29 | The employee who raised it | Withdraw a pending swap request | not yet — [#91](https://github.com/NaimElijah/HrSched/issues/91) |
 | F30 | Admin | Rename their own organisation | not yet — [#92](https://github.com/NaimElijah/HrSched/issues/92) |
 | F31 | Operator | Close an organisation | not yet — [#93](https://github.com/NaimElijah/HrSched/issues/93) |
+| F32 | Admin | Apply a jurisdiction preset shipped with HrSched to their organisation's constraint set | not yet — [#105](https://github.com/NaimElijah/HrSched/issues/105) |
 
 **Swaps (F7, F17)** are approved by a **Scheduler**; the other employee is informed rather than asked,
 and being informed means a notification they can go and read. Approving does not edit the published
@@ -114,6 +115,11 @@ This has three consequences that the model must honour:
 - **A preset is data, and its values must be sourced.** Before any preset ships, its numbers
   are taken from the statute and the source cited. A preset that is wrong produces rosters
   that are confidently illegal, which is the exact failure this product exists to prevent.
+
+**The first preset is Israel's**, sourced from the Hours of Work and Rest Law, 5711-1951
+([#105](https://github.com/NaimElijah/HrSched/issues/105)). Presets ship with HrSched, and an Admin
+applies one to their organisation's set (F32). A preset is a starting point, not a floor: once
+applied, the set is the organisation's own, and an Admin may change any value in it (F10).
 
 ### Constraints are invariants, not warnings
 
@@ -161,6 +167,7 @@ a published roster is superseded rather than edited (R6).
 | R33 | A pending swap request lapses when the roster it names is superseded, and its parties are told. *Not yet — [#94](https://github.com/NaimElijah/HrSched/issues/94)* |
 | R34 | An account holding the Employee role is always linked to an employee of its own organisation. One that is not is disabled until it is linked. *Not yet — [#97](https://github.com/NaimElijah/HrSched/issues/97)* |
 | R35 | A shift straddling two roster periods may be carried by either roster, and R3 is judged across every authoritative roster rather than within one. *Not yet — [#98](https://github.com/NaimElijah/HrSched/issues/98)* |
+| R36 | Working-time rules count days in each shift's own time zone. *Not yet — [#29](https://github.com/NaimElijah/HrSched/issues/29): days are counted in UTC today* |
 
 A roster moves `DRAFT → PUBLISHED → SUPERSEDED`, and no other transition is legal. Exactly one
 roster is authoritative for any given moment, which is what R11 enforces.
@@ -191,16 +198,25 @@ Implemented: **minimum rest between assignments**, **maximum daily working time*
 working time across the roster period**, **maximum consecutive working days**. Each is optional;
 an unset constraint is simply not enforced, and an empty set is a valid configuration.
 
-`TODO`: minimum uninterrupted weekly rest; limits specific to night work; contracted-hours
-floors and ceilings; and averaging a weekly maximum over a reference period longer than the
-roster, which needs history the current model does not hold.
+Required but not yet built, each with its threshold a configured value (R25):
+
+- **minimum uninterrupted weekly rest** — [#101](https://github.com/NaimElijah/HrSched/issues/101);
+- **limits specific to night work**, where what counts as night is itself configured —
+  [#102](https://github.com/NaimElijah/HrSched/issues/102);
+- **contracted-hours bounds**: a roster may not give somebody fewer or more hours than their
+  contract says — [#103](https://github.com/NaimElijah/HrSched/issues/103);
+- **a weekly maximum averaged over a configured reference period** longer than the roster, which
+  needs the work of earlier rosters (Q14) — [#104](https://github.com/NaimElijah/HrSched/issues/104).
 
 ### What makes one legal roster better than another
 
 The objectives a generator should optimise, **none of them modelled yet**: fair distribution of
 unpopular shifts, respect for stated preferences, and minimal disruption when re-generating a
-published roster. These are explicitly *not* constraints — see ADR-005. The decision itself is
-reserved as ADR-010, which is not written until Q13 is answered.
+published roster. These are explicitly *not* constraints — see ADR-005.
+
+**Each organisation weights the objectives itself** (Q13), as it configures its own constraint set:
+a weight is configuration, never a constant. How they are modelled is ADR-010, which is reserved and
+now owed ([#27](https://github.com/NaimElijah/HrSched/issues/27)).
 
 ---
 
@@ -283,10 +299,7 @@ applicant tracking, and being the HR system of record.
 
 | # | Question | Owner | Blocks |
 | --- | --- | --- | --- |
-| Q13 | How are the generator objectives weighted against one another? | NaimElijah | ADR-010, and introducing a solver |
-| Q14 | Over what reference period is a weekly maximum averaged? | NaimElijah | Whether constraint checking needs history beyond the roster |
 | Q15 | What are the non-goals? | NaimElijah | Deferred deliberately |
-| Q17 | Which time zone are working-time rules evaluated in? | NaimElijah | Daily and consecutive-day limits currently count days in UTC |
 | Q19 | Which observability backend receives the OpenTelemetry export, and at what sampling rate? | NaimElijah | Turning OTLP export on; sampling below 1.0 |
 | Q20 | Should an Admin be able to read their organisation's audit trail, and under what retention and erasure obligations? | NaimElijah | An `audit` bounded context; ADR-018's revisit trigger; part of the Compliance TODO |
 | Q21 | By what channel is a colleague actually informed, and how quickly must that happen? | NaimElijah | Anything beyond the in-app inbox: email, push, an unread badge. Today somebody is informed when they next open the application, which for a rota change may be too late ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)) |
@@ -321,6 +334,9 @@ applicant tracking, and being the HR system of record.
 | Q26 | Which roster governs a shift that straddles two roster periods, and is R3 judged across rosters or within one? | Either roster may carry it, and R3 is judged across every authoritative roster — R35, [#98](https://github.com/NaimElijah/HrSched/issues/98) | 2026-09-22 |
 | Q32 | Must an account holding the EMPLOYEE role always be linked to an employee? | Yes, and existing unlinked ones are disabled until linked — R34, [#97](https://github.com/NaimElijah/HrSched/issues/97) | 2026-09-22 |
 | Q33 | May an assignment have more than one pending swap request, and what becomes of a pending request once its roster is superseded? | One only (R32), and it lapses (R33) — [#94](https://github.com/NaimElijah/HrSched/issues/94) | 2026-09-22 |
+| Q13 | How are the generator objectives weighted against one another? | Each organisation weights them itself, as configuration. ADR-010 is now owed — [#27](https://github.com/NaimElijah/HrSched/issues/27) | 2026-09-22 |
+| Q14 | Over what reference period is a weekly maximum averaged? | A reference period configured in the constraint set — [#104](https://github.com/NaimElijah/HrSched/issues/104) | 2026-09-22 |
+| Q17 | Which time zone are working-time rules evaluated in? | Each shift's own — R36, [#29](https://github.com/NaimElijah/HrSched/issues/29) | 2026-09-22 |
 
 Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21; building swaps raised Q22; giving the system a database raised Q23 and Q24; putting an employee's side of swaps into the user interface raised Q25; authentication raised
 Q27 to Q32; and Q33 numbers the two questions [#55](https://github.com/NaimElijah/HrSched/issues/55)
