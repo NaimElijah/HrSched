@@ -53,7 +53,7 @@ implemented; the rest are not.
 | F3 | Scheduler | Publish a roster, after it passes the organisation rules | `SchedulingService`, `RosteringHttpTest` |
 | F4 | Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest`. *Availability, qualifications and contracted hours are on the listing; the roster half is served by F11a rather than repeated here.* |
 | F5 | Employee | See their own published roster | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *The assignments naming them, from published rosters only — the whole roster stays Admin and Scheduler (R12).* |
-| F6 | Employee | Declare when they cannot work, and state soft preferences | `EmployeeService`, `EmployeeServiceTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)) |
+| F6 | Employee | Declare when they cannot work, and state soft preferences | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)) |
 | F7 | Employee | Request a swap of one of their assignments with another employee | `SwapService`, `SwapServiceTest`, `SwapHttpTest` ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)). *Modelled as a transfer rather than a two-way exchange — Q22.* |
 | F8 | Admin | Add employees | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` |
 | F9 | Admin | Define qualifications, and grant them to employees | `QualificationService`, `QualificationServiceTest`, `QualificationHttpTest`; granting: `EmployeeService`, `EmployeeServiceTest` |
@@ -111,19 +111,19 @@ a published roster is superseded rather than edited (R6).
 | R1 | A time range must end strictly after it starts. *`TimeRange`, `TimeRangeTest`* |
 | R2 | An employee must have a name that is not blank. *`Employee`, `EmployeeTest`* |
 | R3 | An employee may not hold two overlapping assignments. *`Roster`, `RosterTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`; at swap approval `SwapServiceTest`; in generation `GreedyRosterGeneratorTest`* |
-| R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `RosterCandidateTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`* |
+| R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `RosterCandidateTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`; at swap approval `SwapServiceTest`* |
 | R5 | An employee may only be assigned within their own organisation. *`SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`* |
-| R6 | A published roster may not be edited; it is superseded by a new version. *`Roster`, `SchedulingService`, `SchedulingServiceTest`* |
+| R6 | A published roster may not be edited; it is superseded by a new version. *`Roster`, `RosterTest`, `SchedulingService`, `SchedulingServiceTest`* |
 | R7 | An employee may not declare overlapping unavailability. *`Employee`, `EmployeeTest`* |
 | R8 | A shift must require at least one person. *`Shift`, `ShiftTest`* |
 | R9 | A shift may only require qualifications its own organisation has defined. *`SchedulingService`, `SchedulingServiceTest`* |
 | R10 | A roster assigning a shift that cannot be resolved cannot be published. *`Roster`, `SchedulingServiceTest`* |
 | R11 | Publishing a roster supersedes every published roster of that organisation whose period it overlaps. *`SchedulingService`, `SchedulingServiceTest`; against a publication in flight at the same time, `RosterRepository.lockPublicationsOf` (`SchedulingServiceTest`, `SwapServiceTest`, `JdbcRosterRepositoryTest`) and, behind it, the `roster_one_published_per_moment` constraint (`JdbcRosterRepository`, `JdbcRosterRepositoryTest`)* |
 | R12 | A roster may only be read by an Admin or a Scheduler, because it is personal data about every colleague. *`SchedulingService`, `RosteringHttpTest`* |
-| R13 | A sign-in name identifies one account across the whole platform, so two accounts can never hold the same one. *`AccountRepository`, `JdbcAccountRepositoryTest`, `AccountAdministrationTest`, `AccountHttpTest`* |
+| R13 | A sign-in name identifies one account across the whole platform, so two accounts can never hold the same one. *`JdbcAccountRepository` and the `account_sign_in_name_unique` constraint, `JdbcAccountRepositoryTest`, `AccountAdministrationTest`, `AccountHttpTest`* |
 | R14 | An organisation always keeps at least one active Admin: the last one can be neither demoted nor disabled. *`AccountService`, `AccountAdministrationTest`, `AccountHttpTest`* |
 | R15 | An account may be linked only to an employee of its own organisation, and an employee has at most one account. *`AccountService`, `AccountAdministrationTest`, `AccountHttpTest`; the second half also `JdbcAccountRepositoryTest`* |
-| R16 | A password chosen by anybody other than the account's owner must be replaced before that account holds a role. *`Account`, `SessionService`, `ActorAuthentication`, `SessionServiceTest`, `AccountHttpTest`* |
+| R16 | A password chosen by anybody other than the account's owner must be replaced before that account holds a role. *`Account`, `SessionService`, `ActorAuthentication`, `ActorAuthenticationConverterTest`, `SessionHttpTest`, `AccountHttpTest`* |
 | R17 | Disabling an account, and resetting its password, end every session it holds. A reset also clears any lockout. An Admin resets other people's passwords, never their own: changing your own takes the current one, and a way around that would undo what it protects. *`AccountService`, `AccountAdministrationTest`, `AccountHttpTest`* |
 
 A roster moves `DRAFT → PUBLISHED → SUPERSEDED`, and no other transition is legal. Exactly one
@@ -158,7 +158,8 @@ roster, which needs history the current model does not hold.
 
 The objectives a generator should optimise, **none of them modelled yet**: fair distribution of
 unpopular shifts, respect for stated preferences, and minimal disruption when re-generating a
-published roster. These are explicitly *not* constraints — see ADR-005 and ADR-010.
+published roster. These are explicitly *not* constraints — see ADR-005. The decision itself is
+reserved as ADR-010, which is not written until Q13 is answered.
 
 ---
 
@@ -184,8 +185,9 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
   covered by its own tests rather than assumed. **A request cannot name an organisation at all**:
   it acts in the one its own account belongs to, read from a row the caller cannot write, so a
   tenant can be neither invented nor borrowed.
-  *Enforced by `Actor.requireTenantMembership`, `ActorTest`, and the `actingIn` helper in each web
-  adapter, covered by `EmployeeHttpTest`, `RosteringHttpTest`, `SwapHttpTest`, `NotificationHttpTest`
+  *Enforced by `Actor.requireTenantMembership` and `Actor.requireAccessTo` (`ActorTest` covers the
+  second), and by the helper in each web adapter that takes the organisation from the actor
+  (`actingIn`; `organisationOf` in `AccountController`), covered by `EmployeeHttpTest`, `RosteringHttpTest`, `SwapHttpTest`, `NotificationHttpTest`
   and `AccountHttpTest`;
   [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md).*
 - **Persistence guarantees** — every accepted write is durable: once a request answers 2xx the
@@ -194,7 +196,7 @@ published roster. These are explicitly *not* constraints — see ADR-005 and ADR
   approval used to strand. Every aggregate lives in PostgreSQL, and the schema is changed only by a
   versioned migration. Roster history is kept but is **not** append-only: superseding a roster
   changes its status in place — Q24. Nothing is purged and no retention period is set — Q23.
-  *Enforced by `Jdbc*Repository` (×8) and their adapter tests, `TransactionalUseCases`,
+  *Enforced by `Jdbc*Repository` (×10) and their adapter tests, `TransactionalUseCases`,
   `SwapHttpTest`; [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md),
   [ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md).*
 - **Performance and scale** — `TODO`: state as measurable numbers per organisation (employees,
