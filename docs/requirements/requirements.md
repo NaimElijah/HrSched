@@ -127,7 +127,7 @@ a published roster is superseded rather than edited (R6).
 | ID | Rule |
 | --- | --- |
 | R1 | A time range must end strictly after it starts. *`TimeRange`, `TimeRangeTest`* |
-| R2 | An employee must have a name that is not blank. *`Employee`, `EmployeeTest`* |
+| R2 | An employee, an organisation and a qualification must each have a name that is not blank. *`Employee`, `EmployeeTest`; `Organisation`, `OrganisationTest`; `Qualification`, `QualificationTest`* |
 | R3 | An employee may not hold two overlapping assignments. *`Roster`, `RosterTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`; at swap approval `SwapServiceTest`; in generation `GreedyRosterGeneratorTest`* |
 | R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `RosterCandidateTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`; at swap approval `SwapServiceTest`* |
 | R5 | An employee may only be assigned within their own organisation. *`SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`* |
@@ -143,19 +143,42 @@ a published roster is superseded rather than edited (R6).
 | R15 | An account may be linked only to an employee of its own organisation, and an employee has at most one account. *`AccountService`, `AccountAdministrationTest`, `AccountHttpTest`; the second half also `JdbcAccountRepositoryTest`* |
 | R16 | A password chosen by anybody other than the account's owner must be replaced before that account holds a role. *`Account`, `SessionService`, `ActorAuthentication`, `ActorAuthenticationConverterTest`, `SessionHttpTest`, `AccountHttpTest`* |
 | R17 | Disabling an account, and resetting its password, end every session it holds. A reset also clears any lockout. An Admin resets other people's passwords, never their own: changing your own takes the current one, and a way around that would undo what it protects. *`AccountService`, `AccountAdministrationTest`, `AccountHttpTest`* |
+| R18 | An employee may not be assigned across a span they declared unavailable, whether by hand, by generation or through a swap. *`RosterCandidate`, `AssignmentEligibility`, `RosterCandidateTest`; on the manual path `SchedulingServiceTest`; at swap approval `SwapServiceTest`; in generation `RosteringHttpTest`* |
+| R19 | A member reaching for another organisation's data is answered *not found*, never *forbidden*, because a refusal would confirm that the thing exists. *The exception handler of each web adapter: `AccessExceptionHandler`, `WorkforceExceptionHandler`, `SchedulingExceptionHandler`, `NotificationExceptionHandler`; `RosteringHttpTest`, `OrganisationHttpTest`, `AccountHttpTest`* |
+| R20 | A swap may be requested only for an assignment the requester holds on the roster currently published. *`SwapService`, `SwapServiceTest`* |
+| R21 | A swap is always with somebody else. *`SwapRequest`, `SwapServiceTest`* |
+| R22 | A shift's headcount is the least it needs, not the most it may have: more people may be assigned to it by hand. *`Shift`; no test pins it yet — [#99](https://github.com/NaimElijah/HrSched/issues/99)* |
+| R23 | A qualification's name is unique within its organisation. *Not yet — [#95](https://github.com/NaimElijah/HrSched/issues/95)* |
+| R24 | A constraint set holds at most one constraint of each kind. *Not yet — [#96](https://github.com/NaimElijah/HrSched/issues/96)* |
+| R25 | Every working-time threshold is greater than zero, and each revision of a constraint set raises its version by one. *`WorkingTimeConstraint`, `WorkingTimeConstraintTest`, `ConstraintSet`, `ConstraintSetTest`* |
+| R26 | Stated preferences may overlap one another, unlike unavailability (R7). *`Employee`; no test pins it yet — [#99](https://github.com/NaimElijah/HrSched/issues/99)* |
+| R27 | A sign-in name ignores case and surrounding spaces, so two names differing only in those are the same name. *`SignInName`, `SignInNameTest`, `AuthHttpTest`* |
+| R28 | A new password must differ from the current one. *`SessionService`, `SessionHttpTest`* |
+| R29 | Consecutive failed sign-ins lock an account for a while, and a successful sign-in clears the count. A wrong current password given when changing it counts as a failure. How many failures, and for how long, is configuration (Q27). *`Account`, `SessionService`, `AuthHttpTest`, `SessionHttpTest`* |
+| R30 | Presenting a refresh token that was already exchanged ends the whole session it belongs to. *`SessionService`, `SessionServiceTest`, `SessionRefreshHttpTest`* |
+| R31 | The Operator's account never holds a role within an organisation, and is never linked to an employee. *`Account`, `AccountTest`* |
+| R32 | An assignment has at most one pending swap request. *Not yet — [#94](https://github.com/NaimElijah/HrSched/issues/94)* |
+| R33 | A pending swap request lapses when the roster it names is superseded, and its parties are told. *Not yet — [#94](https://github.com/NaimElijah/HrSched/issues/94)* |
+| R34 | An account holding the Employee role is always linked to an employee of its own organisation. One that is not is disabled until it is linked. *Not yet — [#97](https://github.com/NaimElijah/HrSched/issues/97)* |
+| R35 | A shift straddling two roster periods may be carried by either roster, and R3 is judged across every authoritative roster rather than within one. *Not yet — [#98](https://github.com/NaimElijah/HrSched/issues/98)* |
 
 A roster moves `DRAFT → PUBLISHED → SUPERSEDED`, and no other transition is legal. Exactly one
 roster is authoritative for any given moment, which is what R11 enforces.
 
+A swap request moves from `REQUESTED` to exactly one of approved or rejected (F17), withdrawn (F29)
+or lapsed (R33), and each of those is final. Approved and rejected exist today; withdrawn and lapsed
+are not built yet.
+
 **Only a Scheduler builds rosters.** An Admin manages people, qualifications and the constraint
-set and cannot define shifts, generate or publish — F1/F3/F11/F12 against F8/F9/F10.
+set and cannot define shifts, generate or publish — F1/F3/F11 against F8/F9/F10.
 
 **Unavailability and rosters are personal data.** Listing the people in an organisation, and
 reading any roster, are both restricted to Admins and Schedulers; an Employee cannot read a
 colleague's. F5 — an employee seeing *their own* work — is a narrower capability beside that one
 rather than a widening of it: it answers only for the personnel record the caller carries, so it
 discloses nothing about anybody else. An actor with no personnel record is refused rather than
-shown an empty week.
+shown an empty week. An Employee learns nothing about colleagues, not even their names, so the
+colleague taking a swapped shift is named by identifier (Q25).
 
 **Revising the rules replaces the whole set.** There is no partial update: a caller sends the rules
 that should apply from now on, and any rule omitted is switched off. `GET /api/constraints`
@@ -263,21 +286,17 @@ applicant tracking, and being the HR system of record.
 | Q13 | How are the generator objectives weighted against one another? | NaimElijah | ADR-010, and introducing a solver |
 | Q14 | Over what reference period is a weekly maximum averaged? | NaimElijah | Whether constraint checking needs history beyond the roster |
 | Q15 | What are the non-goals? | NaimElijah | Deferred deliberately |
-| Q16 | When a new roster only partly overlaps a published one, should the old one be superseded whole, or only for the days replaced? | NaimElijah | Refining R11; today the whole roster is superseded |
 | Q17 | Which time zone are working-time rules evaluated in? | NaimElijah | Daily and consecutive-day limits currently count days in UTC |
 | Q19 | Which observability backend receives the OpenTelemetry export, and at what sampling rate? | NaimElijah | Turning OTLP export on; sampling below 1.0 |
 | Q20 | Should an Admin be able to read their organisation's audit trail, and under what retention and erasure obligations? | NaimElijah | An `audit` bounded context; ADR-018's revisit trigger; part of the Compliance TODO |
 | Q21 | By what channel is a colleague actually informed, and how quickly must that happen? | NaimElijah | Anything beyond the in-app inbox: email, push, an unread badge. Today somebody is informed when they next open the application, which for a rota change may be too late ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)) |
 | Q23 | How long is each kind of record kept, and what is erased on request? | NaimElijah | A retention policy and a purge; part of the Compliance TODO, and it constrains Q20 |
 | Q24 | Must roster history be append-only, so that what was authoritative at a past moment can be reconstructed? | NaimElijah | Whether superseding writes a new row rather than changing a status ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) |
-| Q25 | An employee may not list colleagues, so the user interface has them name the colleague taking a shift by pasting that colleague's employee identifier. Is a names-only colleague directory required, and may an employee see a colleague's name at all? | NaimElijah | Choosing a swap counterparty by name; what an employee may learn about colleagues, on the reasoning behind R12 |
-| Q26 | A shift can straddle two roster periods, and both rosters can then carry it without either superseding the other. Which roster governs such a shift, and is R3 judged across every authoritative roster or within one? | NaimElijah | R3 across rosters: today it is enforced within one roster only ([#63](https://github.com/NaimElijah/HrSched/issues/63)) |
 | Q27 | Are the security defaults right? Access token 10 min, session 12 h absolute and 1 h idle, lockout after 10 consecutive failures for 15 min, passwords at least 15 characters and at most 72 bytes, bcrypt strength 12. | NaimElijah | Whether `application.properties` changes; the length floor cites NIST SP 800-63B-4 3.1.1.2 and the lockout ceiling 3.2.2 ([#72](https://github.com/NaimElijah/HrSched/issues/72)) |
 | Q28 | How does a tenant recover when its only Admin is locked out or has lost their password? The platform operator is confined to the register and cannot help (ADR-030), and R14 only guarantees the account still exists. | NaimElijah | Any recovery path at all: a second Admin by policy, an operator-initiated reset that breaks ADR-030, or an out-of-band process ([#73](https://github.com/NaimElijah/HrSched/issues/73)) |
 | Q29 | Must a sign-in name be an email address? Today it is any string up to 254 characters, normalised and unique platform-wide. | NaimElijah | Validation in `SignInName`; whether anything may ever be sent to it (Q21) ([#74](https://github.com/NaimElijah/HrSched/issues/74)) |
 | Q30 | May the platform have more than one operator, and how is an operator's credential rotated? Today configuration creates exactly one, once, and never overwrites it (ADR-029). | NaimElijah | Whether operator accounts get an administration surface of their own ([#75](https://github.com/NaimElijah/HrSched/issues/75)) |
 | Q31 | Is multi-factor authentication required, and for which roles? | NaimElijah | A second factor in `SignInUseCase`, and what a recovery code would be ([#76](https://github.com/NaimElijah/HrSched/issues/76)) |
-| Q32 | Must an account holding the EMPLOYEE role always be linked to an employee? Today the link is optional for every role, so an EMPLOYEE account with none can sign in and see nothing of its own. | NaimElijah | Tightening R15; the self-service path in ADR-012 ([#77](https://github.com/NaimElijah/HrSched/issues/77)) |
 
 **Resolved**
 
@@ -297,6 +316,12 @@ applicant tracking, and being the HR system of record.
 | Q12 | What identity provider, and how an Actor is built from a real credential | None: HrSched holds its own accounts and signs its own access tokens. An `Actor` is built from the stored account and session the token names, on every request — [ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-028](../ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md), [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md) | 2026-09-21 |
 | Q18 | Whether an employee sees their own roster, and what "their own" means | Yes: the assignments naming them, from published rosters only. A narrower capability beside R12, not a widening of it | 2026-09-01 |
 | Q22 | Is a swap a transfer of one shift, or a two-way exchange of two? | Both: an employee may offer either (F7). The exchange is [#82](https://github.com/NaimElijah/HrSched/issues/82) | 2026-09-22 |
+| Q16 | When a new roster only partly overlaps a published one, is the old one superseded whole, or only for the days replaced? | Whole, as R11 states | 2026-09-22 |
+| Q25 | May an employee see a colleague's name, for instance to choose who takes a shift? | No: an Employee learns nothing about colleagues, not even their names. The colleague is named by identifier | 2026-09-22 |
+| Q26 | Which roster governs a shift that straddles two roster periods, and is R3 judged across rosters or within one? | Either roster may carry it, and R3 is judged across every authoritative roster — R35, [#98](https://github.com/NaimElijah/HrSched/issues/98) | 2026-09-22 |
+| Q32 | Must an account holding the EMPLOYEE role always be linked to an employee? | Yes, and existing unlinked ones are disabled until linked — R34, [#97](https://github.com/NaimElijah/HrSched/issues/97) | 2026-09-22 |
+| Q33 | May an assignment have more than one pending swap request, and what becomes of a pending request once its roster is superseded? | One only (R32), and it lapses (R33) — [#94](https://github.com/NaimElijah/HrSched/issues/94) | 2026-09-22 |
 
-Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21; building swaps raised Q22; giving the system a database raised Q23 and Q24; putting an employee's side of swaps into the user interface raised Q25; and authentication raised
-Q27 to Q32.
+Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21; building swaps raised Q22; giving the system a database raised Q23 and Q24; putting an employee's side of swaps into the user interface raised Q25; authentication raised
+Q27 to Q32; and Q33 numbers the two questions [#55](https://github.com/NaimElijah/HrSched/issues/55)
+raised about pending swaps, answered as they were numbered.
