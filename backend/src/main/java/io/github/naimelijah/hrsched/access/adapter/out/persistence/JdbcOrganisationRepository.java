@@ -19,8 +19,8 @@ import org.springframework.stereotype.Repository;
  * above it.
  *
  * <p>This is the table every other table's tenant column points at, so a row here going missing is
- * not a lost record but a tenant that stops existing — which after ADR-020 answers 404 to every one
- * of their requests. That it is now durable is the sharpest thing ADR-004 fixed.
+ * not a lost record but a tenant that stops existing. That it is now durable is the sharpest thing
+ * ADR-004 fixed.
  */
 @Repository
 public class JdbcOrganisationRepository implements OrganisationRepository {

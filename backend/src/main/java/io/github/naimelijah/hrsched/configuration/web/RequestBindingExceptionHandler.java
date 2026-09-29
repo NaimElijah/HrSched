@@ -29,7 +29,10 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 @RestControllerAdvice(basePackageClasses = HrSchedApplication.class)
 public class RequestBindingExceptionHandler {
 
-  /** The title {@code ActorFromHeaders} gives a blank header, so absent and empty read the same. */
+  /**
+   * The title every context's handler gives a malformed request body, so a caller sees one title
+   * for a request it got wrong, whichever layer noticed.
+   */
   private static final String TITLE = "Invalid request";
 
   /**

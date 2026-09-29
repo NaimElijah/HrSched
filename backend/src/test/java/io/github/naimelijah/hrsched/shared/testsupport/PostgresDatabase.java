@@ -87,8 +87,8 @@ public final class PostgresDatabase {
    * Registers tenants, so rows may be stored against them.
    *
    * <p>Needed because {@code organisation_id} is a real foreign key on every table: a row belonging
-   * to a tenant nobody onboarded is exactly the hazard ADR-020 exists to prevent, so the schema
-   * refuses it and a test that wants one has to say so.
+   * to a tenant nobody onboarded is exactly the hazard ADR-020 was written to prevent, so the
+   * schema refuses it and a test that wants one has to say so.
    */
   public static void given(OrganisationId... organisations) {
     for (OrganisationId organisation : organisations) {

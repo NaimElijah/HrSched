@@ -29,16 +29,16 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * omitting it: it would name a trace that appears in no log line, and send whoever quoted it
  * looking for something that was never written.
  *
- * <p>It reads no request header and knows nothing about who is calling, so unlike {@code
- * ActorFromHeaders} it survives the arrival of authentication untouched.
+ * <p>It reads no request header and knows nothing about who is calling, which is what lets it run
+ * before authentication has decided anything.
  *
  * <p>Ordered explicitly, and the number is load-bearing in both directions. It must run
  * <em>after</em> Boot's observation filter, which opens the span this reads and which {@code
  * WebMvcObservationAutoConfiguration} registers at {@code HIGHEST_PRECEDENCE + 1}: ordered any
  * earlier, {@code currentSpan()} is null and the header silently disappears — which is exactly what
  * happened when this was first ordered, and what {@code TraceIdHttpTest} caught. It must run
- * <em>before</em> {@code KnownOrganisationFilter}, so a request refused there still carries the id
- * the person who was refused has to quote.
+ * <em>before</em> Spring Security's filter chain, so a request the chain refuses still carries the
+ * id the person who was refused has to quote, which {@code SessionHttpTest} checks on a 401.
  */
 @Component
 @Order(TraceIdResponseFilter.ORDER)

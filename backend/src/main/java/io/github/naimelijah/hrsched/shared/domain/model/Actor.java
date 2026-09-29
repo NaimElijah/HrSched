@@ -5,7 +5,8 @@ package io.github.naimelijah.hrsched.shared.domain.model;
  *
  * <p>Sealed on purpose. Tenant isolation is the property whose failure is a security incident, so
  * the set of things that can cross an organisation boundary is closed and visible in one place:
- * {@link TenantActor} can reach exactly its own organisation, {@link Operator} can reach any. A
+ * {@link TenantActor} can reach exactly its own organisation, and {@link Operator} can reach none,
+ * because it belongs to no organisation and administers only the register of them (ADR-030). A
  * third possibility cannot be added without editing this file.
  *
  * <p>Carries no credentials. An actor is the <em>result</em> of authentication, and this type

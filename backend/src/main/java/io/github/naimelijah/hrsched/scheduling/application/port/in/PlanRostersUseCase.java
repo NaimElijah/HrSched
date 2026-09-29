@@ -94,7 +94,8 @@ public interface PlanRostersUseCase {
   Optional<Roster> findRoster(Actor actor, OrganisationId organisation, RosterId roster);
 
   /**
-   * @param actor whoever is asking; any member of the organisation
+   * @param actor whoever is asking; an Admin or a Scheduler of the organisation, because a roster
+   *     says who works when, which is personal data about every colleague (R12)
    * @param organisation whose rosters
    * @return every roster that organisation holds, newest state included
    */

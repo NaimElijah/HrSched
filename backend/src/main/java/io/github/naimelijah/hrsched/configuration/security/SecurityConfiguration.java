@@ -190,15 +190,15 @@ public class SecurityConfiguration {
                     .requestMatchers(HttpMethod.GET, ONE_ORGANISATION)
                     .hasAnyRole(EVERY_ROLE)
                     // Account administration, in the organisation the token names and no other.
-                    // An Admin only: the operator holds no role at all, so this rule refuses it
+                    // An Admin only: the operator's one role is OPERATOR, so this rule refuses it
                     // before the controller has to (ADR-030).
                     .requestMatchers(ACCOUNTS)
                     .hasRole(ADMIN)
                     // Everything inside an organisation. A role rather than merely being
-                    // authenticated, which refuses two callers at once: the operator, which holds
-                    // no role because it belongs to no organisation (ADR-030), and an account
-                    // whose temporary password is still pending, which holds none until it has
-                    // chosen its own (ADR-029).
+                    // authenticated, which refuses two callers at once: the operator, whose one
+                    // role is OPERATOR and no tenant role, because it belongs to no organisation
+                    // (ADR-030), and an account whose temporary password is still pending, which
+                    // holds no role until it has chosen its own (ADR-029).
                     .requestMatchers(TENANT_ROUTES)
                     .hasAnyRole(EVERY_TENANT_ROLE)
                     // Everything else is refused. A route nobody wrote a rule for is a route

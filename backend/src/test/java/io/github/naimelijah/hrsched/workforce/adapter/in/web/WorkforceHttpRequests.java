@@ -28,9 +28,9 @@ final class WorkforceHttpRequests {
    * A fresh organisation per test. The repositories behind the shared Spring context are
    * singletons, so a shared identifier would let one test's data decide another test's assertion.
    *
-   * <p>It is really onboarded rather than invented. Since ADR-020 an organisation nobody onboarded
-   * does not exist, and every request naming one is refused with a 404 before it reaches a
-   * controller — so a random UUID here would fail every test that used it, for the right reason.
+   * <p>It is really onboarded rather than invented. Every request signs in as an account in this
+   * organisation, and an account can only belong to an organisation that exists — so a random UUID
+   * here would fail every test that used it, for the right reason.
    *
    * @param mockMvc the client to onboard through
    * @return the identifier of an organisation nothing else in the suite is using

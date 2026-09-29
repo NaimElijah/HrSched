@@ -38,12 +38,12 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 /**
  * Specification of which workforce failure earns which status.
  *
- * <p>Driven directly rather than over HTTP, for a reason worth recording: {@code ActorFromHeaders}
- * builds a tenant actor's organisation from the same {@code X-Organisation} header the operation
- * targets, so {@code requireAccessTo} compares an organisation with itself and can never fail for a
- * caller arriving over HTTP. Isolation there is produced by the repositories' organisation filter
- * returning nothing, which becomes an unknown-record 404. {@link CrossTenantAccessException} still
- * guards every direct caller and would guard a second adapter, but the branch that translates it is
+ * <p>Driven directly rather than over HTTP, for a reason worth recording: every controller takes
+ * the organisation it acts in from the acting account itself ({@code actingIn}, ADR-031), so {@code
+ * requireAccessTo} compares an organisation with itself and can never fail for a caller arriving
+ * over HTTP. Isolation there is produced by the repositories' organisation filter returning
+ * nothing, which becomes an unknown-record 404. {@link CrossTenantAccessException} still guards
+ * every direct caller and would guard a second adapter, but the branch that translates it is
  * unreachable from any HTTP test -- so it is reachable only from here.
  */
 class WorkforceExceptionHandlerTest {

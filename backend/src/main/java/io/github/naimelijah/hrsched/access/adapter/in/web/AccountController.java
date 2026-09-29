@@ -25,11 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Driving adapter exposing account administration over HTTP (requirement F15).
  *
- * <p><strong>The organisation comes from the token, never from the request.</strong> Every other
- * controller here still reads {@code X-Organisation}; this one cannot, because an Admin who could
- * name the organisation they were administering could name somebody else's. The acting account
- * belongs to exactly one organisation and these routes act in that one, so there is no identifier
- * in any path or body for a caller to change.
+ * <p><strong>The organisation comes from the token, never from the request</strong>, as it does in
+ * every controller (ADR-031), and here the reason is sharpest: an Admin who could name the
+ * organisation they were administering could name somebody else's. The acting account belongs to
+ * exactly one organisation and these routes act in that one, so there is no identifier in any path
+ * or body for a caller to change.
  *
  * <p>That also makes the platform operator's refusal structural rather than a check: an operator
  * belongs to no organisation, so there is nothing for these routes to act in, and {@link

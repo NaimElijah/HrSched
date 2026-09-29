@@ -1,8 +1,8 @@
 package io.github.naimelijah.hrsched.notifications.adapter.in.web;
 
 /**
- * Raised when a request cannot be understood: a header that is not a UUID or a known role, or a
- * body missing a field the use case requires.
+ * Raised when a request body cannot be understood. Nothing in this context raises it yet, because
+ * no notifications route reads a body.
  *
  * <p>Its own type rather than letting {@code NullPointerException} or {@code
  * IllegalArgumentException} escape, because those also arise from genuine defects. Translating them
