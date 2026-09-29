@@ -18,9 +18,8 @@ import org.springframework.stereotype.Repository;
  * tenants, so {@link #findAll()} is meant to cross every one of them and the guard is the use case
  * above it.
  *
- * <p>This is the table every other table's tenant column points at, so a row here going missing is
- * not a lost record but a tenant that stops existing. That it is now durable is the sharpest thing
- * ADR-004 fixed.
+ * <p>This is the table every other table's tenant column points at, and no such foreign key
+ * cascades, so an organisation that still owns anything cannot be deleted from under its data.
  */
 @Repository
 public class JdbcOrganisationRepository implements OrganisationRepository {

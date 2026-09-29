@@ -86,7 +86,7 @@ public interface PlanRostersUseCase {
   Roster publish(Actor actor, OrganisationId organisation, RosterId roster);
 
   /**
-   * @param actor whoever is asking
+   * @param actor whoever is asking; an Admin or a Scheduler of the organisation (R12)
    * @param organisation whose roster
    * @param roster which one
    * @return the roster, or empty if that organisation has no such roster

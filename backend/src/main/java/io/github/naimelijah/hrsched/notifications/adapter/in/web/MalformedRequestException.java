@@ -1,8 +1,8 @@
 package io.github.naimelijah.hrsched.notifications.adapter.in.web;
 
 /**
- * Raised when a request body cannot be understood. Nothing in this context raises it yet, because
- * no notifications route reads a body.
+ * Raised when a request body cannot be understood. Nothing in this context raises it, because no
+ * notifications route reads a body; deleting it is tracked in GitHub issue 118.
  *
  * <p>Its own type rather than letting {@code NullPointerException} or {@code
  * IllegalArgumentException} escape, because those also arise from genuine defects. Translating them

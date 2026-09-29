@@ -29,8 +29,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * omitting it: it would name a trace that appears in no log line, and send whoever quoted it
  * looking for something that was never written.
  *
- * <p>It reads no request header and knows nothing about who is calling, which is what lets it run
- * before authentication has decided anything.
+ * <p>It knows nothing about who is calling, which is what lets it run before authentication has
+ * decided anything.
  *
  * <p>Ordered explicitly, and the number is load-bearing in both directions. It must run
  * <em>after</em> Boot's observation filter, which opens the span this reads and which {@code

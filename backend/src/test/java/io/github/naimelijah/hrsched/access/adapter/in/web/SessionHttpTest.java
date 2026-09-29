@@ -42,7 +42,8 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Drives the two endpoints a bearer token unlocks, and every way a token stops being believed.
+ * Drives reading one's own session and changing one's own password, and every way a token stops
+ * being believed.
  *
  * <p>Most of this file exists because a signature is not enough. A token that was genuinely issued
  * by this service, signed correctly and not yet expired, must still be refused once the account is

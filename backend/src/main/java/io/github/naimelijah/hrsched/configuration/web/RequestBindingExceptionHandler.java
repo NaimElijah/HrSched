@@ -20,9 +20,9 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  * MissingPathVariableException} and {@code ConversionNotSupportedException}, which mean a mapping
  * of ours is wrong, and those rightly stay a 500 rather than being blamed on the caller.
  *
- * <p>The detail names the parameter and never repeats the value sent, for the reason ADR-020's
- * refusal echoes nothing. Nothing is logged or counted: a request that could not be bound is not a
- * refusal of anything the application decided (ADR-018).
+ * <p>The detail names the parameter and never repeats the value sent (ADR-024). Nothing is logged
+ * or counted: a request that could not be bound is not a refusal of anything the application
+ * decided (ADR-018).
  *
  * <p>Scoped to this application's controllers, so actuator's endpoints answer as they always did.
  */
@@ -30,8 +30,9 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 public class RequestBindingExceptionHandler {
 
   /**
-   * The title every context's handler gives a malformed request body, so a caller sees one title
-   * for a request it got wrong, whichever layer noticed.
+   * The title each context's handler gives input it refuses as invalid, such as a required body
+   * field left out, so a missing query parameter reads the same as a missing body field. A body
+   * that cannot be parsed at all is titled {@code Malformed request} by those handlers instead.
    */
   private static final String TITLE = "Invalid request";
 

@@ -31,8 +31,9 @@ final class SchedulingHttpRequests {
    * A fresh organisation per test, really onboarded rather than invented.
    *
    * <p>The repositories behind the shared Spring context are singletons, so a shared identifier
-   * would let one test's data decide another test's assertion; and every request signs in as an
-   * account in this organisation, which can only belong to an organisation that exists.
+   * would let one test's data decide another test's assertion; and the tenant accounts these tests
+   * act as are created in this organisation, whose identity {@code account.organisation_id} must
+   * reference (V3), so an invented identifier would fail in the fixture.
    *
    * @param mockMvc the client to onboard through
    * @return the identifier of an organisation nothing else in the suite is using

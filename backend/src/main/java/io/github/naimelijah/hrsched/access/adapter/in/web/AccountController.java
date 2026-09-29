@@ -25,15 +25,16 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Driving adapter exposing account administration over HTTP (requirement F15).
  *
- * <p><strong>The organisation comes from the token, never from the request</strong>, as it does in
- * every controller (ADR-031), and here the reason is sharpest: an Admin who could name the
- * organisation they were administering could name somebody else's. The acting account belongs to
- * exactly one organisation and these routes act in that one, so there is no identifier in any path
- * or body for a caller to change.
+ * <p><strong>The organisation comes from the acting account, never from the request</strong>, as in
+ * every controller that acts inside an organisation (ADR-031). Here the stakes are highest: an
+ * Admin who could name the organisation they were administering could create accounts in somebody
+ * else's. The acting account belongs to exactly one organisation and these routes act in that one,
+ * so there is no identifier in any path or body for a caller to change.
  *
  * <p>That also makes the platform operator's refusal structural rather than a check: an operator
- * belongs to no organisation, so there is nothing for these routes to act in, and {@link
- * Actor#requireAccessTo} refuses them before any handler decides anything (ADR-030).
+ * belongs to no organisation, so there is nothing for these routes to act in. The chain's Admin
+ * rule refuses it first, and {@link Actor#requireTenantMembership} would refuse it before any use
+ * case ran (ADR-030).
  *
  * <p>A password given to somebody never comes back out. Neither the creation response nor the
  * listing carries one, and the requests that contain one are the only place it exists.

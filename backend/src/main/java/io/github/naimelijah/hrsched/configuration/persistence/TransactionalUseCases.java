@@ -24,8 +24,8 @@ import org.springframework.transaction.interceptor.TransactionInterceptor;
  * swap atomic rather than four writes that might not all happen.
  *
  * <p>A method that only reads is marked read-only. That is not decoration: {@code
- * ActorAuthenticationConverter} calls {@code findActor} on <em>every</em> request that carries a
- * token, so without it each such request would open a read-write transaction before the handler
+ * ActorAuthenticationConverter} calls {@code findActor} on <em>every</em> request whose token
+ * verifies, so without it each such request would open a read-write transaction before the handler
  * opened its own. The naming convention is the only signal available, because the application layer
  * may carry no annotation to say so — and being wrong about it costs a wasted flush, never
  * correctness.

@@ -1,7 +1,8 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
 /**
- * Raised when a request body cannot be understood: it is missing something the use case requires.
+ * Raised when a request body cannot be understood: it is missing something the use case requires,
+ * or holds a null where a value is required.
  *
  * <p>Its own type rather than letting {@code NullPointerException} or {@code
  * IllegalArgumentException} escape, because those also arise from genuine defects. Translating them

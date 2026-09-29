@@ -36,7 +36,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  *
  * <p>Refusals come from three places and mean three different things. No token is a 401 from the
  * chain. The wrong role is a 403 from the URL rule, and the platform operator is refused by the
- * same rule because it holds no role at all (ADR-030). An Admin naming an account that is not
+ * same rule because it never holds a tenant role (ADR-030). An Admin naming an account that is not
  * theirs reaches the use case and is refused with a 404, because a 403 would confirm it exists.
  *
  * <p>Annotated identically to the other HTTP tests so they all share one Spring context.
