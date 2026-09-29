@@ -78,8 +78,9 @@ What works today, end to end over HTTP:
   Scheduler decides. Approving publishes a replacement roster that supersedes the old one and is
   refused if it breaks any rule, so a swap cannot become a way around the rules. The colleague is
   told, in an inbox they can read.
-- **Administer the platform.** An Operator onboards organisations and lists them. An organisation
-  nobody onboarded does not exist: every request naming one is refused.
+- **Administer the platform.** An Operator onboards organisations and lists them. A request acts
+  in the organisation its account belongs to, so there is no organisation in a request to name or
+  invent ([ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md)).
 - **Multi-tenant throughout.** Every aggregate belongs to an organisation and every query is
   scoped to it.
 
@@ -422,8 +423,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | `ShiftTest`, `RosterTest`, `ConstraintSetTest`, `WorkingTimeConstraintTest`, `EmployeeScheduleTest`, `SchedulingValueObjectsTest` | Domain (scheduling) | Headcount, the roster lifecycle, rule thresholds at their boundaries, and day arithmetic. |
 | `SchedulingServiceTest`, `SwapServiceTest`, `EmployeeServiceTest`, `QualificationServiceTest`, `OrganisationServiceTest`, `NotificationServiceTest` | Application | Use cases against hand-written stubs of their own ports. No Spring, no mocking framework. `SwapServiceTest` is the exception that proves the rule: it wires a **real** `SchedulingService`, because the claim worth testing is that approving a swap goes through the same publication everything else does. |
 | `SwapHttpTest` | Adapter (HTTP) | The widest path in the system — onboard a tenant, hire people, roster, publish, hand a shift over, and have the colleague read about it. Four contexts in one test. |
-| `KnownOrganisationHttpTest` | Configuration | That a tenant nobody onboarded cannot be used, and that the refusal is the ordinary 404 carrying a trace id. |
-| `RequestBindingHttpTest` | Configuration | A missing header, a missing query parameter or an identifier that does not parse is answered with a problem detail naming it, whose detail never repeats the value sent. |
+| `RequestBindingHttpTest` | Configuration | A missing query parameter or an identifier that does not parse is answered with a problem detail naming it, whose detail never repeats the value sent. |
 | `NotificationTest` | Domain (notifications) | Among other invariants, that no field of a notification can hold free text — asserted by reflection over the type, because a future field is what would break it. |
 | `SchedulingCommandsTest`, `WorkforceCommandsTest` | Application | Every command rejects a null field, copies what it is handed, and stops short of judging what it carries. |
 | `RosterCandidateTest`, `PublishedLanguageTest` | Published language | What one context tells another, and nothing more. |
@@ -520,15 +520,15 @@ blocked on the same missing environment.
 | [ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md) | Generation behind a port, greedy for now | The product does not yet do the thing it exists to do; a greedy result is a poor solver baseline |
 | [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md) | Organise packages by bounded context | A layer is no longer one place; `workforce` precedes its requirements |
 | [ADR-007](docs/ADRs/ADR-007-monorepo-backend-and-frontend.md) | Monorepo: `backend/` + `frontend/` siblings | Every backend command grows a `cd`; CI and Dependabot need explicit paths |
-
 | [ADR-008](docs/ADRs/ADR-008-context-integration.md) | Contexts integrate through published ports and a small shared kernel | Translation duplicated at every boundary; the kernel is a coupling every context pays for |
 | [ADR-009](docs/ADRs/ADR-009-tenant-isolation-in-the-domain.md) | Tenancy in every signature, enforced in the application | Every signature is longer, and that verbosity is the point |
+| [ADR-011](docs/ADRs/ADR-011-issue-our-own-access-tokens.md) | HrSched signs its own access tokens, and resolves the actor from the stored account and session on every request | The account table now holds password hashes; verifying a token costs a database read; a lockout is a lever for keeping somebody out |
 | [ADR-012](docs/ADRs/ADR-012-acting-identity-carries-its-employee-record.md) | The acting identity carries the employee record it is | One more field in the shared kernel, which ADR-008 named as the thing to watch |
 | [ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md) | React + TypeScript + Vite, with a dev proxy instead of CORS | A second toolchain and CI job; a hand-written client that can drift from the DTOs |
 | [ADR-014](docs/ADRs/ADR-014-root-task-runner.md) | A Node script orchestrates both builds from the root | The root becomes nominally an npm project; per-project commands are named in two places |
 | [ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md) | Coverage measured on both projects, never enforced | A number nothing gates on is a number that can quietly fall |
 | [ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md) | ECS JSON logs everywhere, and a W3C trace id on every response | Local output is JSON and not pleasant to read; one starter brings the whole OpenTelemetry SDK |
-| [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) | Metrics pulled from `/actuator/prometheus`; no monitoring stack committed | The endpoint is unauthenticated, like everything else here; nothing scrapes it yet |
+| [ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md) | Metrics pulled from `/actuator/prometheus`; no monitoring stack committed | The endpoint is reachable without a token ([ADR-032](docs/ADRs/ADR-032-close-the-security-chain-by-default.md)), and whether it stays so is [#78](https://github.com/NaimElijah/HrSched/issues/78); nothing scrapes it yet |
 | [ADR-018](docs/ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md) | Changes and refusals recorded through a port, as log events | The trail is only as durable as the log; every new use case must remember to call the port |
 | [ADR-019](docs/ADRs/ADR-019-an-application-layer-for-the-access-context.md) | The access context gets an application layer; an organisation is a real record | A register held in memory, which after ADR-020 makes a restart a total outage rather than an empty start |
 | [ADR-020](docs/ADRs/ADR-020-refuse-a-request-naming-an-unknown-organisation.md) | An unknown `X-Organisation` is refused at the boundary, with the ordinary 404 | Superseded by ADR-031: there is no claimed organisation left to check, and the filter was deleted rather than left unable to fire |
@@ -568,7 +568,8 @@ a two-endpoint walking skeleton, health probes, and the decisions behind them.
 **Next:** Q2 (roles), Q3 (tenancy) and Q4 (working-time rules) are answered, so the real
 domain can now be modelled — multi-tenant, three roles, and working-time rules as a
 *configured constraint set* rather than any country's law hardcoded. Storage (ADR-004) and
-authentication (ADR-011) are settled, so what remains blocking is ADR-010 (objectives).
+authentication (ADR-011, ADR-028 to ADR-032) are settled, so what remains blocking is ADR-010
+(objectives).
 
 **Known limitations**
 
