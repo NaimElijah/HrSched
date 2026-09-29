@@ -84,7 +84,7 @@ What works today, end to end over HTTP:
   scoped to it.
 
 What does **not** work: generation optimises nothing (see
-[ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)), and there is no authentication.
+[ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)).
 
 ## Quick start
 
@@ -227,13 +227,13 @@ be a default that travels somewhere it is wrong.
 | --- | --- | --- |
 | `spring.application.name` | Name reported in logs and Actuator | `HrSched` |
 | `management.endpoint.health.probes.enabled` | Exposes `health/liveness` and `health/readiness` | `true` (set explicitly; Spring defaults it off outside Kubernetes) |
-| `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info,metrics,prometheus`. An allow list: `loggers`, `env` and `heapdump` are deliberately absent while there is no authentication ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md)) |
+| `management.endpoints.web.exposure.include` | Which Actuator endpoints are reachable over HTTP | `health,info,metrics,prometheus`. An allow list: `loggers`, `env` and `heapdump` are deliberately absent, because the security chain lets anybody reach `/actuator/**` without a token ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md), [ADR-032](docs/ADRs/ADR-032-close-the-security-chain-by-default.md)). Whether it stays open is [#78](https://github.com/NaimElijah/HrSched/issues/78) |
 | `server.port` | HTTP port | `8080` (Spring default, not overridden) |
 | `hrsched.security.token.issuer` | The `iss` claim put in an access token, and required of one | `hrsched` ([ADR-011](docs/ADRs/ADR-011-issue-our-own-access-tokens.md)) |
 | `hrsched.security.token.audience` | The `aud` claim put in an access token, and required of one | `hrsched-api` |
-| `hrsched.security.token.lifetime` | How long an issued access token stays valid | `10m`. Short on purpose: a stolen token is useful only until it expires. The number is open for review (Q29) |
+| `hrsched.security.token.lifetime` | How long an issued access token stays valid | `10m`. Short on purpose: a stolen token is useful only until it expires. The number is open for review (Q27) |
 | `HRSCHED_SECURITY_TOKEN_PRIVATEKEY` | The RSA private key tokens are signed with, as a PKCS#8 PEM of at least 2048 bits | None, and **startup fails without it**. See [`.env.example`](.env.example). `./mvnw spring-boot:run` is the exception: it permits a throwaway key generated at startup, so local development needs no secret |
-| `hrsched.security.password.bcrypt-strength` | Bcrypt's work factor for hashing passwords | `12` (tests use `4`). Reviewed by the owner against the hardware in use (Q29) |
+| `hrsched.security.password.bcrypt-strength` | Bcrypt's work factor for hashing passwords | `12` (tests use `4`). Reviewed by the owner against the hardware in use (Q27) |
 | `HRSCHED_BOOTSTRAP_OPERATOR_SIGNINNAME` / `_PASSWORD` | Creates the first platform operator at startup, once | Unset. Set both or neither; setting one fails startup. The password must be changed at first sign-in ([ADR-029](docs/ADRs/ADR-029-provision-accounts-from-the-top-down.md)). `./mvnw spring-boot:run` supplies throwaway local values |
 | `SPRING_DATASOURCE_URL` / `_USERNAME` / `_PASSWORD` | Where the database is, and who connects to it | **Deliberately unset.** Supplied by `compose.yaml` locally and by the environment in a deployment; see [`.env.example`](.env.example) |
 | `logging.structured.format.console` | Log format on stdout | `ecs` — Elastic Common Schema JSON, always, with no profile that turns it off ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
@@ -567,16 +567,14 @@ a two-endpoint walking skeleton, health probes, and the decisions behind them.
 
 **Next:** Q2 (roles), Q3 (tenancy) and Q4 (working-time rules) are answered, so the real
 domain can now be modelled — multi-tenant, three roles, and working-time rules as a
-*configured constraint set* rather than any country's law hardcoded. Storage is settled
-(ADR-004), so what remains blocking is ADR-010 (objectives) and ADR-011 (authentication).
+*configured constraint set* rather than any country's law hardcoded. Storage (ADR-004) and
+authentication (ADR-011) are settled, so what remains blocking is ADR-010 (objectives).
 
 **Known limitations**
 
 - **Generation optimises nothing.** `GreedyRosterGenerator` fills shifts with the first eligible
   person and ignores fairness, preferences and disruption — the three things that make a roster
   good rather than merely legal. A solver is the next substantial piece of work.
-- **No authentication.** The acting identity comes from request headers, so any caller can claim
-  any role in any organisation. Authorisation logic is real; the identity behind it is not.
 - **Objectives are not modelled**, so there is nothing for a solver to optimise against yet.
 - **Constraint versions are stored but cannot be read back.** Every revision is kept now, keyed by
   version, so the record a published roster holds is no longer worthless — but the port offers only
@@ -603,8 +601,6 @@ domain can now be modelled — multi-tenant, three roles, and working-time rules
   leaves a record of something that did not happen. Newly true because the transaction is; Q20.
 - **A notification reaches somebody when they next open the application.** There is no email, no
   push and no unread badge, which for a rota change may be too late — Q21.
-- No authentication. Authorisation is real and tested, but the identity it acts on is claimed in
-  a header, so every endpoint is effectively open.
 - Time is modelled as `Instant`; rosters are read in local time across potentially different
   regions, so this will have to carry a zone.
 - Architecture enforcement is a test, not the compiler — a multi-module layout would make
