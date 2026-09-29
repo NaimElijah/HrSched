@@ -34,9 +34,9 @@ class TraceIdHttpTest {
   @Autowired private MockMvc mockMvc;
 
   /**
-   * A real organisation, onboarded before each test. Since ADR-020 an invented identifier is
-   * refused with a 404 before any handler runs, which would turn every expected status here into
-   * the same one and prove nothing about the header.
+   * A real organisation, onboarded before each test. Every request here signs in as an account in
+   * it, and an account can only belong to an organisation that exists, so an invented identifier
+   * would fail before any expected status here could be observed.
    */
   private String organisation;
 

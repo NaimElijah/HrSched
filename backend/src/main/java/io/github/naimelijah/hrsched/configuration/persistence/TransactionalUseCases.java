@@ -24,10 +24,11 @@ import org.springframework.transaction.interceptor.TransactionInterceptor;
  * swap atomic rather than four writes that might not all happen.
  *
  * <p>A method that only reads is marked read-only. That is not decoration: {@code
- * KnownOrganisationFilter} calls a use case on <em>every</em> request, so without it each request
- * would open a read-write transaction before the handler opened its own. The naming convention is
- * the only signal available, because the application layer may carry no annotation to say so — and
- * being wrong about it costs a wasted flush, never correctness.
+ * ActorAuthenticationConverter} calls {@code findActor} on <em>every</em> request whose token
+ * verifies, so without it each such request would open a read-write transaction before the handler
+ * opened its own. The naming convention is the only signal available, because the application layer
+ * may carry no annotation to say so — and being wrong about it costs a wasted flush, never
+ * correctness.
  *
  * <p>The proxy is a subclass rather than an interface proxy, so a bean keeps its concrete type and
  * {@code UseCaseConfiguration} reads as it did before. Nothing here works on a self-invocation — a

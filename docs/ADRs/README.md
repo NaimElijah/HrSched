@@ -27,7 +27,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-017](ADR-017-expose-metrics-to-be-scraped.md) | Expose metrics for a scraper to pull, and ship no monitoring stack | Accepted | 2026-08-30 |
 | [ADR-018](ADR-018-audit-through-a-port-not-a-queryable-trail.md) | Record every change and refusal through a driven port, and build no queryable trail | Accepted | 2026-08-30 |
 | [ADR-019](ADR-019-an-application-layer-for-the-access-context.md) | Give the access context an application layer, and make the organisation a real record | Accepted | 2026-09-01 |
-| [ADR-020](ADR-020-refuse-a-request-naming-an-unknown-organisation.md) | Refuse a request naming an organisation nobody onboarded, at the boundary | Accepted | 2026-09-01 |
+| [ADR-020](ADR-020-refuse-a-request-naming-an-unknown-organisation.md) | Refuse a request naming an organisation nobody onboarded, at the boundary | Superseded by [ADR-031](ADR-031-take-the-organisation-from-the-account.md) | 2026-09-01 |
 | [ADR-021](ADR-021-notifications-as-a-bounded-context.md) | Make notifications a bounded context, and let it hold no words | Accepted | 2026-09-01 |
 | [ADR-022](ADR-022-approving-a-swap-publishes-a-replacement-roster.md) | Approve a swap by publishing a replacement roster, never by editing one | Accepted | 2026-09-01 |
 | [ADR-023](ADR-023-the-transaction-boundary-is-the-use-case.md) | Make the use case the transaction boundary, wrapped at the composition root | Accepted | 2026-09-06 |
@@ -36,8 +36,10 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-026](ADR-026-make-overlapping-published-rosters-unrepresentable.md) | Make two overlapping published rosters of one organisation unrepresentable in the schema | Accepted | 2026-09-14 |
 | [ADR-027](ADR-027-take-turns-publishing-within-an-organisation.md) | Make publications within one organisation take turns, with a transaction-scoped advisory lock | Accepted | 2026-09-14 |
 | [ADR-028](ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md) | Keep the browser session as an in-memory access token and a rotating refresh cookie | Accepted | 2026-09-16 |
-| [ADR-029](ADR-029-provision-accounts-from-the-top-down.md) | Provision accounts from the top down, with temporary passwords, and bootstrap the operator from configuration | Proposed | 2026-09-16 |
+| [ADR-029](ADR-029-provision-accounts-from-the-top-down.md) | Provision accounts from the top down, with temporary passwords, and bootstrap the operator from configuration | Accepted | 2026-09-16 |
 | [ADR-030](ADR-030-confine-the-operator-to-the-register-of-organisations.md) | Confine the platform operator to the register of organisations | Accepted | 2026-09-16 |
+| [ADR-031](ADR-031-take-the-organisation-from-the-account.md) | Take the organisation from the account, not from the request | Accepted | 2026-09-21 |
+| [ADR-032](ADR-032-close-the-security-chain-by-default.md) | Close the security chain by default, and name every route that is open | Accepted | 2026-09-21 |
 
 ## Decisions waiting to be recorded
 

@@ -102,7 +102,7 @@ class SchedulingExceptionHandlerTest {
         new RosterNotEditableException(
             RosterId.newId(), RosterStatus.PUBLISHED, "a roster can only be changed while a draft"),
         new UnknownRequiredQualificationException(Set.of(QualificationId.newId())),
-        new MalformedRequestException("X-Role is required"));
+        new MalformedRequestException("shift is required"));
   }
 
   @Test
