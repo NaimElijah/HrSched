@@ -9,6 +9,7 @@ import io.github.naimelijah.hrsched.access.domain.model.NotThePlatformOperatorEx
 import io.github.naimelijah.hrsched.access.domain.model.SignInNameTakenException;
 import io.github.naimelijah.hrsched.access.domain.model.UnacceptablePasswordException;
 import io.github.naimelijah.hrsched.access.domain.model.UnknownAccountException;
+import io.github.naimelijah.hrsched.access.domain.model.UnknownOrganisationException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.micrometer.core.instrument.Counter;
@@ -211,13 +212,20 @@ public class AccessExceptionHandler {
     return problem;
   }
 
-  @ExceptionHandler(CrossTenantAccessException.class)
-  public ProblemDetail handleCrossTenant(CrossTenantAccessException exception) {
-    log.atWarn()
-        .addKeyValue("actor", exception.actor().value())
-        .addKeyValue("organisation", exception.organisation().value())
-        .log("Refused: an actor reached for another organisation's data");
-    denied("cross_tenant");
+  /**
+   * Everything reported as absence, including a cross-tenant attempt: the response must never
+   * confirm that an organisation exists to a caller who may not see it. Only the cross-tenant
+   * attempt is logged and counted; an organisation that is not there is no incident.
+   */
+  @ExceptionHandler({UnknownOrganisationException.class, CrossTenantAccessException.class})
+  public ProblemDetail handleUnknown(RuntimeException exception) {
+    if (exception instanceof CrossTenantAccessException crossTenant) {
+      log.atWarn()
+          .addKeyValue("actor", crossTenant.actor().value())
+          .addKeyValue("organisation", crossTenant.organisation().value())
+          .log("Refused: an actor reached for another organisation's data");
+      denied("cross_tenant");
+    }
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
     problem.setDetail("No such resource.");
