@@ -254,6 +254,25 @@ class OrganisationHttpTest {
   }
 
   /**
+   * The other half of the test below: sharing a handler with a miss must not stop this counting.
+   */
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingOurs_ThenATenantBreachIsCounted()
+      throws Exception {
+    String ours = onboard("Acme %s".formatted(UUID.randomUUID()));
+    String stranger =
+        TestTenants.tokenFor(
+            mockMvc, organisation(onboard("Rival %s".formatted(UUID.randomUUID()))), Role.ADMIN);
+    double before = refusalsOfKind("cross_tenant");
+
+    mockMvc
+        .perform(with(get("/api/organisations/" + ours), stranger))
+        .andExpect(status().isNotFound());
+
+    assertThat(refusalsOfKind("cross_tenant")).isEqualTo(before + 1);
+  }
+
+  /**
    * The operator lists every organisation, so naming one that is not there probes nothing. Counting
    * it beside a tenant reaching for somebody else's would put noise in the one counter that is a
    * security signal.
