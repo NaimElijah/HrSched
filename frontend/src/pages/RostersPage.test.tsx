@@ -176,7 +176,7 @@ describe('the rosters page', () => {
     const board = await openBoard();
 
     expect(
-      await within(board).findByText(/left short rather than filled illegally/),
+      await within(board).findByText(/No shift falls in this roster's period/),
     ).toBeInTheDocument();
   });
 
@@ -299,6 +299,24 @@ describe('the board of a draft', () => {
     );
   });
 
+  /** Since a Scheduler can empty a draft by hand, generation is not the only way it gets empty. */
+  it('GivenTheLastAssignmentRemovedByHand_WhenTheEmptyDraftIsShown_ThenGenerationIsNotBlamed', async () => {
+    aDraft({
+      'DELETE /api/rosters/roster-1/assignments/shift-1/emp-1': {
+        status: 200,
+        body: { ...ROSTER, assignments: [] },
+      },
+    });
+    renderPage();
+    const board = await openBoard();
+
+    await userEvent.click(await within(board).findByRole('button', { name: /^Remove Ada from/ }));
+
+    expect(await within(board).findByText(/0 of 1 assigned/)).toBeInTheDocument();
+    expect(board).not.toHaveTextContent(/nobody eligible/i);
+    expect(board).not.toHaveTextContent(/left short rather than filled illegally/i);
+  });
+
   it('GivenAnAssignmentRefused_WhenAssigning_ThenTheServersReasonIsShown', async () => {
     aDraft({
       'POST /api/rosters/roster-1/assignments': {
@@ -411,6 +429,24 @@ describe('the board of a draft', () => {
       'The shift store is unavailable.',
     );
     expect(await within(board).findByText('Ada')).toBeInTheDocument();
+  });
+
+  /** A listing that failed says nothing about the period, so the board may not either. */
+  it('GivenAnEmptyDraftWhoseShiftsCannotBeLoaded_WhenOpened_ThenItDoesNotClaimThereAreNone', async () => {
+    const empty = { ...ROSTER, assignments: [] };
+    aDraft({
+      '/api/rosters': { status: 200, body: [empty] },
+      '/api/rosters/roster-1': { status: 200, body: empty },
+      '/api/shifts': { status: 500, body: { detail: 'The shift store is unavailable.' } },
+    });
+    renderPage();
+
+    const board = await openBoard();
+
+    expect(await within(board).findByRole('alert')).toHaveTextContent(
+      'The shift store is unavailable.',
+    );
+    expect(board).not.toHaveTextContent(/No shift falls/);
   });
 
   it('GivenAPublishedRoster_WhenOpened_ThenThereAreNoEditingControls', async () => {
