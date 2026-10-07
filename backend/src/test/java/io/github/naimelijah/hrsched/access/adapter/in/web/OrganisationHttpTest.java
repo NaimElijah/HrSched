@@ -4,6 +4,7 @@ import static io.github.naimelijah.hrsched.shared.testsupport.TestTenants.with;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -13,6 +14,10 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -218,10 +223,77 @@ class OrganisationHttpTest {
   }
 
   @Test
-  void GivenNoSuchOrganisation_WhenTheOperatorReadsIt_ThenItIsNotFound() throws Exception {
+  void GivenNoSuchOrganisation_WhenTheOperatorReadsIt_ThenTheMissIsAProblemDetail()
+      throws Exception {
+    mockMvc
+        .perform(with(get("/api/organisations/" + UUID.randomUUID()), operator()))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.title").value("Not found"))
+        .andExpect(jsonPath("$.detail").value("No such resource."));
+  }
+
+  /**
+   * Compared whole rather than field by field, so a property one answer carries and the other does
+   * not would tell them apart here too. Only {@code instance} is set aside: it repeats the path
+   * that was asked for, and the two requests ask for different paths.
+   */
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingOurs_ThenTheAnswerIsTheOneForNoOrganisation()
+      throws Exception {
+    String ours = onboard("Acme %s".formatted(UUID.randomUUID()));
+    String stranger =
+        TestTenants.tokenFor(
+            mockMvc, organisation(onboard("Rival %s".formatted(UUID.randomUUID()))), Role.ADMIN);
+
+    Map<String, Object> theirs = notFoundWithoutInstance("/api/organisations/" + ours, stranger);
+    Map<String, Object> none =
+        notFoundWithoutInstance("/api/organisations/" + UUID.randomUUID(), operator());
+
+    assertThat(theirs).isEqualTo(none);
+  }
+
+  /**
+   * The operator lists every organisation, so naming one that is not there probes nothing. Counting
+   * it beside a tenant reaching for somebody else's would put noise in the one counter that is a
+   * security signal.
+   */
+  @Test
+  void GivenNoSuchOrganisation_WhenTheOperatorReadsIt_ThenNoTenantBreachIsCounted()
+      throws Exception {
+    double before = refusalsOfKind("cross_tenant");
+
     mockMvc
         .perform(with(get("/api/organisations/" + UUID.randomUUID()), operator()))
         .andExpect(status().isNotFound());
+
+    assertThat(refusalsOfKind("cross_tenant")).isEqualTo(before);
+  }
+
+  private Map<String, Object> notFoundWithoutInstance(String path, String token) throws Exception {
+    String body =
+        mockMvc
+            .perform(with(get(path), token))
+            .andExpect(status().isNotFound())
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    Map<String, Object> answer = new HashMap<>(JsonPath.<Map<String, Object>>read(body, "$"));
+    answer.remove("instance");
+    return answer;
+  }
+
+  private double refusalsOfKind(String kind) {
+    Counter counter =
+        mockMvc
+            .getDispatcherServlet()
+            .getWebApplicationContext()
+            .getBean(MeterRegistry.class)
+            .find("hrsched.access.denied")
+            .tag("kind", kind)
+            .counter();
+    return counter == null ? 0 : counter.count();
   }
 
   @Test

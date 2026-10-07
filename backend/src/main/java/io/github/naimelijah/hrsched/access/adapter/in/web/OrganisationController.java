@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.access.adapter.in.web;
 import io.github.naimelijah.hrsched.access.application.port.in.ManageOrganisationsUseCase;
 import io.github.naimelijah.hrsched.access.application.port.in.OnboardOrganisationCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.PublishedOrganisation;
+import io.github.naimelijah.hrsched.access.domain.model.UnknownOrganisationException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.net.URI;
@@ -62,14 +63,21 @@ public class OrganisationController {
         .toList();
   }
 
+  /**
+   * Reads one organisation: any of them for the operator, only their own for anybody else.
+   *
+   * @param id the organisation to read
+   * @return it
+   * @throws UnknownOrganisationException answered as a 404 problem detail when there is no
+   *     organisation by that identity — the same answer a tenant naming another one gets
+   */
   @GetMapping("/{id}")
-  public ResponseEntity<OrganisationResponse> read(
-      @AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
+  public OrganisationResponse read(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
+    OrganisationId organisation = new OrganisationId(id);
     return manageOrganisations
-        .findOrganisation(actor, new OrganisationId(id))
+        .findOrganisation(actor, organisation)
         .map(OrganisationController::respond)
-        .map(ResponseEntity::ok)
-        .orElseGet(() -> ResponseEntity.notFound().build());
+        .orElseThrow(() -> new UnknownOrganisationException(organisation));
   }
 
   private static OrganisationResponse respond(PublishedOrganisation organisation) {
