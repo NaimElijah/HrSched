@@ -13,7 +13,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -372,6 +375,54 @@ class RosteringHttpTest {
     mockMvc
         .perform(as(mockMvc, get("/api/rosters/" + roster), anOrganisation(mockMvc), "SCHEDULER"))
         .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void GivenNoSuchRoster_WhenReadingIt_ThenTheMissIsAProblemDetail() throws Exception {
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                get("/api/rosters/" + UUID.randomUUID()),
+                anOrganisation(mockMvc),
+                "SCHEDULER"))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.title").value("Not found"))
+        .andExpect(jsonPath("$.detail").value("No such resource."));
+  }
+
+  /**
+   * Compared whole rather than field by field, so a property one answer carries and the other does
+   * not would tell them apart here too. Only {@code instance} is set aside: it repeats the path
+   * that was asked for, and the two requests ask for different paths.
+   */
+  @Test
+  void GivenARosterOfAnotherOrganisation_WhenReadingIt_ThenTheAnswerIsTheOneForNoRosterAtAll()
+      throws Exception {
+    String roster =
+        generateRoster(anOrganisation(mockMvc), "2026-10-10T00:00:00Z", "2026-10-11T00:00:00Z");
+    String ours = anOrganisation(mockMvc);
+
+    Map<String, Object> theirs = notFoundWithoutInstance("/api/rosters/" + roster, ours);
+    Map<String, Object> none = notFoundWithoutInstance("/api/rosters/" + UUID.randomUUID(), ours);
+
+    assertThat(theirs).isEqualTo(none);
+  }
+
+  private Map<String, Object> notFoundWithoutInstance(String path, String organisation)
+      throws Exception {
+    String body =
+        mockMvc
+            .perform(as(mockMvc, get(path), organisation, "SCHEDULER"))
+            .andExpect(status().isNotFound())
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    Map<String, Object> answer = new HashMap<>(JsonPath.<Map<String, Object>>read(body, "$"));
+    answer.remove("instance");
+    return answer;
   }
 
   @Test
