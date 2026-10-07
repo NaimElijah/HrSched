@@ -13,6 +13,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
@@ -194,14 +195,21 @@ public class SchedulingController {
     return RosterResponse.from(planRosters.publish(actor, actingIn(actor), new RosterId(id)));
   }
 
+  /**
+   * Reads one roster.
+   *
+   * @param id the roster to read
+   * @return it
+   * @throws UnknownRosterException answered as a 404 problem detail when this organisation has no
+   *     roster by that identity
+   */
   @GetMapping("/rosters/{id}")
-  public ResponseEntity<RosterResponse> find(
-      @AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
+  public RosterResponse find(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
+    RosterId roster = new RosterId(id);
     return planRosters
-        .findRoster(actor, actingIn(actor), new RosterId(id))
+        .findRoster(actor, actingIn(actor), roster)
         .map(RosterResponse::from)
-        .map(ResponseEntity::ok)
-        .orElseGet(() -> ResponseEntity.notFound().build());
+        .orElseThrow(() -> new UnknownRosterException(roster));
   }
 
   /**

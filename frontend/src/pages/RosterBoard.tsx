@@ -123,11 +123,11 @@ export function RosterBoard({
               ? "A draft can be changed by hand. Whether somebody may work a shift is still the backend's call: an assignment it will not accept is refused, with its reason."
               : 'Only a draft is changed by hand. A published roster is replaced by publishing another, never edited.'}
           </p>
-          {roster.assignments.length === 0 ? (
-            <p>
-              Nothing assigned. Either no shift falls in this span, or nobody eligible was available
-              — an uncoverable shift is left short rather than filled illegally.
-            </p>
+          {/* No guess at why a draft is empty: it may have been generated so, or emptied by hand.
+              Each shift states its own shortfall; only a period with no shifts at all, which would
+              otherwise leave the board blank, needs saying. */}
+          {roster.assignments.length === 0 && shifts.value?.length === 0 ? (
+            <p>No shift falls in this roster&apos;s period, so there is nothing to assign.</p>
           ) : null}
           <Failure error={failure} nameOf={nameOf} />
 
