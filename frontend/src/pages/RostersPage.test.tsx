@@ -315,6 +315,8 @@ describe('the board of a draft', () => {
     expect(await within(board).findByText(/0 of 1 assigned/)).toBeInTheDocument();
     expect(board).not.toHaveTextContent(/nobody eligible/i);
     expect(board).not.toHaveTextContent(/left short rather than filled illegally/i);
+    // The one thing the board may still say about an empty draft, and here the shift is listed.
+    expect(board).not.toHaveTextContent(/No shift falls/);
   });
 
   it('GivenAnAssignmentRefused_WhenAssigning_ThenTheServersReasonIsShown', async () => {
