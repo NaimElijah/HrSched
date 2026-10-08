@@ -1,6 +1,5 @@
 package io.github.naimelijah.hrsched.access.application.service;
 
-import io.github.naimelijah.hrsched.access.application.port.in.KnownOrganisationsUseCase;
 import io.github.naimelijah.hrsched.access.application.port.in.ManageOrganisationsUseCase;
 import io.github.naimelijah.hrsched.access.application.port.in.OnboardOrganisationCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.PublishedOrganisation;
@@ -29,13 +28,10 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Orchestrates the organisation use cases, and answers whether a claimed tenant exists.
- *
- * <p>Implements two ports because they are two audiences for one register: {@link
- * ManageOrganisationsUseCase} is what an operator drives, and {@link KnownOrganisationsUseCase} is
- * the single question the rest of the system asks of it.
+ * Orchestrates the organisation use cases: onboarding, listing and reading the register of
+ * organisations.
  */
-public class OrganisationService implements ManageOrganisationsUseCase, KnownOrganisationsUseCase {
+public class OrganisationService implements ManageOrganisationsUseCase {
 
   private final OrganisationRepository organisations;
   private final AccountRepository accounts;
@@ -125,12 +121,6 @@ public class OrganisationService implements ManageOrganisationsUseCase, KnownOrg
       actor.requireAccessTo(organisation);
     }
     return organisations.findById(organisation).map(OrganisationService::publish);
-  }
-
-  @Override
-  public boolean isKnown(OrganisationId organisation) {
-    Objects.requireNonNull(organisation, "organisation must not be null");
-    return organisations.findById(organisation).isPresent();
   }
 
   /**

@@ -64,8 +64,8 @@ public final class TransactionalUseCases {
     };
   }
 
-  /** Every driving port names a query {@code find…} or {@code is…}; everything else writes. */
+  /** Every driving port names a query {@code find…}; everything else writes. */
   private static boolean reads(String method) {
-    return method.startsWith("find") || method.startsWith("is");
+    return method.startsWith("find");
   }
 }
