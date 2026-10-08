@@ -47,14 +47,6 @@ public class NotificationExceptionHandler {
         .increment();
   }
 
-  @ExceptionHandler(MalformedRequestException.class)
-  public ProblemDetail handleInvalidInput(RuntimeException exception) {
-    ProblemDetail problem =
-        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
-    problem.setTitle("Invalid request");
-    return problem;
-  }
-
   @ExceptionHandler(NotAddressableException.class)
   public ProblemDetail handleNotAddressable(NotAddressableException exception) {
     log.atWarn()
