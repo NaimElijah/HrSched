@@ -97,7 +97,6 @@ class OrganisationServiceTest {
     OrganisationId id = service.onboardOrganisation(operator(), onboarding("Acme"));
 
     assertThat(organisations.findById(id)).isPresent();
-    assertThat(service.isKnown(id)).isTrue();
   }
 
   @Test
@@ -203,27 +202,6 @@ class OrganisationServiceTest {
     assertThat(service.findOrganisation(operator(), OrganisationId.newId())).isEmpty();
   }
 
-  /**
-   * The question the boundary asks on every request (ADR-020). It answers about existence only, and
-   * takes no actor, because it runs before an actor built from an unverified claim means anything.
-   */
-  @Test
-  void GivenAnOrganisationNobodyOnboarded_WhenAskedWhetherItIsKnown_ThenItIsNot() {
-    service.onboardOrganisation(operator(), onboarding("Acme"));
-
-    assertThat(service.isKnown(OrganisationId.newId())).isFalse();
-  }
-
-  @Test
-  void GivenNoOrganisationAtAll_WhenAskedWhetherOneIsKnown_ThenItIsNot() {
-    assertThat(service.isKnown(OrganisationId.newId())).isFalse();
-  }
-
-  @Test
-  void GivenNull_WhenAskedWhetherItIsKnown_ThenItIsRejectedRatherThanTreatedAsUnknown() {
-    assertThatThrownBy(() -> service.isKnown(null)).isInstanceOf(NullPointerException.class);
-  }
-
   @Test
   void GivenTheOperator_WhenOnboarding_ThenTheChangeIsRecordedAgainstThem() {
     Operator operator = operator();
@@ -264,7 +242,6 @@ class OrganisationServiceTest {
 
     service.findOrganisation(operator(), acme);
     service.findOrganisations(operator());
-    service.isKnown(acme);
 
     assertThat(audit.changes())
         .describedAs("reads are not audited, or the writes would be buried under them")
