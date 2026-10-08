@@ -108,10 +108,6 @@ public class AccessExceptionHandler {
   }
 
   /**
-   * Answers with a fixed sentence and never with {@code exception.getMessage()}. Jackson's message
-   * quotes the input it failed on, and on the sign-in endpoint that input contains a password.
-   */
-  /**
    * An account named by an Admin that their organisation does not hold. A 404, and the same 404
    * whether it never existed or belongs to another customer: telling those apart would let an Admin
    * discover, one identifier at a time, that a colleague holds an account somewhere else.
@@ -189,6 +185,10 @@ public class AccessExceptionHandler {
     return problem;
   }
 
+  /**
+   * Answers with a fixed sentence and never with {@code exception.getMessage()}. Jackson's message
+   * quotes the input it failed on, and on the sign-in endpoint that input contains a password.
+   */
   @ExceptionHandler(HttpMessageNotReadableException.class)
   public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException exception) {
     ProblemDetail problem =
