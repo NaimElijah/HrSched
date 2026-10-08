@@ -61,6 +61,12 @@ class AuthHttpTest {
   private static final String RIGHT_PASSWORD = "an invented password for a test";
   private static final String WRONG_PASSWORD = "not the invented password";
 
+  /**
+   * Invented, and shaped for the parser to quote back whole: sent unquoted, it begins like {@code
+   * true} and then is not, and Jackson reports that by naming the entire word.
+   */
+  private static final String BARE_WORD_PASSWORD = "theInventedPasswordForATest";
+
   /** Set by the trace filter on every response, and the one header that may legitimately differ. */
   private static final String TRACE_ID = "X-Trace-Id";
 
@@ -246,6 +252,28 @@ class AuthHttpTest {
 
     assertThat(response.getContentAsString()).doesNotContain(RIGHT_PASSWORD);
     assertThat(everythingLogged()).doesNotContain(RIGHT_PASSWORD);
+  }
+
+  /**
+   * The truncated body above cannot catch an answer that repeats the parser: a message about
+   * running out of input quotes nothing. A password sent as a bare word is what the parser does
+   * quote, so this is the request that would carry it back to the caller.
+   */
+  @Test
+  void GivenAPasswordTheParserQuotesBack_WhenSigningIn_ThenTheAnswerDoesNotRepeatIt()
+      throws Exception {
+    String unquoted =
+        "{\"signInName\":\"ada@example.com\",\"password\":%s}".formatted(BARE_WORD_PASSWORD);
+
+    MockHttpServletResponse response =
+        mockMvc
+            .perform(
+                post("/api/auth/sign-in").contentType(MediaType.APPLICATION_JSON).content(unquoted))
+            .andExpect(status().isBadRequest())
+            .andReturn()
+            .getResponse();
+
+    assertThat(response.getContentAsString()).doesNotContain(BARE_WORD_PASSWORD);
   }
 
   @Test
