@@ -64,7 +64,10 @@ public final class TransactionalUseCases {
     };
   }
 
-  /** Every driving port names a query {@code find…}; everything else writes. */
+  /**
+   * A method named {@code find…} reads; any other is treated as a write. A query named otherwise
+   * still gets a read-write transaction, so the name is the only thing that makes a read cheap.
+   */
   private static boolean reads(String method) {
     return method.startsWith("find");
   }
