@@ -255,12 +255,13 @@ class AuthHttpTest {
   }
 
   /**
-   * The truncated body above cannot catch an answer that repeats the parser: a message about
-   * running out of input quotes nothing. A password sent as a bare word is what the parser does
-   * quote, so this is the request that would carry it back to the caller.
+   * {@code GivenAMalformedBodyContainingAPassword_…} cannot catch an answer or a log line that
+   * repeats the parser: its body is truncated, and a message about running out of input quotes
+   * nothing. A password sent as a bare word is what the parser does quote, so this is the request
+   * that would carry it back to the caller, or into the log.
    */
   @Test
-  void GivenAPasswordTheParserQuotesBack_WhenSigningIn_ThenTheAnswerDoesNotRepeatIt()
+  void GivenAPasswordTheParserQuotesBack_WhenSigningIn_ThenNeitherTheAnswerNorTheLogRepeatsIt()
       throws Exception {
     String unquoted =
         "{\"signInName\":\"ada@example.com\",\"password\":%s}".formatted(BARE_WORD_PASSWORD);
@@ -274,6 +275,7 @@ class AuthHttpTest {
             .getResponse();
 
     assertThat(response.getContentAsString()).doesNotContain(BARE_WORD_PASSWORD);
+    assertThat(everythingLogged()).doesNotContain(BARE_WORD_PASSWORD);
   }
 
   @Test
