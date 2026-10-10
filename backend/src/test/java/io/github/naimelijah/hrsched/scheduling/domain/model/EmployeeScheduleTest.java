@@ -145,6 +145,28 @@ class EmployeeScheduleTest {
   }
 
   /**
+   * A midnight that happens twice. Newfoundland put its clocks back at 00:01 on 7 November 2010, so
+   * local midnight of the 7th came at 02:30 UTC and again at 03:30 UTC. Work from 02:31 UTC starts
+   * just after the change, at 23:01 on the 6th, so the 6th runs until the second midnight: 59
+   * minutes there, 61 on the 7th. Taking the first midnight would end the 6th before the work
+   * began.
+   */
+  @Test
+  void GivenAMidnightThatHappensTwice_WhenTotallingPerDay_ThenTheDayEndsAtTheLaterOne() {
+    EmployeeSchedule schedule =
+        new EmployeeSchedule(
+            ADA,
+            List.of(
+                in(ZoneId.of("America/St_Johns"), "2010-11-07T02:31:00Z", "2010-11-07T04:31:00Z")));
+
+    assertThat(schedule.workingTimePerDay())
+        .containsExactly(
+            org.assertj.core.data.MapEntry.entry(LocalDate.of(2010, 11, 6), Duration.ofMinutes(59)),
+            org.assertj.core.data.MapEntry.entry(
+                LocalDate.of(2010, 11, 7), Duration.ofMinutes(61)));
+  }
+
+  /**
    * One person working shifts in two zones: each period lands on the calendar date of its own zone,
    * and work on the same date adds up whichever zone it was in (ADR-034). The Tokyo early shift is
    * still the 4th in UTC, so only counting it in Tokyo puts it on the 5th beside the other.
