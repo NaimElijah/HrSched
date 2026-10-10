@@ -63,7 +63,7 @@ class SwapHttpTest {
         created(
             as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
                 .content(
-                    "{\"start\":\"%s\",\"end\":\"%s\",\"requiredHeadcount\":1}"
+                    "{\"start\":\"%s\",\"end\":\"%s\",\"zone\":\"UTC\",\"requiredHeadcount\":1}"
                         .formatted(start, end))),
         "$.id");
   }

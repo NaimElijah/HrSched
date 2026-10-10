@@ -13,6 +13,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -39,9 +40,10 @@ class SchedulingCommandsTest {
 
   private static Stream<ThrowingCallable> nullFields() {
     return Stream.of(
-        () -> new DefineShiftCommand(null, MONDAY_DAY, 1, Set.of()),
-        () -> new DefineShiftCommand(ACME, null, 1, Set.of()),
-        () -> new DefineShiftCommand(ACME, MONDAY_DAY, 1, null),
+        () -> new DefineShiftCommand(null, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()),
+        () -> new DefineShiftCommand(ACME, null, ZoneOffset.UTC, 1, Set.of()),
+        () -> new DefineShiftCommand(ACME, MONDAY_DAY, null, 1, Set.of()),
+        () -> new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, null),
         () -> new GenerateRosterCommand(null, MONDAY_DAY),
         () -> new GenerateRosterCommand(ACME, null),
         () -> new ReviseConstraintsCommand(null, List.of()),
@@ -57,7 +59,8 @@ class SchedulingCommandsTest {
   @Test
   void GivenAMutableSetOfQualifications_WhenDefiningAShift_ThenLaterChangesAreNotSeen() {
     Set<QualificationId> required = new HashSet<>(Set.of(QualificationId.newId()));
-    DefineShiftCommand command = new DefineShiftCommand(ACME, MONDAY_DAY, 1, required);
+    DefineShiftCommand command =
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, required);
 
     required.add(QualificationId.newId());
 
@@ -87,7 +90,8 @@ class SchedulingCommandsTest {
 
   @Test
   void GivenAHeadcountBelowOne_WhenDefiningAShift_ThenTheCommandAcceptsItAndTheDomainRefusesIt() {
-    DefineShiftCommand command = new DefineShiftCommand(ACME, MONDAY_DAY, 0, Set.of());
+    DefineShiftCommand command =
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 0, Set.of());
 
     assertThatThrownBy(
             () ->
@@ -95,6 +99,7 @@ class SchedulingCommandsTest {
                     ShiftId.newId(),
                     command.organisation(),
                     command.period(),
+                    ZoneOffset.UTC,
                     command.requiredHeadcount(),
                     command.requiredQualifications()))
         .isInstanceOf(InvalidHeadcountException.class);

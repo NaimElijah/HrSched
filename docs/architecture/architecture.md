@@ -106,7 +106,7 @@ Three rules hold this together, and each fails the build when broken:
 | `notifications.application` | Raising and reading notifications. `NotifyUseCase` is this context's **published API** and is deliberately not on a controller; `ReadNotificationsUseCase` is strictly self-service, and whose inbox is read comes from the acting identity rather than from any parameter. Takes a `Clock`, so when something happened is an input rather than an ambient fact. |
 | `workforce.domain.model` | `Employee` (aggregate root: qualifications, unavailability, preferences, contract terms), `Qualification`, `ShiftPreference`, `ContractTerms`. |
 | `workforce.application` | Employee and qualification use cases. `FindRosterableEmployeesUseCase` is this context's **published API**, returning `RosterableEmployee` rather than the aggregate. |
-| `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule`. |
+| `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule` and the `WorkingPeriod`s it holds, `HeldWork`. |
 | `scheduling.application` | Shift definition, constraint configuration, roster generation and publication. Assembles the evidence constraints are judged against. |
 | `scheduling.adapter.out.workforce` | An anti-corruption layer: one of **two** classes in scheduling permitted to name another context, and only its published port. |
 | `scheduling.adapter.out.notification` | The other one. Translates "a swap was approved" into the word the `notifications` context uses for it, so nothing inward of the `Notifier` port knows that context exists ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
@@ -381,12 +381,18 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 - **Constraint checking lives in the application layer**, not in `Roster`. It needs when each
   shift runs and who is available — data the aggregate cannot reach. The judgement itself is
   still the domain's.
-- **Days are counted in UTC**, because `TimeRange` carries no zone. `EmployeeSchedule` splits every
-  period at midnight and totals the time landing on each day, so a shift running past midnight is
-  counted against both days it touches and a shift ending exactly at midnight does not make the
-  next day a working day. The arithmetic is right; the *zone* is not necessarily, and for an
-  organisation whose local midnight is not UTC midnight this attributes work to the wrong day. That
-  is Q17, and it must be answered before production.
+- **Days are counted in each shift's own zone (R36).** A `Shift` carries a `ZoneId`, and
+  `EmployeeSchedule` holds `WorkingPeriod`s — a period with its shift's zone — rather than bare
+  `TimeRange`s, which stay zone-free in the kernel. It splits every period at midnight *in that
+  period's zone* and totals the time landing on each day, so a shift running past midnight is
+  counted against both days it touches, a shift ending exactly at midnight does not make the next
+  day a working day, and a day is 23 or 25 hours long when the clocks change. Work in two zones
+  lands on each zone's own date. Only ids the JVM's time zone database knows are accepted, so a raw
+  offset such as `+01:00` is refused; there is no default, and shifts stored before V5 keep the UTC
+  they were judged in. The Shifts page sends the browser's zone, so a site in another zone cannot
+  yet be planned for
+  ([#136](https://github.com/NaimElijah/HrSched/issues/136),
+  [ADR-034](../ADRs/ADR-034-count-working-days-in-each-shifts-own-time-zone.md)).
 - **`MaximumWeeklyWorkingTime` treats the roster period as the reference period.** Jurisdictions
   that average over a longer window cannot be expressed; that needs history beyond the roster.
 - **The user interface enforces nothing.** Every rule is the backend's. The UI renders refusals —

@@ -8,6 +8,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,13 @@ class RosterTest {
   private static final TimeRange OVERLAPPING_WEEK =
       new TimeRange(Instant.parse("2026-09-10T00:00:00Z"), Instant.parse("2026-09-17T00:00:00Z"));
   private static final List<HeldWork> NOTHING_ELSEWHERE = List.of();
+
+  /**
+   * When a shift runs, its days counted in UTC; R3 compares instants, so the zone is immaterial.
+   */
+  private static WorkingPeriod utc(TimeRange period) {
+    return new WorkingPeriod(period, ZoneOffset.UTC);
+  }
 
   private static Roster draft() {
     return new Roster(RosterId.newId(), ACME, WEEK);
@@ -180,7 +188,7 @@ class RosterTest {
             .with(new Assignment(monday, grace));
 
     List<EmployeeSchedule> schedules =
-        roster.schedulesFor(Map.of(monday, MONDAY, tuesday, TUESDAY), NOTHING_ELSEWHERE);
+        roster.schedulesFor(Map.of(monday, utc(MONDAY), tuesday, utc(TUESDAY)), NOTHING_ELSEWHERE);
 
     assertThat(schedules).hasSize(2);
     assertThat(schedules)
@@ -202,7 +210,7 @@ class RosterTest {
     assertThatThrownBy(
             () ->
                 roster.schedulesFor(
-                    Map.of(day, MONDAY, afternoon, MONDAY_AFTERNOON), NOTHING_ELSEWHERE))
+                    Map.of(day, utc(MONDAY), afternoon, utc(MONDAY_AFTERNOON)), NOTHING_ELSEWHERE))
         .isInstanceOf(OverlappingAssignmentException.class);
   }
 
@@ -216,7 +224,8 @@ class RosterTest {
 
     assertThatCode(
             () ->
-                roster.schedulesFor(Map.of(day, MONDAY, evening, mondayEvening), NOTHING_ELSEWHERE))
+                roster.schedulesFor(
+                    Map.of(day, utc(MONDAY), evening, utc(mondayEvening)), NOTHING_ELSEWHERE))
         .describedAs("a period's end is exclusive, so ending as the next begins is no overlap")
         .doesNotThrowAnyException();
   }
@@ -240,7 +249,9 @@ class RosterTest {
     assertThatThrownBy(
             () ->
                 roster.requireNoOverlappingWorkFor(
-                    ADA, Map.of(day, MONDAY, afternoon, MONDAY_AFTERNOON), NOTHING_ELSEWHERE))
+                    ADA,
+                    Map.of(day, utc(MONDAY), afternoon, utc(MONDAY_AFTERNOON)),
+                    NOTHING_ELSEWHERE))
         .isInstanceOf(OverlappingAssignmentException.class);
   }
 
@@ -251,7 +262,9 @@ class RosterTest {
         draft().with(new Assignment(day, ADA)).with(new Assignment(ShiftId.newId(), ADA));
 
     assertThatThrownBy(
-            () -> roster.requireNoOverlappingWorkFor(ADA, Map.of(day, MONDAY), NOTHING_ELSEWHERE))
+            () ->
+                roster.requireNoOverlappingWorkFor(
+                    ADA, Map.of(day, utc(MONDAY)), NOTHING_ELSEWHERE))
         .describedAs("work that cannot be placed in time cannot be shown not to overlap")
         .isInstanceOf(RosterNotVerifiableException.class);
   }
@@ -275,7 +288,8 @@ class RosterTest {
     assertThatThrownBy(
             () ->
                 roster.schedulesFor(
-                    Map.of(day, MONDAY, tuesday, TUESDAY, afternoon, MONDAY_AFTERNOON),
+                    Map.of(
+                        day, utc(MONDAY), tuesday, utc(TUESDAY), afternoon, utc(MONDAY_AFTERNOON)),
                     NOTHING_ELSEWHERE))
         .isInstanceOf(OverlappingAssignmentException.class);
   }
@@ -291,7 +305,9 @@ class RosterTest {
     Roster roster = draft().with(new Assignment(day, ADA));
 
     assertThatThrownBy(
-            () -> roster.requireNoOverlappingWorkFor(ADA, Map.of(day, MONDAY), List.of(elsewhere)))
+            () ->
+                roster.requireNoOverlappingWorkFor(
+                    ADA, Map.of(day, utc(MONDAY)), List.of(elsewhere)))
         .isInstanceOf(OverlappingAssignmentException.class)
         .hasMessageContaining(elsewhere.roster().value().toString());
   }
@@ -306,7 +322,7 @@ class RosterTest {
     assertThatCode(
             () ->
                 roster.requireNoOverlappingWorkFor(
-                    ADA, Map.of(day, MONDAY), List.of(heldBy(ADA, mondayEvening))))
+                    ADA, Map.of(day, utc(MONDAY)), List.of(heldBy(ADA, mondayEvening))))
         .doesNotThrowAnyException();
   }
 
@@ -324,7 +340,7 @@ class RosterTest {
     assertThatCode(
             () ->
                 roster.requireNoOverlappingWorkFor(
-                    ADA, Map.of(overnight, MONDAY), List.of(sameShiftElsewhere)))
+                    ADA, Map.of(overnight, utc(MONDAY)), List.of(sameShiftElsewhere)))
         .doesNotThrowAnyException();
   }
 
@@ -336,7 +352,7 @@ class RosterTest {
     assertThatCode(
             () ->
                 roster.requireNoOverlappingWorkFor(
-                    ADA, Map.of(day, MONDAY), List.of(heldBy(EmployeeId.newId(), MONDAY))))
+                    ADA, Map.of(day, utc(MONDAY)), List.of(heldBy(EmployeeId.newId(), MONDAY))))
         .doesNotThrowAnyException();
   }
 
@@ -354,7 +370,7 @@ class RosterTest {
             () ->
                 roster.requireNoOverlappingWorkFor(
                     ADA,
-                    Map.of(tuesday, TUESDAY),
+                    Map.of(tuesday, utc(TUESDAY)),
                     List.of(heldBy(ADA, MONDAY), heldBy(ADA, MONDAY_AFTERNOON))))
         .doesNotThrowAnyException();
   }
@@ -377,7 +393,7 @@ class RosterTest {
             () ->
                 roster.requireNoOverlappingWorkFor(
                     ADA,
-                    Map.of(day, MONDAY),
+                    Map.of(day, utc(MONDAY)),
                     List.of(heldBy(ADA, allMonday), heldBy(ADA, earlyMonday))))
         .isInstanceOf(OverlappingAssignmentException.class);
   }
@@ -388,7 +404,9 @@ class RosterTest {
     Roster roster = draft().with(new Assignment(day, ADA));
 
     assertThatThrownBy(
-            () -> roster.schedulesFor(Map.of(day, MONDAY), List.of(heldBy(ADA, MONDAY_AFTERNOON))))
+            () ->
+                roster.schedulesFor(
+                    Map.of(day, utc(MONDAY)), List.of(heldBy(ADA, MONDAY_AFTERNOON))))
         .isInstanceOf(OverlappingAssignmentException.class);
   }
 
@@ -402,11 +420,11 @@ class RosterTest {
     Roster roster = draft().with(new Assignment(day, ADA));
 
     List<EmployeeSchedule> schedules =
-        roster.schedulesFor(Map.of(day, MONDAY), List.of(heldBy(ADA, TUESDAY)));
+        roster.schedulesFor(Map.of(day, utc(MONDAY)), List.of(heldBy(ADA, TUESDAY)));
 
     assertThat(schedules)
         .singleElement()
-        .satisfies(schedule -> assertThat(schedule.workingPeriods()).containsExactly(MONDAY));
+        .satisfies(schedule -> assertThat(schedule.workingPeriods()).containsExactly(utc(MONDAY)));
   }
 
   @Test

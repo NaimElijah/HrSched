@@ -7,7 +7,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
+import java.time.ZoneOffset;
 import java.util.stream.Stream;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
@@ -35,8 +35,13 @@ class WorkingTimeConstraintTest {
         Instant.parse("2026-09-%sT%s:00:00Z".formatted(day, to)));
   }
 
+  /** The days of this work are counted in UTC; a case about another zone builds its own. */
   private static EmployeeSchedule working(TimeRange... periods) {
-    return new EmployeeSchedule(ADA, List.of(periods));
+    return new EmployeeSchedule(
+        ADA,
+        java.util.Arrays.stream(periods)
+            .map(period -> new WorkingPeriod(period, ZoneOffset.UTC))
+            .toList());
   }
 
   /** Every way a threshold can be meaningless, one row each. */

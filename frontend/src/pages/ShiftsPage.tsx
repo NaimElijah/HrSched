@@ -36,6 +36,9 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
       await scheduling.defineShift({
         start: from.toISOString(),
         end: to.toISOString(),
+        // The zone `new Date` just read the inputs in, so the one these times mean. The backend
+        // counts the shift's working-time days in it (R36).
+        zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         requiredHeadcount: Number(headcount),
         requiredQualifications: required,
       });

@@ -41,6 +41,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-031](ADR-031-take-the-organisation-from-the-account.md) | Take the organisation from the account, not from the request | Accepted | 2026-09-21 |
 | [ADR-032](ADR-032-close-the-security-chain-by-default.md) | Close the security chain by default, and name every route that is open | Accepted | 2026-09-21 |
 | [ADR-033](ADR-033-judge-r3-across-authoritative-rosters-under-the-publication-lock.md) | Judge R3 across authoritative rosters in the application, under the publication lock | Accepted | 2026-10-10 |
+| [ADR-034](ADR-034-count-working-days-in-each-shifts-own-time-zone.md) | Count working days in each shift's own time zone | Accepted | 2026-10-10 |
 
 ## Decisions waiting to be recorded
 
