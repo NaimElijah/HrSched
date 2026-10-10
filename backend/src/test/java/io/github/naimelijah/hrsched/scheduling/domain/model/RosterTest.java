@@ -426,13 +426,16 @@ class RosterTest {
     assertThat(published(WEEK).staysAuthoritativeBeside(replacement)).isTrue();
   }
 
+  /**
+   * A draft binds nobody. Each predicate is asked about the replacement that would otherwise make
+   * it true — one overlapping, one only touching — so the status is what makes both false.
+   */
   @Test
-  void
-      GivenADraftOverlappingTheReplacement_WhenPublishing_ThenItIsNeitherSupersededNorAuthoritative() {
-    Roster replacement = new Roster(RosterId.newId(), ACME, OVERLAPPING_WEEK);
-
-    assertThat(draft().isSupersededBy(replacement)).isFalse();
-    assertThat(draft().staysAuthoritativeBeside(replacement)).isFalse();
+  void GivenADraft_WhenAnotherIsPublished_ThenItIsNeitherSupersededNorAuthoritative() {
+    assertThat(draft().isSupersededBy(new Roster(RosterId.newId(), ACME, OVERLAPPING_WEEK)))
+        .isFalse();
+    assertThat(draft().staysAuthoritativeBeside(new Roster(RosterId.newId(), ACME, NEXT_WEEK)))
+        .isFalse();
   }
 
   @Test
@@ -442,12 +445,15 @@ class RosterTest {
     assertThat(published(WEEK).superseded().staysAuthoritativeBeside(replacement)).isFalse();
   }
 
+  /**
+   * Only supersession needs the identity check. A roster always overlaps itself, so it could never
+   * stay authoritative beside itself whatever that check said.
+   */
   @Test
-  void GivenThePublishedRosterItself_WhenPublishingIt_ThenItIsNeitherSupersededNorBesideItself() {
+  void GivenThePublishedRosterItself_WhenPublishingIt_ThenItDoesNotSupersedeItself() {
     Roster roster = published(WEEK);
 
     assertThat(roster.isSupersededBy(roster)).isFalse();
-    assertThat(roster.staysAuthoritativeBeside(roster)).isFalse();
   }
 
   /**
