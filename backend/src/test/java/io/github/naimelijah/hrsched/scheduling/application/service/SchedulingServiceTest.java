@@ -49,6 +49,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -73,6 +75,15 @@ class SchedulingServiceTest {
       new TimeRange(Instant.parse("2026-10-05T08:00:00Z"), Instant.parse("2026-10-05T16:00:00Z"));
   private static final TimeRange THE_WEEK =
       new TimeRange(Instant.parse("2026-10-05T00:00:00Z"), Instant.parse("2026-10-12T00:00:00Z"));
+  private static final TimeRange NEXT_WEEK =
+      new TimeRange(Instant.parse("2026-10-12T00:00:00Z"), Instant.parse("2026-10-19T00:00:00Z"));
+
+  /** Runs past the end of THE_WEEK into NEXT_WEEK, so either roster may carry it (R35). */
+  private static final TimeRange SUNDAY_NIGHT =
+      new TimeRange(Instant.parse("2026-10-11T22:00:00Z"), Instant.parse("2026-10-12T06:00:00Z"));
+
+  private static final TimeRange NEXT_MONDAY_EARLY =
+      new TimeRange(Instant.parse("2026-10-12T00:00:00Z"), Instant.parse("2026-10-12T08:00:00Z"));
 
   private FakeShifts shifts;
   private FakeRosters rosters;
@@ -110,7 +121,8 @@ class SchedulingServiceTest {
   @Test
   void GivenAScheduler_WhenGeneratingAndPublishing_ThenTheConstraintVersionIsRecorded() {
     available(ACME, "Ada");
-    service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
 
     Roster draft =
         service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
@@ -124,7 +136,8 @@ class SchedulingServiceTest {
   @Test
   void GivenRulesTightenedAfterGeneration_WhenPublishing_ThenItIsRefusedWithEveryViolation() {
     available(ACME, "Ada");
-    service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
     Roster draft =
         service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
@@ -157,7 +170,8 @@ class SchedulingServiceTest {
   void
       GivenAnEarlierPublishedRosterForTheSameWeek_WhenPublishingAgain_ThenTheEarlierIsSuperseded() {
     available(ACME, "Ada");
-    service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
     Roster first =
         service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     service.publish(scheduler(ACME), ACME, first.id());
@@ -195,7 +209,8 @@ class SchedulingServiceTest {
             () ->
                 service.defineShift(
                     scheduler(ACME),
-                    new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of(QualificationId.newId()))))
+                    new DefineShiftCommand(
+                        ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(QualificationId.newId()))))
         .describedAs("a shift nobody could ever cover is an error, not a permanent silent gap")
         .isInstanceOf(UnknownRequiredQualificationException.class);
   }
@@ -208,7 +223,8 @@ class SchedulingServiceTest {
     assertThatCode(
             () ->
                 service.defineShift(
-                    scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of(forklift))))
+                    scheduler(ACME),
+                    new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(forklift))))
         .doesNotThrowAnyException();
   }
 
@@ -227,7 +243,8 @@ class SchedulingServiceTest {
   @Test
   void GivenTheOperator_WhenReadingARoster_ThenItIsRefused() {
     available(ACME, "Ada");
-    service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
     Roster draft =
         service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
@@ -246,10 +263,12 @@ class SchedulingServiceTest {
    */
   @Test
   void GivenShiftsInsideAndOutsideASpan_WhenListingThem_ThenOnlyTheOverlappingOnesComeBack() {
-    service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
     TimeRange nextMonth =
         new TimeRange(Instant.parse("2026-11-09T08:00:00Z"), Instant.parse("2026-11-09T16:00:00Z"));
-    service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, nextMonth, 1, Set.of()));
+    service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, nextMonth, ZoneOffset.UTC, 1, Set.of()));
 
     assertThat(service.findShifts(scheduler(ACME), ACME, THE_WEEK))
         .extracting(Shift::period)
@@ -258,7 +277,8 @@ class SchedulingServiceTest {
 
   @Test
   void GivenAnotherOrganisationsShifts_WhenListingThem_ThenNothingLeaks() {
-    service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
 
     assertThatThrownBy(() -> service.findShifts(scheduler(RIVAL), ACME, THE_WEEK))
         .isInstanceOf(CrossTenantAccessException.class);
@@ -268,7 +288,8 @@ class SchedulingServiceTest {
   @Test
   void GivenADefinedShift_WhenAnEmployeeReadsItByIdentity_ThenItIsReturned() {
     ShiftId id =
-        service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+        service.defineShift(
+            scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
 
     assertThat(service.findShift(new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE), ACME, id))
         .map(Shift::period)
@@ -279,7 +300,8 @@ class SchedulingServiceTest {
   void GivenAnotherOrganisationsShift_WhenReadByIdentity_ThenNothingLeaks() {
     ShiftId theirs =
         service.defineShift(
-            scheduler(RIVAL), new DefineShiftCommand(RIVAL, MONDAY_DAY, 1, Set.of()));
+            scheduler(RIVAL),
+            new DefineShiftCommand(RIVAL, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
 
     assertThatThrownBy(() -> service.findShift(scheduler(RIVAL), ACME, theirs))
         .isInstanceOf(CrossTenantAccessException.class);
@@ -289,7 +311,8 @@ class SchedulingServiceTest {
   @Test
   void GivenRostersOfTwoOrganisations_WhenListingThem_ThenOnlyTheCallersComeBack() {
     available(ACME, "Ada");
-    service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
     Roster ours = service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     service.generateDraft(scheduler(RIVAL), new GenerateRosterCommand(RIVAL, THE_WEEK));
 
@@ -303,7 +326,8 @@ class SchedulingServiceTest {
     TenantActor scheduler = scheduler(ACME);
 
     ShiftId shift =
-        service.defineShift(scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+        service.defineShift(
+            scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
 
     assertThat(audit.of(SchedulingChange.SHIFT_DEFINED))
         .containsExactly(
@@ -326,7 +350,8 @@ class SchedulingServiceTest {
   void GivenAScheduler_WhenPublishingARoster_ThenGenerationAndPublicationAreBothRecorded() {
     available(ACME, "Ada");
     TenantActor scheduler = scheduler(ACME);
-    service.defineShift(scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    service.defineShift(
+        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
     Roster draft = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
 
     service.publish(scheduler, ACME, draft.id());
@@ -349,7 +374,8 @@ class SchedulingServiceTest {
   void GivenAnEarlierPublishedRoster_WhenItIsSuperseded_ThenThatIsRecordedToo() {
     available(ACME, "Ada");
     TenantActor scheduler = scheduler(ACME);
-    service.defineShift(scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    service.defineShift(
+        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
     Roster first = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
     service.publish(scheduler, ACME, first.id());
     Roster second = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
@@ -366,7 +392,8 @@ class SchedulingServiceTest {
   void GivenARosterBreakingTheRules_WhenPublicationIsRefused_ThenNothingIsRecordedAsPublished() {
     available(ACME, "Ada");
     TenantActor scheduler = scheduler(ACME);
-    service.defineShift(scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+    service.defineShift(
+        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
     Roster draft = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
     // Invented: four hours a day, which the eight-hour shift already assigned cannot satisfy.
     service.reviseConstraints(
@@ -389,7 +416,8 @@ class SchedulingServiceTest {
     assertThatThrownBy(
             () ->
                 service.defineShift(
-                    scheduler(RIVAL), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of())))
+                    scheduler(RIVAL),
+                    new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of())))
         .isInstanceOf(CrossTenantAccessException.class);
 
     assertThat(audit.changes()).isEmpty();
@@ -400,7 +428,8 @@ class SchedulingServiceTest {
     assertThatThrownBy(
             () ->
                 service.defineShift(
-                    admin(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of())))
+                    admin(ACME),
+                    new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of())))
         .isInstanceOf(NotPermittedException.class);
 
     assertThat(audit.changes()).isEmpty();
@@ -424,7 +453,8 @@ class SchedulingServiceTest {
 
   private ShiftId aShift(OrganisationId organisation, Set<QualificationId> required) {
     return service.defineShift(
-        scheduler(organisation), new DefineShiftCommand(organisation, MONDAY_DAY, 1, required));
+        scheduler(organisation),
+        new DefineShiftCommand(organisation, MONDAY_DAY, ZoneOffset.UTC, 1, required));
   }
 
   @Test
@@ -635,6 +665,36 @@ class SchedulingServiceTest {
   }
 
   /**
+   * R36 at publication. Both shifts are on the 6th in Tokyo, twelve hours there, but counted in UTC
+   * they fall seven hours on the 5th and five on the 6th, under the cap.
+   */
+  @Test
+  void GivenTwoShiftsOnOneDayInTheirOwnZone_WhenPublishingUnderADailyCap_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ZoneId tokyo = ZoneId.of("Asia/Tokyo");
+    for (TimeRange when :
+        List.of(
+            new TimeRange(
+                Instant.parse("2026-10-05T15:00:00Z"), Instant.parse("2026-10-05T21:00:00Z")),
+            new TimeRange(
+                Instant.parse("2026-10-05T23:00:00Z"), Instant.parse("2026-10-06T05:00:00Z")))) {
+      ShiftId shift =
+          service.defineShift(
+              scheduler(ACME), new DefineShiftCommand(ACME, when, tokyo, 1, Set.of()));
+      service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+    }
+    // Invented: ten hours a day.
+    service.reviseConstraints(
+        admin(ACME),
+        new ReviseConstraintsCommand(
+            ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(10)))));
+
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, draft.id()))
+        .isInstanceOf(RosterNotCompliantException.class);
+  }
+
+  /**
    * The hole the review found. Generation filters candidates through {@code
    * RosterCandidate.couldCover}, which tests availability as well as qualifications, so it refuses
    * to roster somebody through their declared absence. Assigning by hand used to accept it, and
@@ -685,7 +745,8 @@ class SchedulingServiceTest {
     TimeRange december =
         new TimeRange(Instant.parse("2026-12-07T08:00:00Z"), Instant.parse("2026-12-07T16:00:00Z"));
     ShiftId elsewhere =
-        service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, december, 1, Set.of()));
+        service.defineShift(
+            scheduler(ACME), new DefineShiftCommand(ACME, december, ZoneOffset.UTC, 1, Set.of()));
 
     assertThatThrownBy(
             () ->
@@ -707,7 +768,8 @@ class SchedulingServiceTest {
     TimeRange afternoon =
         new TimeRange(Instant.parse("2026-10-05T12:00:00Z"), Instant.parse("2026-10-05T20:00:00Z"));
     ShiftId overlapping =
-        service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, afternoon, 1, Set.of()));
+        service.defineShift(
+            scheduler(ACME), new DefineShiftCommand(ACME, afternoon, ZoneOffset.UTC, 1, Set.of()));
     service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), day, ada));
     audit.forget();
 
@@ -731,7 +793,8 @@ class SchedulingServiceTest {
     TimeRange evening =
         new TimeRange(Instant.parse("2026-10-05T16:00:00Z"), Instant.parse("2026-10-05T20:00:00Z"));
     ShiftId next =
-        service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, evening, 1, Set.of()));
+        service.defineShift(
+            scheduler(ACME), new DefineShiftCommand(ACME, evening, ZoneOffset.UTC, 1, Set.of()));
     service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), day, ada));
 
     assertThatCode(
@@ -777,6 +840,149 @@ class SchedulingServiceTest {
     service.publish(scheduler(ACME), ACME, draft.id());
 
     assertThat(rosters.log().calls()).first().isEqualTo(CallLog.Call.LOCK_PUBLICATIONS);
+  }
+
+  // --- R35: R3 is judged across every authoritative roster, not within one --------------------
+
+  private Roster storedDraft(TimeRange period) {
+    Roster draft = new Roster(RosterId.newId(), ACME, period);
+    rosters.save(draft);
+    return draft;
+  }
+
+  private ShiftId shiftAt(TimeRange when) {
+    return service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, when, ZoneOffset.UTC, 1, Set.of()));
+  }
+
+  private void assign(Roster draft, ShiftId shift, EmployeeId who) {
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, who));
+  }
+
+  private static Roster publishedCarrying(TimeRange period, Assignment assignment) {
+    return new Roster(RosterId.newId(), ACME, period)
+        .withAssignments(List.of(assignment))
+        .publishedUnder(1);
+  }
+
+  @Test
+  void GivenTheirWorkOnTheAdjacentPublishedRoster_WhenAssigningOverlappingWork_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster thisWeek = storedDraft(THE_WEEK);
+    assign(thisWeek, shiftAt(SUNDAY_NIGHT), ada);
+    service.publish(scheduler(ACME), ACME, thisWeek.id());
+    Roster nextWeek = storedDraft(NEXT_WEEK);
+    ShiftId early = shiftAt(NEXT_MONDAY_EARLY);
+    audit.forget();
+
+    assertThatThrownBy(() -> assign(nextWeek, early, ada))
+        .isInstanceOf(OverlappingAssignmentException.class)
+        .hasMessageContaining(thisWeek.id().value().toString());
+
+    assertThat(rosters.byId(nextWeek.id()).assignments()).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The guarantee. Assigning checks without taking the publication lock, so publication checks
+   * again under it (ADR-027, ADR-033). Both drafts here were filled before either was published, so
+   * only publication can see the clash.
+   */
+  @Test
+  void GivenTwoDraftsPuttingOnePersonInTwoPlaces_WhenTheSecondIsPublished_ThenItIsRefused() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster thisWeek = storedDraft(THE_WEEK);
+    assign(thisWeek, shiftAt(SUNDAY_NIGHT), ada);
+    Roster nextWeek = storedDraft(NEXT_WEEK);
+    assign(nextWeek, shiftAt(NEXT_MONDAY_EARLY), ada);
+    service.publish(scheduler(ACME), ACME, nextWeek.id());
+    audit.forget();
+
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, thisWeek.id()))
+        .isInstanceOf(OverlappingAssignmentException.class);
+
+    assertThat(rosters.byId(thisWeek.id()).status()).isEqualTo(RosterStatus.DRAFT);
+    assertThat(rosters.byId(nextWeek.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * Publishing supersedes the roster it overlaps, whole (R11, Q16). That roster's work stops
+   * binding anybody the moment this one lands, so it is no evidence against it.
+   */
+  @Test
+  void
+      GivenOverlappingWorkOnlyOnTheRosterBeingReplaced_WhenAssigningAndPublishing_ThenBothSucceed() {
+    EmployeeId ada = available(ACME, "Ada");
+    publishedWork(ACME, ada, MONDAY_DAY);
+    Roster replacement = storedDraft(THE_WEEK);
+    TimeRange afternoon =
+        new TimeRange(Instant.parse("2026-10-05T12:00:00Z"), Instant.parse("2026-10-05T20:00:00Z"));
+    ShiftId instead = shiftAt(afternoon);
+
+    assertThatCode(() -> assign(replacement, instead, ada)).doesNotThrowAnyException();
+    assertThat(service.publish(scheduler(ACME), ACME, replacement.id()).status())
+        .isEqualTo(RosterStatus.PUBLISHED);
+  }
+
+  /**
+   * Refuse rather than skip: work on another roster that cannot be placed in time cannot be shown
+   * not to overlap.
+   */
+  @Test
+  void GivenTheirWorkOnTheAdjacentRosterCannotBeResolved_WhenPublishing_ThenItIsNotVerifiable() {
+    EmployeeId ada = available(ACME, "Ada");
+    rosters.save(publishedCarrying(NEXT_WEEK, new Assignment(ShiftId.newId(), ada)));
+    Roster thisWeek =
+        new Roster(RosterId.newId(), ACME, THE_WEEK)
+            .withAssignments(List.of(new Assignment(aShift(ACME, Set.of()), ada)));
+    rosters.save(thisWeek);
+
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, thisWeek.id()))
+        .isInstanceOf(RosterNotVerifiableException.class);
+
+    assertThat(rosters.byId(thisWeek.id()).status()).isEqualTo(RosterStatus.DRAFT);
+  }
+
+  /**
+   * Only the people on this roster are judged. A colleague's unresolvable work could sit on any
+   * roster the organisation ever published, and refusing for it would block every later publication
+   * with nothing on this draft to fix.
+   */
+  @Test
+  void GivenAColleaguesUnresolvableWorkOnTheAdjacentRoster_WhenPublishing_ThenItIsPublished() {
+    EmployeeId ada = available(ACME, "Ada");
+    rosters.save(publishedCarrying(NEXT_WEEK, new Assignment(ShiftId.newId(), EmployeeId.newId())));
+    Roster thisWeek = storedDraft(THE_WEEK);
+    assign(thisWeek, aShift(ACME, Set.of()), ada);
+
+    assertThat(service.publish(scheduler(ACME), ACME, thisWeek.id()).status())
+        .isEqualTo(RosterStatus.PUBLISHED);
+  }
+
+  /**
+   * The main path, which counting one assignment twice would break. Generation re-covers a shift
+   * running past the end of the week it was published in, and picks the same person for it, so next
+   * week's roster carries Ada on Sunday night too. Either roster may carry that shift (R35), and it
+   * is one place to be, not two (ADR-033).
+   */
+  @Test
+  void GivenAShiftStraddlingIntoNextWeek_WhenNextWeekIsGeneratedAndPublished_ThenItIsPublished() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId sundayNight = shiftAt(SUNDAY_NIGHT);
+    Roster thisWeek =
+        service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+    service.publish(scheduler(ACME), ACME, thisWeek.id());
+
+    Roster nextWeek =
+        service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK));
+
+    assertThat(nextWeek.assignments()).containsExactly(new Assignment(sundayNight, ada));
+    assertThat(service.publish(scheduler(ACME), ACME, nextWeek.id()).status())
+        .isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(rosters.byId(thisWeek.id()).status())
+        .describedAs("rosters that only touch do not supersede each other")
+        .isEqualTo(RosterStatus.PUBLISHED);
   }
 
   @Test
@@ -825,7 +1031,8 @@ class SchedulingServiceTest {
     Roster draft = emptyDraft(organisation);
     ShiftId shift =
         service.defineShift(
-            scheduler(organisation), new DefineShiftCommand(organisation, when, 1, Set.of()));
+            scheduler(organisation),
+            new DefineShiftCommand(organisation, when, ZoneOffset.UTC, 1, Set.of()));
     service.assign(
         scheduler(organisation),
         new AssignToShiftCommand(organisation, draft.id(), shift, employee));
@@ -856,7 +1063,8 @@ class SchedulingServiceTest {
     Roster draft = emptyDraft(ACME);
     ShiftId shift = aShift(ACME, Set.of());
     ShiftId other =
-        service.defineShift(scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of()));
+        service.defineShift(
+            scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
     service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
     service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), other, grace));
     service.publish(scheduler(ACME), ACME, draft.id());
@@ -988,7 +1196,8 @@ class SchedulingServiceTest {
     assertThatThrownBy(
             () ->
                 service.defineShift(
-                    anOperator(), new DefineShiftCommand(ACME, MONDAY_DAY, 1, Set.of())))
+                    anOperator(),
+                    new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of())))
         .isInstanceOf(NotATenantMemberException.class);
   }
 

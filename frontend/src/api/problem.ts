@@ -57,8 +57,8 @@ export class ApiError extends Error {
    * True when the working-time rules refused it.
    *
    * Decided by the violations rather than the status alone: the backend also answers 422 for an
-   * assignee without the shift's qualification, or a shift outside the roster's period, and those
-   * list no rules because they broke none.
+   * assignee without the shift's qualification, a shift outside the roster's period, or somebody
+   * who would be in two places at once, and those list no rules because they broke none.
    */
   get isRuleBreach(): boolean {
     return this.status === 422 && this.violations.length > 0;

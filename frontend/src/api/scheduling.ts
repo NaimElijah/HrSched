@@ -5,6 +5,8 @@ export interface Shift {
   readonly id: string;
   readonly start: string;
   readonly end: string;
+  /** The IANA zone the shift's working-time days are counted in. */
+  readonly zone: string;
   readonly requiredHeadcount: number;
   readonly requiredQualifications: readonly string[];
 }
@@ -82,6 +84,8 @@ export interface RequestSwap {
 export interface DefineShiftRequest {
   readonly start: string;
   readonly end: string;
+  /** An IANA zone name, such as `Europe/London`: the zone the shift's days are counted in. */
+  readonly zone: string;
   readonly requiredHeadcount: number;
   readonly requiredQualifications: readonly string[];
 }
@@ -107,7 +111,8 @@ export const scheduling = {
    * Puts somebody on a shift of a draft, and returns the roster as it now stands.
    *
    * Throws an ApiError with `isRefused` when the domain will not have that person there —
-   * unqualified, unavailable, or a shift outside the roster's period. Nothing here checks first.
+   * unqualified, unavailable, a shift outside the roster's period, or already working then, on this
+   * draft or on a published roster beside it. Nothing here checks first.
    */
   assign: (roster: string, shift: string, employee: string): Promise<Roster> =>
     api.post<Roster>(path`/api/rosters/${roster}/assignments`, { shift, employee }),

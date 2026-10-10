@@ -10,17 +10,24 @@ import java.util.UUID;
  * @param id the shift identity
  * @param start when it begins
  * @param end when it ends
+ * @param zone where its working-time days are counted
  * @param requiredHeadcount how many people it needs
  * @param requiredQualifications what each of them must hold
  */
 public record ShiftResponse(
-    UUID id, Instant start, Instant end, int requiredHeadcount, List<UUID> requiredQualifications) {
+    UUID id,
+    Instant start,
+    Instant end,
+    String zone,
+    int requiredHeadcount,
+    List<UUID> requiredQualifications) {
 
   static ShiftResponse from(Shift shift) {
     return new ShiftResponse(
         shift.id().value(),
         shift.period().start(),
         shift.period().end(),
+        shift.zone().getId(),
         shift.requiredHeadcount(),
         shift.requiredQualifications().stream().map(QualificationId::value).toList());
   }

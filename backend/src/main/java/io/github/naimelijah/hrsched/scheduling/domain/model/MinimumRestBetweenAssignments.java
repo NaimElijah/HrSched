@@ -30,7 +30,8 @@ public record MinimumRestBetweenAssignments(Duration minimumRest) implements Wor
 
   @Override
   public Optional<String> violatedBy(EmployeeSchedule schedule) {
-    List<TimeRange> periods = schedule.workingPeriods();
+    List<TimeRange> periods =
+        schedule.workingPeriods().stream().map(WorkingPeriod::period).toList();
     for (int i = 1; i < periods.size(); i++) {
       TimeRange previous = periods.get(i - 1);
       TimeRange next = periods.get(i);

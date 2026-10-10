@@ -6,8 +6,8 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.EmployeeSchedule;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
+import io.github.naimelijah.hrsched.scheduling.domain.model.WorkingPeriod;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
-import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
@@ -64,7 +64,7 @@ public class GreedyRosterGenerator implements RosterGenerator {
   public List<Assignment> generate(
       List<Shift> shifts, List<RosterCandidate> candidates, ConstraintSet constraints) {
     List<Assignment> assignments = new ArrayList<>();
-    Map<EmployeeId, List<TimeRange>> committed = new LinkedHashMap<>();
+    Map<EmployeeId, List<WorkingPeriod>> committed = new LinkedHashMap<>();
 
     List<Shift> chronological =
         shifts.stream().sorted(Comparator.comparing(shift -> shift.period().start())).toList();
@@ -81,12 +81,12 @@ public class GreedyRosterGenerator implements RosterGenerator {
         if (!candidate.couldCover(shift.period(), shift.requiredQualifications())) {
           continue;
         }
-        List<TimeRange> proposed =
+        List<WorkingPeriod> proposed =
             new ArrayList<>(committed.getOrDefault(candidate.id(), List.of()));
-        if (proposed.stream().anyMatch(shift.period()::overlaps)) {
+        if (proposed.stream().anyMatch(working -> working.period().overlaps(shift.period()))) {
           continue;
         }
-        proposed.add(shift.period());
+        proposed.add(shift.workingPeriod());
         if (!constraints.violationsFor(new EmployeeSchedule(candidate.id(), proposed)).isEmpty()) {
           continue;
         }

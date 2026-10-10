@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import java.time.ZoneId;
 import java.util.Objects;
 import java.util.Set;
 
@@ -22,6 +23,7 @@ public final class Shift {
   private final ShiftId id;
   private final OrganisationId organisation;
   private final TimeRange period;
+  private final ZoneId zone;
   private final int requiredHeadcount;
   private final Set<QualificationId> requiredQualifications;
 
@@ -29,6 +31,7 @@ public final class Shift {
    * @param id the shift identity, never {@code null}
    * @param organisation whose shift this is, never {@code null}
    * @param period when it runs, never {@code null}
+   * @param zone where its working-time days are counted (R36), never {@code null}
    * @param requiredHeadcount how many people it needs, at least one
    * @param requiredQualifications what every assigned person must hold, possibly empty
    * @throws InvalidHeadcountException if fewer than one person is required
@@ -37,11 +40,13 @@ public final class Shift {
       ShiftId id,
       OrganisationId organisation,
       TimeRange period,
+      ZoneId zone,
       int requiredHeadcount,
       Set<QualificationId> requiredQualifications) {
     this.id = Objects.requireNonNull(id, "id must not be null");
     this.organisation = Objects.requireNonNull(organisation, "organisation must not be null");
     this.period = Objects.requireNonNull(period, "period must not be null");
+    this.zone = Objects.requireNonNull(zone, "zone must not be null");
     if (requiredHeadcount < 1) {
       throw new InvalidHeadcountException(requiredHeadcount);
     }
@@ -59,6 +64,17 @@ public final class Shift {
 
   public TimeRange period() {
     return period;
+  }
+
+  public ZoneId zone() {
+    return zone;
+  }
+
+  /**
+   * @return when this shift runs, with the zone its working-time days are counted in
+   */
+  public WorkingPeriod workingPeriod() {
+    return new WorkingPeriod(period, zone);
   }
 
   public int requiredHeadcount() {

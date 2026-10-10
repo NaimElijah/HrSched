@@ -106,7 +106,7 @@ Three rules hold this together, and each fails the build when broken:
 | `notifications.application` | Raising and reading notifications. `NotifyUseCase` is this context's **published API** and is deliberately not on a controller; `ReadNotificationsUseCase` is strictly self-service, and whose inbox is read comes from the acting identity rather than from any parameter. Takes a `Clock`, so when something happened is an input rather than an ambient fact. |
 | `workforce.domain.model` | `Employee` (aggregate root: qualifications, unavailability, preferences, contract terms), `Qualification`, `ShiftPreference`, `ContractTerms`. |
 | `workforce.application` | Employee and qualification use cases. `FindRosterableEmployeesUseCase` is this context's **published API**, returning `RosterableEmployee` rather than the aggregate. |
-| `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule`. |
+| `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule` and the `WorkingPeriod`s it holds, `HeldWork`. |
 | `scheduling.application` | Shift definition, constraint configuration, roster generation and publication. Assembles the evidence constraints are judged against. |
 | `scheduling.adapter.out.workforce` | An anti-corruption layer: one of **two** classes in scheduling permitted to name another context, and only its published port. |
 | `scheduling.adapter.out.notification` | The other one. Translates "a swap was approved" into the word the `notifications` context uses for it, so nothing inward of the `Notifier` port knows that context exists ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
@@ -381,12 +381,18 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 - **Constraint checking lives in the application layer**, not in `Roster`. It needs when each
   shift runs and who is available — data the aggregate cannot reach. The judgement itself is
   still the domain's.
-- **Days are counted in UTC**, because `TimeRange` carries no zone. `EmployeeSchedule` splits every
-  period at midnight and totals the time landing on each day, so a shift running past midnight is
-  counted against both days it touches and a shift ending exactly at midnight does not make the
-  next day a working day. The arithmetic is right; the *zone* is not necessarily, and for an
-  organisation whose local midnight is not UTC midnight this attributes work to the wrong day. That
-  is Q17, and it must be answered before production.
+- **Days are counted in each shift's own zone (R36).** A `Shift` carries a `ZoneId`, and
+  `EmployeeSchedule` holds `WorkingPeriod`s — a period with its shift's zone — rather than bare
+  `TimeRange`s, which stay zone-free in the kernel. It splits every period at midnight *in that
+  period's zone* and totals the time landing on each day, so a shift running past midnight is
+  counted against both days it touches, a shift ending exactly at midnight does not make the next
+  day a working day, and a day is 23 or 25 hours long when the clocks change. Work in two zones
+  lands on each zone's own date. Only ids the JVM's time zone database knows are accepted, so a raw
+  offset such as `+01:00` is refused; there is no default, and shifts stored before V5 keep the UTC
+  they were judged in. The Shifts page sends the browser's zone, so a site in another zone cannot
+  yet be planned for
+  ([#136](https://github.com/NaimElijah/HrSched/issues/136),
+  [ADR-034](../ADRs/ADR-034-count-working-days-in-each-shifts-own-time-zone.md)).
 - **`MaximumWeeklyWorkingTime` treats the roster period as the reference period.** Jurisdictions
   that average over a longer window cannot be expressed; that needs history beyond the roster.
 - **The user interface enforces nothing.** Every rule is the backend's. The UI renders refusals —
@@ -449,7 +455,8 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 - **Publishing supersedes, so exactly one roster is authoritative.** `publish` marks every
   published roster of that organisation whose period overlaps as `SUPERSEDED`. Overlap rather than
   equality decides it, because a partly-overlapping published roster would otherwise still govern
-  the days it shares. Whether a partial replacement should supersede the old roster whole is Q16.
+  the days it shares, and the old roster goes whole, not only for the days replaced (Q16). Which
+  rosters go is `Roster.isSupersededBy`'s decision.
 - **Two overlapping published rosters cannot be stored.** Migration `V2` adds the
   `roster_one_published_per_moment` exclusion constraint over the organisation and the roster's
   period, for `PUBLISHED` rows only. A writer that publishes without seeing a publication still in
@@ -461,9 +468,12 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   three rules that are about one assignment — the person belongs to the organisation (R5), holds
   what the shift demands (R4), and has not declared they cannot work when it runs (F6) — plus that
   the shift falls inside the roster's own period, which generation cannot violate because it only
-  ever assigns shifts it found there, and that the person holds no other shift on this draft
-  overlapping it (R3), which generation cannot violate because it skips anybody already working
-  then. It deliberately leaves the working-time rules to publication,
+  ever assigns shifts it found there, and that the person holds no other shift overlapping it (R3):
+  on this draft, which generation cannot violate because it skips anybody already working then, or
+  on a published roster that stays authoritative beside the draft (R35), which generation can,
+  because it is given no other roster's work
+  ([#130](https://github.com/NaimElijah/HrSched/issues/130)). It deliberately leaves the
+  working-time rules to publication,
   exactly as generation does: those judge a whole schedule rather than a single assignment, so the
   honest place for them is the step that cannot be bypassed, and a hand-made roster breaking a daily
   limit is refused at publication just as a generated one is.
@@ -484,8 +494,20 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   constraint set checks nothing — the asymmetry unavailability once had. `assign` asks the same
   question of the one person being assigned, so the board is told as it happens; publication asks
   it of everybody, so a swap approval and a generated draft are held to it too. Both answer 422.
-  It looks within one roster only: whether R3 should also look across rosters, for a shift that
-  straddles two roster periods, is Q26.
+- **R3 looks across rosters, not within one (R35).** A roster carries every shift overlapping its
+  period, so a shift straddling two periods can sit on both, and two rosters that only touch are
+  both authoritative. Each person's work on the roster being published is compared with the
+  `HeldWork` they hold on every other published roster that stays authoritative once it lands.
+  `Roster.isSupersededBy` and `Roster.staysAuthoritativeBeside` split one read of the organisation's
+  rosters into what this publication supersedes and what it is judged beside. The same assignment
+  carried by both rosters is one place to be, not two, and two pieces of held work are never
+  compared with each other. Publication checks under the lock (ADR-027); `assign` checks without
+  it, as early word. Nothing in the schema backs this up the way `roster_one_published_per_moment`
+  backs R11, because `roster_assignment` stores no times. Held work is checked for R3 only: the
+  working-time rules still judge one roster at a time
+  ([#131](https://github.com/NaimElijah/HrSched/issues/131)), and generation is given no other
+  roster's work ([#130](https://github.com/NaimElijah/HrSched/issues/130))
+  ([ADR-033](../ADRs/ADR-033-judge-r3-across-authoritative-rosters-under-the-publication-lock.md)).
 - **Reading the people of an organisation is restricted to Admins and Schedulers**, because
   unavailability is personal data. Generation reaches the same data through the anti-corruption
   layer carrying the Scheduler's own identity, so the restriction holds there too.
@@ -506,14 +528,16 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   a convention every writer has to follow; the `roster_one_published_per_moment` constraint is what
   holds for one that does not
   ([ADR-027](../ADRs/ADR-027-take-turns-publishing-within-an-organisation.md)).
-- **Three reads were written for a hash map and have not been revisited.** `supersedeOverlapping`
+- **Three reads were written for a hash map and have not been revisited.** `publish`, `assign`
   and `findOwnSchedule` call `RosterRepository.findByOrganisation`, which now loads every roster the
-  tenant has ever had together with all of their assignments, to find the few that overlap one week;
-  `violations()` fetches each assignment's shift one at a time, an N+1 inside the publish
-  transaction; and every owned collection is written one `INSERT` per row. All three were free
-  against a map and are not against a database. Fixing the first two means new port methods that
-  push the predicate into SQL, which is a change inward of the ports and so a decision of its own;
-  the performance requirement that would size it is still `TODO`.
+  tenant has ever had together with all of their assignments, to find the few that overlap one week
+  or stay authoritative beside it; `violations()` fetches each assignment's shift one at a time, an
+  N+1 inside the publish transaction, and the work held elsewhere for R35 is resolved the same way;
+  and every owned collection is written one `INSERT` per row. All three were free against a map and
+  are not against a database. Fixing the first two means new port methods that push the predicate
+  into SQL, which is a change inward of the ports and so a decision of its own. The requirement that
+  sizes it is now stated — interactive requests within 300 ms at the 95th percentile — and nothing
+  measures it yet ([#34](https://github.com/NaimElijah/HrSched/issues/34)).
 - **An audit entry cannot be rolled back.** The trail is a log stream (ADR-018) and a transaction
   that fails after a service has recorded a change leaves a record of something that did not
   happen. This is newly true because the transaction is, and it is Q20's problem to solve.

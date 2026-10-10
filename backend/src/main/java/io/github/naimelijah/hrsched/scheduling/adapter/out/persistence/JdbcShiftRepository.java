@@ -9,6 +9,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -47,10 +48,11 @@ public class JdbcShiftRepository implements ShiftRepository {
     int stored =
         jdbc.sql(
                 """
-            INSERT INTO shift (id, organisation_id, starts_at, ends_at, required_headcount)
-            VALUES (:id, :organisation, :startsAt, :endsAt, :headcount)
+            INSERT INTO shift (id, organisation_id, starts_at, ends_at, zone, required_headcount)
+            VALUES (:id, :organisation, :startsAt, :endsAt, :zone, :headcount)
             ON CONFLICT (id) DO UPDATE SET starts_at = EXCLUDED.starts_at,
                                            ends_at = EXCLUDED.ends_at,
+                                           zone = EXCLUDED.zone,
                                            required_headcount = EXCLUDED.required_headcount
             WHERE shift.organisation_id = EXCLUDED.organisation_id
             """)
@@ -58,6 +60,7 @@ public class JdbcShiftRepository implements ShiftRepository {
             .param("organisation", shift.organisation().value())
             .param("startsAt", shift.period().start().atOffset(ZoneOffset.UTC))
             .param("endsAt", shift.period().end().atOffset(ZoneOffset.UTC))
+            .param("zone", shift.zone().getId())
             .param("headcount", shift.requiredHeadcount())
             .update();
     requireStored(stored, id);
@@ -81,7 +84,7 @@ public class JdbcShiftRepository implements ShiftRepository {
   public Optional<Shift> findById(OrganisationId organisation, ShiftId id) {
     return jdbc.sql(
             """
-            SELECT id, organisation_id, starts_at, ends_at, required_headcount FROM shift
+            SELECT id, organisation_id, starts_at, ends_at, zone, required_headcount FROM shift
             WHERE organisation_id = :organisation AND id = :id
             """)
         .param("organisation", organisation.value())
@@ -96,7 +99,8 @@ public class JdbcShiftRepository implements ShiftRepository {
     return withQualifications(
         jdbc.sql(
                 """
-                SELECT id, organisation_id, starts_at, ends_at, required_headcount FROM shift
+                SELECT id, organisation_id, starts_at, ends_at, zone, required_headcount
+                FROM shift
                 WHERE organisation_id = :organisation
                   AND starts_at < :spanEnd
                   AND :spanStart < ends_at
@@ -111,7 +115,11 @@ public class JdbcShiftRepository implements ShiftRepository {
 
   /** A shift with none of its required qualifications yet. */
   private record BareShift(
-      ShiftId id, OrganisationId organisation, TimeRange period, int requiredHeadcount) {}
+      ShiftId id,
+      OrganisationId organisation,
+      TimeRange period,
+      ZoneId zone,
+      int requiredHeadcount) {}
 
   private static BareShift toBareShift(ResultSet row, int rowNumber) throws SQLException {
     return new BareShift(
@@ -120,6 +128,7 @@ public class JdbcShiftRepository implements ShiftRepository {
         new TimeRange(
             row.getObject("starts_at", OffsetDateTime.class).toInstant(),
             row.getObject("ends_at", OffsetDateTime.class).toInstant()),
+        ZoneId.of(row.getString("zone")),
         row.getInt("required_headcount"));
   }
 
@@ -136,6 +145,7 @@ public class JdbcShiftRepository implements ShiftRepository {
                     shift.id(),
                     shift.organisation(),
                     shift.period(),
+                    shift.zone(),
                     shift.requiredHeadcount(),
                     required.getOrDefault(shift.id().value(), Set.of())))
         .toList();

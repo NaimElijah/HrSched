@@ -25,13 +25,14 @@ Two things are **not** what they look like:
   It ignores fairness, preferences and disruption entirely.
 - **The audit trail is a log stream, not a trail.** Every change and refusal is recorded through
   an `AuditTrail` driven port, but nothing is stored and nothing is queryable: the record lives
-  only wherever stdout is collected. Whether an Admin may read it, and for how long it is kept,
-  is Q20 (ADR-018).
+  only wherever stdout is collected (ADR-018). The requirement is now a durable trail an Admin
+  reads for their own organisation (Q20, #31); how long it is kept is Q23.
 
-Everything in `docs/requirements/requirements.md` from *Functional requirements* onward is
-still `TODO`. A `TODO` there is a question for the repo owner, not a gap for an agent to fill
-in. Do not invent a requirement, a domain rule, or a persistence choice to make a document
-look complete.
+`docs/requirements/requirements.md` was reviewed row by row with the repo owner on 2026-09-22.
+Many rows say `not yet`: the requirement is decided and an issue tracks building it, so the code
+is behind the document on purpose. What is still `TODO` there, and every open question, is a
+question for the repo owner, not a gap for an agent to fill in. Do not invent a requirement, a
+domain rule, or a persistence choice to make a document look complete.
 
 Every question that blocked modelling is answered — see `docs/requirements/requirements.md`.
 Three consequences bind everything written from now on:
