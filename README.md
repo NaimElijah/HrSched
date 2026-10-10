@@ -193,9 +193,9 @@ api "$ADMIN" -X PUT localhost:8080/api/constraints \
 
 SCHEDULER=$(enter scheduler@acme.example "$SCHEDULER_TEMPORARY" "$SCHEDULER_PASSWORD")
 
-# 3. The Scheduler defines the work.
+# 3. The Scheduler defines the work. The zone is where its days are counted (R36).
 api "$SCHEDULER" -X POST localhost:8080/api/shifts \
-  -d '{"start":"2026-10-05T08:00:00Z","end":"2026-10-05T16:00:00Z","requiredHeadcount":1}'
+  -d '{"start":"2026-10-05T08:00:00Z","end":"2026-10-05T16:00:00Z","zone":"Europe/London","requiredHeadcount":1}'
 
 # 4. Generate a draft, then publish it. Only a Scheduler may.
 ROSTER=$(api "$SCHEDULER" -X POST localhost:8080/api/rosters \
