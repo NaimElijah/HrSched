@@ -17,7 +17,6 @@ import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
-import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import java.time.Instant;
@@ -42,7 +41,8 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Drives the two endpoints a bearer token unlocks, and every way a token stops being believed.
+ * Drives reading one's own session and changing one's own password, and every way a token stops
+ * being believed.
  *
  * <p>Most of this file exists because a signature is not enough. A token that was genuinely issued
  * by this service, signed correctly and not yet expired, must still be refused once the account is
@@ -309,37 +309,21 @@ class SessionHttpTest {
    * Documents the bearer filter's own behaviour, which the SPA has to respect: a token that fails
    * verification is refused on <em>every</em> route, including one that asks for no authentication.
    * A client must therefore send no token rather than a stale one.
+   *
+   * <p>Health is the route, because it answers without a token ({@code SecurityConfigurationTest}),
+   * so the 401 here can only come from the token that was sent.
    */
   @Test
-  void GivenAnInvalidBearerToken_WhenCallingARouteThatStillTakesHeaders_ThenItIsUnauthorised()
+  void GivenAnInvalidBearerToken_WhenCallingARouteThatAsksForNoAuthentication_ThenItIsUnauthorised()
       throws Exception {
     MockHttpServletResponse response =
         mockMvc
             .perform(
-                post("/api/organisations")
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer not-a-token")
-                    .header("X-User", UUID.randomUUID().toString())
-                    .header("X-Role", "OPERATOR")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(TestTenants.onboarding("Acme %s".formatted(UUID.randomUUID()))))
+                get("/actuator/health").header(HttpHeaders.AUTHORIZATION, "Bearer not-a-token"))
             .andReturn()
             .getResponse();
 
     assertThat(response.getStatus()).isEqualTo(401);
-  }
-
-  /** Proves this task locked nothing but the two endpoints it was meant to. */
-  @Test
-  void GivenAHeaderIdentityRoute_WhenCalledWithoutAToken_ThenItStillWorks() throws Exception {
-    MockHttpServletResponse response =
-        mockMvc
-            .perform(
-                TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
-                    .content(TestTenants.onboarding("Acme %s".formatted(UUID.randomUUID()))))
-            .andReturn()
-            .getResponse();
-
-    assertThat(response.getStatus()).isEqualTo(201);
   }
 
   private MockHttpServletResponse readSessionWith(String authorization) throws Exception {
