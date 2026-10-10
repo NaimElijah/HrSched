@@ -154,17 +154,24 @@ public final class Roster {
    * Groups the assignments into one schedule per employee, which is what constraints are evaluated
    * against.
    *
-   * <p>Nobody's schedule is built with two shifts at once in it. R3 holds whatever the constraint
-   * set says, and this is the step publication cannot skip, so it is where a roster carrying
-   * somebody in two places is refused however the draft was made.
+   * <p>Nobody's schedule is built with two shifts at once in it, on this roster or beside work they
+   * hold on another authoritative one. R3 holds whatever the constraint set says, and this is the
+   * step publication cannot skip, so it is where a roster carrying somebody in two places is
+   * refused however the draft was made.
+   *
+   * <p>Work held elsewhere is checked for R3 only. It is not in the schedules returned, because the
+   * working-time rules still judge one roster at a time (ADR-033).
    *
    * @param shiftPeriods when each assigned shift runs; must cover every assigned shift
-   * @return one schedule per employee appearing in this roster
+   * @param heldElsewhere work on the other rosters that stay authoritative beside this one
+   * @return one schedule per employee appearing in this roster, holding only this roster's work
    * @throws RosterNotVerifiableException if any assigned shift is missing from {@code shiftPeriods}
-   * @throws OverlappingAssignmentException if anybody would work two of these shifts at once
+   * @throws OverlappingAssignmentException if anybody would work two shifts at once
    */
-  public List<EmployeeSchedule> schedulesFor(Map<ShiftId, TimeRange> shiftPeriods) {
+  public List<EmployeeSchedule> schedulesFor(
+      Map<ShiftId, TimeRange> shiftPeriods, List<HeldWork> heldElsewhere) {
     Objects.requireNonNull(shiftPeriods, "shiftPeriods must not be null");
+    Objects.requireNonNull(heldElsewhere, "heldElsewhere must not be null");
     Map<EmployeeId, List<TimeRange>> byEmployee = new LinkedHashMap<>();
     for (Assignment assignment : assignments) {
       TimeRange when = shiftPeriods.get(assignment.shift());
@@ -173,28 +180,39 @@ public final class Roster {
       }
       byEmployee.computeIfAbsent(assignment.employee(), key -> new ArrayList<>()).add(when);
     }
-    byEmployee.keySet().forEach(employee -> requireNoOverlappingWorkFor(employee, shiftPeriods));
+    byEmployee
+        .keySet()
+        .forEach(employee -> requireNoOverlappingWorkFor(employee, shiftPeriods, heldElsewhere));
     return byEmployee.entrySet().stream()
         .map(entry -> new EmployeeSchedule(entry.getKey(), entry.getValue()))
         .toList();
   }
 
   /**
-   * Refuses this roster if one person would work two of its shifts at once (R3).
+   * Refuses this roster if one person would work two shifts at once (R3): two of its own, or one of
+   * its own beside work they already hold on another authoritative roster (R35).
    *
    * <p>Only that person's shifts need to be in {@code shiftPeriods}, so assigning somebody by hand
    * can be checked without resolving everybody else's work.
    *
+   * <p>The same shift held by the same person on another roster is no overlap. R35 lets either
+   * roster carry a shift straddling both periods, and that is one place to be, not two (ADR-033).
+   * Two pieces of work held elsewhere are never compared with each other: if they overlap, that is
+   * a breach of the rosters carrying them, not of this one.
+   *
    * @param employee whose work to check
    * @param shiftPeriods when shifts run; must cover every shift this employee is assigned
+   * @param heldElsewhere work on the other rosters that stay authoritative beside this one; anybody
+   *     else's is ignored
    * @throws RosterNotVerifiableException if one of their shifts is missing from {@code
    *     shiftPeriods}
-   * @throws OverlappingAssignmentException naming two of their shifts that overlap
+   * @throws OverlappingAssignmentException naming two shifts of theirs that overlap
    */
   public void requireNoOverlappingWorkFor(
-      EmployeeId employee, Map<ShiftId, TimeRange> shiftPeriods) {
+      EmployeeId employee, Map<ShiftId, TimeRange> shiftPeriods, List<HeldWork> heldElsewhere) {
     Objects.requireNonNull(employee, "employee must not be null");
     Objects.requireNonNull(shiftPeriods, "shiftPeriods must not be null");
+    Objects.requireNonNull(heldElsewhere, "heldElsewhere must not be null");
     List<ShiftId> theirs =
         assignments.stream()
             .filter(assignment -> assignment.employee().equals(employee))
@@ -218,6 +236,48 @@ public final class Roster {
         throw new OverlappingAssignmentException(employee, earlier, later);
       }
     }
+    // Every own shift against every held one. The neighbour shortcut above is unsound here: it
+    // assumes every adjacent pair is compared, and pairs held elsewhere are deliberately not.
+    for (HeldWork held : heldElsewhere) {
+      if (!held.employee().equals(employee)) {
+        continue;
+      }
+      for (ShiftId shift : theirs) {
+        if (!shift.equals(held.shift()) && shiftPeriods.get(shift).overlaps(held.period())) {
+          throw new OverlappingAssignmentException(employee, shift, held.shift(), held.roster());
+        }
+      }
+    }
+  }
+
+  /**
+   * Whether publishing {@code replacement} demotes this roster (R11). Overlap, not equality, is
+   * what decides, and the whole roster goes, not only the days replaced (Q16).
+   *
+   * @param replacement the draft about to be published
+   * @return true if this is a published roster of the same organisation whose period overlaps it
+   */
+  public boolean isSupersededBy(Roster replacement) {
+    Objects.requireNonNull(replacement, "replacement must not be null");
+    return isPublishedBeside(replacement) && period.overlaps(replacement.period);
+  }
+
+  /**
+   * Whether this roster still governs its days once {@code replacement} is published, so the work
+   * it carries is evidence the replacement must be judged against (R35).
+   *
+   * @param replacement the draft about to be published
+   * @return true if this is a published roster of the same organisation that it does not supersede
+   */
+  public boolean staysAuthoritativeBeside(Roster replacement) {
+    Objects.requireNonNull(replacement, "replacement must not be null");
+    return isPublishedBeside(replacement) && !period.overlaps(replacement.period);
+  }
+
+  private boolean isPublishedBeside(Roster replacement) {
+    return status == RosterStatus.PUBLISHED
+        && !id.equals(replacement.id)
+        && organisation.equals(replacement.organisation);
   }
 
   private void requireDraft() {

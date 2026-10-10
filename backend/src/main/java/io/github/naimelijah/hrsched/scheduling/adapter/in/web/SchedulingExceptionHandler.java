@@ -196,9 +196,10 @@ public class SchedulingExceptionHandler {
   /**
    * Assigning work that the domain forbids: somebody who lacks a qualification the shift demands
    * (R4), somebody who said they cannot work when it runs (F6), a shift the roster's own period
-   * does not cover (R11), or somebody who would then work two shifts at once (R3). All four earn a
-   * 422 for the same reason a non-compliant roster does: the caller named real things and asked for
-   * something the domain forbids, which is neither a malformed request nor a missing one.
+   * does not cover (R11), or somebody who would then work two shifts at once (R3), on this roster
+   * or beside work they hold on another authoritative one (R35). All four earn a 422 for the same
+   * reason a non-compliant roster does: the caller named real things and asked for something the
+   * domain forbids, which is neither a malformed request nor a missing one.
    *
    * <p>The overlap can also be found at publication — approving a swap, or publishing a draft that
    * arrived carrying one — and is answered the same way there. It is not counted as a refused

@@ -26,10 +26,12 @@ public interface PlanRostersUseCase {
    * <p>Checks the rules that are about the assignment itself: the person is one of the
    * organisation's own (R5), holds every qualification the shift demands (R4), and has not declared
    * that they cannot work when it runs (F6) — the same three questions generation asks — and holds
-   * no other shift on this draft overlapping it (R3), which generation never produces either. It
-   * deliberately does <em>not</em> check working-time rules, exactly as generation does not: those
-   * judge a whole schedule rather than one assignment, and they are enforced where they can be
-   * enforced honestly, at publication, which cannot be bypassed.
+   * no other shift overlapping it (R3): on this draft, which generation never produces either, or
+   * on a published roster that stays authoritative beside it (R35). That last check takes no
+   * publication lock, so publication asks it again (ADR-033). It deliberately does <em>not</em>
+   * check working-time rules, exactly as generation does not: those judge a whole schedule rather
+   * than one assignment, and they are enforced where they can be enforced honestly, at publication,
+   * which cannot be bypassed.
    *
    * @param actor whoever is assigning; must be a Scheduler
    * @param command which draft, which shift, and who
@@ -49,7 +51,10 @@ public interface PlanRostersUseCase {
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException if
    *     they already cover that shift
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException if
-   *     they already cover another shift on this draft that overlaps it
+   *     they already cover another shift that overlaps it, on this draft or on a published roster
+   *     that stays authoritative beside it
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException if
+   *     one of their shifts, here or on such a roster, cannot be resolved
    */
   Roster assign(Actor actor, AssignToShiftCommand command);
 
@@ -76,7 +81,11 @@ public interface PlanRostersUseCase {
    * @param roster which draft
    * @return the published roster
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException if
-   *     it puts anybody on two shifts at once, whatever the rules say. Checked before the rules
+   *     it puts anybody on two shifts at once, whatever the rules say: two of its own, or one
+   *     beside work they hold on a published roster that stays authoritative once it lands (R35).
+   *     Checked before the rules
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException if a
+   *     shift it assigns, or one its people hold on such a roster, cannot be resolved
    * @throws RosterNotCompliantException if it breaks any rule. There is no override
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException
    *     if a roster overlapping it was published at the same time by a writer that did not take

@@ -266,6 +266,123 @@ class RosteringHttpTest {
         .andExpect(jsonPath("$.detail").value(containsString("overlap")));
   }
 
+  // --- R35: R3 across every authoritative roster -----------------------------------------------
+  //
+  // Both weeks' drafts are generated before any shift exists, so they start empty and carry only
+  // what each test puts on them. Generated later, next week's draft would pick up Sunday night
+  // itself, and the refusal would be R3 within one roster rather than across two.
+
+  private static final String SUNDAY_NIGHT_START = "2026-12-13T22:00:00Z";
+  private static final String SUNDAY_NIGHT_END = "2026-12-14T06:00:00Z";
+
+  private void assign(String organisation, String roster, String shift, String employee)
+      throws Exception {
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, employee)))
+        .andExpect(status().isOk());
+  }
+
+  private void publish(String organisation, String roster) throws Exception {
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  void
+      GivenTheirNightOnLastWeeksPublishedRoster_WhenAssigningOverlappingWork_ThenItIsUnprocessable()
+          throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String thisWeek = generateRoster(organisation, "2026-12-07T00:00:00Z", "2026-12-14T00:00:00Z");
+    String nextWeek = generateRoster(organisation, "2026-12-14T00:00:00Z", "2026-12-21T00:00:00Z");
+    String sundayNight = defineShift(organisation, SUNDAY_NIGHT_START, SUNDAY_NIGHT_END, 1);
+    String mondayEarly =
+        defineShift(organisation, "2026-12-14T00:00:00Z", "2026-12-14T08:00:00Z", 1);
+    assign(organisation, thisWeek, sundayNight, ada);
+    publish(organisation, thisWeek);
+
+    mockMvc
+        .perform(
+            as(
+                    mockMvc,
+                    post("/api/rosters/" + nextWeek + "/assignments"),
+                    organisation,
+                    "SCHEDULER")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(mondayEarly, ada)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.title").value("Assignment refused"))
+        .andExpect(jsonPath("$.detail").value(containsString(thisWeek)));
+  }
+
+  /**
+   * The check that holds, over a real database. Both drafts were filled before either was
+   * published, so assigning saw nothing; publication is judged under the lock against what is
+   * really stored.
+   */
+  @Test
+  void GivenTwoDraftsPuttingOnePersonInTwoPlaces_WhenTheSecondIsPublished_ThenItIsUnprocessable()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String thisWeek = generateRoster(organisation, "2026-12-07T00:00:00Z", "2026-12-14T00:00:00Z");
+    String nextWeek = generateRoster(organisation, "2026-12-14T00:00:00Z", "2026-12-21T00:00:00Z");
+    assign(
+        organisation,
+        thisWeek,
+        defineShift(organisation, SUNDAY_NIGHT_START, SUNDAY_NIGHT_END, 1),
+        ada);
+    assign(
+        organisation,
+        nextWeek,
+        defineShift(organisation, "2026-12-14T00:00:00Z", "2026-12-14T08:00:00Z", 1),
+        ada);
+    publish(organisation, nextWeek);
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                post("/api/rosters/" + thisWeek + "/publication"),
+                organisation,
+                "SCHEDULER"))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.title").value("Assignment refused"))
+        .andExpect(jsonPath("$.detail").value(containsString(nextWeek)));
+  }
+
+  /**
+   * R35's first half: a shift straddling two roster periods may be carried by either roster, and by
+   * both. Generating next week covers Sunday night again with the same person, which must not read
+   * as being in two places at once.
+   */
+  @Test
+  void GivenAShiftStraddlingIntoNextWeek_WhenEachWeekIsGeneratedAndPublished_ThenBothArePublished()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String sundayNight = defineShift(organisation, SUNDAY_NIGHT_START, SUNDAY_NIGHT_END, 1);
+    String thisWeek = generateRoster(organisation, "2026-12-07T00:00:00Z", "2026-12-14T00:00:00Z");
+    publish(organisation, thisWeek);
+    String nextWeek = generateRoster(organisation, "2026-12-14T00:00:00Z", "2026-12-21T00:00:00Z");
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                post("/api/rosters/" + nextWeek + "/publication"),
+                organisation,
+                "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("PUBLISHED"))
+        .andExpect(jsonPath("$.assignments[0].shift").value(sundayNight))
+        .andExpect(jsonPath("$.assignments[0].employee").value(ada));
+  }
+
   @Test
   void GivenSomebodyNotInTheOrganisation_WhenAssigningThem_ThenItIsNotFound() throws Exception {
     String organisation = anOrganisation(mockMvc);

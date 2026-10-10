@@ -25,9 +25,22 @@ class RosterTest {
       new TimeRange(Instant.parse("2026-09-07T12:00:00Z"), Instant.parse("2026-09-07T20:00:00Z"));
   private static final TimeRange TUESDAY =
       new TimeRange(Instant.parse("2026-09-08T08:00:00Z"), Instant.parse("2026-09-08T16:00:00Z"));
+  private static final TimeRange NEXT_WEEK =
+      new TimeRange(Instant.parse("2026-09-14T00:00:00Z"), Instant.parse("2026-09-21T00:00:00Z"));
+  private static final TimeRange OVERLAPPING_WEEK =
+      new TimeRange(Instant.parse("2026-09-10T00:00:00Z"), Instant.parse("2026-09-17T00:00:00Z"));
+  private static final List<HeldWork> NOTHING_ELSEWHERE = List.of();
 
   private static Roster draft() {
     return new Roster(RosterId.newId(), ACME, WEEK);
+  }
+
+  private static Roster published(TimeRange period) {
+    return new Roster(RosterId.newId(), ACME, period).publishedUnder(1);
+  }
+
+  private static HeldWork heldBy(EmployeeId employee, TimeRange when) {
+    return new HeldWork(RosterId.newId(), ShiftId.newId(), employee, when);
   }
 
   @Test
@@ -167,7 +180,7 @@ class RosterTest {
             .with(new Assignment(monday, grace));
 
     List<EmployeeSchedule> schedules =
-        roster.schedulesFor(Map.of(monday, MONDAY, tuesday, TUESDAY));
+        roster.schedulesFor(Map.of(monday, MONDAY, tuesday, TUESDAY), NOTHING_ELSEWHERE);
 
     assertThat(schedules).hasSize(2);
     assertThat(schedules)
@@ -186,7 +199,10 @@ class RosterTest {
     ShiftId afternoon = ShiftId.newId();
     Roster roster = draft().with(new Assignment(day, ADA)).with(new Assignment(afternoon, ADA));
 
-    assertThatThrownBy(() -> roster.schedulesFor(Map.of(day, MONDAY, afternoon, MONDAY_AFTERNOON)))
+    assertThatThrownBy(
+            () ->
+                roster.schedulesFor(
+                    Map.of(day, MONDAY, afternoon, MONDAY_AFTERNOON), NOTHING_ELSEWHERE))
         .isInstanceOf(OverlappingAssignmentException.class);
   }
 
@@ -198,7 +214,9 @@ class RosterTest {
         new TimeRange(Instant.parse("2026-09-07T16:00:00Z"), Instant.parse("2026-09-07T20:00:00Z"));
     Roster roster = draft().with(new Assignment(day, ADA)).with(new Assignment(evening, ADA));
 
-    assertThatCode(() -> roster.schedulesFor(Map.of(day, MONDAY, evening, mondayEvening)))
+    assertThatCode(
+            () ->
+                roster.schedulesFor(Map.of(day, MONDAY, evening, mondayEvening), NOTHING_ELSEWHERE))
         .describedAs("a period's end is exclusive, so ending as the next begins is no overlap")
         .doesNotThrowAnyException();
   }
@@ -222,7 +240,7 @@ class RosterTest {
     assertThatThrownBy(
             () ->
                 roster.requireNoOverlappingWorkFor(
-                    ADA, Map.of(day, MONDAY, afternoon, MONDAY_AFTERNOON)))
+                    ADA, Map.of(day, MONDAY, afternoon, MONDAY_AFTERNOON), NOTHING_ELSEWHERE))
         .isInstanceOf(OverlappingAssignmentException.class);
   }
 
@@ -232,7 +250,8 @@ class RosterTest {
     Roster roster =
         draft().with(new Assignment(day, ADA)).with(new Assignment(ShiftId.newId(), ADA));
 
-    assertThatThrownBy(() -> roster.requireNoOverlappingWorkFor(ADA, Map.of(day, MONDAY)))
+    assertThatThrownBy(
+            () -> roster.requireNoOverlappingWorkFor(ADA, Map.of(day, MONDAY), NOTHING_ELSEWHERE))
         .describedAs("work that cannot be placed in time cannot be shown not to overlap")
         .isInstanceOf(RosterNotVerifiableException.class);
   }
@@ -256,7 +275,198 @@ class RosterTest {
     assertThatThrownBy(
             () ->
                 roster.schedulesFor(
-                    Map.of(day, MONDAY, tuesday, TUESDAY, afternoon, MONDAY_AFTERNOON)))
+                    Map.of(day, MONDAY, tuesday, TUESDAY, afternoon, MONDAY_AFTERNOON),
+                    NOTHING_ELSEWHERE))
         .isInstanceOf(OverlappingAssignmentException.class);
+  }
+
+  /**
+   * R35: R3 is judged across every authoritative roster, not within one. A shift running past the
+   * end of last week's roster can overlap work on this one, and the person cannot be in both.
+   */
+  @Test
+  void GivenOverlappingWorkHeldOnAnotherRoster_WhenCheckingThem_ThenItIsRefusedNamingThatRoster() {
+    ShiftId day = ShiftId.newId();
+    HeldWork elsewhere = heldBy(ADA, MONDAY_AFTERNOON);
+    Roster roster = draft().with(new Assignment(day, ADA));
+
+    assertThatThrownBy(
+            () -> roster.requireNoOverlappingWorkFor(ADA, Map.of(day, MONDAY), List.of(elsewhere)))
+        .isInstanceOf(OverlappingAssignmentException.class)
+        .hasMessageContaining(elsewhere.roster().value().toString());
+  }
+
+  @Test
+  void GivenWorkHeldElsewhereThatOnlyTouches_WhenCheckingThem_ThenNothingIsRefused() {
+    ShiftId day = ShiftId.newId();
+    TimeRange mondayEvening =
+        new TimeRange(Instant.parse("2026-09-07T16:00:00Z"), Instant.parse("2026-09-07T20:00:00Z"));
+    Roster roster = draft().with(new Assignment(day, ADA));
+
+    assertThatCode(
+            () ->
+                roster.requireNoOverlappingWorkFor(
+                    ADA, Map.of(day, MONDAY), List.of(heldBy(ADA, mondayEvening))))
+        .doesNotThrowAnyException();
+  }
+
+  /**
+   * R35 lets either roster carry a shift straddling both periods, and generation picks the same
+   * person for it again. The same assignment on two rosters is one place to be, not two, so it is
+   * no overlap. ADR-033.
+   */
+  @Test
+  void GivenTheSameShiftHeldByThemOnAnotherRoster_WhenCheckingThem_ThenNothingIsRefused() {
+    ShiftId overnight = ShiftId.newId();
+    HeldWork sameShiftElsewhere = new HeldWork(RosterId.newId(), overnight, ADA, MONDAY);
+    Roster roster = draft().with(new Assignment(overnight, ADA));
+
+    assertThatCode(
+            () ->
+                roster.requireNoOverlappingWorkFor(
+                    ADA, Map.of(overnight, MONDAY), List.of(sameShiftElsewhere)))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void GivenSomebodyElsesOverlappingWorkHeldElsewhere_WhenCheckingThem_ThenNothingIsRefused() {
+    ShiftId day = ShiftId.newId();
+    Roster roster = draft().with(new Assignment(day, ADA));
+
+    assertThatCode(
+            () ->
+                roster.requireNoOverlappingWorkFor(
+                    ADA, Map.of(day, MONDAY), List.of(heldBy(EmployeeId.newId(), MONDAY))))
+        .doesNotThrowAnyException();
+  }
+
+  /**
+   * Two rosters published before R35 was enforced may already overlap each other. That is their
+   * breach, not this roster's, and refusing here would block every later publication with no remedy
+   * the Scheduler could reach from this draft.
+   */
+  @Test
+  void GivenTwoPiecesOfWorkElsewhereOverlappingEachOther_WhenCheckingThem_ThenNothingIsRefused() {
+    ShiftId tuesday = ShiftId.newId();
+    Roster roster = draft().with(new Assignment(tuesday, ADA));
+
+    assertThatCode(
+            () ->
+                roster.requireNoOverlappingWorkFor(
+                    ADA,
+                    Map.of(tuesday, TUESDAY),
+                    List.of(heldBy(ADA, MONDAY), heldBy(ADA, MONDAY_AFTERNOON))))
+        .doesNotThrowAnyException();
+  }
+
+  /**
+   * The overlap that comparing neighbours by start time would miss. Sorted together, the short
+   * night shift held elsewhere falls between the long one and this roster's day shift, so only a
+   * comparison of every held piece against every own shift finds it.
+   */
+  @Test
+  void GivenLongWorkHeldElsewhereWithShorterWorkStartingInside_WhenCheckingThem_ThenItIsRefused() {
+    ShiftId day = ShiftId.newId();
+    TimeRange allMonday =
+        new TimeRange(Instant.parse("2026-09-07T00:00:00Z"), Instant.parse("2026-09-07T23:00:00Z"));
+    TimeRange earlyMonday =
+        new TimeRange(Instant.parse("2026-09-07T01:00:00Z"), Instant.parse("2026-09-07T02:00:00Z"));
+    Roster roster = draft().with(new Assignment(day, ADA));
+
+    assertThatThrownBy(
+            () ->
+                roster.requireNoOverlappingWorkFor(
+                    ADA,
+                    Map.of(day, MONDAY),
+                    List.of(heldBy(ADA, allMonday), heldBy(ADA, earlyMonday))))
+        .isInstanceOf(OverlappingAssignmentException.class);
+  }
+
+  @Test
+  void GivenOverlappingWorkHeldElsewhere_WhenBuildingSchedules_ThenItIsRefused() {
+    ShiftId day = ShiftId.newId();
+    Roster roster = draft().with(new Assignment(day, ADA));
+
+    assertThatThrownBy(
+            () -> roster.schedulesFor(Map.of(day, MONDAY), List.of(heldBy(ADA, MONDAY_AFTERNOON))))
+        .isInstanceOf(OverlappingAssignmentException.class);
+  }
+
+  /**
+   * Work held elsewhere is checked for R3 and nothing more. The working-time rules still judge one
+   * roster at a time, so it must not leak into the schedules they are evaluated against.
+   */
+  @Test
+  void GivenWorkHeldElsewhere_WhenBuildingSchedules_ThenOnlyThisRostersWorkIsScheduled() {
+    ShiftId day = ShiftId.newId();
+    Roster roster = draft().with(new Assignment(day, ADA));
+
+    List<EmployeeSchedule> schedules =
+        roster.schedulesFor(Map.of(day, MONDAY), List.of(heldBy(ADA, TUESDAY)));
+
+    assertThat(schedules)
+        .singleElement()
+        .satisfies(schedule -> assertThat(schedule.workingPeriods()).containsExactly(MONDAY));
+  }
+
+  @Test
+  void GivenAPublishedRosterOverlappingTheReplacement_WhenPublishing_ThenItIsSuperseded() {
+    Roster replacement = new Roster(RosterId.newId(), ACME, OVERLAPPING_WEEK);
+
+    assertThat(published(WEEK).isSupersededBy(replacement)).isTrue();
+    assertThat(published(WEEK).staysAuthoritativeBeside(replacement)).isFalse();
+  }
+
+  @Test
+  void
+      GivenAPublishedRosterThatOnlyTouchesTheReplacement_WhenPublishing_ThenItStaysAuthoritative() {
+    Roster replacement = new Roster(RosterId.newId(), ACME, NEXT_WEEK);
+
+    assertThat(published(WEEK).isSupersededBy(replacement)).isFalse();
+    assertThat(published(WEEK).staysAuthoritativeBeside(replacement)).isTrue();
+  }
+
+  /**
+   * A draft binds nobody. Each predicate is asked about the replacement that would otherwise make
+   * it true — one overlapping, one only touching — so the status is what makes both false.
+   */
+  @Test
+  void GivenADraft_WhenAnotherIsPublished_ThenItIsNeitherSupersededNorAuthoritative() {
+    assertThat(draft().isSupersededBy(new Roster(RosterId.newId(), ACME, OVERLAPPING_WEEK)))
+        .isFalse();
+    assertThat(draft().staysAuthoritativeBeside(new Roster(RosterId.newId(), ACME, NEXT_WEEK)))
+        .isFalse();
+  }
+
+  @Test
+  void GivenASupersededRoster_WhenAnotherIsPublished_ThenItIsNotAuthoritative() {
+    Roster replacement = new Roster(RosterId.newId(), ACME, NEXT_WEEK);
+
+    assertThat(published(WEEK).superseded().staysAuthoritativeBeside(replacement)).isFalse();
+  }
+
+  /**
+   * Only supersession needs the identity check. A roster always overlaps itself, so it could never
+   * stay authoritative beside itself whatever that check said.
+   */
+  @Test
+  void GivenThePublishedRosterItself_WhenPublishingIt_ThenItDoesNotSupersedeItself() {
+    Roster roster = published(WEEK);
+
+    assertThat(roster.isSupersededBy(roster)).isFalse();
+  }
+
+  /**
+   * Another organisation's roster is never superseded by this one, and its work is never this
+   * organisation's evidence. The read is already scoped, so this holds the line if it ever is not.
+   */
+  @Test
+  void GivenAnotherOrganisationsPublishedRoster_WhenPublishing_ThenItIsIgnored() {
+    Roster theirs = new Roster(RosterId.newId(), OrganisationId.newId(), WEEK).publishedUnder(1);
+
+    assertThat(theirs.isSupersededBy(new Roster(RosterId.newId(), ACME, OVERLAPPING_WEEK)))
+        .isFalse();
+    assertThat(theirs.staysAuthoritativeBeside(new Roster(RosterId.newId(), ACME, NEXT_WEEK)))
+        .isFalse();
   }
 }
