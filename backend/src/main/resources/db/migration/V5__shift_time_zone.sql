@@ -1,7 +1,8 @@
 -- Each shift's working-time days are counted in its own zone (R36). See ADR-034.
 --
--- The zone is an IANA time zone database name, such as Europe/London, validated where a shift is
--- defined; the database does not check it, because it does not hold the same zone database.
+-- The zone is a java.time zone id, such as Europe/London. Which ids a client may send is decided
+-- where a shift is defined over HTTP; the database does not check it, because it does not hold the
+-- same zone database as the JVM.
 --
 -- Every shift stored before this was judged in UTC, so UTC is what they keep: a shift whose days
 -- were counted one way does not have them counted differently after the fact. Shifts have no edit

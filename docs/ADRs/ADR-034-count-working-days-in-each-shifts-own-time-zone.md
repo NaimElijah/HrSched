@@ -22,6 +22,7 @@ Forces:
 **A shift carries a `ZoneId`, and each piece of work is split at its own zone's midnights.**
 
 - **`Shift` has a non-null `zone`.** `Shift.workingPeriod()` pairs it with the period as a `WorkingPeriod`, a scheduling value object. `EmployeeSchedule` holds `WorkingPeriod`s. `TimeRange` is unchanged.
+- **The domain accepts any `ZoneId`, and the boundary decides which ids a client may send.** A fixed offset has well-defined midnights, so a shift in one is not an illegal state for counting days, and `Shift` has no invariant to enforce. Refusing raw offsets is a judgement about what a client most likely meant by the string it sent, which is wire-format validation. That belongs at the boundary, as every other request check in this codebase does.
 - **`workingTimePerDay` splits each period at midnight in that period's zone**, so a day is as long as its clocks make it: 23 hours when they go forward, 25 when they go back.
 - **Work in different zones lands on each zone's own calendar date**, and work on the same date adds up whichever zone it was in. Days are keyed by `LocalDate`; there is no "organisation day" to reconcile them into.
 - **Only ids the JVM's time zone database knows are accepted** at the HTTP boundary: those in `ZoneId.getAvailableZoneIds()`, such as `Europe/London` or `UTC`. A raw offset such as `+01:00`, `UTC+01:00` or `GMT+1` is refused, though `ZoneId.of` would take it, because somebody sending one almost always means a place, and an offset ignores that place's daylight saving. The database's own fixed-offset zones, `Etc/GMT±N`, are accepted. A browser on a machine set to a fixed offset reports exactly that name, and its typed times were read in that offset, so refusing it would lock that user out to protect nothing. Their sign is POSIX's, inverted: `Etc/GMT+5` is five hours *behind* UTC.
@@ -41,7 +42,7 @@ Forces:
 
 - **The zone is the Scheduler's machine, not the workplace.** Someone planning from Lisbon for a Madrid site enters Madrid's times as Lisbon's, and those days are counted in Lisbon. Fixing that needs a zone picker and wall-clock conversion in a chosen zone, which `Date` cannot do (#136). **Revisit** when a Scheduler must plan for a site in another zone, which is #136's trigger.
 - **The UTC backfill is permanent.** Every shift defined before V5 counts its days in UTC for good, which is how it was judged. Nothing shows a shift's zone yet either (#136).
-- **The database cannot validate a zone.** PostgreSQL's zone list is not the JVM's, so the column is free text that only the HTTP boundary checks. A future writer that bypasses the boundary must check for itself.
+- **The database cannot validate a zone.** PostgreSQL's zone list is not the JVM's, so the column holds whatever `ZoneId.getId()` gave. Tests store `ZoneOffset.UTC` as `Z`, for instance. A future way of defining shifts other than HTTP, such as an import, decides for itself which ids it accepts.
 - **Every request that defines a shift must carry `zone`.** That includes any client outside this repository; none exists today.
 
 ## Alternatives considered
