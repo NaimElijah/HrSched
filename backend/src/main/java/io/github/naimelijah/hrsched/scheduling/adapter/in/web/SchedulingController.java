@@ -22,6 +22,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.net.URI;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -66,17 +67,19 @@ public class SchedulingController {
   public ResponseEntity<ShiftResponse> defineShift(
       @AuthenticationPrincipal Actor actor, @RequestBody DefineShiftRequest request) {
     Set<QualificationId> required = request.toRequiredQualifications();
+    ZoneId zone = request.toZone();
     ShiftId id =
         manageShifts.defineShift(
             actor,
             new DefineShiftCommand(
-                actingIn(actor), request.toPeriod(), request.requiredHeadcount(), required));
+                actingIn(actor), request.toPeriod(), zone, request.requiredHeadcount(), required));
     return ResponseEntity.created(URI.create("/api/shifts/" + id.value()))
         .body(
             new ShiftResponse(
                 id.value(),
                 request.start(),
                 request.end(),
+                zone.getId(),
                 request.requiredHeadcount(),
                 required.stream().map(QualificationId::value).toList()));
   }

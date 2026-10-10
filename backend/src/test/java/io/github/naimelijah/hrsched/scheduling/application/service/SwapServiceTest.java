@@ -150,7 +150,7 @@ class SwapServiceTest {
 
   private ShiftId aShift(Set<QualificationId> required) {
     return scheduling.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, 1, required));
+        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, required));
   }
 
   /**
@@ -428,7 +428,8 @@ class SwapServiceTest {
         new TimeRange(Instant.parse("2026-10-05T00:00:00Z"), Instant.parse("2026-10-05T08:00:00Z"));
     ShiftId early =
         scheduling.defineShift(
-            scheduler(ACME), new DefineShiftCommand(ACME, earlyMonday, 1, Set.of()));
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, earlyMonday, ZoneOffset.UTC, 1, Set.of()));
     Roster draft =
         scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), monday, ada));
@@ -539,7 +540,7 @@ class SwapServiceTest {
         new TimeRange(Instant.parse("2026-10-05T12:00:00Z"), Instant.parse("2026-10-05T20:00:00Z"));
     ShiftId gracesAfternoon =
         scheduling.defineShift(
-            scheduler(ACME), new DefineShiftCommand(ACME, afternoon, 1, Set.of()));
+            scheduler(ACME), new DefineShiftCommand(ACME, afternoon, ZoneOffset.UTC, 1, Set.of()));
     Roster draft =
         scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), day, ada));
@@ -578,13 +579,15 @@ class SwapServiceTest {
         new TimeRange(Instant.parse("2026-10-12T00:00:00Z"), Instant.parse("2026-10-12T08:00:00Z"));
     ShiftId adasNight =
         scheduling.defineShift(
-            scheduler(ACME), new DefineShiftCommand(ACME, sundayNight, 1, Set.of()));
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, sundayNight, ZoneOffset.UTC, 1, Set.of()));
     Roster original = publishedWith(ada, adasNight);
     Roster nextDraft =
         scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, nextWeek));
     ShiftId gracesEarly =
         scheduling.defineShift(
-            scheduler(ACME), new DefineShiftCommand(ACME, nextMondayEarly, 1, Set.of()));
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, nextMondayEarly, ZoneOffset.UTC, 1, Set.of()));
     scheduling.assign(
         scheduler(ACME), new AssignToShiftCommand(ACME, nextDraft.id(), gracesEarly, grace));
     scheduling.publish(scheduler(ACME), ACME, nextDraft.id());

@@ -35,6 +35,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPe
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.WorkingPeriod;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -122,6 +123,7 @@ public class SchedulingService
             ShiftId.newId(),
             command.organisation(),
             command.period(),
+            command.zone(),
             command.requiredHeadcount(),
             command.requiredQualifications());
     shifts.save(shift);
@@ -354,22 +356,23 @@ public class SchedulingService
   }
 
   /**
-   * When the shifts of these assignments run, which the roster itself does not know.
+   * When the shifts of these assignments run, and the zone each one's days are counted in (R36):
+   * neither of which the roster itself knows.
    *
    * <p>A shift the repository cannot return refuses rather than being left out: whatever is judged
    * against these periods would otherwise be judged against less work than the roster carries.
    *
    * @throws RosterNotVerifiableException if any of those shifts cannot be resolved
    */
-  private Map<ShiftId, TimeRange> periodsOf(
+  private Map<ShiftId, WorkingPeriod> periodsOf(
       OrganisationId organisation, Roster roster, List<Assignment> assignments) {
-    Map<ShiftId, TimeRange> periods = new LinkedHashMap<>();
+    Map<ShiftId, WorkingPeriod> periods = new LinkedHashMap<>();
     for (Assignment assignment : assignments) {
       Shift shift =
           shifts
               .findById(organisation, assignment.shift())
               .orElseThrow(() -> new RosterNotVerifiableException(roster.id(), assignment.shift()));
-      periods.put(shift.id(), shift.period());
+      periods.put(shift.id(), shift.workingPeriod());
     }
     return periods;
   }

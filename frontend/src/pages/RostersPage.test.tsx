@@ -34,6 +34,7 @@ const SHIFT = {
   id: 'shift-1',
   start: '2026-11-03T08:00:00Z',
   end: '2026-11-03T16:00:00Z',
+  zone: 'UTC',
   requiredHeadcount: 1,
   requiredQualifications: [],
 };

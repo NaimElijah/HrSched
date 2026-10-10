@@ -420,7 +420,7 @@ and never enforced — there is no threshold and nothing fails a build on it ([A
 | --- | --- | --- |
 | `TimeRangeTest`, `ActorTest`, `IdentityTest` | Shared kernel | The range invariant, which actor may cross an organisation boundary, and every identity record — including that a `UserId` and an `EmployeeId` wrapping one UUID stay unequal ([ADR-012](docs/ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). |
 | `OrganisationTest`, `EmployeeTest`, `QualificationTest`, `ContractTermsTest`, `ShiftPreferenceTest` | Domain (access, workforce) | Constructor invariants and identity equality. No Spring. |
-| `ShiftTest`, `RosterTest`, `ConstraintSetTest`, `WorkingTimeConstraintTest`, `EmployeeScheduleTest`, `SchedulingValueObjectsTest` | Domain (scheduling) | Headcount, the roster lifecycle, rule thresholds at their boundaries, and day arithmetic. |
+| `ShiftTest`, `RosterTest`, `ConstraintSetTest`, `WorkingTimeConstraintTest`, `EmployeeScheduleTest`, `SchedulingValueObjectsTest` | Domain (scheduling) | Headcount, the roster lifecycle, rule thresholds at their boundaries, and day arithmetic in each shift's own zone, daylight saving included. |
 | `SchedulingServiceTest`, `SwapServiceTest`, `EmployeeServiceTest`, `QualificationServiceTest`, `OrganisationServiceTest`, `NotificationServiceTest` | Application | Use cases against hand-written stubs of their own ports. No Spring, no mocking framework. `SwapServiceTest` is the exception that proves the rule: it wires a **real** `SchedulingService`, because the claim worth testing is that approving a swap goes through the same publication everything else does. |
 | `SwapHttpTest` | Adapter (HTTP) | The widest path in the system — onboard a tenant, hire people, roster, publish, hand a shift over, and have the colleague read about it. Four contexts in one test. |
 | `RequestBindingHttpTest` | Configuration | A missing query parameter or an identifier that does not parse is answered with a problem detail naming it, whose detail never repeats the value sent. |
@@ -580,9 +580,10 @@ authentication (ADR-011, ADR-028 to ADR-032) are settled, so what remains blocki
 - **Constraint versions are stored but cannot be read back.** Every revision is kept now, keyed by
   version, so the record a published roster holds is no longer worthless — but the port offers only
   `findCurrent`, so reading a historical version still needs a method nobody has asked for.
-- **Time is UTC-only.** `TimeRange` carries no zone. Periods are split correctly at midnight, so
-  the arithmetic is right, but the *day* is a UTC day — for an organisation whose local midnight
-  is not UTC midnight, work is counted against the wrong one.
+- **A shift's zone is the Scheduler's browser's.** Working-time days are counted in each shift's
+  own zone (R36, ADR-034), and the Shifts page sends the zone it read the typed times in. Planning
+  a site in another zone, and seeing which zone a shift is counted in, are #136. Shifts stored
+  before that change keep the UTC they were judged in.
 - **Nothing automated proves the UI and the API agree.** The typed client is written by hand from
   the Java records, so a DTO change can drift silently. There is no contract test and no browser
   test — see ADR-013 for the trigger to add one.

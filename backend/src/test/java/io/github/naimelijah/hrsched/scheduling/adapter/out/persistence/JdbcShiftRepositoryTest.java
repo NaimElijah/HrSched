@@ -9,6 +9,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,7 +44,8 @@ class JdbcShiftRepositoryTest {
   }
 
   private static Shift shift(OrganisationId organisation, String start, String end) {
-    return new Shift(ShiftId.newId(), organisation, between(start, end), 1, Set.of());
+    return new Shift(
+        ShiftId.newId(), organisation, between(start, end), ZoneOffset.UTC, 1, Set.of());
   }
 
   private static TimeRange theDay() {
@@ -55,6 +58,33 @@ class JdbcShiftRepositoryTest {
     repository.save(morning);
 
     assertThat(repository.findById(ACME, morning.id())).contains(morning);
+  }
+
+  /**
+   * Shifts compare by identity, so finding one says nothing about its zone; the zone its days are
+   * counted in (R36) is asserted on its own, through both reads.
+   */
+  @Test
+  void GivenAShiftInAZoneOtherThanUtc_WhenReadBack_ThenItKeepsItsZone() {
+    ZoneId london = ZoneId.of("Europe/London");
+    Shift evening =
+        new Shift(
+            ShiftId.newId(),
+            ACME,
+            between("2026-09-07T17:00:00Z", "2026-09-07T23:00:00Z"),
+            london,
+            1,
+            Set.of());
+    repository.save(evening);
+
+    assertThat(repository.findById(ACME, evening.id()))
+        .get()
+        .extracting(Shift::zone)
+        .isEqualTo(london);
+    assertThat(repository.findWithin(ACME, theDay()))
+        .singleElement()
+        .extracting(Shift::zone)
+        .isEqualTo(london);
   }
 
   @Test
@@ -126,6 +156,7 @@ class JdbcShiftRepositoryTest {
             original.id(),
             ACME,
             between("2026-09-07T09:00:00Z", "2026-09-07T17:00:00Z"),
+            ZoneOffset.UTC,
             2,
             Set.of());
     repository.save(original);
@@ -153,6 +184,7 @@ class JdbcShiftRepositoryTest {
             ShiftId.newId(),
             ACME,
             between("2026-09-07T08:00:00Z", "2026-09-07T16:00:00Z"),
+            ZoneOffset.UTC,
             1,
             Set.of(forklift, crane));
     repository.save(morning);
@@ -170,9 +202,9 @@ class JdbcShiftRepositoryTest {
     QualificationId crane = QualificationId.newId();
     ShiftId id = ShiftId.newId();
     TimeRange period = between("2026-09-07T08:00:00Z", "2026-09-07T16:00:00Z");
-    repository.save(new Shift(id, ACME, period, 1, Set.of(forklift)));
+    repository.save(new Shift(id, ACME, period, ZoneOffset.UTC, 1, Set.of(forklift)));
 
-    repository.save(new Shift(id, ACME, period, 1, Set.of(crane)));
+    repository.save(new Shift(id, ACME, period, ZoneOffset.UTC, 1, Set.of(crane)));
 
     assertThat(repository.findById(ACME, id))
         .get()

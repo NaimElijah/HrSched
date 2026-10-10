@@ -5,7 +5,6 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -22,21 +21,26 @@ import java.util.TreeMap;
  * assignments or shifts, so a new rule is a single small class.
  *
  * @param employee whose schedule this is
- * @param workingPeriods the spans they would work, sorted by start
+ * @param workingPeriods the spans they would work, each with the zone its days are counted in,
+ *     sorted by start
  */
-public record EmployeeSchedule(EmployeeId employee, List<TimeRange> workingPeriods) {
+public record EmployeeSchedule(EmployeeId employee, List<WorkingPeriod> workingPeriods) {
 
   public EmployeeSchedule {
     Objects.requireNonNull(employee, "employee must not be null");
     workingPeriods =
-        workingPeriods.stream().sorted(Comparator.comparing(TimeRange::start)).toList();
+        workingPeriods.stream()
+            .sorted(Comparator.comparing(working -> working.period().start()))
+            .toList();
   }
 
   /**
    * @return the total time worked across every period
    */
   public Duration totalWorkingTime() {
-    return workingPeriods.stream().map(TimeRange::length).reduce(Duration.ZERO, Duration::plus);
+    return workingPeriods.stream()
+        .map(working -> working.period().length())
+        .reduce(Duration.ZERO, Duration::plus);
   }
 
   /**
@@ -46,20 +50,20 @@ public record EmployeeSchedule(EmployeeId employee, List<TimeRange> workingPerio
    * daily cap mean anything: a shift running 22:00 to 06:00 places two hours on the first day and
    * six on the second, so the second day's total includes work that began the day before.
    *
-   * <p>ASSUMPTION: days are counted in UTC, because a {@link TimeRange} carries no zone yet. For an
-   * organisation whose shifts cross midnight in local time this attributes work to the wrong day,
-   * which is one more reason the zone question has to be answered before this is trusted in
-   * production.
+   * <p>Midnight is each period's own zone's (R36), so a day is as long as its clocks make it: 23
+   * hours when they go forward, 25 when they go back. Work in two zones lands on each zone's own
+   * date, and work on the same date adds up whichever zone it was in (ADR-034).
    *
    * @return time worked per calendar day, in date order, with no zero-length entries
    */
   public Map<LocalDate, Duration> workingTimePerDay() {
     Map<LocalDate, Duration> perDay = new TreeMap<>();
-    for (TimeRange period : workingPeriods) {
+    for (WorkingPeriod working : workingPeriods) {
+      TimeRange period = working.period();
       Instant cursor = period.start();
       while (cursor.isBefore(period.end())) {
-        LocalDate day = LocalDate.ofInstant(cursor, ZoneOffset.UTC);
-        Instant midnight = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        LocalDate day = LocalDate.ofInstant(cursor, working.zone());
+        Instant midnight = day.plusDays(1).atStartOfDay(working.zone()).toInstant();
         Instant sliceEnd = midnight.isBefore(period.end()) ? midnight : period.end();
         perDay.merge(day, Duration.between(cursor, sliceEnd), Duration::plus);
         cursor = sliceEnd;

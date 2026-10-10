@@ -63,7 +63,7 @@ class RosteringHttpTest {
             .perform(
                 as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
                     .content(
-                        "{\"start\":\"%s\",\"end\":\"%s\",\"requiredHeadcount\":%d}"
+                        "{\"start\":\"%s\",\"end\":\"%s\",\"zone\":\"UTC\",\"requiredHeadcount\":%d}"
                             .formatted(start, end, headcount)))
             .andExpect(status().isCreated())
             .andReturn()
@@ -223,7 +223,7 @@ class RosteringHttpTest {
                 as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
                     .content(
                         ("{\"start\":\"2026-11-04T08:00:00Z\",\"end\":\"2026-11-04T16:00:00Z\","
-                                + "\"requiredHeadcount\":1,\"requiredQualifications\":[\"%s\"]}")
+                                + "\"zone\":\"UTC\",\"requiredHeadcount\":1,\"requiredQualifications\":[\"%s\"]}")
                             .formatted(forklift)))
             .andExpect(status().isCreated())
             .andReturn()
@@ -549,7 +549,7 @@ class RosteringHttpTest {
             as(mockMvc, post("/api/shifts"), anOrganisation(mockMvc), "EMPLOYEE")
                 .content(
                     "{\"start\":\"2026-10-10T08:00:00Z\",\"end\":\"2026-10-10T16:00:00Z\","
-                        + "\"requiredHeadcount\":1}"))
+                        + "\"zone\":\"UTC\",\"requiredHeadcount\":1}"))
         .andExpect(status().isForbidden());
   }
 
@@ -560,7 +560,7 @@ class RosteringHttpTest {
             as(mockMvc, post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
                 .content(
                     "{\"start\":\"2026-10-11T16:00:00Z\",\"end\":\"2026-10-11T08:00:00Z\","
-                        + "\"requiredHeadcount\":1}"))
+                        + "\"zone\":\"UTC\",\"requiredHeadcount\":1}"))
         .andExpect(status().isBadRequest());
   }
 
@@ -795,7 +795,7 @@ class RosteringHttpTest {
     mockMvc
         .perform(
             as(mockMvc, post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
-                .content("{\"requiredHeadcount\":1}"))
+                .content("{\"zone\":\"UTC\",\"requiredHeadcount\":1}"))
         .andExpect(status().isBadRequest());
   }
 
@@ -806,7 +806,7 @@ class RosteringHttpTest {
             as(mockMvc, post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
                 .content(
                     "{\"start\":\"2026-10-05T08:00:00Z\",\"end\":\"2026-10-05T16:00:00Z\","
-                        + "\"requiredHeadcount\":1,\"requiredQualifications\":[\"%s\"]}"
+                        + "\"zone\":\"UTC\",\"requiredHeadcount\":1,\"requiredQualifications\":[\"%s\"]}"
                             .formatted(UUID.randomUUID())))
         .andExpect(status().isBadRequest());
   }
@@ -843,7 +843,7 @@ class RosteringHttpTest {
             .perform(
                 as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
                     .content(
-                        "{\"start\":\"2026-11-16T08:00:00Z\",\"end\":\"2026-11-16T16:00:00Z\",\"requiredHeadcount\":2}"))
+                        "{\"start\":\"2026-11-16T08:00:00Z\",\"end\":\"2026-11-16T16:00:00Z\",\"zone\":\"UTC\",\"requiredHeadcount\":2}"))
             .andExpect(status().isCreated())
             .andReturn()
             .getResponse()
@@ -867,5 +867,127 @@ class RosteringHttpTest {
         .perform(as(mockMvc, get("/api/shifts/" + theirs), anOrganisation(mockMvc), "SCHEDULER"))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  // --- R36: a shift's working-time days are counted in its own zone ----------------------------
+
+  /** Fixed, so a refusal can be asserted exactly and can never carry what the caller sent. */
+  private static final String ZONE_REFUSAL =
+      "zone must name an IANA time zone, such as Europe/London";
+
+  private String defineShiftIn(String organisation, String zone, String start, String end)
+      throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
+                    .content(
+                        "{\"start\":\"%s\",\"end\":\"%s\",\"zone\":\"%s\",\"requiredHeadcount\":1}"
+                            .formatted(start, end, zone)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.zone").value(zone))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return body.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
+  }
+
+  @Test
+  void GivenAZone_WhenDefiningAShift_ThenItIsEchoedAndReadBack() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String shift =
+        defineShiftIn(organisation, "Asia/Tokyo", "2026-12-01T00:00:00Z", "2026-12-01T08:00:00Z");
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/shifts/" + shift), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.zone").value("Asia/Tokyo"));
+  }
+
+  /**
+   * No default. A zone the caller did not send is a zone a developer chose, and it would count
+   * somebody's days in the wrong place without anybody noticing.
+   */
+  @Test
+  void GivenNoZone_WhenDefiningAShift_ThenItIsABadRequest() throws Exception {
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
+                .content(
+                    "{\"start\":\"2026-12-02T08:00:00Z\",\"end\":\"2026-12-02T16:00:00Z\","
+                        + "\"requiredHeadcount\":1}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail").value(ZONE_REFUSAL));
+  }
+
+  /** ADR-024: a refusal never repeats what was sent. */
+  @Test
+  void GivenAZoneThatDoesNotExist_WhenDefiningAShift_ThenNothingSentIsEchoed() throws Exception {
+    String unmistakable = "Nowhere/Zz9PluralZAlpha";
+
+    String body =
+        mockMvc
+            .perform(
+                as(mockMvc, post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
+                    .content(
+                        ("{\"start\":\"2026-12-03T08:00:00Z\",\"end\":\"2026-12-03T16:00:00Z\","
+                                + "\"zone\":\"%s\",\"requiredHeadcount\":1}")
+                            .formatted(unmistakable)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value(ZONE_REFUSAL))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(body).doesNotContain(unmistakable);
+  }
+
+  /**
+   * A fixed offset is a valid Java zone but not a place: it ignores daylight saving, so a shift
+   * entered as +01:00 would have its days counted an hour wrong half the year (ADR-034).
+   */
+  @Test
+  void GivenAFixedOffsetForAZone_WhenDefiningAShift_ThenItIsABadRequest() throws Exception {
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
+                .content(
+                    "{\"start\":\"2026-12-04T08:00:00Z\",\"end\":\"2026-12-04T16:00:00Z\","
+                        + "\"zone\":\"+01:00\",\"requiredHeadcount\":1}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.detail").value(ZONE_REFUSAL));
+  }
+
+  /**
+   * The issue's done-when, end to end. Both shifts are on the 6th in Tokyo, twelve hours there, so
+   * an invented ten-hour cap refuses the roster. Counted in UTC they would fall seven hours on the
+   * 5th and five on the 6th, and it would publish.
+   */
+  @Test
+  void GivenTwoShiftsOnOneDayInTheirOwnZone_WhenPublishingUnderADailyCap_ThenItIsRefused()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String roster = generateRoster(organisation, "2026-12-05T00:00:00Z", "2026-12-07T00:00:00Z");
+    String lateNight =
+        defineShiftIn(organisation, "Asia/Tokyo", "2026-12-05T15:00:00Z", "2026-12-05T21:00:00Z");
+    String morning =
+        defineShiftIn(organisation, "Asia/Tokyo", "2026-12-05T23:00:00Z", "2026-12-06T05:00:00Z");
+    assign(organisation, roster, lateNight, ada);
+    assign(organisation, roster, morning, ada);
+    mockMvc
+        .perform(
+            as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
+                .content("{\"maximumDailyMinutes\":600}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.violations.length()").value(1))
+        .andExpect(jsonPath("$.violations[0].employee").value(ada))
+        .andExpect(jsonPath("$.violations[0].constraint").value("maximum daily working time"));
   }
 }

@@ -5,6 +5,8 @@ export interface Shift {
   readonly id: string;
   readonly start: string;
   readonly end: string;
+  /** The IANA zone the shift's working-time days are counted in. */
+  readonly zone: string;
   readonly requiredHeadcount: number;
   readonly requiredQualifications: readonly string[];
 }

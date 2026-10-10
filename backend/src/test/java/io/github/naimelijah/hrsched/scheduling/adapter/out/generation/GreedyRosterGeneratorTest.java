@@ -16,6 +16,8 @@ import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -45,6 +47,7 @@ class GreedyRosterGeneratorTest {
         ShiftId.newId(),
         ACME,
         new TimeRange(Instant.parse(start), Instant.parse(end)),
+        ZoneOffset.UTC,
         headcount,
         needed);
   }
@@ -91,6 +94,42 @@ class GreedyRosterGeneratorTest {
         generator.generate(List.of(eightHours), List.of(anyone("Ada")), oneHourDays);
 
     assertThat(assignments).isEmpty();
+  }
+
+  /**
+   * Generation judges the same rules publication does, so it counts days in each shift's zone too
+   * (R36). Both Tokyo shifts fall on the 7th there, twelve hours against an invented cap of ten, so
+   * Ada can take only the first. Counted in UTC they straddle two days and she would get both.
+   */
+  @Test
+  void GivenTwoShiftsOnOneLocalDay_WhenGeneratingUnderADailyCap_ThenOnlyOneIsAssignedToThem() {
+    ZoneId tokyo = ZoneId.of("Asia/Tokyo");
+    Shift lateNight =
+        new Shift(
+            ShiftId.newId(),
+            ACME,
+            new TimeRange(
+                Instant.parse("2026-09-06T15:00:00Z"), Instant.parse("2026-09-06T21:00:00Z")),
+            tokyo,
+            1,
+            Set.of());
+    Shift morning =
+        new Shift(
+            ShiftId.newId(),
+            ACME,
+            new TimeRange(
+                Instant.parse("2026-09-06T23:00:00Z"), Instant.parse("2026-09-07T05:00:00Z")),
+            tokyo,
+            1,
+            Set.of());
+    ConstraintSet tenHourDays =
+        ConstraintSet.initial(ACME)
+            .revisedTo(List.of(new MaximumDailyWorkingTime(Duration.ofHours(10))));
+
+    List<Assignment> assignments =
+        generator.generate(List.of(lateNight, morning), List.of(anyone("Ada")), tenHourDays);
+
+    assertThat(assignments).extracting(Assignment::shift).containsExactly(lateNight.id());
   }
 
   @Test

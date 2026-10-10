@@ -14,8 +14,9 @@ import java.util.Objects;
  * <p>Makes the illegal state unrepresentable — an instance cannot exist unless it ends after it
  * starts, so no caller has to check.
  *
- * <p>ASSUMPTION: instants, not local date-times with a zone. Rosters are read in local time and the
- * product is multi-tenant across potentially different regions, so this will have to carry a zone.
+ * <p>Instants, with no zone. Where a zone matters it is carried beside this, by whatever owns it: a
+ * shift's working-time days are counted in the shift's own zone (R36, ADR-034), and the kernel
+ * stays free of a choice only one context makes.
  *
  * @param start when the span begins, never {@code null}
  * @param end when the span ends, never {@code null} and strictly after {@code start}
