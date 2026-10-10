@@ -82,6 +82,8 @@ export interface RequestSwap {
 export interface DefineShiftRequest {
   readonly start: string;
   readonly end: string;
+  /** An IANA zone name, such as `Europe/London`: the zone the shift's days are counted in. */
+  readonly zone: string;
   readonly requiredHeadcount: number;
   readonly requiredQualifications: readonly string[];
 }

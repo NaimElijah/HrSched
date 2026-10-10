@@ -195,6 +195,25 @@ describe('defining a shift', () => {
     });
   });
 
+  /**
+   * The backend counts a shift's working-time days in its own zone (R36), and the times above
+   * were read in the runner's zone, so that is the one that must travel with them. Compared with
+   * the runner's zone rather than a literal, for the reason localDates.test.ts gives.
+   */
+  it('GivenAValidPeriod_WhenDefining_ThenTheZoneItWasEnteredInIsSent', async () => {
+    const stub = routeTo();
+    show();
+    await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
+
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00');
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00');
+    await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
+
+    await waitFor(() =>
+      expect(postedBody(stub).zone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone),
+    );
+  });
+
   it('GivenAQualificationSelected_WhenDefining_ThenItIsRequiredOnTheShift', async () => {
     const stub = routeTo();
     show();
