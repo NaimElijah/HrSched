@@ -19,6 +19,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -944,19 +946,33 @@ class RosteringHttpTest {
   }
 
   /**
-   * A fixed offset is a valid Java zone but not a place: it ignores daylight saving, so a shift
-   * entered as +01:00 would have its days counted an hour wrong half the year (ADR-034).
+   * A raw offset is a valid Java zone but not a place: it ignores daylight saving, so a shift
+   * entered as +01:00 would have its days counted an hour wrong half the year (ADR-034). Every
+   * notation {@code ZoneId.of} would take for one is refused.
    */
-  @Test
-  void GivenAFixedOffsetForAZone_WhenDefiningAShift_ThenItIsABadRequest() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"+01:00", "UTC+01:00", "GMT+1"})
+  void GivenARawOffsetForAZone_WhenDefiningAShift_ThenItIsABadRequest(String offset)
+      throws Exception {
     mockMvc
         .perform(
             as(mockMvc, post("/api/shifts"), anOrganisation(mockMvc), "SCHEDULER")
                 .content(
-                    "{\"start\":\"2026-12-04T08:00:00Z\",\"end\":\"2026-12-04T16:00:00Z\","
-                        + "\"zone\":\"+01:00\",\"requiredHeadcount\":1}"))
+                    ("{\"start\":\"2026-12-04T08:00:00Z\",\"end\":\"2026-12-04T16:00:00Z\","
+                            + "\"zone\":\"%s\",\"requiredHeadcount\":1}")
+                        .formatted(offset)))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.detail").value(ZONE_REFUSAL));
+  }
+
+  /**
+   * The time zone database's own fixed offsets are accepted, because a browser on a machine set to
+   * one reports exactly this name, and its typed times were read in it (ADR-034).
+   */
+  @Test
+  void GivenTheDatabasesOwnFixedOffsetZone_WhenDefiningAShift_ThenItIsAccepted() throws Exception {
+    defineShiftIn(
+        anOrganisation(mockMvc), "Etc/GMT-3", "2026-12-04T08:00:00Z", "2026-12-04T16:00:00Z");
   }
 
   /**
