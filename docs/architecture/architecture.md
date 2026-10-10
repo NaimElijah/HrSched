@@ -387,9 +387,10 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   period's zone* and totals the time landing on each day, so a shift running past midnight is
   counted against both days it touches, a shift ending exactly at midnight does not make the next
   day a working day, and a day is 23 or 25 hours long when the clocks change. Work in two zones
-  lands on each zone's own date. Only time zone database names are accepted, there is no default,
-  and shifts stored before V5 keep the UTC they were judged in. The Shifts page sends the browser's
-  zone, so a site in another zone cannot yet be planned for
+  lands on each zone's own date. Only ids the JVM's time zone database knows are accepted, so a raw
+  offset such as `+01:00` is refused; there is no default, and shifts stored before V5 keep the UTC
+  they were judged in. The Shifts page sends the browser's zone, so a site in another zone cannot
+  yet be planned for
   ([#136](https://github.com/NaimElijah/HrSched/issues/136),
   [ADR-034](../ADRs/ADR-034-count-working-days-in-each-shifts-own-time-zone.md)).
 - **`MaximumWeeklyWorkingTime` treats the roster period as the reference period.** Jurisdictions

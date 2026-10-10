@@ -30,10 +30,12 @@ public record DefineShiftRequest(
   static final String ZONE_REFUSAL = "zone must name an IANA time zone, such as Europe/London";
 
   /**
-   * Only names in the time zone database are accepted. {@link ZoneId#of} also takes fixed offsets
-   * such as {@code +01:00}, which ignore daylight saving and would count a shift's days an hour
-   * wrong half the year (ADR-034). There is no default: a zone the caller did not send is a zone
-   * somebody else chose for them.
+   * Only ids the JVM's time zone database knows are accepted, which refuses a raw offset such as
+   * {@code +01:00} that {@link ZoneId#of} would take: somebody sending one almost always means a
+   * place, and an offset ignores that place's daylight saving. The database's own fixed-offset
+   * zones, {@code Etc/GMT±N}, are accepted, because a browser on a machine set to a fixed offset
+   * reports exactly that name, and that is the offset its typed times were read in (ADR-034). There
+   * is no default: a zone the caller did not send is a zone somebody else chose for them.
    *
    * @return the zone the shift's working-time days are counted in
    * @throws MalformedRequestException if the zone is absent or is not a time zone database name
