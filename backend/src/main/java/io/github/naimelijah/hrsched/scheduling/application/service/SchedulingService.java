@@ -22,6 +22,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDir
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
+import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
@@ -41,7 +42,9 @@ import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -50,6 +53,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -191,8 +195,9 @@ public class SchedulingService
         workforce, actor, command.organisation(), command.employee(), shift);
 
     Roster amended = draft.with(new Assignment(command.shift(), command.employee()));
-    // R3. Publication would refuse this roster too, but only here can the Scheduler be told which
-    // assignment did it, while they are making it.
+    // R3 and R35. Publication would refuse this roster too, but only here can the Scheduler be told
+    // which assignment did it, while they are making it. This reads without the publication lock,
+    // so it is early word rather than the guarantee: publication checks again under it (ADR-033).
     amended.requireNoOverlappingWorkFor(
         command.employee(),
         periodsOf(
@@ -200,7 +205,13 @@ public class SchedulingService
             amended,
             amended.assignments().stream()
                 .filter(assignment -> assignment.employee().equals(command.employee()))
-                .toList()));
+                .toList()),
+        heldElsewhere(
+            command.organisation(),
+            rosters.findByOrganisation(command.organisation()).stream()
+                .filter(existing -> existing.staysAuthoritativeBeside(amended))
+                .toList(),
+            Set.of(command.employee())));
     rosters.save(amended);
     recorded(
         actor, command.organisation(), SchedulingChange.ASSIGNMENT_ADDED, amended.id().value());
@@ -236,13 +247,25 @@ public class SchedulingService
             .findById(organisation, rosterId)
             .orElseThrow(() -> new UnknownRosterException(rosterId));
     ConstraintSet constraints = currentOrInitial(organisation);
+    // One read decides both what this publication replaces and what it is judged beside, so the two
+    // can never disagree about a roster (R11, R35).
+    List<Roster> existing = rosters.findByOrganisation(organisation);
+    List<HeldWork> heldElsewhere =
+        heldElsewhere(
+            organisation,
+            existing.stream().filter(roster -> roster.staysAuthoritativeBeside(draft)).toList(),
+            draft.assignments().stream().map(Assignment::employee).collect(Collectors.toSet()));
 
-    List<ConstraintViolation> violations = violations(organisation, draft, constraints);
+    List<ConstraintViolation> violations =
+        violations(organisation, draft, constraints, heldElsewhere);
     if (!violations.isEmpty()) {
       throw new RosterNotCompliantException(violations);
     }
 
-    supersedeOverlapping(actor, organisation, draft);
+    supersede(
+        actor,
+        organisation,
+        existing.stream().filter(roster -> roster.isSupersededBy(draft)).toList());
     Roster published = draft.publishedUnder(constraints.version());
     rosters.save(published);
     recorded(actor, organisation, SchedulingChange.ROSTER_PUBLISHED, published.id().value());
@@ -314,11 +337,17 @@ public class SchedulingService
   /**
    * Evaluates every employee schedule in the roster against the organisation rules.
    *
+   * @param heldElsewhere work on the rosters that stay authoritative beside this one, for R3
    * @return every rule broken, empty if the roster may be published
    */
   private List<ConstraintViolation> violations(
-      OrganisationId organisation, Roster roster, ConstraintSet constraints) {
-    return roster.schedulesFor(periodsOf(organisation, roster, roster.assignments())).stream()
+      OrganisationId organisation,
+      Roster roster,
+      ConstraintSet constraints,
+      List<HeldWork> heldElsewhere) {
+    return roster
+        .schedulesFor(periodsOf(organisation, roster, roster.assignments()), heldElsewhere)
+        .stream()
         .map(constraints::violationsFor)
         .flatMap(List::stream)
         .toList();
@@ -346,27 +375,56 @@ public class SchedulingService
   }
 
   /**
-   * Marks every published roster this one replaces as superseded, so that exactly one roster is
-   * authoritative for any given moment.
+   * The work these people already hold on the given authoritative rosters, with when each shift
+   * runs (R35).
    *
-   * <p>Overlap, not equality, decides what is replaced: a roster republished for a shorter window
-   * during the week still governs the days it covers, and leaving the old one PUBLISHED would give
-   * those days two authoritative answers. This is the mechanism that removes the need for an
-   * override — see ADR-005 and requirement R6.
+   * <p>Only their work is resolved. A colleague's shift that cannot be resolved could sit on any
+   * roster the organisation ever published, and refusing for it would block a roster that does not
+   * carry that colleague, with nothing on it to fix.
+   *
+   * @throws RosterNotVerifiableException if one of their shifts on those rosters cannot be
+   *     resolved, naming the roster carrying it: work that cannot be placed in time cannot be shown
+   *     not to overlap
    */
-  private void supersedeOverlapping(Actor actor, OrganisationId organisation, Roster replacement) {
-    rosters.findByOrganisation(organisation).stream()
-        .filter(existing -> existing.status() == RosterStatus.PUBLISHED)
-        .filter(existing -> !existing.id().equals(replacement.id()))
-        .filter(existing -> existing.period().overlaps(replacement.period()))
-        .forEach(
-            existing -> {
-              rosters.save(existing.superseded());
-              // Recorded per roster, not once for the publication that caused it. Nobody asked for
-              // these demotions, so without an entry each a roster appears to demote itself.
-              recorded(
-                  actor, organisation, SchedulingChange.ROSTER_SUPERSEDED, existing.id().value());
-            });
+  private List<HeldWork> heldElsewhere(
+      OrganisationId organisation, List<Roster> authoritative, Set<EmployeeId> employees) {
+    Map<ShiftId, TimeRange> resolved = new HashMap<>();
+    List<HeldWork> held = new ArrayList<>();
+    for (Roster roster : authoritative) {
+      for (Assignment assignment : roster.assignments()) {
+        if (!employees.contains(assignment.employee())) {
+          continue;
+        }
+        TimeRange when =
+            resolved.computeIfAbsent(
+                assignment.shift(),
+                shift ->
+                    shifts
+                        .findById(organisation, shift)
+                        .map(Shift::period)
+                        .orElseThrow(() -> new RosterNotVerifiableException(roster.id(), shift)));
+        held.add(new HeldWork(roster.id(), assignment.shift(), assignment.employee(), when));
+      }
+    }
+    return held;
+  }
+
+  /**
+   * Marks every roster this publication replaces as superseded, so that exactly one roster is
+   * authoritative for any given moment. Which rosters those are is {@link Roster#isSupersededBy}'s
+   * decision.
+   *
+   * <p>This is the mechanism that removes the need for an override — see ADR-005 and requirement
+   * R6.
+   */
+  private void supersede(Actor actor, OrganisationId organisation, List<Roster> replaced) {
+    replaced.forEach(
+        existing -> {
+          rosters.save(existing.superseded());
+          // Recorded per roster, not once for the publication that caused it. Nobody asked for
+          // these demotions, so without an entry each a roster appears to demote itself.
+          recorded(actor, organisation, SchedulingChange.ROSTER_SUPERSEDED, existing.id().value());
+        });
   }
 
   /**

@@ -107,7 +107,8 @@ export const scheduling = {
    * Puts somebody on a shift of a draft, and returns the roster as it now stands.
    *
    * Throws an ApiError with `isRefused` when the domain will not have that person there —
-   * unqualified, unavailable, or a shift outside the roster's period. Nothing here checks first.
+   * unqualified, unavailable, a shift outside the roster's period, or already working then, on this
+   * draft or on a published roster beside it. Nothing here checks first.
    */
   assign: (roster: string, shift: string, employee: string): Promise<Roster> =>
     api.post<Roster>(path`/api/rosters/${roster}/assignments`, { shift, employee }),

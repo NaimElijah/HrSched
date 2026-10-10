@@ -563,6 +563,45 @@ class SwapServiceTest {
   }
 
   /**
+   * R35 at approval. Ada's Sunday night runs into next week, where Grace already works an early
+   * Monday on the next roster. Handing her Ada's night would put her in two places at once across
+   * the two rosters, which publication refuses whichever roster each shift is on.
+   */
+  @Test
+  void
+      GivenAColleagueWorkingThenOnTheAdjacentRoster_WhenApprovingTheSwap_ThenItIsRefusedAndNothingChanges() {
+    TimeRange sundayNight =
+        new TimeRange(Instant.parse("2026-10-11T22:00:00Z"), Instant.parse("2026-10-12T06:00:00Z"));
+    TimeRange nextWeek =
+        new TimeRange(Instant.parse("2026-10-12T00:00:00Z"), Instant.parse("2026-10-19T00:00:00Z"));
+    TimeRange nextMondayEarly =
+        new TimeRange(Instant.parse("2026-10-12T00:00:00Z"), Instant.parse("2026-10-12T08:00:00Z"));
+    ShiftId adasNight =
+        scheduling.defineShift(
+            scheduler(ACME), new DefineShiftCommand(ACME, sundayNight, 1, Set.of()));
+    Roster original = publishedWith(ada, adasNight);
+    Roster nextDraft =
+        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, nextWeek));
+    ShiftId gracesEarly =
+        scheduling.defineShift(
+            scheduler(ACME), new DefineShiftCommand(ACME, nextMondayEarly, 1, Set.of()));
+    scheduling.assign(
+        scheduler(ACME), new AssignToShiftCommand(ACME, nextDraft.id(), gracesEarly, grace));
+    scheduling.publish(scheduler(ACME), ACME, nextDraft.id());
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada),
+            new RequestSwapCommand(ACME, original.id(), adasNight, ada, grace));
+
+    assertThatThrownBy(() -> service.approveSwap(scheduler(ACME), ACME, request))
+        .isInstanceOf(OverlappingAssignmentException.class);
+
+    assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.SWAP_APPROVED);
+  }
+
+  /**
    * An approval that waited for another has to decide from what that one committed, so the lock
    * comes before the request is read, as well as its roster - not only before the publication it
    * ends in (ADR-027). Read first, a request the other approval has just decided still looks
