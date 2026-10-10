@@ -44,6 +44,7 @@ Forces:
 - **Publication reads every roster the organisation holds**, superseded history included, and resolves the draft's people's shifts on every authoritative roster, past weeks included. That runs inside the publication lock, so the cost grows with history, against the 300 ms 95th-percentile target `requirements.md` sets for interactive requests. Nothing measures that yet. It is the same in-memory read `findOwnSchedule` already makes, and #34 tracks reshaping those reads. **Revisit** when a publication or an assignment is measured above that target, or when #34 pushes the predicate into SQL.
 - **Generation still sees one roster.** It can draft a roster that publication then refuses, for example by putting somebody on an early Monday overlapping a Sunday night that someone else holds on next week's draft. Fixing that needs the owner to decide whether a straddling shift staffed on one roster counts towards its headcount on the other (R22): #130.
 - **A straddling shift may be staffed on both rosters by different people.** R22 allows more people than the headcount, so this is not a breach, but nothing reconciles the two either.
+- **The same person on a shift carried by both rosters is sanctioned, with two costs.** Their own schedule lists the shift once per roster. Approving a swap of it on one roster leaves them on it on the other, while both people are told it was approved. Both were possible before this decision. Settling them needs the owner to say what a shift carried by two rosters means (#135).
 
 ## Alternatives considered
 
