@@ -34,7 +34,7 @@ Forces:
 
 **Easier**
 
-- **A daily cap and a consecutive-day cap mean the day the people there live**, daylight saving included. That holds for generation, assignment, publication and swap approval alike, because all of them judge through `EmployeeSchedule`.
+- **A daily cap and a consecutive-day cap mean the day the people there live**, daylight saving included. That holds for generation, publication and swap approval alike, because all of them judge working time through `EmployeeSchedule`. Assigning by hand judges no working-time rule: it checks only overlap (R3), on instants, which no zone affects.
 - **An organisation with sites in several zones needs no special case.** Each shift says where it is.
 - **The kernel is untouched**, and so is every workforce type.
 
