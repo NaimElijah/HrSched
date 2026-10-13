@@ -112,10 +112,11 @@ function interpret<T>(path: string, answered: Answered): T {
  * Single-flight within the tab, and serialised across tabs by a Web Lock where the browser has one.
  * A refused renewal ends the session rather than being retried: the cookie is either good or gone.
  *
- * Only a 401 is a refusal. The backend answers this endpoint with 200 or 401 and nothing else, so
- * any other failure came from something in front of it — a proxy or gateway with no backend behind
- * it — which has decided nothing about the cookie. Ending the session then would tell somebody
- * they are signed out because the network was down (#139).
+ * Only a 401 is a refusal: it is the one way the backend refuses a cookie. Anything else — a proxy
+ * or gateway with no backend behind it, or the backend failing — has decided nothing about the
+ * cookie, and ending the session then would tell somebody they are signed out because the network
+ * or the server was down (#139). A 401 can also be the backend refusing the stale access token
+ * this request still carries, rather than the cookie (#179).
  *
  * @returns whether there is a usable token afterwards
  * @throws ApiError when the refresh failed without being refused, or the fetch rejection itself

@@ -249,8 +249,8 @@ describe('renewing a session', () => {
   });
 
   /**
-   * The backend answers a refresh with 200 or 401 and nothing else. A 502 comes from whatever stands
-   * in front of it with nothing behind, which has decided nothing about the cookie (#139).
+   * The backend refuses a cookie only with a 401. A 502 comes from whatever stands in front of it
+   * with nothing behind, which has decided nothing about the cookie (#139).
    */
   it('GivenARefreshAnsweredByAGatewayWithNoBackend_WhenRequesting_ThenTheSessionIsKeptAndThatFailureThrown', async () => {
     signedIn();
