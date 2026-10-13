@@ -162,6 +162,35 @@ describe('a restore that cannot finish', () => {
 
     expect(await screen.findByRole('button', { name: 'People' })).toBeInTheDocument();
   });
+
+  /**
+   * The refresh worked, so the client holds a live token. The sign-in form would ask somebody who
+   * is signed in to sign in again, and tell them nothing about why.
+   */
+  it('GivenAGoodRefresh_WhenReadingTheSessionFails_ThenTheAppDoesNotClaimTheUserSignedOut', async () => {
+    loadingThrough(A_TENANT, () => ({
+      '/api/auth/session': { status: 500, body: { detail: 'The database is on fire.' } },
+    }));
+
+    show();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Your session could not be restored' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('The database is on fire.');
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument();
+  });
+
+  it('GivenAGoodRefresh_WhenTheNetworkFailsReadingTheSession_ThenTheAppDoesNotClaimTheUserSignedOut', async () => {
+    loadingThrough(A_TENANT, () => ({ '/api/auth/session': UNREACHABLE }));
+
+    show();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Your session could not be restored' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument();
+  });
 });
 
 describe('what each kind of account sees', () => {

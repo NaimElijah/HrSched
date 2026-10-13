@@ -73,8 +73,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           return;
         }
         // The refresh answered with a session, but read it back rather than trusting the copy: a
-        // password changed in another tab is exactly the kind of thing that makes them differ.
-        setSession(restored ? await auth.readSession().catch(() => null) : null);
+        // password changed in another tab is exactly the kind of thing that makes them differ. A
+        // read that fails is a failed restore, not a sign-out: the token just issued is still live.
+        setSession(restored ? await auth.readSession() : null);
       } catch (failure) {
         if (abandoned) {
           return;
