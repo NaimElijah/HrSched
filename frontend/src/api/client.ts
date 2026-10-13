@@ -233,7 +233,9 @@ export const auth = {
   /**
    * Restores a session from the refresh cookie, which is how a reload keeps somebody signed in.
    *
-   * @returns whether a session was restored
+   * @returns whether a session was restored; false when the backend refused the cookie
+   * @throws ApiError when the refresh failed without being refused, such as a gateway's 502
+   * @throws TypeError, as `fetch` rejects, when the backend could not be reached at all
    */
   restore: (): Promise<boolean> => refreshOnce(),
 
