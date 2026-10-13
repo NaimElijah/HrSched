@@ -341,6 +341,18 @@ describe('what a failure carries', () => {
     expect(error.message).toBe('nope');
   });
 
+  /**
+   * A proxy or gateway with nothing behind it answers with no body. The failure shown must still
+   * say something, or the person sees an empty alert.
+   */
+  it('GivenAFailureWithNoBody_WhenRequesting_ThenTheMessageNamesTheStatus', async () => {
+    respondWith(502, null);
+
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+
+    expect(error.message).toBe('The server returned 502.');
+  });
+
   it('GivenACrossTenantRead_WhenRequesting_ThenItIsNotFoundRatherThanForbidden', async () => {
     respondWith(404, { title: 'Not found', detail: 'No such resource.' });
 

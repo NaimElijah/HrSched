@@ -81,9 +81,11 @@ async function send(path: string, init: RequestInit): Promise<Answered> {
 
 function interpret<T>(path: string, answered: Answered): T {
   if (!answered.ok) {
+    // No body at all is left for toApiError to describe by its status. An empty detail would be a
+    // failure that says nothing, which is what a gateway with no backend behind it sends.
     throw toApiError(
       answered.status,
-      parseOrNull(answered.text) ?? { detail: answered.text },
+      parseOrNull(answered.text) ?? (answered.text.length === 0 ? null : { detail: answered.text }),
       answered.reference,
     );
   }
