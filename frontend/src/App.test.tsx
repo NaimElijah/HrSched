@@ -151,6 +151,19 @@ describe('a restore that cannot finish', () => {
     expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument();
   });
 
+  /** The dev proxy, and any gateway in front of a backend that is down, answers rather than fails. */
+  it('GivenTheBackendIsDownBehindAProxy_WhenRestoringTheSession_ThenTheAppSaysSoRatherThanSigningOut', async () => {
+    loadingThrough(A_TENANT, () => ({ '/api/auth/refresh': { status: 502, body: null } }));
+
+    show();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Your session could not be restored' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('The server returned 502.');
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument();
+  });
+
   it('GivenARetry_WhenTheNetworkIsBack_ThenTheSessionIsRestored', async () => {
     let down = true;
     loadingThrough(A_TENANT, () => (down ? { '/api/auth/refresh': UNREACHABLE } : {}));

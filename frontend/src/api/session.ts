@@ -59,9 +59,9 @@ export function holdSession(signedIn: SignedIn): void {
 /**
  * Forgets everything, and tells anybody watching.
  *
- * Called when a refresh fails, when signing out, and whenever the backend stops believing us. The
- * notification is what lets the shell fall back to the sign-in screen from anywhere, including from
- * inside a request a page made.
+ * Called when a refresh is refused, when signing out, and whenever the backend stops believing us.
+ * The notification is what lets the shell fall back to the sign-in screen from anywhere, including
+ * from inside a request a page made.
  */
 export function endSession(): void {
   accessToken = null;

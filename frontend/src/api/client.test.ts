@@ -248,6 +248,34 @@ describe('renewing a session', () => {
     stop();
   });
 
+  /**
+   * The backend answers a refresh with 200 or 401 and nothing else. A 502 comes from whatever stands
+   * in front of it with nothing behind, which has decided nothing about the cookie (#139).
+   */
+  it('GivenARefreshAnsweredByAGatewayWithNoBackend_WhenRequesting_ThenTheSessionIsKeptAndThatFailureThrown', async () => {
+    signedIn();
+    let ended = false;
+    answering((path) =>
+      path === '/api/auth/refresh' ? { status: 502, body: null } : { status: 401, body: {} },
+    );
+    const stop = onSessionEnded(() => {
+      ended = true;
+    });
+
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+
+    expect(error.status).toBe(502);
+    expect(currentAccessToken()).not.toBeNull();
+    expect(ended).toBe(false);
+    stop();
+  });
+
+  it('GivenARefreshAnsweredByAGatewayWithNoBackend_WhenRestoring_ThenItIsThrownRatherThanReadAsNoSession', async () => {
+    respondWith(502, null);
+
+    await expect(auth.restore()).rejects.toBeInstanceOf(ApiError);
+  });
+
   /** A 401 from signing in is the answer, not a hint to go and renew something. */
   it('GivenAnAuthEndpointAnswering401_WhenRequesting_ThenNoRefreshIsAttempted', async () => {
     const stub = respondWith(401, { detail: 'Those credentials were not accepted.' });
