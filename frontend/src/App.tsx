@@ -44,8 +44,9 @@ type Tab = (typeof TENANT_TABS)[number] | (typeof OPERATOR_TABS)[number] | 'Orga
  * What is drawn is decided by the session state, and there are five of them. While the refresh
  * cookie is being tried the app says so quietly rather than flashing a sign-in form at somebody who
  * turns out to be signed in. If that attempt cannot finish, it says what went wrong and offers to
- * try again, because a backend nobody could reach has said nothing about whether somebody is signed
- * in. Signed out, there is nothing here but the form. With a temporary
+ * try again: a backend nobody could reach has said nothing about whether somebody is signed in, and
+ * a session that could not be read back after a good refresh is still live. Signed out, there is
+ * nothing here but the form. With a temporary
  * password still pending there is nothing but the password screen — not because the tabs would be
  * empty, but because the backend refuses that account everything else, and offering tabs that all
  * answer 403 would be a lie the UI told.

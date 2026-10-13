@@ -14,9 +14,10 @@ import type { Session } from '../api/session';
  * `password-change-required` is its own state for a stronger reason: an account in it may do
  * exactly two things, and the shell must not be reachable at all until it is out of it.
  *
- * `restore-failed` means the restore could not find out either way, because the backend was not
- * reached or did not answer. That is not `signed-out`: the cookie may be perfectly good, and
- * offering the sign-in form would tell somebody something nobody knows (#139).
+ * `restore-failed` means the restore could not finish: either the backend was not reached or did
+ * not answer, so nobody knows whether the cookie is good, or the cookie was good but the session
+ * could not be read back. Neither is `signed-out`, and offering the sign-in form would tell
+ * somebody something untrue or something nobody knows (#139).
  */
 export type SessionState =
   'restoring' | 'restore-failed' | 'signed-out' | 'password-change-required' | 'signed-in';
