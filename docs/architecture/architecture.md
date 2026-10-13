@@ -246,6 +246,10 @@ sequenceDiagram
 
     C->>W: POST /api/rosters/{id}/publication
     W->>S: publish(actor, organisation, roster)
+    S->>S: roster.requireDraft()
+    alt not a draft
+        S-->>C: 400, before anything is superseded or recorded
+    end
     S->>R: violationsFor(each employee schedule)
     alt any rule broken
         R-->>C: 422 with every violation listed

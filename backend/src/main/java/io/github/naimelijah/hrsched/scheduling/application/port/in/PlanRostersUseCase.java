@@ -80,6 +80,8 @@ public interface PlanRostersUseCase {
    * @param organisation whose roster
    * @param roster which draft
    * @return the published roster
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException if the
+   *     roster is not a draft. Checked before anything else, so nothing is superseded or recorded
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException if
    *     it puts anybody on two shifts at once, whatever the rules say: two of its own, or one
    *     beside work they hold on a published roster that stays authoritative once it lands (R35).

@@ -408,6 +408,57 @@ class SchedulingServiceTest {
   }
 
   /**
+   * Republishing a superseded roster would supersede the newer one in its place before finding out
+   * it is not a draft. The transaction rolls that save back, but not the audit line, which would
+   * record a demotion that never happened (#133).
+   */
+  @Test
+  void
+      GivenASupersededRosterThatANewerOneOverlaps_WhenPublishingItAgain_ThenItIsRefusedAndNothingIsRecorded() {
+    available(ACME, "Ada");
+    TenantActor scheduler = scheduler(ACME);
+    service.defineShift(
+        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+    Roster first = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+    service.publish(scheduler, ACME, first.id());
+    Roster second = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+    service.publish(scheduler, ACME, second.id());
+    audit.forget();
+
+    assertThatThrownBy(() -> service.publish(scheduler, ACME, first.id()))
+        .isInstanceOf(RosterNotEditableException.class);
+
+    assertThat(rosters.byId(second.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * A roster that is not a draft is refused for that, whatever else is wrong with it: the rules it
+   * would break now are no reason to refuse something that could not be published anyway.
+   */
+  @Test
+  void
+      GivenAPublishedRosterTheRevisedRulesWouldRefuse_WhenPublishingItAgain_ThenItIsRefusedAsNotEditable() {
+    available(ACME, "Ada");
+    TenantActor scheduler = scheduler(ACME);
+    service.defineShift(
+        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+    Roster published =
+        service.publish(
+            scheduler,
+            ACME,
+            service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK)).id());
+    // Invented: four hours a day, which the eight-hour shift already assigned cannot satisfy.
+    service.reviseConstraints(
+        admin(ACME),
+        new ReviseConstraintsCommand(
+            ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(4)))));
+
+    assertThatThrownBy(() -> service.publish(scheduler, ACME, published.id()))
+        .isInstanceOf(RosterNotEditableException.class);
+  }
+
+  /**
    * A refused act changed nothing, so it must leave no entry saying it did. An audit trail that
    * records attempts as though they were changes is worse than none: it is wrong.
    */
