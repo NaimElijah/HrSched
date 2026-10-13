@@ -248,6 +248,9 @@ public class SchedulingService
         rosters
             .findById(organisation, rosterId)
             .orElseThrow(() -> new UnknownRosterException(rosterId));
+    // Before anything else is read or written. Supersession saves and records, and an audit line
+    // outlives the rollback of a refusal that came after it (#133).
+    draft.requireDraft();
     ConstraintSet constraints = currentOrInitial(organisation);
     // One read decides both what this publication replaces and what it is judged beside, so the two
     // can never disagree about a roster (R11, R35).

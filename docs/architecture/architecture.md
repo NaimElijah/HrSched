@@ -123,7 +123,7 @@ Three rules hold this together, and each fails the build when broken:
 | `configuration.observability` | Cross-cutting instrumentation that belongs to no context. Today that is `TraceIdResponseFilter`, which puts the request's trace id on the response as `X-Trace-Id`. It depends on nothing about who is calling, so it can run ahead of the security chain, and it is ordered to (see *Structural decisions not visible from the file layout*), which is why a refusal still carries the id. |
 | `configuration.web` | `RequestBindingExceptionHandler` — answers a request Spring could not bind to a controller's parameters (a missing query parameter, an identifier that does not parse) with a 400 problem detail naming what was wrong, whose detail repeats nothing that was sent. It belongs to no context because the failure happens before any controller runs ([ADR-024](../ADRs/ADR-024-answer-unbindable-requests-with-a-problem-detail.md)). |
 | `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists — it attaches the bearer token, renews the session once on a 401 and retries the request exactly once (single-flight within the tab, serialised across tabs by a Web Lock), and reads back `X-Trace-Id`; `session.ts` holds the access token in a module variable and **nowhere a script can read it back**, and notifies the shell when a session ends. It writes no identity claim of any kind: the bearer token is the whole of what says who is acting, and a request carrying a second, weaker answer would be offering one. `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts` mirror the backend DTOs, one module per context. |
-| `frontend/src/auth` | `SessionProvider` (which of four states the app is in, and the handshake every load begins with), `SignInPage`, `ChangePasswordPage` and `SessionBar`. Replaced `frontend/src/identity`, whose bar let anybody claim any role in any organisation because the backend believed whatever headers it was sent. |
+| `frontend/src/auth` | `SessionProvider` (which of five states the app is in, and the handshake every load begins with, including the one that cannot finish, because the backend was not reached or the session could not be read back), `SignInPage`, `ChangePasswordPage` and `SessionBar`. Replaced `frontend/src/identity`, whose bar let anybody claim any role in any organisation because the backend believed whatever headers it was sent. |
 | `frontend/src/pages` | One screen per capability: People, Accounts, Qualifications, Rules, Shifts, Rosters, Swaps, Me, Organisations. Organisations is the platform Operator's: it lists and onboards organisations, and offers no way to act inside one, because the Operator is refused everything inside every tenant ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)). A tenant role reaching it is shown the 403 rather than a hidden tab. Accounts is its mirror for an Admin: it creates accounts, changes what one is, disables and restores one, and resets a colleague's password. Nothing on it names an organisation, because the backend takes that from the token; every temporary password is typed, masked, never defaulted, and cleared once the request it was typed for has succeeded. Swaps is where a Scheduler answers requests; approving publishes a replacement roster, so it is refused exactly as any publication is: with every broken working-time rule named, or, if it would put somebody in two places at once, with that. Me shows an employee their identifier, their published work over the planning span, and a way to hand a shift to a colleague named by that colleague's identifier, because an employee may not list colleagues (Q25). Me also holds the employee's `Inbox`. Opening a roster shows `RosterBoard`, which loads that roster by identifier and changes a draft through a picker and buttons per shift rather than by drag and drop ([ADR-025](../ADRs/ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md)). |
 
 ## Communication
@@ -246,6 +246,10 @@ sequenceDiagram
 
     C->>W: POST /api/rosters/{id}/publication
     W->>S: publish(actor, organisation, roster)
+    S->>S: roster.requireDraft()
+    alt not a draft
+        S-->>C: 400, before anything is superseded or recorded
+    end
     S->>R: violationsFor(each employee schedule)
     alt any rule broken
         R-->>C: 422 with every violation listed
@@ -255,7 +259,12 @@ sequenceDiagram
 ```
 
 Everything is persisted, and the whole exchange above is one transaction: the boundary is the use
-case, so a refusal at any point leaves nothing behind ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)).
+case, so a refusal at any point stores nothing ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)).
+An audit entry is a log line, though, and no rollback takes one back. So publication makes every
+refusal it can before it supersedes and records anything. The one refusal that can still follow
+those entries is `RosterPublicationConflictException`, which needs a writer that skipped the
+publication lock ([ADR-027](../ADRs/ADR-027-take-turns-publishing-within-an-organisation.md)). A durable
+trail is [#31](https://github.com/NaimElijah/HrSched/issues/31).
 
 ## External dependencies and integration points
 

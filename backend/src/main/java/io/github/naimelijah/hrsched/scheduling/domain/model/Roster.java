@@ -282,7 +282,16 @@ public final class Roster {
         && organisation.equals(replacement.organisation);
   }
 
-  private void requireDraft() {
+  /**
+   * Refuses anything but a draft, for a caller that must know before it does anything else.
+   *
+   * <p>Every edit to a draft, and {@link #publishedUnder}, checks this itself. Publication needs it
+   * on its own, because it supersedes other rosters and records that before it reaches {@link
+   * #publishedUnder}.
+   *
+   * @throws RosterNotEditableException if this roster is no longer a draft
+   */
+  public void requireDraft() {
     if (status != RosterStatus.DRAFT) {
       throw new RosterNotEditableException(
           id, status, "a roster can only be changed while a draft");
