@@ -285,8 +285,9 @@ public final class Roster {
   /**
    * Refuses anything but a draft, for a caller that must know before it does anything else.
    *
-   * <p>Every change this aggregate offers checks this itself. Publication needs it on its own,
-   * because it supersedes other rosters and records that before it reaches {@link #publishedUnder}.
+   * <p>Every edit to a draft, and {@link #publishedUnder}, checks this itself. Publication needs it
+   * on its own, because it supersedes other rosters and records that before it reaches {@link
+   * #publishedUnder}.
    *
    * @throws RosterNotEditableException if this roster is no longer a draft
    */
