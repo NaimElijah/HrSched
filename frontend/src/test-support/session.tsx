@@ -57,6 +57,8 @@ export function SignedIn({ session, children }: { session: Session; children: Re
   const value: SessionContextValue = {
     state: session.passwordChangeRequired ? 'password-change-required' : 'signed-in',
     session,
+    restoreFailure: null,
+    retryRestore: () => undefined,
     key: `${session.userId}|${String(session.passwordChangeRequired)}`,
     signIn: () => Promise.resolve(),
     signOut: () => Promise.resolve(),
