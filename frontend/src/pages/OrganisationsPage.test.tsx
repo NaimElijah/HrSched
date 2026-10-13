@@ -72,8 +72,10 @@ describe('reading the platform', () => {
   });
 
   it('GivenTheSessionHasEnded_WhenOpened_ThenTheRefusalSaysSo', async () => {
+    // An ended session is one whose refresh the backend refuses too, and it refuses with a 401.
     thePlatform({
       '/api/organisations': { status: 401, body: { detail: 'A valid access token is required.' } },
+      'POST /api/auth/refresh': { status: 401, body: { detail: 'Sign in again.' } },
     });
 
     show();
