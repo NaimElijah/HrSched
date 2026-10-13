@@ -996,6 +996,24 @@ class SchedulingServiceTest {
   }
 
   /**
+   * A roster that is not a draft is refused before the work beside it is looked up. That lookup
+   * refuses a shift it cannot resolve as not verifiable, and the answer owed here is that this
+   * roster cannot be published again at all (#133).
+   */
+  @Test
+  void
+      GivenAPublishedRosterBesideWorkThatCannotBeResolved_WhenPublishingItAgain_ThenItIsRefusedAsNotEditable() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster thisWeek = storedDraft(THE_WEEK);
+    assign(thisWeek, shiftAt(MONDAY_DAY), ada);
+    service.publish(scheduler(ACME), ACME, thisWeek.id());
+    rosters.save(publishedCarrying(NEXT_WEEK, new Assignment(ShiftId.newId(), ada)));
+
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, thisWeek.id()))
+        .isInstanceOf(RosterNotEditableException.class);
+  }
+
+  /**
    * Only the people on this roster are judged. A colleague's unresolvable work could sit on any
    * roster the organisation ever published, and refusing for it would block every later publication
    * with nothing on this draft to fix.
