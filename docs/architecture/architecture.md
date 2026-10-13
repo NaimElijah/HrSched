@@ -246,6 +246,10 @@ sequenceDiagram
 
     C->>W: POST /api/rosters/{id}/publication
     W->>S: publish(actor, organisation, roster)
+    S->>S: roster.requireDraft()
+    alt not a draft
+        S-->>C: 400, before anything is superseded or recorded
+    end
     S->>R: violationsFor(each employee schedule)
     alt any rule broken
         R-->>C: 422 with every violation listed
@@ -255,7 +259,12 @@ sequenceDiagram
 ```
 
 Everything is persisted, and the whole exchange above is one transaction: the boundary is the use
-case, so a refusal at any point leaves nothing behind ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)).
+case, so a refusal at any point stores nothing ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)).
+An audit entry is a log line, though, and no rollback takes one back. So publication makes every
+refusal it can before it supersedes and records anything. The one refusal that can still follow
+those entries is `RosterPublicationConflictException`, which needs a writer that skipped the
+publication lock ([ADR-027](../ADRs/ADR-027-take-turns-publishing-within-an-organisation.md)). A durable
+trail is [#31](https://github.com/NaimElijah/HrSched/issues/31).
 
 ## External dependencies and integration points
 
