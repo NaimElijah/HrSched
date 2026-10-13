@@ -176,6 +176,36 @@ describe('a restore that cannot finish', () => {
     expect(await screen.findByRole('button', { name: 'People' })).toBeInTheDocument();
   });
 
+  /** While a retry is in flight nothing is known yet, so the sign-in form would be a guess too. */
+  it('GivenARetryInFlight_WhenItHasNotAnsweredYet_ThenTheAppSaysItIsRestoring', async () => {
+    let attempts = 0;
+    let answerTheRetry: (answered: unknown) => void = () => undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => {
+        attempts += 1;
+        return attempts === 1
+          ? Promise.reject(new TypeError('Failed to fetch'))
+          : new Promise((resolve) => {
+              answerTheRetry = resolve;
+            });
+      }),
+    );
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+
+    try {
+      expect(screen.getByRole('status')).toHaveTextContent('Restoring your session…');
+      expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument();
+    } finally {
+      // The client shares one refresh between every caller, so a retry left unanswered here would
+      // keep every later test waiting on it.
+      answerTheRetry(await respond({ status: 401, body: {} }));
+      await screen.findByRole('heading', { name: 'Sign in' });
+    }
+  });
+
   /**
    * The refresh worked, so the client holds a live token. The sign-in form would ask somebody who
    * is signed in to sign in again, and tell them nothing about why.
