@@ -248,6 +248,34 @@ describe('renewing a session', () => {
     stop();
   });
 
+  /**
+   * The backend refuses a cookie only with a 401. A 502 comes from whatever stands in front of it
+   * with nothing behind, which has decided nothing about the cookie (#139).
+   */
+  it('GivenARefreshAnsweredByAGatewayWithNoBackend_WhenRequesting_ThenTheSessionIsKeptAndThatFailureThrown', async () => {
+    signedIn();
+    let ended = false;
+    answering((path) =>
+      path === '/api/auth/refresh' ? { status: 502, body: null } : { status: 401, body: {} },
+    );
+    const stop = onSessionEnded(() => {
+      ended = true;
+    });
+
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+
+    expect(error.status).toBe(502);
+    expect(currentAccessToken()).not.toBeNull();
+    expect(ended).toBe(false);
+    stop();
+  });
+
+  it('GivenARefreshAnsweredByAGatewayWithNoBackend_WhenRestoring_ThenItIsThrownRatherThanReadAsNoSession', async () => {
+    respondWith(502, null);
+
+    await expect(auth.restore()).rejects.toBeInstanceOf(ApiError);
+  });
+
   /** A 401 from signing in is the answer, not a hint to go and renew something. */
   it('GivenAnAuthEndpointAnswering401_WhenRequesting_ThenNoRefreshIsAttempted', async () => {
     const stub = respondWith(401, { detail: 'Those credentials were not accepted.' });
@@ -339,6 +367,18 @@ describe('what a failure carries', () => {
 
     expect(error.violations).toHaveLength(0);
     expect(error.message).toBe('nope');
+  });
+
+  /**
+   * A proxy or gateway with nothing behind it answers with no body. The failure shown must still
+   * say something, or the person sees an empty alert.
+   */
+  it('GivenAFailureWithNoBody_WhenRequesting_ThenTheMessageNamesTheStatus', async () => {
+    respondWith(502, null);
+
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+
+    expect(error.message).toBe('The server returned 502.');
   });
 
   it('GivenACrossTenantRead_WhenRequesting_ThenItIsNotFoundRatherThanForbidden', async () => {

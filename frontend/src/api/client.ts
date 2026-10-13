@@ -81,9 +81,11 @@ async function send(path: string, init: RequestInit): Promise<Answered> {
 
 function interpret<T>(path: string, answered: Answered): T {
   if (!answered.ok) {
+    // No body at all is left for toApiError to describe by its status. An empty detail would be a
+    // failure that says nothing, which is what a gateway with no backend behind it sends.
     throw toApiError(
       answered.status,
-      parseOrNull(answered.text) ?? { detail: answered.text },
+      parseOrNull(answered.text) ?? (answered.text.length === 0 ? null : { detail: answered.text }),
       answered.reference,
     );
   }
@@ -108,9 +110,16 @@ function interpret<T>(path: string, answered: Answered): T {
  * Renews the session at most once, however many requests are waiting.
  *
  * Single-flight within the tab, and serialised across tabs by a Web Lock where the browser has one.
- * A failed renewal ends the session rather than being retried: the cookie is either good or gone.
+ * A refused renewal ends the session rather than being retried: the cookie is either good or gone.
+ *
+ * Only a 401 is a refusal: it is the one way the backend refuses a cookie. Anything else — a proxy
+ * or gateway with no backend behind it, or the backend failing — has decided nothing about the
+ * cookie, and ending the session then would tell somebody they are signed out because the network
+ * or the server was down (#139). A 401 can also be the backend refusing the stale access token
+ * this request still carries, rather than the cookie (#179).
  *
  * @returns whether there is a usable token afterwards
+ * @throws ApiError when the refresh failed without being refused, or the fetch rejection itself
  */
 async function refreshOnce(): Promise<boolean> {
   refreshing ??= (async () => {
@@ -120,7 +129,7 @@ async function refreshOnce(): Promise<boolean> {
           method: 'POST',
           headers: { 'X-Requested-With': REQUESTED_WITH },
         });
-        if (!answered.ok) {
+        if (answered.status === 401) {
           endSession();
           return false;
         }
@@ -224,7 +233,9 @@ export const auth = {
   /**
    * Restores a session from the refresh cookie, which is how a reload keeps somebody signed in.
    *
-   * @returns whether a session was restored
+   * @returns whether a session was restored; false when the backend refused the cookie
+   * @throws ApiError when the refresh failed without being refused, such as a gateway's 502
+   * @throws TypeError, as `fetch` rejects, when the backend could not be reached at all
    */
   restore: (): Promise<boolean> => refreshOnce(),
 

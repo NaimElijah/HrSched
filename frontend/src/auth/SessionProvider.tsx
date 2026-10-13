@@ -13,12 +13,22 @@ import type { Session } from '../api/session';
  *
  * `password-change-required` is its own state for a stronger reason: an account in it may do
  * exactly two things, and the shell must not be reachable at all until it is out of it.
+ *
+ * `restore-failed` means the restore could not finish: either the backend was not reached or did
+ * not answer, so nobody knows whether the cookie is good, or the cookie was good but the session
+ * could not be read back. Neither is `signed-out`, and offering the sign-in form would tell
+ * somebody something untrue or something nobody knows (#139).
  */
-export type SessionState = 'restoring' | 'signed-out' | 'password-change-required' | 'signed-in';
+export type SessionState =
+  'restoring' | 'restore-failed' | 'signed-out' | 'password-change-required' | 'signed-in';
 
 interface SessionContextValue {
   readonly state: SessionState;
   readonly session: Session | null;
+  /** Why the restore failed while the state is `restore-failed`, and null otherwise. */
+  readonly restoreFailure: unknown;
+  /** Runs the whole restore again, from the refresh onwards. */
+  readonly retryRestore: () => void;
   /** Changes whenever who is signed in changes, so loaded answers are asked again. */
   readonly key: string;
   readonly signIn: (signInName: string, password: string) => Promise<void>;
@@ -52,22 +62,38 @@ function stateOf(session: Session | null): SessionState {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [restoring, setRestoring] = useState(true);
+  const [restoreFailure, setRestoreFailure] = useState<unknown>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let abandoned = false;
     void (async () => {
-      const restored = await auth.restore();
-      if (abandoned) {
-        return;
+      try {
+        const restored = await auth.restore();
+        if (abandoned) {
+          return;
+        }
+        // The refresh answered with a session, but read it back rather than trusting the copy: a
+        // password changed in another tab is exactly the kind of thing that makes them differ. A
+        // read that fails is a failed restore, not a sign-out: the token just issued is still live.
+        setSession(restored ? await auth.readSession() : null);
+      } catch (failure) {
+        if (abandoned) {
+          return;
+        }
+        setRestoreFailure(failure);
       }
-      // The refresh answered with a session, but read it back rather than trusting the copy: a
-      // password changed in another tab is exactly the kind of thing that makes them differ.
-      setSession(restored ? await auth.readSession().catch(() => null) : null);
       setRestoring(false);
     })();
     return () => {
       abandoned = true;
     };
+  }, [attempt]);
+
+  const retryRestore = useCallback(() => {
+    setRestoreFailure(null);
+    setRestoring(true);
+    setAttempt((previous) => previous + 1);
   }, []);
 
   useEffect(
@@ -94,8 +120,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<SessionContextValue>(
     () => ({
-      state: restoring ? 'restoring' : stateOf(session),
+      state: restoring
+        ? 'restoring'
+        : restoreFailure === null
+          ? stateOf(session)
+          : 'restore-failed',
       session,
+      restoreFailure,
+      retryRestore,
       // The password flag is in the key on purpose: clearing it is a different app, and everything
       // loaded while it was set was loaded by somebody who could not reach any of it.
       key: session === null ? '' : `${session.userId}|${String(session.passwordChangeRequired)}`,
@@ -103,7 +135,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       signOut,
       changePassword,
     }),
-    [restoring, session, signIn, signOut, changePassword],
+    [restoring, restoreFailure, retryRestore, session, signIn, signOut, changePassword],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

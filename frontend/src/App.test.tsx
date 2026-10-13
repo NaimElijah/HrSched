@@ -12,9 +12,9 @@ import { A_TENANT, THE_OPERATOR } from './test-support/session';
  *
  * That is deliberate: what this file is mostly about is the handshake every load begins with. The
  * app asks the backend whether the refresh cookie is still good before it draws anything, and which
- * of four states it lands in decides whether somebody sees a sign-in form, a forced password
- * change, or the application. Supplying a session directly would skip exactly the part worth
- * testing.
+ * of five states it lands in decides whether somebody sees a sign-in form, a forced password
+ * change, the application, or a restore that could not finish. Supplying a session directly would
+ * skip exactly the part worth testing.
  *
  * It also covers the one deliberate swallow in the application. The shell needs the employee list
  * for its pickers, and an EMPLOYEE is not permitted to read it — that one refusal is expected and
@@ -34,8 +34,8 @@ interface Answer {
  * @param rest what any other path answers with
  */
 function loadingAs(session: Session | null, rest: Answer = { status: 200, body: [] }) {
-  const stub = vi.fn((path: string) => {
-    const answer: Answer =
+  const stub = vi.fn((path: string) =>
+    respond(
       path === '/api/auth/refresh'
         ? session === null
           ? { status: 401, body: { detail: 'A valid access token is required.' } }
@@ -45,13 +45,42 @@ function loadingAs(session: Session | null, rest: Answer = { status: 200, body: 
             }
         : path === '/api/auth/session'
           ? { status: 200, body: session }
-          : rest;
-    return Promise.resolve({
-      ok: answer.status < 400,
-      status: answer.status,
-      headers: new Headers(),
-      text: () => Promise.resolve(answer.body === null ? '' : JSON.stringify(answer.body)),
-    });
+          : rest,
+    ),
+  );
+  vi.stubGlobal('fetch', stub);
+  return stub;
+}
+
+function respond(answer: Answer) {
+  return Promise.resolve({
+    ok: answer.status < 400,
+    status: answer.status,
+    headers: new Headers(),
+    text: () => Promise.resolve(answer.body === null ? '' : JSON.stringify(answer.body)),
+  });
+}
+
+/** How `fetch` fails when the network is down: it rejects rather than answering. */
+const UNREACHABLE = 'unreachable';
+
+/**
+ * Answers as {@link loadingAs} does, except for the paths named.
+ *
+ * @param session who the refresh cookie belongs to
+ * @param overrides read on every request, so a test can bring the network back mid-way
+ */
+function loadingThrough(
+  session: Session,
+  overrides: () => Readonly<Record<string, Answer | typeof UNREACHABLE>>,
+) {
+  const answering = loadingAs(session);
+  const stub = vi.fn((path: string) => {
+    const override = overrides()[path];
+    if (override === UNREACHABLE) {
+      return Promise.reject(new TypeError('Failed to fetch'));
+    }
+    return override === undefined ? answering(path) : respond(override);
   });
   vi.stubGlobal('fetch', stub);
   return stub;
@@ -101,6 +130,109 @@ describe('what a load begins with', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'People' })).not.toBeInTheDocument();
     expect(screen.getByText(/set by somebody else/i)).toBeInTheDocument();
+  });
+});
+
+describe('a restore that cannot finish', () => {
+  /**
+   * A network that is down says nothing about the refresh cookie, so the sign-in form would be a
+   * guess, and "Restoring…" forever is no answer at all (#139).
+   */
+  it('GivenTheNetworkFails_WhenRestoringTheSession_ThenTheAppSaysSoAndOffersARetry', async () => {
+    loadingThrough(A_TENANT, () => ({ '/api/auth/refresh': UNREACHABLE }));
+
+    show();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Your session could not be restored' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Failed to fetch');
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument();
+  });
+
+  /** The dev proxy, and any gateway in front of a backend that is down, answers rather than fails. */
+  it('GivenTheBackendIsDownBehindAProxy_WhenRestoringTheSession_ThenTheAppSaysSoRatherThanSigningOut', async () => {
+    loadingThrough(A_TENANT, () => ({ '/api/auth/refresh': { status: 502, body: null } }));
+
+    show();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Your session could not be restored' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('The server returned 502.');
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument();
+  });
+
+  it('GivenARetry_WhenTheNetworkIsBack_ThenTheSessionIsRestored', async () => {
+    let down = true;
+    loadingThrough(A_TENANT, () => (down ? { '/api/auth/refresh': UNREACHABLE } : {}));
+    show();
+    await screen.findByRole('button', { name: 'Try again' });
+
+    down = false;
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByRole('button', { name: 'People' })).toBeInTheDocument();
+  });
+
+  /** While a retry is in flight nothing is known yet, so the sign-in form would be a guess too. */
+  it('GivenARetryInFlight_WhenItHasNotAnsweredYet_ThenTheAppSaysItIsRestoring', async () => {
+    let attempts = 0;
+    let answerTheRetry: (answered: unknown) => void = () => undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => {
+        attempts += 1;
+        return attempts === 1
+          ? Promise.reject(new TypeError('Failed to fetch'))
+          : new Promise((resolve) => {
+              answerTheRetry = resolve;
+            });
+      }),
+    );
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+
+    try {
+      expect(screen.getByRole('status')).toHaveTextContent('Restoring your session…');
+      expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument();
+    } finally {
+      // The client shares one refresh between every caller, so a retry left unanswered here would
+      // keep every later test waiting on it.
+      answerTheRetry(await respond({ status: 401, body: {} }));
+      await screen.findByRole('heading', { name: 'Sign in' });
+    }
+  });
+
+  /**
+   * The refresh worked, so the client holds a live token. The sign-in form would ask somebody who
+   * is signed in to sign in again, and tell them nothing about why.
+   */
+  it('GivenAGoodRefresh_WhenReadingTheSessionFails_ThenTheAppDoesNotClaimTheUserSignedOut', async () => {
+    loadingThrough(A_TENANT, () => ({
+      '/api/auth/session': { status: 500, body: { detail: 'The database is on fire.' } },
+    }));
+
+    show();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Your session could not be restored' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('The database is on fire.');
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument();
+  });
+
+  it('GivenAGoodRefresh_WhenTheNetworkFailsReadingTheSession_ThenTheAppDoesNotClaimTheUserSignedOut', async () => {
+    loadingThrough(A_TENANT, () => ({ '/api/auth/session': UNREACHABLE }));
+
+    show();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Your session could not be restored' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument();
   });
 });
 
