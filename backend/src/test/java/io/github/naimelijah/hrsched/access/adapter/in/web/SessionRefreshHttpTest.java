@@ -8,15 +8,21 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.access.adapter.out.token.AccessTokenKey;
+import io.github.naimelijah.hrsched.access.adapter.out.token.AccessTokenProperties;
+import io.github.naimelijah.hrsched.access.adapter.out.token.JwtAccessTokenIssuer;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
+import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import jakarta.servlet.http.Cookie;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -33,6 +39,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -56,10 +63,19 @@ class SessionRefreshHttpTest {
   private static final String PASSWORD = "an invented password for a test";
   private static final String REQUESTED_WITH = "X-Requested-With";
 
+  /**
+   * Past the 60 seconds by which {@code JwtTimestampValidator} lets an expiry slip by default, so a
+   * token this far beyond its lifetime is expired by any reading of the clock.
+   */
+  private static final Duration PAST_THE_CLOCK_SKEW = Duration.ofMinutes(5);
+
   @Autowired private MockMvc mockMvc;
   @Autowired private AccountRepository accounts;
   @Autowired private PasswordHasher passwords;
   @Autowired private JwtDecoder tokens;
+  @Autowired private JwtEncoder encoder;
+  @Autowired private AccessTokenKey key;
+  @Autowired private AccessTokenProperties tokenProperties;
 
   private Logger root;
   private ListAppender<ILoggingEvent> captured;
@@ -224,6 +240,76 @@ class SessionRefreshHttpTest {
     assertThat(cookie).contains("Max-Age=0");
   }
 
+  /**
+   * The premise of #179, pinned on the backend side: the bearer filter refuses a stale access token
+   * before the controller reads the cookie, even on a route that asks for no token. A client that
+   * renews only after its token has expired must therefore send no token with the renewal.
+   *
+   * <p>The refusal is the filter's and not the controller's: no {@code Set-Cookie} clears the
+   * cookie, and the same cookie still renews once the token is left off.
+   */
+  @Test
+  void
+      GivenAnExpiredAccessTokenBesideAValidCookie_WhenRefreshing_ThenTheTokenIsRefusedAndTheCookieUntouched()
+          throws Exception {
+    Account account = anOperator();
+    MockHttpServletResponse signedIn = signIn(account);
+    String cookie = refreshTokenOf(signedIn);
+    String stale = anExpiredAccessToken(account, sessionOf(signedIn));
+
+    MockHttpServletResponse refused =
+        mockMvc
+            .perform(
+                withCookie(post("/api/auth/refresh"), cookie)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + stale))
+            .andReturn()
+            .getResponse();
+
+    assertThat(refused.getStatus()).isEqualTo(401);
+    assertThat(JsonPath.<String>read(refused.getContentAsString(), "$.title"))
+        .isEqualTo("Unauthenticated");
+    assertThat(refused.getHeader(HttpHeaders.SET_COOKIE)).isNull();
+    assertThat(refresh(cookie).getStatus())
+        .describedAs("the same cookie, sent without the stale token, is still good")
+        .isEqualTo(200);
+  }
+
+  /**
+   * Signing out after idle is the case that matters on a shared machine: refused this way, the
+   * session is not revoked and the cookie survives, so a reload signs the person back in (#179).
+   */
+  @Test
+  void
+      GivenAnExpiredAccessTokenBesideAValidCookie_WhenSigningOut_ThenItIsRefusedAndTheSessionSurvives()
+          throws Exception {
+    Account account = anOperator();
+    MockHttpServletResponse signedIn = signIn(account);
+    UUID session = sessionOf(signedIn);
+    String stale = anExpiredAccessToken(account, session);
+
+    MockHttpServletResponse refused =
+        mockMvc
+            .perform(
+                withCookie(post("/api/auth/sign-out"), refreshTokenOf(signedIn))
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + stale))
+            .andReturn()
+            .getResponse();
+
+    assertThat(refused.getStatus()).isEqualTo(401);
+    assertThat(refused.getHeader(HttpHeaders.SET_COOKIE)).isNull();
+    assertThat(revocationOf(session)).isNull();
+  }
+
+  @Test
+  void GivenAValidCookieAndNoAccessToken_WhenSigningOut_ThenTheSessionIsRevoked() throws Exception {
+    MockHttpServletResponse signedIn = signIn(anOperator());
+    UUID session = sessionOf(signedIn);
+
+    assertThat(signOut(refreshTokenOf(signedIn)).getStatus()).isEqualTo(204);
+
+    assertThat(revocationOf(session)).isNotNull();
+  }
+
   @Test
   void GivenRefreshesAndSignOuts_WhenAnswered_ThenNoTokenValueIsEverLogged() throws Exception {
     String token = refreshTokenOf(signIn(anOperator()));
@@ -298,6 +384,19 @@ class SessionRefreshHttpTest {
   private UUID sessionOf(MockHttpServletResponse response) throws Exception {
     String accessToken = JsonPath.read(response.getContentAsString(), "$.accessToken");
     return UUID.fromString(tokens.decode(accessToken).getClaimAsString("sid"));
+  }
+
+  /**
+   * A token this application signed for a real account and session, issued long enough ago that it
+   * has expired by more than the decoder's clock skew, whatever lifetime is configured. Only its
+   * age is wrong with it.
+   */
+  private String anExpiredAccessToken(Account account, UUID session) {
+    Instant issued = Instant.now().minus(tokenProperties.lifetime()).minus(PAST_THE_CLOCK_SKEW);
+    return new JwtAccessTokenIssuer(
+            encoder, key, tokenProperties, Clock.fixed(issued, ZoneOffset.UTC))
+        .issue(account.id(), new SignInSessionId(session))
+        .value();
   }
 
   private static String revocationOf(UUID session) {
