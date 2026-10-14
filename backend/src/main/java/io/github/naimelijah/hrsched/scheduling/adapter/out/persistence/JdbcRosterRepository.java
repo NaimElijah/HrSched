@@ -95,9 +95,12 @@ public class JdbcRosterRepository implements RosterRepository {
     try {
       store(roster);
     } catch (DataAccessException refused) {
-      // Only a published roster enters the constraint's partial index, so only its save can be the
-      // one PostgreSQL refuses, or picks as the victim, when two publications collide. A deadlock
-      // anywhere else is not a publication conflict, and stays what it is.
+      // Only a publication can widen what the constraint sees: a draft is outside it, and a
+      // supersession only narrows its row's interval to end where the replacement's begins. So only
+      // a publication's save is the one PostgreSQL refuses, or picks as the victim, when two
+      // publications collide. A deadlock anywhere else stays what it is, a supersession's included:
+      // it needs a writer that skipped the publication lock (ADR-027), and is not a refusal to
+      // reload and retry.
       if (roster.status() == RosterStatus.PUBLISHED && isPublicationCollision(refused)) {
         throw new RosterPublicationConflictException(roster.id(), refused);
       }
