@@ -12,6 +12,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
@@ -100,7 +101,9 @@ class AppendOnlyRosterHistoryMigrationTest {
   @Test
   void
       GivenPublishedAndSupersededRosters_WhenMigrated_ThenEachIsRecordedFromTheOneMomentHistoryBegan() {
+    Instant beforeMigrating = theDatabasesClock();
     migrateToTheLatest();
+    Instant afterMigrating = theDatabasesClock();
 
     JdbcRosterRepository rosters = new JdbcRosterRepository(jdbc);
     Roster stillADraft = rosters.findById(ACME, draft).orElseThrow();
@@ -108,7 +111,9 @@ class AppendOnlyRosterHistoryMigrationTest {
     Roster stillSuperseded = rosters.findById(ACME, superseded).orElseThrow();
 
     assertThat(stillADraft.publishedAt()).isNull();
-    assertThat(stillPublished.publishedAt()).isNotNull();
+    assertThat(stillPublished.publishedAt())
+        .describedAs("the moment the migration ran, not one from before it or invented")
+        .isBetween(beforeMigrating, afterMigrating);
     assertThat(stillPublished.supersededAt()).isNull();
     assertThat(stillSuperseded.publishedAt()).isEqualTo(stillPublished.publishedAt());
   }
@@ -126,6 +131,14 @@ class AppendOnlyRosterHistoryMigrationTest {
         new JdbcRosterRepository(jdbc).findById(ACME, superseded).orElseThrow();
 
     assertThat(stillSuperseded.supersededAt()).isEqualTo(stillSuperseded.publishedAt());
+  }
+
+  /**
+   * The database's own clock, which is the one V6 stamps with. Each read is its own transaction, so
+   * a read before the migration and one after it bound the migration's transaction between them.
+   */
+  private Instant theDatabasesClock() {
+    return jdbc.sql("SELECT now()").query(OffsetDateTime.class).single().toInstant();
   }
 
   private void migrateToTheLatest() {
