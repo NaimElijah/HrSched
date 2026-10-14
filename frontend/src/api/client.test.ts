@@ -157,7 +157,7 @@ describe('what the cookie-credentialed requests carry', () => {
     expect(headersOf(stub.mock.calls[0]).get('Authorization')).toBeNull();
   });
 
-  it('GivenASignOut_WhenSent_ThenItCarriesTheRequestedWithHeaderAndTheCookie', async () => {
+  it('GivenASignOut_WhenSent_ThenItCarriesTheRequestedWithHeaderAndSameOriginCredentials', async () => {
     signedIn();
     const stub = respondWith(204, null);
 
