@@ -33,7 +33,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-023](ADR-023-the-transaction-boundary-is-the-use-case.md) | Make the use case the transaction boundary, wrapped at the composition root | Accepted | 2026-09-06 |
 | [ADR-024](ADR-024-answer-unbindable-requests-with-a-problem-detail.md) | Answer a request Spring cannot bind with a problem detail, from one fallback handler | Accepted | 2026-09-14 |
 | [ADR-025](ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md) | Edit a draft roster through controls on a board, not by drag and drop | Accepted | 2026-09-14 |
-| [ADR-026](ADR-026-make-overlapping-published-rosters-unrepresentable.md) | Make two overlapping published rosters of one organisation unrepresentable in the schema | Accepted | 2026-09-14 |
+| [ADR-026](ADR-026-make-overlapping-published-rosters-unrepresentable.md) | Make two overlapping published rosters of one organisation unrepresentable in the schema | Superseded by [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md) | 2026-09-14 |
 | [ADR-027](ADR-027-take-turns-publishing-within-an-organisation.md) | Make publications within one organisation take turns, with a transaction-scoped advisory lock | Accepted | 2026-09-14 |
 | [ADR-028](ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md) | Keep the browser session as an in-memory access token and a rotating refresh cookie | Accepted | 2026-09-16 |
 | [ADR-029](ADR-029-provision-accounts-from-the-top-down.md) | Provision accounts from the top down, with temporary passwords, and bootstrap the operator from configuration | Accepted | 2026-09-16 |
@@ -42,6 +42,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-032](ADR-032-close-the-security-chain-by-default.md) | Close the security chain by default, and name every route that is open | Accepted | 2026-09-21 |
 | [ADR-033](ADR-033-judge-r3-across-authoritative-rosters-under-the-publication-lock.md) | Judge R3 across authoritative rosters in the application, under the publication lock | Accepted | 2026-10-10 |
 | [ADR-034](ADR-034-count-working-days-in-each-shifts-own-time-zone.md) | Count working days in each shift's own time zone | Accepted | 2026-10-10 |
+| [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md) | Keep roster history as a record of when each roster governed, written once | Accepted | 2026-10-14 |
 
 ## Decisions waiting to be recorded
 
@@ -50,6 +51,8 @@ Known-open and blocking work elsewhere. An entry here is a placeholder, **not** 
 | Will be | Decision | Blocks |
 | --- | --- | --- |
 | ADR-010 | Objectives: what makes one legal roster better than another | Introducing a real solver (ADR-005) |
+| ADR-035 | The AWS topology: ECS Fargate, RDS, and one CloudFront origin ([#153](https://github.com/NaimElijah/HrSched/issues/153)) | Running on AWS (staging) |
+| ADR-036 | A CDK app as the third buildable project ([#154](https://github.com/NaimElijah/HrSched/issues/154)) | Running on AWS (staging) |
 
 ## Conventions
 

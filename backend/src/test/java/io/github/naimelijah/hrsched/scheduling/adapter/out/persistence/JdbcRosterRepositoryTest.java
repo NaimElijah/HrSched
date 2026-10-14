@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
@@ -18,6 +19,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
@@ -61,6 +63,15 @@ class JdbcRosterRepositoryTest {
   /** Invented to distinguish one stored version from another; not from any statute. */
   private static final int A_CONSTRAINT_VERSION = 3;
 
+  /** When a roster in these tests was published. Any instant would do. */
+  private static final Instant PUBLISHED_AT = Instant.parse("2026-09-01T09:00:00Z");
+
+  /** When a newer roster superseded it, and so when that newer one was published. */
+  private static final Instant SUPERSEDED_AT = Instant.parse("2026-09-03T15:30:00Z");
+
+  /** A Thursday afternoon, inside both {@link #THE_WEEK} and {@link #OVERLAPPING_WEEK}. */
+  private static final Instant THURSDAY_AFTERNOON = Instant.parse("2026-09-10T15:00:00Z");
+
   /**
    * How long a racing writer may take before the test gives up on it. Far longer than a publication
    * needs, including PostgreSQL's one-second wait before it resolves a deadlock, so reaching it
@@ -98,7 +109,28 @@ class JdbcRosterRepositoryTest {
   }
 
   private static Roster published(OrganisationId organisation, TimeRange period) {
-    return new Roster(RosterId.newId(), organisation, period).publishedUnder(A_CONSTRAINT_VERSION);
+    return new Roster(RosterId.newId(), organisation, period)
+        .publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT);
+  }
+
+  /**
+   * R37's reconstruction, stated once (ADR-037): the roster whose period holds the scheduled
+   * instant, and which had been published but not yet superseded at the moment of record.
+   */
+  private static Optional<RosterId> authoritativeAt(
+      List<Roster> history, Instant recordedAt, Instant scheduled) {
+    return history.stream()
+        .filter(roster -> roster.publishedAt() != null)
+        .filter(roster -> !roster.publishedAt().isAfter(recordedAt))
+        .filter(
+            roster -> roster.supersededAt() == null || recordedAt.isBefore(roster.supersededAt()))
+        .filter(roster -> !roster.period().start().isAfter(scheduled))
+        .filter(roster -> scheduled.isBefore(roster.period().end()))
+        .map(Roster::id)
+        .reduce(
+            (one, other) -> {
+              throw new AssertionError("%s and %s governed one moment".formatted(one, other));
+            });
   }
 
   @Test
@@ -135,7 +167,7 @@ class JdbcRosterRepositoryTest {
   void GivenAPublishedRosterSavedOverItsDraft_WhenReadBack_ThenTheLaterVersionWins() {
     Roster draft = draft(ACME);
     repository.save(draft);
-    repository.save(draft.publishedUnder(A_CONSTRAINT_VERSION));
+    repository.save(draft.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
 
     assertThat(repository.findById(ACME, draft.id()))
         .get()
@@ -161,7 +193,7 @@ class JdbcRosterRepositoryTest {
 
   @Test
   void GivenAPublishedRoster_WhenReadBack_ThenItKeepsTheVersionThatApprovedIt() {
-    Roster published = draft(ACME).publishedUnder(A_CONSTRAINT_VERSION);
+    Roster published = draft(ACME).publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT);
     repository.save(published);
 
     assertThat(repository.findById(ACME, published.id()))
@@ -172,13 +204,136 @@ class JdbcRosterRepositoryTest {
 
   @Test
   void GivenASupersededRoster_WhenReadBack_ThenItIsStillSuperseded() {
-    Roster superseded = draft(ACME).publishedUnder(A_CONSTRAINT_VERSION).superseded();
-    repository.save(superseded);
+    Roster published = published(ACME, THE_WEEK);
+    repository.save(published);
+    repository.save(published.superseded(SUPERSEDED_AT));
 
-    assertThat(repository.findById(ACME, superseded.id()))
+    assertThat(repository.findById(ACME, published.id()))
         .get()
         .extracting(Roster::status)
         .isEqualTo(RosterStatus.SUPERSEDED);
+  }
+
+  @Test
+  void GivenASupersededRoster_WhenReadBack_ThenBothItsMomentsOfRecordComeBack() {
+    Roster published = published(ACME, THE_WEEK);
+    repository.save(published);
+    repository.save(published.superseded(SUPERSEDED_AT));
+
+    Roster stored = repository.findById(ACME, published.id()).orElseThrow();
+
+    assertThat(stored.publishedAt()).isEqualTo(PUBLISHED_AT);
+    assertThat(stored.supersededAt()).isEqualTo(SUPERSEDED_AT);
+  }
+
+  /**
+   * What R37 asks for. After a roster is superseded, which roster governed a moment of the schedule
+   * can still be answered for any moment of record: the old one before the supersession, the new
+   * one from then on, and neither before anything was published.
+   */
+  @Test
+  void
+      GivenARosterSupersededLater_WhenReconstructingAPastMoment_ThenTheRosterGoverningThenIsFound() {
+    Roster first = published(ACME, THE_WEEK);
+    repository.save(first);
+    Roster replacement = new Roster(RosterId.newId(), ACME, OVERLAPPING_WEEK);
+    repository.save(replacement);
+    repository.save(first.superseded(SUPERSEDED_AT));
+    repository.save(replacement.publishedUnder(A_CONSTRAINT_VERSION, SUPERSEDED_AT));
+
+    List<Roster> history = repository.findByOrganisation(ACME);
+
+    assertThat(authoritativeAt(history, PUBLISHED_AT.minusSeconds(1), THURSDAY_AFTERNOON))
+        .isEmpty();
+    assertThat(authoritativeAt(history, SUPERSEDED_AT.minusNanos(1_000), THURSDAY_AFTERNOON))
+        .contains(first.id());
+    assertThat(authoritativeAt(history, SUPERSEDED_AT, THURSDAY_AFTERNOON))
+        .contains(replacement.id());
+  }
+
+  /** A publication is recorded once. Recording it again would rewrite when it happened. */
+  @Test
+  void GivenAPublishedRoster_WhenStoredAgain_ThenItIsRefusedAsNoLongerEditable() {
+    Roster published = published(ACME, THE_WEEK);
+    repository.save(published);
+
+    assertThatThrownBy(() -> repository.save(published))
+        .isInstanceOf(RosterNotEditableException.class);
+  }
+
+  @Test
+  void GivenAPublishedRoster_WhenItsDraftIsStoredOverIt_ThenItIsRefusedAndKeepsItsAssignments() {
+    Assignment ada = new Assignment(ShiftId.newId(), EmployeeId.newId());
+    Roster draft = draft(ACME).with(ada);
+    repository.save(draft);
+    repository.save(draft.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
+
+    assertThatThrownBy(() -> repository.save(draft.withAssignments(List.of())))
+        .describedAs("a draft stored over its own publication would un-publish it")
+        .isInstanceOf(RosterNotEditableException.class);
+
+    Roster stored = repository.findById(ACME, draft.id()).orElseThrow();
+    assertThat(stored.status()).isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(stored.assignments()).containsExactly(ada);
+  }
+
+  @Test
+  void GivenADraft_WhenStoredAsSuperseded_ThenItIsRefusedAsNeverPublished() {
+    Roster draft = draft(ACME);
+    repository.save(draft);
+    Roster superseded =
+        draft.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT).superseded(SUPERSEDED_AT);
+
+    assertThatThrownBy(() -> repository.save(superseded))
+        .isInstanceOf(RosterNotEditableException.class);
+    assertThat(repository.findById(ACME, draft.id()))
+        .get()
+        .extracting(Roster::status)
+        .isEqualTo(RosterStatus.DRAFT);
+  }
+
+  /**
+   * Superseded once, at one moment. A second supersession would rewrite when it stopped governing.
+   */
+  @Test
+  void GivenASupersededRoster_WhenSupersededAgain_ThenItIsRefusedAndKeepsItsMoment() {
+    Roster published = published(ACME, THE_WEEK);
+    repository.save(published);
+    repository.save(published.superseded(SUPERSEDED_AT));
+
+    assertThatThrownBy(() -> repository.save(published.superseded(SUPERSEDED_AT.plusSeconds(60))))
+        .isInstanceOf(RosterNotEditableException.class);
+    assertThat(repository.findById(ACME, published.id()))
+        .get()
+        .extracting(Roster::supersededAt)
+        .isEqualTo(SUPERSEDED_AT);
+  }
+
+  @Test
+  void GivenARosterOfAnotherOrganisation_WhenStoredUnderTheSameIdentityAsOurs_ThenItIsRefused() {
+    Roster theirs = draft(RIVAL);
+    repository.save(theirs);
+    Roster ours = new Roster(theirs.id(), ACME, THE_WEEK);
+
+    assertThatThrownBy(() -> repository.save(ours)).isInstanceOf(IllegalStateException.class);
+    assertThat(repository.findById(RIVAL, theirs.id())).contains(theirs);
+  }
+
+  @Test
+  void
+      GivenARosterOfAnotherOrganisation_WhenSupersededUnderTheSameIdentityAsOurs_ThenItIsRefused() {
+    Roster theirs = published(RIVAL, THE_WEEK);
+    repository.save(theirs);
+    Roster ours =
+        new Roster(theirs.id(), ACME, THE_WEEK)
+            .publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT)
+            .superseded(SUPERSEDED_AT);
+
+    assertThatThrownBy(() -> repository.save(ours)).isInstanceOf(IllegalStateException.class);
+    assertThat(repository.findById(RIVAL, theirs.id()))
+        .get()
+        .extracting(Roster::status)
+        .isEqualTo(RosterStatus.PUBLISHED);
   }
 
   @Test
@@ -195,7 +350,7 @@ class JdbcRosterRepositoryTest {
   }
 
   /**
-   * Publishing supersedes and re-saves rosters, so a save has to leave the assignment table
+   * A draft is stored again every time it is edited, so a save has to leave the assignment table
    * agreeing with the aggregate rather than accumulating what was there before.
    */
   @Test
@@ -267,11 +422,18 @@ class JdbcRosterRepositoryTest {
         .isEqualTo(RosterStatus.PUBLISHED);
   }
 
-  /** History may overlap: a superseded roster governs nothing, so it blocks nothing. */
+  /**
+   * A superseded roster governed only until it was superseded, so a replacement governing from that
+   * moment on overlaps it in the schedule but at no moment of record.
+   */
   @Test
-  void GivenASupersededRoster_WhenAnOverlappingOneIsPublished_ThenItIsStored() {
-    repository.save(published(ACME, THE_WEEK).superseded());
-    Roster replacement = published(ACME, OVERLAPPING_WEEK);
+  void GivenASupersededRoster_WhenAnOverlappingOneIsPublishedAsItWasSuperseded_ThenItIsStored() {
+    Roster first = published(ACME, THE_WEEK);
+    repository.save(first);
+    repository.save(first.superseded(SUPERSEDED_AT));
+    Roster replacement =
+        new Roster(RosterId.newId(), ACME, OVERLAPPING_WEEK)
+            .publishedUnder(A_CONSTRAINT_VERSION, SUPERSEDED_AT);
 
     repository.save(replacement);
 
@@ -279,6 +441,54 @@ class JdbcRosterRepositoryTest {
         .get()
         .extracting(Roster::status)
         .isEqualTo(RosterStatus.PUBLISHED);
+  }
+
+  /**
+   * R11 held for the past as well as the present. A roster recorded as published while the old one
+   * still governed would make two rosters authoritative over the same days at once, and the history
+   * could no longer say which; the schema refuses it however it is arrived at.
+   */
+  @Test
+  void GivenASupersededRoster_WhenOneIsRecordedAsPublishedWhileItStillGoverned_ThenItIsAConflict() {
+    Roster first = published(ACME, THE_WEEK);
+    repository.save(first);
+    repository.save(first.superseded(SUPERSEDED_AT));
+    Roster backdated =
+        new Roster(RosterId.newId(), ACME, OVERLAPPING_WEEK)
+            .publishedUnder(A_CONSTRAINT_VERSION, SUPERSEDED_AT.minusSeconds(3600));
+
+    assertThatThrownBy(() -> repository.save(backdated))
+        .isInstanceOf(RosterPublicationConflictException.class);
+  }
+
+  /**
+   * The race a status stored in place lost silently: an edit of a draft that commits after the
+   * draft was published used to write it back to a draft, un-publishing it with nothing recorded.
+   * The edit waits for the publication's row, then finds it published and is refused.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenAnEditWaitingOnAPublication_WhenThePublicationCommits_ThenTheEditIsRefused()
+      throws Exception {
+    Assignment ada = new Assignment(ShiftId.newId(), EmployeeId.newId());
+    Roster draft = draft(ACME).with(ada);
+    repository.save(draft);
+
+    List<Throwable> refusals =
+        refusalsOf(
+            waitForTheOther -> {
+              repository.save(draft.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
+              waitForTheOther.run();
+            },
+            waitForTheOther -> {
+              waitForTheOther.run();
+              repository.save(draft.withAssignments(List.of()));
+            });
+
+    assertThat(refusals).singleElement().isInstanceOf(RosterNotEditableException.class);
+    Roster stored = repository.findById(ACME, draft.id()).orElseThrow();
+    assertThat(stored.status()).isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(stored.assignments()).containsExactly(ada);
   }
 
   /** Generating a draft over a published week is how every replacement starts. */
@@ -417,16 +627,16 @@ class JdbcRosterRepositoryTest {
     return waitForTheOther -> {
       repository.findByOrganisation(ACME);
       waitForTheOther.run();
-      repository.save(draft.publishedUnder(A_CONSTRAINT_VERSION));
+      repository.save(draft.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
     };
   }
 
   /** Publishes one roster, waits until the other writer has published one too, then another. */
   private Writer publishingOneThenAnother(Roster first, Roster then) {
     return waitForTheOther -> {
-      repository.save(first.publishedUnder(A_CONSTRAINT_VERSION));
+      repository.save(first.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
       waitForTheOther.run();
-      repository.save(then.publishedUnder(A_CONSTRAINT_VERSION));
+      repository.save(then.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
     };
   }
 

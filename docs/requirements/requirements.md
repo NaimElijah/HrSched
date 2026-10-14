@@ -169,7 +169,7 @@ a published roster is superseded rather than edited (R6).
 | R34 | An account holding the Employee role is always linked to an employee of its own organisation. One that is not is disabled until it is linked. *Not yet — [#97](https://github.com/NaimElijah/HrSched/issues/97)* |
 | R35 | A shift straddling two roster periods may be carried by either roster, and R3 is judged across every authoritative roster rather than within one. *`Roster`, `HeldWork`, `RosterTest`; at assignment and publication `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`; at swap approval `SwapServiceTest` ([ADR-033](../ADRs/ADR-033-judge-r3-across-authoritative-rosters-under-the-publication-lock.md)). Generation is given no other roster's work yet, so it can draft what publication refuses — [#130](https://github.com/NaimElijah/HrSched/issues/130)* |
 | R36 | Working-time rules count days in each shift's own time zone. *`Shift`, `WorkingPeriod`, `EmployeeSchedule`, `EmployeeScheduleTest`, `ConstraintSetTest`; in generation `GreedyRosterGeneratorTest`; at publication `SchedulingServiceTest`, `RosteringHttpTest`; stored by `JdbcShiftRepository`, `JdbcShiftRepositoryTest` ([ADR-034](../ADRs/ADR-034-count-working-days-in-each-shifts-own-time-zone.md)). The zone sent is the browser's, so a site in another zone cannot yet be planned for — [#136](https://github.com/NaimElijah/HrSched/issues/136)* |
-| R37 | Roster history is append-only: what was authoritative at any past moment can be reconstructed exactly. *Not yet — [#106](https://github.com/NaimElijah/HrSched/issues/106)* |
+| R37 | Roster history is append-only: what was authoritative at any past moment can be reconstructed exactly. *`Roster` (`RosterTest`), `SchedulingService` (`SchedulingServiceTest`), `JdbcRosterRepository` and the `roster_one_published_per_moment` constraint (`JdbcRosterRepositoryTest`), migration `V6` (`AppendOnlyRosterHistoryMigrationTest`) ([ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)). Exact from V6 on: nothing earlier was recorded.* |
 | R38 | A sign-in name is an email address. *Not yet — [#108](https://github.com/NaimElijah/HrSched/issues/108)* |
 | R39 | Operators and Admins sign in with a second factor as well as a password. *Not yet — [#109](https://github.com/NaimElijah/HrSched/issues/109)* |
 
@@ -264,12 +264,14 @@ now owed ([#27](https://github.com/NaimElijah/HrSched/issues/27)).
   change has committed and survives a crash or a restart. **A use case is one transaction**, so a
   request refused part-way leaves nothing behind — including the replacement roster a refused swap
   approval used to strand. Every aggregate lives in PostgreSQL, and the schema is changed only by a
-  versioned migration. Roster history must be **append-only**, so that what was authoritative at any
-  past moment can be reconstructed (R37, Q24); today superseding a roster still changes its status
-  in place. Nothing is purged and no retention period is set — Q23.
+  versioned migration. Roster history is **append-only**, so that what was authoritative at any
+  past moment can be reconstructed (R37, Q24): a roster records when it was published and when it
+  was superseded, each once, and nothing recorded is rewritten. Nothing is purged and no retention
+  period is set — Q23.
   *Enforced by `Jdbc*Repository` (×10) and their adapter tests, `TransactionalUseCases`,
   `SwapHttpTest`; [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md),
-  [ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md).*
+  [ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md),
+  [ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md).*
 - **Performance and scale** — one deployment holds up to **100 organisations**; one organisation
   has up to **1,000 employees**; one planning period holds up to **500 shifts**; up to **10
   Schedulers** work in one organisation at once. Interactive requests answer within **300 ms at the
