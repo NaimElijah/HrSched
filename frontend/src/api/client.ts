@@ -11,7 +11,7 @@ import type { SignedIn } from './session';
 const TRACE_ID_HEADER = 'X-Trace-Id';
 
 /**
- * Required by the endpoints whose credential is the refresh cookie.
+ * Sent with every cookie-credentialed request, which the backend requires of them.
  *
  * Its presence is the whole check; the value is never read. A browser will not attach a header like
  * this to a cross-site request without a CORS preflight, and the backend configures no CORS, so a
@@ -23,8 +23,8 @@ const REQUESTED_WITH = 'XMLHttpRequest';
 const AUTH_PREFIX = '/api/auth/';
 
 /**
- * The endpoints whose credential is the refresh cookie, and which are therefore sent no access
- * token.
+ * The endpoints whose credential is the refresh cookie. They are sent `X-Requested-With`, and no
+ * access token.
  *
  * The backend refuses a token that fails verification on every route, before the controller reads
  * the cookie, and the token held when these are sent is usually one that has just expired: renewal
@@ -78,7 +78,9 @@ interface Answered {
 async function send(path: string, init: RequestInit): Promise<Answered> {
   const headers = new Headers(init.headers);
   const token = currentAccessToken();
-  if (token !== null && !COOKIE_CREDENTIALED.has(path)) {
+  if (COOKIE_CREDENTIALED.has(path)) {
+    headers.set('X-Requested-With', REQUESTED_WITH);
+  } else if (token !== null) {
     headers.set('Authorization', `Bearer ${token}`);
   }
   if (init.body !== undefined) {
@@ -139,10 +141,7 @@ async function refreshOnce(): Promise<boolean> {
   refreshing ??= (async () => {
     try {
       return await underRefreshLock(async () => {
-        const answered = await send('/api/auth/refresh', {
-          method: 'POST',
-          headers: { 'X-Requested-With': REQUESTED_WITH },
-        });
+        const answered = await send('/api/auth/refresh', { method: 'POST' });
         if (answered.status === 401) {
           endSession();
           return false;
@@ -260,10 +259,7 @@ export const auth = {
    */
   signOut: async (): Promise<void> => {
     try {
-      await request<void>('/api/auth/sign-out', {
-        method: 'POST',
-        headers: { 'X-Requested-With': REQUESTED_WITH },
-      });
+      await request<void>('/api/auth/sign-out', { method: 'POST' });
     } finally {
       endSession();
     }

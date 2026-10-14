@@ -157,6 +157,26 @@ describe('what the cookie-credentialed requests carry', () => {
     expect(headersOf(stub.mock.calls[0]).get('Authorization')).toBeNull();
   });
 
+  it('GivenASignOut_WhenSent_ThenItCarriesTheRequestedWithHeaderAndTheCookie', async () => {
+    signedIn();
+    const stub = respondWith(204, null);
+
+    await auth.signOut();
+
+    expect(headersOf(stub.mock.calls[0]).get('X-Requested-With')).toBe('XMLHttpRequest');
+    expect((stub.mock.calls[0]?.[1] as RequestInit).credentials).toBe('same-origin');
+  });
+
+  /** The header marks a cookie-credentialed request, and is sent with no other. */
+  it('GivenAnOrdinaryRequest_WhenSent_ThenItCarriesNoRequestedWithHeader', async () => {
+    signedIn();
+    const stub = respondWith(200, []);
+
+    await api.get('/api/shifts');
+
+    expect(headersOf(stub.mock.calls[0]).get('X-Requested-With')).toBeNull();
+  });
+
   it('GivenAHeldToken_WhenSigningOut_ThenItCarriesNoAuthorization', async () => {
     signedIn();
     const stub = respondWith(204, null);
