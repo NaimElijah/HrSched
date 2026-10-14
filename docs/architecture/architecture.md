@@ -281,7 +281,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 | `spring-boot-starter-jdbc` | `JdbcClient`, the connection pool, and the transaction manager | [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md). Chosen over JPA because the domain may not carry `jakarta.persistence` annotations. |
 | `spring-boot-starter-flyway` + `flyway-database-postgresql` | Versioned schema migrations, applied on startup | ADR-004. New in Boot 4.x; 3.x had no Flyway starter. |
 | `postgresql` | The JDBC driver | ADR-004. Runtime scope; nothing compiles against it. |
-| `btree_gist` (PostgreSQL extension) | The `uuid` equality the `roster_one_published_per_moment` exclusion constraint indexes on | [ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md). Ships with PostgreSQL and is trusted, so the migrating role needs `CREATE` on the database, not superuser. Installed by migration `V2`. |
+| `btree_gist` (PostgreSQL extension) | The `uuid` equality the `roster_one_published_per_moment` exclusion constraint indexes on | [ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md). Ships with PostgreSQL and is trusted, so the migrating role needs `CREATE` on the database, not superuser. Installed by migration `V2`; [ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md) widened the constraint in `V6`. |
 | `spring-boot-docker-compose` | Starting the local database on `./mvnw spring-boot:run` | ADR-004, and it keeps `scripts/run.mjs` free of build logic as [ADR-014](../ADRs/ADR-014-root-task-runner.md) requires. Optional scope, so it never reaches a deployed artifact. |
 | `testcontainers-postgresql`, `testcontainers-junit-jupiter`, `spring-boot-testcontainers` | The real database the tests run against | ADR-004. Docker is required to build; there is deliberately no skip-when-absent. Pinned by the Testcontainers BOM, which the Boot BOM does not manage. |
 | `spring-boot-starter-opentelemetry` | A W3C trace id per request, in the MDC and on the response | [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md). Supplies the OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters; export is switched off until Q19 is answered. |
@@ -466,13 +466,28 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   equality decides it, because a partly-overlapping published roster would otherwise still govern
   the days it shares, and the old roster goes whole, not only for the days replaced (Q16). Which
   rosters go is `Roster.isSupersededBy`'s decision.
-- **Two overlapping published rosters cannot be stored.** Migration `V2` adds the
-  `roster_one_published_per_moment` exclusion constraint over the organisation and the roster's
-  period, for `PUBLISHED` rows only. A writer that publishes without seeing a publication still in
-  flight is refused by PostgreSQL rather than leaving two rosters authoritative. PostgreSQL reports
-  that as an exclusion violation, or, when two such writers wait on each other, by aborting one as
-  a deadlock victim. `JdbcRosterRepository` turns either into `RosterPublicationConflictException`,
-  which is answered 409 ([ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md)).
+- **Roster history is a record of when each roster governed, and is never rewritten (R37).** A
+  roster stores `published_at` and `superseded_at`, each written once, and no status: the status is
+  read off the two. Superseding writes `superseded_at` into a row that otherwise stays as it was
+  published, so a roster governed its period from the one moment until the other, and which roster
+  governed a day at any past moment is that interval read back. `publish` reads its `Clock` once,
+  after the lock, and `Roster.nextMomentOfRecord` turns the reading into the moment it supersedes and
+  publishes at: to the microsecond, and always after everything the organisation already recorded,
+  so a clock that has not moved cannot record a roster that never governed. `JdbcRosterRepository`
+  guards each write so that nothing is stored over a published roster but its supersession; a write
+  the guard stops is `RosterNotEditableException`. Rows stored before `V6` carry the moment that
+  migration ran, because none earlier was recorded
+  ([ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)).
+- **Two rosters governing the same days at the same moment cannot be stored.** The
+  `roster_one_published_per_moment` exclusion constraint, which `V2` introduced and `V6` widened,
+  ranges over the organisation, the roster's period and the moments it governed, for published and
+  superseded rows. A writer that publishes without seeing a publication still in flight is refused
+  by PostgreSQL rather than leaving two rosters authoritative, and so is one that would record the
+  past as having had two. PostgreSQL reports that as an exclusion violation, or, when two such
+  writers wait on each other, by aborting one as a deadlock victim. `JdbcRosterRepository` turns
+  either into `RosterPublicationConflictException`, which is answered 409
+  ([ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md),
+  [ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)).
 - **Assigning by hand asks the same questions generation asks, and no more.** `assign` enforces the
   three rules that are about one assignment — the person belongs to the organisation (R5), holds
   what the shift demands (R4), and has not declared they cannot work when it runs (F6) — plus that
@@ -528,7 +543,10 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 - **Two edits of one draft are atomic, but the later still wins.** Two concurrent saves of one
   roster serialise on its row rather than interleaving, so neither is left half-done; but there is
   no version column, so the later one overwrites the earlier outright rather than being rejected.
-  Adding one would change port signatures, which is a decision of its own.
+  Adding one would change port signatures, which is a decision of its own (#33). An edit that waits
+  on a publication of the same draft is the exception: it finds the roster published when it gets
+  the row, and is refused rather than turning it back into a draft. An edit that commits first is
+  still overwritten, by the assignments the publication validated.
 - **Publications within one organisation take turns.** `publish` and `approveSwap` first call
   `RosterRepository.lockPublicationsOf`, a transaction-scoped PostgreSQL advisory lock per
   organisation, before reading anything they decide from. A second publication therefore waits,

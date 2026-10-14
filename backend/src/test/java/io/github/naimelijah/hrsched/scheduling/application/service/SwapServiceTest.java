@@ -114,7 +114,13 @@ class SwapServiceTest {
     audit = new RecordingAuditTrail();
     scheduling =
         new SchedulingService(
-            shifts, rosters, constraintSets, workforce, new AssignsNobody(), audit);
+            shifts,
+            rosters,
+            constraintSets,
+            workforce,
+            new AssignsNobody(),
+            audit,
+            Clock.fixed(RAISED_AT, ZoneOffset.UTC));
     service =
         new SwapService(
             swaps,

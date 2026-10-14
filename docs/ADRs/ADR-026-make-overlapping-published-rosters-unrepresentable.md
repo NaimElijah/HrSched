@@ -1,6 +1,6 @@
 # ADR-026: Make two overlapping published rosters of one organisation unrepresentable in the schema
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md)
 - **Date:** 2026-09-14
 
 ## Context

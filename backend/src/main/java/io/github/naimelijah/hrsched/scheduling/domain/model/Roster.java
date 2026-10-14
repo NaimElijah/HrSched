@@ -3,7 +3,10 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -11,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * Who works which shifts over a period: the aggregate root of the scheduling context.
@@ -23,8 +27,19 @@ import java.util.Set;
  * <p>A published roster records the constraint set version that validated it. If the organisation
  * later tightens a rule, this roster remains a historical fact that was legal when made. Rule
  * changes are never retroactive.
+ *
+ * <p>It also records when it was published and, once superseded, when that happened. Superseding
+ * adds that second moment and changes nothing already recorded, so the roster governed its days
+ * from the one moment until the other, and what was authoritative at any past moment can be
+ * reconstructed (R37, ADR-037).
  */
 public final class Roster {
+
+  /**
+   * The finest moment history is recorded at. A moment the record cannot keep exactly would be kept
+   * as a different one, so a finer one is refused rather than rounded.
+   */
+  private static final ChronoUnit MOMENT_OF_RECORD = ChronoUnit.MICROS;
 
   private final RosterId id;
   private final OrganisationId organisation;
@@ -32,6 +47,8 @@ public final class Roster {
   private final RosterStatus status;
   private final List<Assignment> assignments;
   private final Integer validatedAgainstConstraintVersion;
+  private final Instant publishedAt;
+  private final Instant supersededAt;
 
   /**
    * Creates an empty draft.
@@ -41,7 +58,7 @@ public final class Roster {
    * @param period the span it covers
    */
   public Roster(RosterId id, OrganisationId organisation, TimeRange period) {
-    this(id, organisation, period, RosterStatus.DRAFT, List.of(), null);
+    this(id, organisation, period, RosterStatus.DRAFT, List.of(), null, null, null);
   }
 
   private Roster(
@@ -50,13 +67,24 @@ public final class Roster {
       TimeRange period,
       RosterStatus status,
       List<Assignment> assignments,
-      Integer validatedAgainstConstraintVersion) {
+      Integer validatedAgainstConstraintVersion,
+      Instant publishedAt,
+      Instant supersededAt) {
     this.id = Objects.requireNonNull(id, "id must not be null");
     this.organisation = Objects.requireNonNull(organisation, "organisation must not be null");
     this.period = Objects.requireNonNull(period, "period must not be null");
     this.status = Objects.requireNonNull(status, "status must not be null");
     this.assignments = List.copyOf(assignments);
     this.validatedAgainstConstraintVersion = validatedAgainstConstraintVersion;
+    // Reachable only through the transitions below, which keep it; checked so that a later edit to
+    // one of them cannot quietly build a roster whose status and history disagree.
+    if ((status == RosterStatus.DRAFT) != (publishedAt == null)
+        || (status == RosterStatus.SUPERSEDED) != (supersededAt != null)) {
+      throw new IllegalStateException(
+          "Roster %s is %s, which its moments of record do not agree with".formatted(id, status));
+    }
+    this.publishedAt = publishedAt;
+    this.supersededAt = supersededAt;
   }
 
   /**
@@ -70,7 +98,8 @@ public final class Roster {
     requireDraft();
     List<Assignment> extended = new ArrayList<>(assignments);
     extended.add(assignment);
-    return new Roster(id, organisation, period, status, requireNoDuplicates(extended), null);
+    return new Roster(
+        id, organisation, period, status, requireNoDuplicates(extended), null, null, null);
   }
 
   /**
@@ -87,7 +116,7 @@ public final class Roster {
     }
     List<Assignment> remaining = new ArrayList<>(assignments);
     remaining.remove(assignment);
-    return new Roster(id, organisation, period, status, remaining, null);
+    return new Roster(id, organisation, period, status, remaining, null, null, null);
   }
 
   /**
@@ -99,7 +128,8 @@ public final class Roster {
   public Roster withAssignments(List<Assignment> replacement) {
     Objects.requireNonNull(replacement, "replacement must not be null");
     requireDraft();
-    return new Roster(id, organisation, period, status, requireNoDuplicates(replacement), null);
+    return new Roster(
+        id, organisation, period, status, requireNoDuplicates(replacement), null, null, null);
   }
 
   /**
@@ -118,28 +148,48 @@ public final class Roster {
   }
 
   /**
-   * Publishes this draft, recording which constraint version approved it.
+   * Publishes this draft, recording which constraint version approved it and when.
    *
    * <p>The caller is responsible for having checked the constraints; this records the outcome. The
    * check lives in the application layer because it needs employee data this aggregate cannot see.
    *
    * @param constraintVersion the constraint set version that validated these assignments
+   * @param at the moment it begins to govern its days; see {@link #nextMomentOfRecord}
    * @return the published roster
    * @throws RosterNotEditableException if this roster is not a draft
+   * @throws IllegalArgumentException if {@code at} is finer than a microsecond
    */
-  public Roster publishedUnder(int constraintVersion) {
+  public Roster publishedUnder(int constraintVersion, Instant at) {
     requireDraft();
     return new Roster(
-        id, organisation, period, RosterStatus.PUBLISHED, assignments, constraintVersion);
+        id,
+        organisation,
+        period,
+        RosterStatus.PUBLISHED,
+        assignments,
+        constraintVersion,
+        recordable(at),
+        null);
   }
 
   /**
-   * @return this roster marked as replaced by a newer one
-   * @throws RosterNotEditableException if it was never published
+   * Marks this roster as replaced by a newer one. Everything it recorded is kept, and the moment it
+   * stopped governing is added.
+   *
+   * @param at the moment the roster replacing it was published
+   * @return this roster, superseded
+   * @throws RosterNotEditableException if it is not a published roster
+   * @throws IllegalArgumentException if {@code at} is before it was published, or finer than a
+   *     microsecond
    */
-  public Roster superseded() {
+  public Roster superseded(Instant at) {
     if (status != RosterStatus.PUBLISHED) {
       throw new RosterNotEditableException(id, status, "only a published roster can be superseded");
+    }
+    if (recordable(at).isBefore(publishedAt)) {
+      throw new IllegalArgumentException(
+          "Roster %s was published at %s and cannot be superseded before that, at %s"
+              .formatted(id.value(), publishedAt, at));
     }
     return new Roster(
         id,
@@ -147,7 +197,46 @@ public final class Roster {
         period,
         RosterStatus.SUPERSEDED,
         assignments,
-        validatedAgainstConstraintVersion);
+        validatedAgainstConstraintVersion,
+        publishedAt,
+        at);
+  }
+
+  /**
+   * The moment a publication records itself at, and supersedes at, given everything its
+   * organisation has already recorded.
+   *
+   * <p>The clock's reading, to the microsecond, unless the history already reaches it: then one
+   * microsecond after the latest moment recorded. A clock that is fixed, coarse, or stepped back
+   * would otherwise end a roster's authority before it began, or begin and end it at one instant,
+   * and the history would no longer say which roster governed when. Record time therefore only
+   * moves forward within an organisation, which is what makes the half-open interval from a
+   * roster's publication to its supersession a faithful account of when it governed.
+   *
+   * @param clock what the clock reads now
+   * @param history every roster of the organisation publishing
+   * @return the moment to publish and supersede at
+   */
+  public static Instant nextMomentOfRecord(Instant clock, Collection<Roster> history) {
+    Objects.requireNonNull(clock, "clock must not be null");
+    Objects.requireNonNull(history, "history must not be null");
+    Instant now = clock.truncatedTo(MOMENT_OF_RECORD);
+    return history.stream()
+        .flatMap(roster -> Stream.of(roster.publishedAt, roster.supersededAt))
+        .filter(Objects::nonNull)
+        .max(Comparator.naturalOrder())
+        .filter(latest -> !now.isAfter(latest))
+        .map(latest -> latest.plus(1, MOMENT_OF_RECORD))
+        .orElse(now);
+  }
+
+  private static Instant recordable(Instant at) {
+    Objects.requireNonNull(at, "at must not be null");
+    if (!at.truncatedTo(MOMENT_OF_RECORD).equals(at)) {
+      throw new IllegalArgumentException(
+          "%s is finer than history is recorded at, which is to the microsecond".formatted(at));
+    }
+    return at;
   }
 
   /**
@@ -323,6 +412,20 @@ public final class Roster {
    */
   public Integer validatedAgainstConstraintVersion() {
     return validatedAgainstConstraintVersion;
+  }
+
+  /**
+   * @return when this roster was published, or null while it is a draft
+   */
+  public Instant publishedAt() {
+    return publishedAt;
+  }
+
+  /**
+   * @return when a newer roster superseded this one, or null unless one has
+   */
+  public Instant supersededAt() {
+    return supersededAt;
   }
 
   @Override

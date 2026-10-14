@@ -3,6 +3,8 @@ package io.github.naimelijah.hrsched.scheduling.application.service;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,8 +30,29 @@ final class FakeRosters implements RosterRepository {
     this.log = log;
   }
 
+  /**
+   * Refuses the writes {@code JdbcRosterRepository} refuses because history is append-only: nothing
+   * is stored over a published roster except its supersession, and only a published roster can be
+   * superseded. A fake that accepted those would let a use case pass here and fail in production.
+   * The schema's other refusals, of an identity another organisation holds and of two rosters
+   * governing one moment, are not mirrored; {@code JdbcRosterRepositoryTest} proves those.
+   */
   @Override
   public void save(Roster roster) {
+    RosterStatus before = stored.containsKey(roster.id()) ? stored.get(roster.id()).status() : null;
+    if (roster.status() == RosterStatus.SUPERSEDED && before == null) {
+      throw new IllegalStateException("No roster %s is stored to supersede".formatted(roster.id()));
+    }
+    if (roster.status() == RosterStatus.SUPERSEDED && before != RosterStatus.PUBLISHED) {
+      throw new RosterNotEditableException(
+          roster.id(), before, "only a published roster can be superseded");
+    }
+    if (roster.status() != RosterStatus.SUPERSEDED
+        && before != null
+        && before != RosterStatus.DRAFT) {
+      throw new RosterNotEditableException(
+          roster.id(), before, "a roster can only be changed while a draft");
+    }
     stored.put(roster.id(), roster);
   }
 
