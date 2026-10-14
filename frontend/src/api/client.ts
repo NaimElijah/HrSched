@@ -23,6 +23,20 @@ const REQUESTED_WITH = 'XMLHttpRequest';
 const AUTH_PREFIX = '/api/auth/';
 
 /**
+ * The endpoints whose credential is the refresh cookie, and which are therefore sent no access
+ * token.
+ *
+ * The backend refuses a token that fails verification on every route, before the controller reads
+ * the cookie, and the token held when these are sent is usually one that has just expired: renewal
+ * happens because it did. Sending it would refuse the renewal and leave a sign-out undone (#179).
+ * Not all of `AUTH_PREFIX`: reading the session and changing the password need the token.
+ */
+const COOKIE_CREDENTIALED: ReadonlySet<string> = new Set([
+  '/api/auth/refresh',
+  '/api/auth/sign-out',
+]);
+
+/**
  * Serialises refreshes across tabs.
  *
  * Two tabs renewing with one cookie is exactly the pattern reuse detection is built to punish: the
@@ -64,7 +78,7 @@ interface Answered {
 async function send(path: string, init: RequestInit): Promise<Answered> {
   const headers = new Headers(init.headers);
   const token = currentAccessToken();
-  if (token !== null) {
+  if (token !== null && !COOKIE_CREDENTIALED.has(path)) {
     headers.set('Authorization', `Bearer ${token}`);
   }
   if (init.body !== undefined) {
@@ -115,8 +129,8 @@ function interpret<T>(path: string, answered: Answered): T {
  * Only a 401 is a refusal: it is the one way the backend refuses a cookie. Anything else — a proxy
  * or gateway with no backend behind it, or the backend failing — has decided nothing about the
  * cookie, and ending the session then would tell somebody they are signed out because the network
- * or the server was down (#139). A 401 can also be the backend refusing the stale access token
- * this request still carries, rather than the cookie (#179).
+ * or the server was down (#139). The renewal carries no access token, so the 401 cannot be the
+ * backend refusing a stale one instead of the cookie (#179).
  *
  * @returns whether there is a usable token afterwards
  * @throws ApiError when the refresh failed without being refused, or the fetch rejection itself
@@ -209,11 +223,12 @@ export const api = {
 };
 
 /**
- * The authentication endpoints, which are the only ones whose credential is not the access token.
+ * The authentication endpoints.
  *
- * They live here rather than in a module of their own because they are the one place `fetch` is
- * called with something other than a bearer token, and this module is the only one allowed to call
- * `fetch` at all.
+ * Signing in is credentialed by the name and password in its body, renewing and signing out by the
+ * refresh cookie, and reading the session and changing the password by the access token, like any
+ * other call. They live here rather than in a module of their own because three of them carry a
+ * credential other than the token, and this module is the only one allowed to call `fetch` at all.
  */
 export const auth = {
   /**

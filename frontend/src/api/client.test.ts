@@ -132,6 +132,95 @@ describe('what a request carries', () => {
 });
 
 /**
+ * Renewing and signing out are carried by the refresh cookie, and the backend refuses a stale
+ * access token on every route before it reads the cookie. The token held when either is sent is
+ * usually exactly that — renewal happens because it expired — so neither may carry it (#179).
+ */
+describe('what the cookie-credentialed requests carry', () => {
+  it('GivenAHeldToken_WhenRenewing_ThenTheRefreshCarriesNoAuthorization', async () => {
+    signedIn();
+    const stub = respondWith(401, {});
+
+    await api.get('/api/shifts').catch(() => undefined);
+
+    const refresh = stub.mock.calls.find(([called]) => called === '/api/auth/refresh');
+    expect(refresh).toBeDefined();
+    expect(headersOf(refresh).get('Authorization')).toBeNull();
+  });
+
+  it('GivenAHeldToken_WhenRestoring_ThenTheRefreshCarriesNoAuthorization', async () => {
+    signedIn();
+    const stub = respondWith(401, {});
+
+    await auth.restore();
+
+    expect(headersOf(stub.mock.calls[0]).get('Authorization')).toBeNull();
+  });
+
+  it('GivenAHeldToken_WhenSigningOut_ThenItCarriesNoAuthorization', async () => {
+    signedIn();
+    const stub = respondWith(204, null);
+
+    await auth.signOut();
+
+    expect(headersOf(stub.mock.calls[0]).get('Authorization')).toBeNull();
+  });
+
+  /** Reading the session and changing the password sit under the same prefix but need the token. */
+  it('GivenAHeldToken_WhenReadingTheSession_ThenTheTokenIsStillSent', async () => {
+    signedIn();
+    const stub = respondWith(200, A_SESSION);
+
+    await auth.readSession();
+
+    expect(headersOf(stub.mock.calls[0]).get('Authorization')).toBe('Bearer token-1');
+  });
+
+  it('GivenAHeldToken_WhenChangingThePassword_ThenTheTokenIsStillSent', async () => {
+    signedIn();
+    const stub = respondWith(200, {
+      accessToken: 'token-2',
+      tokenType: 'Bearer',
+      expiresIn: 600,
+      session: A_SESSION,
+    });
+
+    await auth.changePassword('an invented password', 'another invented password');
+
+    expect(headersOf(stub.mock.calls[0]).get('Authorization')).toBe('Bearer token-1');
+  });
+
+  /**
+   * The session surviving its access token is the whole point. The stub answers the refresh as the
+   * backend does: refused when it carries a token, renewed when it carries only the cookie.
+   */
+  it('GivenAnExpiredAccessToken_WhenRenewingAgainstTheBackendsRule_ThenTheSessionSurvives', async () => {
+    signedIn();
+    let renewed = false;
+    answering((path, init) => {
+      const authorization = new Headers(init?.headers).get('Authorization');
+      if (path === '/api/auth/refresh') {
+        if (authorization !== null) {
+          return { status: 401, body: { title: 'Unauthenticated' } };
+        }
+        renewed = true;
+        return {
+          status: 200,
+          body: { accessToken: 'token-2', tokenType: 'Bearer', expiresIn: 600, session: A_SESSION },
+        };
+      }
+      return renewed && authorization === 'Bearer token-2'
+        ? { status: 200, body: ['a shift'] }
+        : { status: 401, body: {} };
+    });
+
+    await expect(api.get('/api/shifts')).resolves.toEqual(['a shift']);
+
+    expect(currentSession()).toEqual(A_SESSION);
+  });
+});
+
+/**
  * The access token lives in a module variable and nowhere a script can read it back. A token in
  * `localStorage` is a token a cross-site scripting flaw walks away with, and one that survives the
  * tab is one that outlives the reason it was issued (ADR-028).
