@@ -63,6 +63,12 @@ class SessionRefreshHttpTest {
   private static final String PASSWORD = "an invented password for a test";
   private static final String REQUESTED_WITH = "X-Requested-With";
 
+  /**
+   * Past the 60 seconds by which {@code JwtTimestampValidator} lets an expiry slip by default, so a
+   * token this far beyond its lifetime is expired by any reading of the clock.
+   */
+  private static final Duration PAST_THE_CLOCK_SKEW = Duration.ofMinutes(5);
+
   @Autowired private MockMvc mockMvc;
   @Autowired private AccountRepository accounts;
   @Autowired private PasswordHasher passwords;
@@ -381,12 +387,14 @@ class SessionRefreshHttpTest {
   }
 
   /**
-   * A token this application signed for a real account and session, issued an hour ago so that it
-   * has expired by more than the decoder's clock skew. Only its age is wrong with it.
+   * A token this application signed for a real account and session, issued long enough ago that it
+   * has expired by more than the decoder's clock skew, whatever lifetime is configured. Only its
+   * age is wrong with it.
    */
   private String anExpiredAccessToken(Account account, UUID session) {
-    Clock anHourAgo = Clock.fixed(Instant.now().minus(Duration.ofHours(1)), ZoneOffset.UTC);
-    return new JwtAccessTokenIssuer(encoder, key, tokenProperties, anHourAgo)
+    Instant issued = Instant.now().minus(tokenProperties.lifetime()).minus(PAST_THE_CLOCK_SKEW);
+    return new JwtAccessTokenIssuer(
+            encoder, key, tokenProperties, Clock.fixed(issued, ZoneOffset.UTC))
         .issue(account.id(), new SignInSessionId(session))
         .value();
   }
