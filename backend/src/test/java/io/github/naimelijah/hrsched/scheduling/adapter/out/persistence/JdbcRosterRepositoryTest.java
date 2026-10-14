@@ -28,6 +28,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -465,6 +466,10 @@ class JdbcRosterRepositoryTest {
    * The race a status stored in place lost silently: an edit of a draft that commits after the
    * draft was published used to write it back to a draft, un-publishing it with nothing recorded.
    * The edit waits for the publication's row, then finds it published and is refused.
+   *
+   * <p>The publication commits only once the edit is waiting on its row. Otherwise the commit could
+   * land before the edit arrived, and this would be the same as storing over a published roster
+   * with nobody racing - which a guard read before the write, rather than in it, would also pass.
    */
   @Test
   @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
@@ -474,13 +479,16 @@ class JdbcRosterRepositoryTest {
     Roster draft = draft(ACME).with(ada);
     repository.save(draft);
 
+    AtomicInteger editor = new AtomicInteger();
     List<Throwable> refusals =
         refusalsOf(
             waitForTheOther -> {
               repository.save(draft.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
               waitForTheOther.run();
+              awaitWaitingOnALock(editor.get());
             },
             waitForTheOther -> {
+              editor.set(backendServingThisTransaction());
               waitForTheOther.run();
               repository.save(draft.withAssignments(List.of()));
             });
@@ -602,6 +610,33 @@ class JdbcRosterRepositoryTest {
         .isInstanceOfSatisfying(
             SQLException.class,
             cause -> assertThat(cause.getSQLState()).isEqualTo(DEADLOCK_DETECTED));
+  }
+
+  /** The PostgreSQL backend serving the calling thread's transaction, which joins it. */
+  private static int backendServingThisTransaction() {
+    return PostgresDatabase.jdbcClient()
+        .sql("SELECT pg_backend_pid()")
+        .query(Integer.class)
+        .single();
+  }
+
+  /**
+   * Returns once the backend {@code pid} is waiting for a lock some other transaction holds.
+   *
+   * <p>Asks PostgreSQL rather than sleeping, so it returns as soon as the wait begins and never
+   * guesses how long that takes; the bound is only there to fail a test that would otherwise hang.
+   */
+  private static void awaitWaitingOnALock(int pid) {
+    long giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(STUCK_AFTER_SECONDS);
+    while (!PostgresDatabase.jdbcClient()
+        .sql("SELECT cardinality(pg_blocking_pids(:pid)) > 0")
+        .param("pid", pid)
+        .query(Boolean.class)
+        .single()) {
+      if (System.nanoTime() > giveUpAt) {
+        throw new IllegalStateException("The other writer never waited for a lock");
+      }
+    }
   }
 
   /** Saves one draft, waits until the other writer has saved one too, then saves another. */
