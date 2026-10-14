@@ -178,9 +178,10 @@ public class UseCaseConfiguration {
       WorkforceDirectory workforce,
       RosterGenerator generator,
       AuditTrail audit,
+      Clock clock,
       PlatformTransactionManager transactions) {
     return transactional(
-        new SchedulingService(shifts, rosters, constraintSets, workforce, generator, audit),
+        new SchedulingService(shifts, rosters, constraintSets, workforce, generator, audit, clock),
         transactions);
   }
 

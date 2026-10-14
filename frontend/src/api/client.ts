@@ -11,7 +11,7 @@ import type { SignedIn } from './session';
 const TRACE_ID_HEADER = 'X-Trace-Id';
 
 /**
- * Required by the endpoints whose credential is the refresh cookie.
+ * Sent with every cookie-credentialed request, which the backend requires of them.
  *
  * Its presence is the whole check; the value is never read. A browser will not attach a header like
  * this to a cross-site request without a CORS preflight, and the backend configures no CORS, so a
@@ -19,8 +19,29 @@ const TRACE_ID_HEADER = 'X-Trace-Id';
  */
 const REQUESTED_WITH = 'XMLHttpRequest';
 
-/** Everything under here is authentication itself, and a 401 from it is never worth retrying. */
-const AUTH_PREFIX = '/api/auth/';
+/**
+ * The endpoints whose credential is the refresh cookie. They are sent `X-Requested-With`, and no
+ * access token.
+ *
+ * The backend refuses a token that fails verification on every route, before the controller reads
+ * the cookie, and the token held when these are sent is usually one that has just expired: renewal
+ * happens because it did. Sending it would refuse the renewal and leave a sign-out undone (#179).
+ * Not all of `/api/auth/`: reading the session and changing the password need the token.
+ */
+const COOKIE_CREDENTIALED: ReadonlySet<string> = new Set([
+  '/api/auth/refresh',
+  '/api/auth/sign-out',
+]);
+
+/**
+ * The requests whose 401 is an answer about their own credential, which renewing the access token
+ * cannot change: a name and password refused, or a cookie refused.
+ *
+ * Every other request is credentialed by the token, including reading the session and changing the
+ * password, so its 401 is the token and is renewed like any other (#179). The backend keeps that
+ * true: a wrong current password is a 403, not a 401.
+ */
+const NOT_RENEWED: ReadonlySet<string> = new Set(['/api/auth/sign-in', ...COOKIE_CREDENTIALED]);
 
 /**
  * Serialises refreshes across tabs.
@@ -43,7 +64,7 @@ let refreshing: Promise<boolean> | null = null;
  */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const first = await send(path, init);
-  if (first.status !== 401 || path.startsWith(AUTH_PREFIX)) {
+  if (first.status !== 401 || NOT_RENEWED.has(path)) {
     return interpret<T>(path, first);
   }
   // One renewal, then one retry, and never more. A second 401 means the session is genuinely over,
@@ -64,7 +85,9 @@ interface Answered {
 async function send(path: string, init: RequestInit): Promise<Answered> {
   const headers = new Headers(init.headers);
   const token = currentAccessToken();
-  if (token !== null) {
+  if (COOKIE_CREDENTIALED.has(path)) {
+    headers.set('X-Requested-With', REQUESTED_WITH);
+  } else if (token !== null) {
     headers.set('Authorization', `Bearer ${token}`);
   }
   if (init.body !== undefined) {
@@ -115,8 +138,8 @@ function interpret<T>(path: string, answered: Answered): T {
  * Only a 401 is a refusal: it is the one way the backend refuses a cookie. Anything else — a proxy
  * or gateway with no backend behind it, or the backend failing — has decided nothing about the
  * cookie, and ending the session then would tell somebody they are signed out because the network
- * or the server was down (#139). A 401 can also be the backend refusing the stale access token
- * this request still carries, rather than the cookie (#179).
+ * or the server was down (#139). The renewal carries no access token, so the 401 cannot be the
+ * backend refusing a stale one instead of the cookie (#179).
  *
  * @returns whether there is a usable token afterwards
  * @throws ApiError when the refresh failed without being refused, or the fetch rejection itself
@@ -125,10 +148,7 @@ async function refreshOnce(): Promise<boolean> {
   refreshing ??= (async () => {
     try {
       return await underRefreshLock(async () => {
-        const answered = await send('/api/auth/refresh', {
-          method: 'POST',
-          headers: { 'X-Requested-With': REQUESTED_WITH },
-        });
+        const answered = await send('/api/auth/refresh', { method: 'POST' });
         if (answered.status === 401) {
           endSession();
           return false;
@@ -209,11 +229,12 @@ export const api = {
 };
 
 /**
- * The authentication endpoints, which are the only ones whose credential is not the access token.
+ * The authentication endpoints.
  *
- * They live here rather than in a module of their own because they are the one place `fetch` is
- * called with something other than a bearer token, and this module is the only one allowed to call
- * `fetch` at all.
+ * Signing in is credentialed by the name and password in its body, renewing and signing out by the
+ * refresh cookie, and reading the session and changing the password by the access token, like any
+ * other call. They live here rather than in a module of their own because three of them carry a
+ * credential other than the token, and this module is the only one allowed to call `fetch` at all.
  */
 export const auth = {
   /**
@@ -245,10 +266,7 @@ export const auth = {
    */
   signOut: async (): Promise<void> => {
     try {
-      await request<void>('/api/auth/sign-out', {
-        method: 'POST',
-        headers: { 'X-Requested-With': REQUESTED_WITH },
-      });
+      await request<void>('/api/auth/sign-out', { method: 'POST' });
     } finally {
       endSession();
     }

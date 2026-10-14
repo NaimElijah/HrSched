@@ -7,8 +7,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -32,6 +34,14 @@ class RosterTest {
       new TimeRange(Instant.parse("2026-09-10T00:00:00Z"), Instant.parse("2026-09-17T00:00:00Z"));
   private static final List<HeldWork> NOTHING_ELSEWHERE = List.of();
 
+  /** When a roster in these tests was published. Any instant would do. */
+  private static final Instant PUBLISHED_AT = Instant.parse("2026-09-01T09:00:00Z");
+
+  /** When it was superseded: later, as a supersession always is. */
+  private static final Instant SUPERSEDED_AT = Instant.parse("2026-09-03T15:30:00Z");
+
+  private static final Duration A_MICROSECOND = Duration.of(1, ChronoUnit.MICROS);
+
   /**
    * When a shift runs, its days counted in UTC; R3 compares instants, so the zone is immaterial.
    */
@@ -44,7 +54,7 @@ class RosterTest {
   }
 
   private static Roster published(TimeRange period) {
-    return new Roster(RosterId.newId(), ACME, period).publishedUnder(1);
+    return new Roster(RosterId.newId(), ACME, period).publishedUnder(1, PUBLISHED_AT);
   }
 
   private static HeldWork heldBy(EmployeeId employee, TimeRange when) {
@@ -95,7 +105,7 @@ class RosterTest {
   @Test
   void GivenAPublishedRoster_WhenRemovingAnAssignment_ThenItIsRefused() {
     ShiftId shift = ShiftId.newId();
-    Roster published = draft().with(new Assignment(shift, ADA)).publishedUnder(1);
+    Roster published = draft().with(new Assignment(shift, ADA)).publishedUnder(1, PUBLISHED_AT);
 
     assertThatThrownBy(() -> published.without(new Assignment(shift, ADA)))
         .isInstanceOf(RosterNotEditableException.class);
@@ -134,7 +144,7 @@ class RosterTest {
 
   @Test
   void GivenADraft_WhenPublished_ThenItRecordsTheConstraintVersionThatApprovedIt() {
-    Roster published = draft().publishedUnder(7);
+    Roster published = draft().publishedUnder(7, PUBLISHED_AT);
 
     assertThat(published.status()).isEqualTo(RosterStatus.PUBLISHED);
     assertThat(published.validatedAgainstConstraintVersion())
@@ -144,7 +154,7 @@ class RosterTest {
 
   @Test
   void GivenAPublishedRoster_WhenChangingIt_ThenItIsRefused() {
-    Roster published = draft().publishedUnder(1);
+    Roster published = draft().publishedUnder(1, PUBLISHED_AT);
 
     assertThatThrownBy(() -> published.with(new Assignment(ShiftId.newId(), ADA)))
         .describedAs("people plan their lives around a published roster")
@@ -155,16 +165,19 @@ class RosterTest {
 
   @Test
   void GivenAPublishedRoster_WhenPublishedAgain_ThenItIsRefused() {
-    Roster published = draft().publishedUnder(1);
+    Roster published = draft().publishedUnder(1, PUBLISHED_AT);
 
-    assertThatThrownBy(() -> published.publishedUnder(2))
+    assertThatThrownBy(() -> published.publishedUnder(2, PUBLISHED_AT))
         .isInstanceOf(RosterNotEditableException.class);
   }
 
   @Test
   void GivenAPublishedRoster_WhenSuperseded_ThenItKeepsItsHistory() {
     Roster superseded =
-        draft().with(new Assignment(ShiftId.newId(), ADA)).publishedUnder(3).superseded();
+        draft()
+            .with(new Assignment(ShiftId.newId(), ADA))
+            .publishedUnder(3, PUBLISHED_AT)
+            .superseded(SUPERSEDED_AT);
 
     assertThat(superseded.status()).isEqualTo(RosterStatus.SUPERSEDED);
     assertThat(superseded.assignments()).hasSize(1);
@@ -172,8 +185,94 @@ class RosterTest {
   }
 
   @Test
+  void GivenANewRoster_WhenCreated_ThenNoMomentOfRecordIsSet() {
+    Roster roster = draft();
+
+    assertThat(roster.publishedAt()).isNull();
+    assertThat(roster.supersededAt()).isNull();
+  }
+
+  @Test
+  void GivenADraft_WhenPublished_ThenItRecordsWhenItWasPublished() {
+    Roster published = draft().publishedUnder(1, PUBLISHED_AT);
+
+    assertThat(published.publishedAt()).isEqualTo(PUBLISHED_AT);
+    assertThat(published.supersededAt()).isNull();
+  }
+
+  /**
+   * Superseding adds a fact and changes none: the roster still says when it was published, so what
+   * was authoritative before the supersession can be reconstructed (R37).
+   */
+  @Test
+  void GivenAPublishedRoster_WhenSuperseded_ThenItRecordsWhenAndKeepsWhenItWasPublished() {
+    Roster superseded = draft().publishedUnder(1, PUBLISHED_AT).superseded(SUPERSEDED_AT);
+
+    assertThat(superseded.publishedAt()).isEqualTo(PUBLISHED_AT);
+    assertThat(superseded.supersededAt()).isEqualTo(SUPERSEDED_AT);
+  }
+
+  @Test
+  void GivenAPublishedRoster_WhenSupersededBeforeItWasPublished_ThenItIsRefused() {
+    Roster published = draft().publishedUnder(1, PUBLISHED_AT);
+
+    assertThatThrownBy(() -> published.superseded(PUBLISHED_AT.minus(A_MICROSECOND)))
+        .describedAs("a roster cannot stop governing before it began to")
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void GivenAMomentFinerThanAMicrosecond_WhenPublishing_ThenItIsRefused() {
+    assertThatThrownBy(() -> draft().publishedUnder(1, PUBLISHED_AT.plusNanos(1)))
+        .describedAs("history is recorded to the microsecond, and a finer moment cannot be kept")
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void GivenAMomentFinerThanAMicrosecond_WhenSuperseding_ThenItIsRefused() {
+    Roster published = draft().publishedUnder(1, PUBLISHED_AT);
+
+    assertThatThrownBy(() -> published.superseded(SUPERSEDED_AT.plusNanos(1)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void GivenNoHistory_WhenChoosingTheMomentOfRecord_ThenItIsTheClockToTheMicrosecond() {
+    Instant clock = Instant.parse("2026-09-05T10:00:00.123456789Z");
+
+    assertThat(Roster.nextMomentOfRecord(clock, List.of(draft())))
+        .isEqualTo(Instant.parse("2026-09-05T10:00:00.123456Z"));
+  }
+
+  @Test
+  void GivenHistoryBehindTheClock_WhenChoosingTheMomentOfRecord_ThenItIsTheClock() {
+    Instant clock = SUPERSEDED_AT.plus(Duration.ofDays(1));
+
+    assertThat(Roster.nextMomentOfRecord(clock, List.of(published(WEEK).superseded(SUPERSEDED_AT))))
+        .isEqualTo(clock);
+  }
+
+  /**
+   * A clock that reads no later than the history already recorded - a fixed clock, a coarse one, or
+   * one stepped back - would otherwise end one roster's authority before it began, or begin and end
+   * another's at one instant. Moving one microsecond past the latest moment recorded keeps every
+   * authority interval non-empty and in order.
+   */
+  @Test
+  void GivenHistoryReachingTheClock_WhenChoosingTheMomentOfRecord_ThenItIsAMicrosecondLater() {
+    Roster supersededLast = published(WEEK).superseded(SUPERSEDED_AT);
+    Roster publishedFirst = published(NEXT_WEEK);
+
+    assertThat(
+            Roster.nextMomentOfRecord(
+                PUBLISHED_AT, List.of(publishedFirst, supersededLast, draft())))
+        .isEqualTo(SUPERSEDED_AT.plus(A_MICROSECOND));
+  }
+
+  @Test
   void GivenADraft_WhenSuperseding_ThenItIsRefused() {
-    assertThatThrownBy(() -> draft().superseded()).isInstanceOf(RosterNotEditableException.class);
+    assertThatThrownBy(() -> draft().superseded(SUPERSEDED_AT))
+        .isInstanceOf(RosterNotEditableException.class);
   }
 
   @Test
@@ -460,7 +559,8 @@ class RosterTest {
   void GivenASupersededRoster_WhenAnotherIsPublished_ThenItIsNotAuthoritative() {
     Roster replacement = new Roster(RosterId.newId(), ACME, NEXT_WEEK);
 
-    assertThat(published(WEEK).superseded().staysAuthoritativeBeside(replacement)).isFalse();
+    assertThat(published(WEEK).superseded(SUPERSEDED_AT).staysAuthoritativeBeside(replacement))
+        .isFalse();
   }
 
   /**
@@ -480,7 +580,8 @@ class RosterTest {
    */
   @Test
   void GivenAnotherOrganisationsPublishedRoster_WhenPublishing_ThenItIsIgnored() {
-    Roster theirs = new Roster(RosterId.newId(), OrganisationId.newId(), WEEK).publishedUnder(1);
+    Roster theirs =
+        new Roster(RosterId.newId(), OrganisationId.newId(), WEEK).publishedUnder(1, PUBLISHED_AT);
 
     assertThat(theirs.isSupersededBy(new Roster(RosterId.newId(), ACME, OVERLAPPING_WEEK)))
         .isFalse();

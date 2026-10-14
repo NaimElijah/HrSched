@@ -47,10 +47,12 @@ import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -85,6 +87,9 @@ class SchedulingServiceTest {
   private static final TimeRange NEXT_MONDAY_EARLY =
       new TimeRange(Instant.parse("2026-10-12T00:00:00Z"), Instant.parse("2026-10-12T08:00:00Z"));
 
+  /** What the clock reads in these tests, unless a test says otherwise. Any instant would do. */
+  private static final Instant NOW = Instant.parse("2026-10-01T09:00:00Z");
+
   private FakeShifts shifts;
   private FakeRosters rosters;
   private FakeConstraintSets constraintSets;
@@ -99,9 +104,47 @@ class SchedulingServiceTest {
     constraintSets = new FakeConstraintSets();
     workforce = new FakeWorkforce();
     audit = new RecordingAuditTrail();
-    service =
-        new SchedulingService(
-            shifts, rosters, constraintSets, workforce, new FirstFitGenerator(), audit);
+    service = withClock(Clock.fixed(NOW, ZoneOffset.UTC));
+  }
+
+  private SchedulingService withClock(Clock clock) {
+    return new SchedulingService(
+        shifts, rosters, constraintSets, workforce, new FirstFitGenerator(), audit, clock);
+  }
+
+  /** Reads a second later every time it is asked, so a use case reading it twice is caught. */
+  private static final class AdvancingClock extends Clock {
+
+    private Instant next;
+
+    AdvancingClock(Instant start) {
+      next = start;
+    }
+
+    @Override
+    public Instant instant() {
+      Instant now = next;
+      next = next.plusSeconds(1);
+      return now;
+    }
+
+    @Override
+    public ZoneId getZone() {
+      return ZoneOffset.UTC;
+    }
+
+    @Override
+    public Clock withZone(ZoneId zone) {
+      throw new UnsupportedOperationException("these tests read instants only");
+    }
+  }
+
+  /** Generates and publishes a roster for THE_WEEK, which supersedes any published before it. */
+  private Roster publishTheWeek() {
+    Roster draft =
+        service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+    service.publish(scheduler(ACME), ACME, draft.id());
+    return rosters.byId(draft.id());
   }
 
   private static TenantActor scheduler(OrganisationId organisation) {
@@ -184,6 +227,45 @@ class SchedulingServiceTest {
         .describedAs("two rosters must never both be authoritative for the same week")
         .isEqualTo(RosterStatus.SUPERSEDED);
     assertThat(rosters.byId(second.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+  }
+
+  /**
+   * The roster superseded stops governing at the very moment its replacement starts to, so at no
+   * moment of record do both govern, and at none does neither (R37).
+   */
+  @Test
+  void
+      GivenAPublicationThatSupersedesAnother_WhenRecorded_ThenOneMomentEndsTheOneAndBeginsTheOther() {
+    service = withClock(new AdvancingClock(NOW));
+    available(ACME, "Ada");
+    service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+    Roster first = publishTheWeek();
+
+    Roster second = publishTheWeek();
+
+    assertThat(rosters.byId(first.id()).supersededAt())
+        .describedAs("read from the clock once, or the two moments would differ")
+        .isEqualTo(second.publishedAt());
+    assertThat(second.publishedAt()).isAfter(first.publishedAt());
+  }
+
+  /**
+   * A clock that has not moved since the last publication would begin and end the first roster's
+   * authority at one instant, recording that it never governed. Record time moves on instead.
+   */
+  @Test
+  void GivenAClockThatHasNotMoved_WhenPublishingAgain_ThenItIsRecordedAMicrosecondLater() {
+    available(ACME, "Ada");
+    service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+    Roster first = publishTheWeek();
+
+    Roster second = publishTheWeek();
+
+    assertThat(first.publishedAt()).isEqualTo(NOW);
+    assertThat(second.publishedAt()).isEqualTo(NOW.plus(1, ChronoUnit.MICROS));
+    assertThat(rosters.byId(first.id()).supersededAt()).isEqualTo(second.publishedAt());
   }
 
   @Test
@@ -913,7 +995,7 @@ class SchedulingServiceTest {
   private static Roster publishedCarrying(TimeRange period, Assignment assignment) {
     return new Roster(RosterId.newId(), ACME, period)
         .withAssignments(List.of(assignment))
-        .publishedUnder(1);
+        .publishedUnder(1, NOW.minus(Duration.ofDays(1)));
   }
 
   @Test

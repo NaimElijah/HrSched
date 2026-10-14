@@ -43,6 +43,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -98,20 +100,27 @@ public class SchedulingService
   private final WorkforceDirectory workforce;
   private final RosterGenerator generator;
   private final AuditTrail audit;
+  private final Clock clock;
 
+  /**
+   * @param clock what a publication reads the time from, so that when it happened is an input a
+   *     test supplies rather than an ambient fact
+   */
   public SchedulingService(
       ShiftRepository shifts,
       RosterRepository rosters,
       ConstraintSetRepository constraintSets,
       WorkforceDirectory workforce,
       RosterGenerator generator,
-      AuditTrail audit) {
+      AuditTrail audit,
+      Clock clock) {
     this.shifts = Objects.requireNonNull(shifts, "shifts must not be null");
     this.rosters = Objects.requireNonNull(rosters, "rosters must not be null");
     this.constraintSets = Objects.requireNonNull(constraintSets, "constraintSets must not be null");
     this.workforce = Objects.requireNonNull(workforce, "workforce must not be null");
     this.generator = Objects.requireNonNull(generator, "generator must not be null");
     this.audit = Objects.requireNonNull(audit, "audit must not be null");
+    this.clock = Objects.requireNonNull(clock, "clock must not be null");
   }
 
   @Override
@@ -267,11 +276,15 @@ public class SchedulingService
       throw new RosterNotCompliantException(violations);
     }
 
+    // Read under the lock, from the history the lock froze, and once: the rosters this supersedes
+    // stop governing at the very moment this one starts to (R37, ADR-037).
+    Instant at = Roster.nextMomentOfRecord(clock.instant(), existing);
     supersede(
         actor,
         organisation,
-        existing.stream().filter(roster -> roster.isSupersededBy(draft)).toList());
-    Roster published = draft.publishedUnder(constraints.version());
+        existing.stream().filter(roster -> roster.isSupersededBy(draft)).toList(),
+        at);
+    Roster published = draft.publishedUnder(constraints.version(), at);
     rosters.save(published);
     recorded(actor, organisation, SchedulingChange.ROSTER_PUBLISHED, published.id().value());
     return published;
@@ -423,10 +436,11 @@ public class SchedulingService
    * <p>This is the mechanism that removes the need for an override — see ADR-005 and requirement
    * R6.
    */
-  private void supersede(Actor actor, OrganisationId organisation, List<Roster> replaced) {
+  private void supersede(
+      Actor actor, OrganisationId organisation, List<Roster> replaced, Instant at) {
     replaced.forEach(
         existing -> {
-          rosters.save(existing.superseded());
+          rosters.save(existing.superseded(at));
           // Recorded per roster, not once for the publication that caused it. Nobody asked for
           // these demotions, so without an entry each a roster appears to demote itself.
           recorded(actor, organisation, SchedulingChange.ROSTER_SUPERSEDED, existing.id().value());
