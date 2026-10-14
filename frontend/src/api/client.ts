@@ -19,9 +19,6 @@ const TRACE_ID_HEADER = 'X-Trace-Id';
  */
 const REQUESTED_WITH = 'XMLHttpRequest';
 
-/** Everything under here is authentication itself, and a 401 from it is never worth retrying. */
-const AUTH_PREFIX = '/api/auth/';
-
 /**
  * The endpoints whose credential is the refresh cookie. They are sent `X-Requested-With`, and no
  * access token.
@@ -29,12 +26,22 @@ const AUTH_PREFIX = '/api/auth/';
  * The backend refuses a token that fails verification on every route, before the controller reads
  * the cookie, and the token held when these are sent is usually one that has just expired: renewal
  * happens because it did. Sending it would refuse the renewal and leave a sign-out undone (#179).
- * Not all of `AUTH_PREFIX`: reading the session and changing the password need the token.
+ * Not all of `/api/auth/`: reading the session and changing the password need the token.
  */
 const COOKIE_CREDENTIALED: ReadonlySet<string> = new Set([
   '/api/auth/refresh',
   '/api/auth/sign-out',
 ]);
+
+/**
+ * The requests whose 401 is an answer about their own credential, which renewing the access token
+ * cannot change: a name and password refused, or a cookie refused.
+ *
+ * Every other request is credentialed by the token, including reading the session and changing the
+ * password, so its 401 is the token and is renewed like any other (#179). The backend keeps that
+ * true: a wrong current password is a 403, not a 401.
+ */
+const NOT_RENEWED: ReadonlySet<string> = new Set(['/api/auth/sign-in', ...COOKIE_CREDENTIALED]);
 
 /**
  * Serialises refreshes across tabs.
@@ -57,7 +64,7 @@ let refreshing: Promise<boolean> | null = null;
  */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const first = await send(path, init);
-  if (first.status !== 401 || path.startsWith(AUTH_PREFIX)) {
+  if (first.status !== 401 || NOT_RENEWED.has(path)) {
     return interpret<T>(path, first);
   }
   // One renewal, then one retry, and never more. A second 401 means the session is genuinely over,

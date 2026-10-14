@@ -385,6 +385,75 @@ describe('renewing a session', () => {
     await expect(auth.restore()).rejects.toBeInstanceOf(ApiError);
   });
 
+  /**
+   * Changing the password is credentialed by the access token, and the backend answers a wrong
+   * current password with a 403 precisely so that a 401 here means the token. Somebody who spends
+   * more than a token's lifetime on the change-password screen must still be able to submit it.
+   */
+  it('GivenAnExpiredAccessToken_WhenChangingThePassword_ThenItIsRenewedAndRetried', async () => {
+    signedIn();
+    let renewed = false;
+    const stub = answering((path, init) => {
+      if (path === '/api/auth/refresh') {
+        renewed = true;
+        return {
+          status: 200,
+          body: { accessToken: 'token-2', tokenType: 'Bearer', expiresIn: 600, session: A_SESSION },
+        };
+      }
+      const authorization = new Headers(init?.headers).get('Authorization');
+      return renewed && authorization === 'Bearer token-2'
+        ? {
+            status: 200,
+            body: {
+              accessToken: 'token-3',
+              tokenType: 'Bearer',
+              expiresIn: 600,
+              session: A_SESSION,
+            },
+          }
+        : { status: 401, body: {} };
+    });
+
+    await auth.changePassword('an invented password', 'another invented password');
+
+    expect(stub.mock.calls.map(([called]) => called)).toEqual([
+      '/api/auth/password',
+      '/api/auth/refresh',
+      '/api/auth/password',
+    ]);
+    expect(currentAccessToken()).toBe('token-3');
+  });
+
+  it('GivenAnExpiredAccessToken_WhenReadingTheSession_ThenItIsRenewedAndRetried', async () => {
+    signedIn();
+    let renewed = false;
+    const stub = answering((path) => {
+      if (path === '/api/auth/refresh') {
+        renewed = true;
+        return {
+          status: 200,
+          body: { accessToken: 'token-2', tokenType: 'Bearer', expiresIn: 600, session: A_SESSION },
+        };
+      }
+      return renewed ? { status: 200, body: A_SESSION } : { status: 401, body: {} };
+    });
+
+    await expect(auth.readSession()).resolves.toEqual(A_SESSION);
+
+    expect(stub.mock.calls.filter(([called]) => called === '/api/auth/session')).toHaveLength(2);
+  });
+
+  /** Signing out is carried by the cookie, so its 401 says nothing a renewal could change. */
+  it('GivenASignOutAnswering401_WhenRequesting_ThenNoRefreshIsAttempted', async () => {
+    signedIn();
+    const stub = respondWith(401, {});
+
+    await expect(auth.signOut()).rejects.toBeInstanceOf(ApiError);
+
+    expect(stub.mock.calls.filter(([called]) => called === '/api/auth/refresh')).toHaveLength(0);
+  });
+
   /** A 401 from signing in is the answer, not a hint to go and renew something. */
   it('GivenAnAuthEndpointAnswering401_WhenRequesting_ThenNoRefreshIsAttempted', async () => {
     const stub = respondWith(401, { detail: 'Those credentials were not accepted.' });
