@@ -31,9 +31,11 @@ final class FakeRosters implements RosterRepository {
   }
 
   /**
-   * Refuses what {@code JdbcRosterRepository} refuses, because history is append-only: nothing is
-   * stored over a published roster except its supersession, and only a published roster can be
+   * Refuses the writes {@code JdbcRosterRepository} refuses because history is append-only: nothing
+   * is stored over a published roster except its supersession, and only a published roster can be
    * superseded. A fake that accepted those would let a use case pass here and fail in production.
+   * The schema's other refusals, of an identity another organisation holds and of two rosters
+   * governing one moment, are not mirrored; {@code JdbcRosterRepositoryTest} proves those.
    */
   @Override
   public void save(Roster roster) {
