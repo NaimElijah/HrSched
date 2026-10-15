@@ -44,9 +44,9 @@ import java.util.UUID;
  * Orchestrates the swap use cases (requirement F7).
  *
  * <p>Its own service rather than more of {@code SchedulingService}, which already implements four
- * driving ports over six collaborators. Swapping is a distinct workflow with its own aggregate and
- * its own audience, and putting it beside roster planning would have made one class nobody can hold
- * in their head.
+ * driving ports over eight collaborators. Swapping is a distinct workflow with its own aggregate
+ * and its own audience, and putting it beside roster planning would have made one class nobody can
+ * hold in their head.
  *
  * <p><strong>It publishes through {@link PlanRostersUseCase} rather than repeating what publishing
  * does.</strong> That is the important decision in this class. Approving a swap has to check the
@@ -234,9 +234,10 @@ public class SwapService implements RequestSwapsUseCase {
   /**
    * Loads a request that is still waiting on somebody.
    *
-   * <p>The status is checked here, before the roster is, so that deciding a swap twice is reported
-   * as "already decided" rather than as whatever became of the roster in the meantime — which after
-   * an approval is that it was superseded, an answer that describes a symptom and hides the cause.
+   * <p>The status is checked here, before the roster is, so that deciding a swap that has ended is
+   * reported as no longer pending rather than as whatever became of the roster in the meantime -
+   * which after an approval or a lapse is that it was superseded, an answer that describes a
+   * symptom and hides the cause.
    *
    * <p>{@code SwapRequest.approved()} enforces the same rule and remains the invariant; this is
    * about which refusal the caller is given first.

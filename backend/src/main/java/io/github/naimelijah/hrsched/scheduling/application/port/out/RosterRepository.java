@@ -38,6 +38,10 @@ public interface RosterRepository {
    * would each miss the other. Taken before that read, the second publication reads what the first
    * committed (ADR-027). Taking it again within the same use case is harmless.
    *
+   * <p>Raising and rejecting a swap take it too, because a publication lapses the requests on what
+   * it supersedes (R33): a request raised against a roster being superseded would miss the lapse,
+   * and a rejection landing mid-publication would refuse it (ADR-039).
+   *
    * @param organisation whose publications take turns
    * @throws IllegalStateException if called outside the unit of work a use case runs in, where
    *     there is nothing to hold the lock until

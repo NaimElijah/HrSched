@@ -22,6 +22,9 @@ public interface SwapRequestRepository {
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if the
    *     stored request has already left {@code REQUESTED}. A decision is final, so a second one is
    *     refused rather than written over the first, whichever writer read it pending
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException if
+   *     it is pending and its assignment already has another pending request (R32). Raising a
+   *     request checks first; this is the backstop for a writer that skipped the publication lock
    */
   void save(SwapRequest request);
 
