@@ -181,8 +181,9 @@ public class SwapService implements RequestSwapsUseCase {
     rosters.save(replacement);
 
     // Publishing is what checks the rules, supersedes what it replaces, and records both. If the
-    // swap would break a rule this throws and nothing below runs - the request stays pending, and
-    // the replacement stays a draft the Scheduler can look at to see what was refused.
+    // swap would break a rule this throws and nothing below runs, so the request stays pending; the
+    // use case's transaction then takes the replacement draft with it, leaving nothing half-built
+    // (ADR-023).
     Roster publishedReplacement = planRosters.publish(actor, organisation, replacement.id());
 
     swaps.save(request.approved());
