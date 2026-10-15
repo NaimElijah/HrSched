@@ -10,11 +10,10 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRoste
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PublishedSwapRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RequestSwapCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.Notifier;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestRepository;
+import io.github.naimelijah.hrsched.scheduling.application.service.RecordingNotifier.Told;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
@@ -29,14 +28,12 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
-import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownSwapRequestException;
-import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
@@ -52,10 +49,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -744,11 +738,6 @@ class SwapServiceTest {
   }
 
   /**
-   * What the notifier was told, so that "the colleague is informed" is something a test can ask.
-   */
-  private record Told(String what, EmployeeId who, SwapRequestId request) {}
-
-  /**
    * A generator that fills nothing, so a roster under test carries only what the test put on it.
    *
    * <p>Deliberately not FirstFitGenerator: this class is about deciding swaps, and a draft that
@@ -760,68 +749,6 @@ class SwapServiceTest {
     public List<Assignment> generate(
         List<Shift> toCover, List<RosterCandidate> candidates, ConstraintSet constraints) {
       return List.of();
-    }
-  }
-
-  private static final class RecordingNotifier implements Notifier {
-
-    private final List<Told> told = new ArrayList<>();
-
-    @Override
-    public void swapRequested(
-        Actor actor, OrganisationId organisation, EmployeeId counterparty, SwapRequestId request) {
-      told.add(new Told("REQUESTED", counterparty, request));
-    }
-
-    @Override
-    public void swapApproved(
-        Actor actor, OrganisationId organisation, EmployeeId party, SwapRequestId request) {
-      told.add(new Told("APPROVED", party, request));
-    }
-
-    @Override
-    public void swapRejected(
-        Actor actor, OrganisationId organisation, EmployeeId party, SwapRequestId request) {
-      told.add(new Told("REJECTED", party, request));
-    }
-  }
-
-  /** Hand-written, like every other double here: the repository is our own port. */
-  private static final class FakeSwaps implements SwapRequestRepository {
-
-    private final Map<SwapRequestId, SwapRequest> stored = new LinkedHashMap<>();
-    private final CallLog log;
-
-    /**
-     * @param log shared with the roster store, so reading a request is ordered against the
-     *     publication lock too
-     */
-    FakeSwaps(CallLog log) {
-      this.log = log;
-    }
-
-    @Override
-    public void save(SwapRequest request) {
-      stored.put(request.id(), request);
-    }
-
-    @Override
-    public Optional<SwapRequest> findById(OrganisationId organisation, SwapRequestId id) {
-      log.add(CallLog.Call.FIND_SWAP_REQUEST);
-      return Optional.ofNullable(stored.get(id))
-          .filter(request -> request.organisation().equals(organisation));
-    }
-
-    @Override
-    public List<SwapRequest> findByOrganisation(OrganisationId organisation) {
-      log.add(CallLog.Call.FIND_SWAP_REQUESTS);
-      return stored.values().stream()
-          .filter(request -> request.organisation().equals(organisation))
-          .toList();
-    }
-
-    SwapRequest byId(SwapRequestId id) {
-      return stored.get(id);
     }
   }
 
