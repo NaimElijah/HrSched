@@ -448,7 +448,8 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   against (Q9). **Version one is never stored:** reading the rules stores nothing, and the first
   revision writes version two. Every organisation starts bound by the empty set, so
   `SchedulingService.findConstraints` answers version one from `ConstraintSet.initial` when no row
-  holds it, and `roster.validated_against_constraint_version` carries no foreign key.
+  holds it, and `roster.validated_against_constraint_version` carries no foreign key
+  ([ADR-038](../ADRs/ADR-038-read-a-constraint-version-back-by-its-number.md)).
 - **Approving a swap publishes a replacement; it never edits.** `SwapService` builds the roster that
   would have been published had the swap been in it, and then calls `PlanRostersUseCase.publish` -
   the same door generation and manual assignment go through. So the constraint check, the
