@@ -28,17 +28,28 @@ export function ApprovingRules({ version }: { version: number }) {
       <h3>Rules of version {version}</h3>
       <Failure error={rules.error} />
       <Busy busy={rules.busy} />
-      {loaded === null ? null : enforced.length === 0 ? (
+      {/* Whether anything was enforced is the server's list to say, not this page's labels: a rule
+          added to the API before it gets a label here is still named, never reported as absent. */}
+      {loaded === null ? null : loaded.constraints.length === 0 ? (
         <p>No working-time rule was enforced under this version.</p>
       ) : (
-        <dl>
-          {enforced.map(({ key, label, value }) => (
-            <div key={key}>
-              <dt>{label}</dt>
-              <dd>{value}</dd>
-            </div>
-          ))}
-        </dl>
+        <>
+          <ul>
+            {loaded.constraints.map((constraint) => (
+              <li key={constraint}>{constraint}</li>
+            ))}
+          </ul>
+          {enforced.length === 0 ? null : (
+            <dl>
+              {enforced.map(({ key, label, value }) => (
+                <div key={key}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </>
       )}
     </section>
   );

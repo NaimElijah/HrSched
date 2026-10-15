@@ -258,6 +258,38 @@ describe('the rosters page', () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * What a version enforced is the server's to say. A rule this page has no label for yet must
+   * still be named rather than read as "nothing was enforced", which would be a false account of
+   * what a roster was judged against.
+   */
+  it('GivenARuleThePageHasNoLabelFor_WhenItsVersionIsOpened_ThenTheRuleIsStillNamed', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 3 };
+    aDraft({
+      '/api/rosters': { status: 200, body: [published] },
+      '/api/constraints/3': {
+        status: 200,
+        body: {
+          version: 3,
+          constraints: ['a rule added after this page was written'],
+          minimumRestMinutes: null,
+          maximumDailyMinutes: null,
+          maximumWeeklyMinutes: null,
+          maximumConsecutiveDays: null,
+        },
+      },
+    });
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Version 3' }));
+
+    const rules = await screen.findByRole('region', { name: 'Rules of version 3' });
+    expect(
+      await within(rules).findByText('a rule added after this page was written'),
+    ).toBeInTheDocument();
+    expect(rules).not.toHaveTextContent('No working-time rule was enforced');
+  });
+
   it('GivenTheRulesCannotBeRead_WhenAVersionIsOpened_ThenTheFailureIsShown', async () => {
     const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 2 };
     aDraft({
