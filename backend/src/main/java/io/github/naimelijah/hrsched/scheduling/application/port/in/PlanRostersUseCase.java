@@ -124,8 +124,9 @@ public interface PlanRostersUseCase {
    * @param approved the request this publication settles, already approved
    * @return the published replacement
    * @throws IllegalArgumentException if {@code approved} is not approved, belongs to another
-   *     organisation, or names a roster this publication does not supersede. Refused before
-   *     anything is written
+   *     organisation, names a roster this publication does not supersede, is not the request stored
+   *     and waiting under its identity with the same roster, shift and parties, or is not carried
+   *     by the replacement. Refused before anything is written
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if the
    *     stored request stopped being pending meanwhile, which needs a writer that skipped the
    *     publication lock

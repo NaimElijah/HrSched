@@ -54,9 +54,12 @@ transaction.**
 - `PlanRostersUseCase.publishApproving(actor, organisation, replacement, approved)` is `publish` with
   one addition: it stores the approved request **before** the lapse looks for pending requests, so
   the lapse never takes it for one of them.
-- It refuses, before writing anything, an argument it could not have been asked to settle: one not
-  `APPROVED`, one of another organisation, or one naming a roster this publication does not
-  supersede.
+- It refuses, before writing anything, an argument it could not have been asked to settle:
+  - one not `APPROVED`, or of another organisation;
+  - one naming a roster this publication does not supersede;
+  - one that is not the request stored and waiting under its identity, with the same roster, shift
+    and parties;
+  - one the replacement does not carry.
 - `SwapService` then records `SWAP_APPROVED` and tells the parties, after the approval is stored.
 
 **A decision is final in the store too.** The swap upsert updates only a row still `REQUESTED`.

@@ -1014,6 +1014,72 @@ class SwapServiceTest {
     assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
   }
 
+  /** Not one a Scheduler was asked: a request nobody raised cannot be approved into existence. */
+  @Test
+  void GivenARequestNobodyStored_WhenPublishedAsApproved_ThenItIsRefusedAndNothingChanges() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequest neverRaised =
+        new SwapRequest(SwapRequestId.newId(), ACME, original.id(), shift, ada, grace, RAISED_AT)
+            .approved();
+    Roster replacement = replacementWith(grace, shift);
+
+    assertThatThrownBy(
+            () -> scheduling.publishApproving(scheduler(ACME), ACME, replacement.id(), neverRaised))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(swaps.byId(neverRaised.id())).isNull();
+  }
+
+  /** The stored request is the one asked; approving it with other parties would rewrite it. */
+  @Test
+  void GivenARequestWithOtherPartiesThanStored_WhenPublishedAsApproved_ThenItIsRefused() {
+    EmployeeId alan = available(ACME, "Alan", Set.of());
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    SwapRequest toAlanInstead =
+        new SwapRequest(request, ACME, original.id(), shift, ada, alan, RAISED_AT).approved();
+    Roster replacement = replacementWith(alan, shift);
+
+    assertThatThrownBy(
+            () ->
+                scheduling.publishApproving(scheduler(ACME), ACME, replacement.id(), toAlanInstead))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(swaps.byId(request).counterparty()).isEqualTo(grace);
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+  }
+
+  /** Approving says the roster changed; a replacement that does not carry the swap has not. */
+  @Test
+  void GivenAReplacementThatDoesNotCarryTheSwap_WhenPublishedAsApproved_ThenItIsRefused() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    Roster empty =
+        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+
+    assertThatThrownBy(
+            () ->
+                scheduling.publishApproving(
+                    scheduler(ACME), ACME, empty.id(), swaps.byId(request).approved()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+  }
+
+  /** A draft over THE_WEEK carrying one person on one shift, as a swap's replacement would. */
+  private Roster replacementWith(EmployeeId who, ShiftId shift) {
+    Roster draft =
+        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+    return scheduling.assign(
+        scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, who));
+  }
+
   /**
    * A request read against a roster that a publication in flight is about to supersede would be
    * stored after that publication looked for requests to lapse, and wait forever on a roster nobody

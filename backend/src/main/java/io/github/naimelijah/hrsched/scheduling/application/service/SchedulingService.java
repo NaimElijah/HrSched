@@ -326,7 +326,7 @@ public class SchedulingService
         existing.stream().filter(roster -> roster.isSupersededBy(draft)).toList();
     // Before anything is written, for the reason requireDraft is: a refusal after the supersession
     // would leave audit lines for a publication that never happened.
-    approving.ifPresent(request -> requireSettledBy(request, organisation, replaced));
+    approving.ifPresent(request -> requireSettledBy(request, organisation, replaced, draft));
 
     // Read under the lock, from the history the lock froze, and once: the rosters this supersedes
     // stop governing at the very moment this one starts to (R37, ADR-037).
@@ -346,10 +346,12 @@ public class SchedulingService
 
   /**
    * An approval names the request it settles so that the lapse leaves it alone. Anything else in
-   * that place is a caller's mistake, never a state a user can reach, so it is refused as one.
+   * that place is a caller's mistake, never a state a user can reach, so it is refused as one: a
+   * request nobody raised, one that differs from what was asked, or one the roster being published
+   * does not carry. Read under the lock, so what is stored cannot change before it is written.
    */
-  private static void requireSettledBy(
-      SwapRequest approved, OrganisationId organisation, List<Roster> replaced) {
+  private void requireSettledBy(
+      SwapRequest approved, OrganisationId organisation, List<Roster> replaced, Roster draft) {
     if (approved.status() != SwapRequestStatus.APPROVED) {
       throw new IllegalArgumentException(
           "Only an approved swap request can be published as approved, not one that is "
@@ -364,6 +366,31 @@ public class SchedulingService
           "Swap request %s names a roster this publication does not supersede"
               .formatted(approved.id().value()));
     }
+    boolean asked =
+        swaps
+            .findById(organisation, approved.id())
+            .filter(stored -> stored.status() == SwapRequestStatus.REQUESTED)
+            .filter(stored -> isTheSameAsk(stored, approved))
+            .isPresent();
+    if (!asked) {
+      throw new IllegalArgumentException(
+          "Swap request %s is not one waiting on a Scheduler as it was asked"
+              .formatted(approved.id().value()));
+    }
+    if (!draft.assignments().contains(approved.taken())
+        || draft.assignments().contains(approved.given())) {
+      throw new IllegalArgumentException(
+          "The roster being published does not carry swap request %s"
+              .formatted(approved.id().value()));
+    }
+  }
+
+  private static boolean isTheSameAsk(SwapRequest stored, SwapRequest approved) {
+    return stored.roster().equals(approved.roster())
+        && stored.shift().equals(approved.shift())
+        && stored.requester().equals(approved.requester())
+        && stored.counterparty().equals(approved.counterparty())
+        && stored.requestedAt().equals(approved.requestedAt());
   }
 
   /**
