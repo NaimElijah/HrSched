@@ -11,7 +11,6 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.time.OffsetDateTime;
-import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
@@ -126,19 +125,31 @@ class SwapRequestMigrationTest {
 
   /**
    * Two raised in the same instant still need one to keep, and the identity breaks the tie as it
-   * does in the queue. Whichever it is, exactly one is left waiting.
+   * does in the queue: PostgreSQL orders a {@code uuid} as unsigned bytes, which is not {@code
+   * UUID.compareTo}'s signed order, so the expected keeper is worked out the database's way.
    */
   @Test
-  void GivenTwoRequestsPendingForOneAssignmentRaisedTogether_WhenMigrated_ThenExactlyOneWaits() {
+  void
+      GivenTwoRequestsPendingForOneAssignmentRaisedTogether_WhenMigrated_ThenTheFirstQueuedWaits() {
     UUID shift = UUID.randomUUID();
     UUID requester = UUID.randomUUID();
     SwapRequestId one = requestOn(current, shift, requester, "REQUESTED", RAISED);
     SwapRequestId other = requestOn(current, shift, requester, "REQUESTED", RAISED);
+    SwapRequestId firstQueued = unsignedly(one.value(), other.value()) < 0 ? one : other;
+    SwapRequestId secondQueued = firstQueued.equals(one) ? other : one;
 
     migrateToTheLatest();
 
-    assertThat(List.of(statusOf(one), statusOf(other)))
-        .containsExactlyInAnyOrder(SwapRequestStatus.REQUESTED, SwapRequestStatus.LAPSED);
+    assertThat(statusOf(firstQueued)).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(statusOf(secondQueued)).isEqualTo(SwapRequestStatus.LAPSED);
+  }
+
+  /** Compares two identities as PostgreSQL compares a {@code uuid}: as unsigned bytes. */
+  private static int unsignedly(UUID left, UUID right) {
+    int high = Long.compareUnsigned(left.getMostSignificantBits(), right.getMostSignificantBits());
+    return high != 0
+        ? high
+        : Long.compareUnsigned(left.getLeastSignificantBits(), right.getLeastSignificantBits());
   }
 
   /** A decided request never held the assignment, so it neither lapses nor makes another lapse. */
