@@ -70,7 +70,7 @@ export interface SwapRequest {
   readonly shift: string;
   readonly requester: string;
   readonly counterparty: string;
-  readonly status: 'REQUESTED' | 'APPROVED' | 'REJECTED';
+  readonly status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'LAPSED';
 }
 
 /** Mirrors RequestSwapRequest: whose shift, on which published roster, and who is asked to take it. */
@@ -129,7 +129,8 @@ export const scheduling = {
 
   /**
    * Asks for a shift to be handed to a colleague. A Scheduler decides; whether the colleague may take
-   * it is checked when they do, not now (ADR-022).
+   * it is checked when they do, not now (ADR-022). Throws an ApiError with `isConflict` when that
+   * shift already has a request waiting, whoever it asks (R32).
    */
   requestSwap: (request: RequestSwap): Promise<SwapRequest> =>
     api.post<SwapRequest>('/api/swaps', request),
@@ -142,11 +143,12 @@ export const scheduling = {
   /**
    * Approves a swap by publishing the roster that carries it, superseding the one it was raised
    * against (ADR-022). Throws an ApiError with `isRuleBreach` when that roster would break a rule,
-   * and with `isConflict` when somebody has already decided the request.
+   * and with `isConflict` when the request is no longer pending: already decided, or lapsed because
+   * its roster was replaced (R33).
    */
   approveSwap: (id: string): Promise<Roster> => api.post<Roster>(path`/api/swaps/${id}/approval`),
 
-  /** Declines a swap; no roster changes. Throws with `isConflict` when it was already decided. */
+  /** Declines a swap; no roster changes. Throws with `isConflict` when it is no longer pending. */
   rejectSwap: (id: string): Promise<void> => api.post<void>(path`/api/swaps/${id}/rejection`),
 
   currentConstraints: (): Promise<ConstraintSet> => api.get<ConstraintSet>('/api/constraints'),

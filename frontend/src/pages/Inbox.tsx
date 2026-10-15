@@ -21,6 +21,7 @@ const WORDING: Record<NotificationKind, string> = {
   SWAP_REQUESTED: 'A colleague has asked you to take one of their shifts.',
   SWAP_APPROVED: 'A swap you are part of was approved, and the roster changed.',
   SWAP_REJECTED: 'A swap you are part of was declined. Nothing changed.',
+  SWAP_LAPSED: 'A swap you are part of lapsed: its roster was replaced before anybody decided it.',
 };
 
 function isKnownKind(kind: string): kind is NotificationKind {

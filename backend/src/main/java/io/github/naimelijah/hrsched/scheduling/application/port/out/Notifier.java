@@ -12,7 +12,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
  * telling and about what; how that reaches a person is somebody else's problem, and is answered
  * today by an adapter over the {@code notifications} context (ADR-021).
  *
- * <p>Three methods rather than one taking a kind, so that adding a fourth thing worth telling
+ * <p>One method per event rather than one taking a kind, so that adding another thing worth telling
  * somebody about is a compile error at every implementation rather than a silently unhandled enum
  * value.
  *
@@ -46,5 +46,15 @@ public interface Notifier {
    * @param request which swap request
    */
   void swapRejected(
+      Actor actor, OrganisationId organisation, EmployeeId party, SwapRequestId request);
+
+  /**
+   * @param actor on whose behalf the notification is raised: whoever published the roster that
+   *     superseded the one the request named
+   * @param organisation whose swap
+   * @param party somebody who was waiting on the request
+   * @param request which swap request lapsed (R33)
+   */
+  void swapLapsed(
       Actor actor, OrganisationId organisation, EmployeeId party, SwapRequestId request);
 }

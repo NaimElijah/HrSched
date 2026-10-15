@@ -109,7 +109,15 @@ class SchedulingServiceTest {
 
   private SchedulingService withClock(Clock clock) {
     return new SchedulingService(
-        shifts, rosters, constraintSets, workforce, new FirstFitGenerator(), audit, clock);
+        shifts,
+        rosters,
+        constraintSets,
+        new FakeSwaps(new CallLog()),
+        workforce,
+        new FirstFitGenerator(),
+        new RecordingNotifier(),
+        audit,
+        clock);
   }
 
   /** Reads a second later every time it is asked, so a use case reading it twice is caught. */

@@ -80,4 +80,45 @@ class SwapRequestTest {
     assertThat(approved.requester()).isEqualTo(pending.requester());
     assertThat(approved.counterparty()).isEqualTo(pending.counterparty());
   }
+
+  /** R33: nobody decided it, but it is over, and it keeps everything that identified it. */
+  @Test
+  void GivenAPendingRequest_WhenItLapses_ThenOnlyTheStatusChanges() {
+    SwapRequest pending = request();
+
+    SwapRequest lapsed = pending.lapsed();
+
+    assertThat(lapsed.status()).isEqualTo(SwapRequestStatus.LAPSED);
+    assertThat(lapsed.id()).isEqualTo(pending.id());
+    assertThat(lapsed.roster()).isEqualTo(pending.roster());
+    assertThat(lapsed.shift()).isEqualTo(pending.shift());
+    assertThat(lapsed.requester()).isEqualTo(pending.requester());
+    assertThat(lapsed.counterparty()).isEqualTo(pending.counterparty());
+    assertThat(lapsed.requestedAt()).isEqualTo(RAISED_AT);
+  }
+
+  /** An approved swap already published its roster; its roster moving on does not undo that. */
+  @Test
+  void GivenAnApprovedRequest_WhenItWouldLapse_ThenItIsRefused() {
+    SwapRequest approved = request().approved();
+
+    assertThatThrownBy(approved::lapsed).isInstanceOf(SwapNotPendingException.class);
+  }
+
+  @Test
+  void GivenARejectedRequest_WhenItWouldLapse_ThenItIsRefused() {
+    SwapRequest rejected = request().rejected();
+
+    assertThatThrownBy(rejected::lapsed).isInstanceOf(SwapNotPendingException.class);
+  }
+
+  /**
+   * A lapsed request names a roster that no longer governs, so there is nothing left to approve.
+   */
+  @Test
+  void GivenALapsedRequest_WhenApproved_ThenItIsRefused() {
+    SwapRequest lapsed = request().lapsed();
+
+    assertThatThrownBy(lapsed::approved).isInstanceOf(SwapNotPendingException.class);
+  }
 }

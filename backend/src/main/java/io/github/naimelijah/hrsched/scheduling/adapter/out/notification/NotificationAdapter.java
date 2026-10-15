@@ -49,6 +49,12 @@ public class NotificationAdapter implements Notifier {
     tell(actor, organisation, party, NotifiableEvent.SWAP_REJECTED, request);
   }
 
+  @Override
+  public void swapLapsed(
+      Actor actor, OrganisationId organisation, EmployeeId party, SwapRequestId request) {
+    tell(actor, organisation, party, NotifiableEvent.SWAP_LAPSED, request);
+  }
+
   private void tell(
       Actor actor,
       OrganisationId organisation,

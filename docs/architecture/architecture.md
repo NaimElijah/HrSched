@@ -451,12 +451,24 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   holds it, and `roster.validated_against_constraint_version` carries no foreign key
   ([ADR-038](../ADRs/ADR-038-read-a-constraint-version-back-by-its-number.md)).
 - **Approving a swap publishes a replacement; it never edits.** `SwapService` builds the roster that
-  would have been published had the swap been in it, and then calls `PlanRostersUseCase.publish` -
-  the same door generation and manual assignment go through. So the constraint check, the
-  supersession and both audit entries are not merely also applied to swaps, they are the same code,
-  and a swap cannot become a way round rules generation cannot get round
-  ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)). The cost is that a
-  refused approval leaves the replacement behind as a draft.
+  would have been published had the swap been in it, and then calls
+  `PlanRostersUseCase.publishApproving` - `publish`, the same door generation and manual assignment
+  go through, told which request it settles. So the constraint check, the supersession and both
+  audit entries are not merely also applied to swaps, they are the same code, and a swap cannot
+  become a way round rules generation cannot get round
+  ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)). A refused approval
+  takes the replacement draft with it, because the use case is one transaction (ADR-023).
+- **A publication lapses the swap requests waiting on what it supersedes (R33).** Before it records
+  anything, `SchedulingService.publish` reads `findPendingNaming` for each roster it supersedes and
+  saves each request `LAPSED`. Once the published roster is stored, it records `SWAP_LAPSED` for
+  each and tells both parties - all in the publication's transaction. A swap approval stores its
+  own request as approved before that read, so it is never lapsed with the others; every other
+  request on that roster is. The swap
+  upsert only ever changes a request still `REQUESTED`, so no decision is written over another.
+  The same lookup keeps an assignment - roster, shift and person - to one pending request when one
+  is raised (R32), and the partial unique index `swap_request_one_pending_per_assignment` refuses a
+  writer that skipped the publication lock
+  ([ADR-039](../ADRs/ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md)).
 - **Whether a colleague may cover a swapped shift is decided at approval, not at request.** Deciding
   it means listing colleagues, which discloses their unavailability, and an Employee may not. So a
   request may name somebody who cannot cover the shift — because they lack a qualification, or
@@ -550,11 +562,12 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   on a publication of the same draft is the exception: it finds the roster published when it gets
   the row, and is refused rather than turning it back into a draft. An edit that commits first is
   still overwritten, by the assignments the publication validated.
-- **Publications within one organisation take turns.** `publish` and `approveSwap` first call
-  `RosterRepository.lockPublicationsOf`, a transaction-scoped PostgreSQL advisory lock per
-  organisation, before reading anything they decide from. A second publication therefore waits,
-  then reads what the first committed: it supersedes that roster as R11 says, and a second swap
-  approval finds its request already decided or its roster no longer the published one. The lock is
+- **Publications within one organisation take turns.** `publish`, `approveSwap`, `rejectSwap` and
+  `requestSwap` first call `RosterRepository.lockPublicationsOf`, a transaction-scoped PostgreSQL
+  advisory lock per organisation, before reading anything they decide from. A second publication
+  therefore waits, then reads what the first committed: it supersedes that roster as R11 says, a
+  second swap decision finds its request no longer pending, and a request is never raised against
+  a roster a publication in flight is superseding (ADR-039). The lock is
   a convention every writer has to follow; the `roster_one_published_per_moment` constraint is what
   holds for one that does not
   ([ADR-027](../ADRs/ADR-027-take-turns-publishing-within-an-organisation.md)).

@@ -164,8 +164,8 @@ a published roster is superseded rather than edited (R6).
 | R29 | Consecutive failed sign-ins lock an account for a while, and a successful sign-in clears the count. A wrong current password given when changing it counts as a failure. How many failures, and for how long, is configuration (Q27). *`Account`, `SessionService`, `AuthHttpTest`, `SessionHttpTest`* |
 | R30 | Presenting a refresh token that was already exchanged ends the whole session it belongs to. *`SessionService`, `SessionServiceTest`, `SessionRefreshHttpTest`* |
 | R31 | The Operator's account never holds a role within an organisation, and is never linked to an employee. *`Account`, `AccountTest`* |
-| R32 | An assignment has at most one pending swap request. *Not yet — [#94](https://github.com/NaimElijah/HrSched/issues/94)* |
-| R33 | A pending swap request lapses when the roster it names is superseded, and its parties are told. *Not yet — [#94](https://github.com/NaimElijah/HrSched/issues/94)* |
+| R32 | An assignment has at most one pending swap request. *`SwapService`, `SwapServiceTest`, `SwapHttpTest`; the schema's `swap_request_one_pending_per_assignment` for a writer that skips the publication lock, `JdbcSwapRequestRepositoryTest`; duplicates already stored lapsed by V8, `SwapRequestMigrationTest` ([ADR-039](../ADRs/ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md)). The assignment is the roster, the shift and the person on it, so the same shift on a replacement roster is another one, which leaves [#135](https://github.com/NaimElijah/HrSched/issues/135) open* |
+| R33 | A pending swap request lapses when the roster it names is superseded, and its parties are told. *`SwapRequest`, `SwapRequestTest`; in the publication that supersedes the roster `SchedulingService`, `SwapServiceTest`, `SwapHttpTest`; requests already pending on a superseded roster lapsed by V7, `SwapRequestMigrationTest` ([ADR-039](../ADRs/ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md))* |
 | R34 | An account holding the Employee role is always linked to an employee of its own organisation. One that is not is disabled until it is linked. *Not yet — [#97](https://github.com/NaimElijah/HrSched/issues/97)* |
 | R35 | A shift straddling two roster periods may be carried by either roster, and R3 is judged across every authoritative roster rather than within one. *`Roster`, `HeldWork`, `RosterTest`; at assignment and publication `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`; at swap approval `SwapServiceTest` ([ADR-033](../ADRs/ADR-033-judge-r3-across-authoritative-rosters-under-the-publication-lock.md)). Generation is given no other roster's work yet, so it can draft what publication refuses — [#130](https://github.com/NaimElijah/HrSched/issues/130)* |
 | R36 | Working-time rules count days in each shift's own time zone. *`Shift`, `WorkingPeriod`, `EmployeeSchedule`, `EmployeeScheduleTest`, `ConstraintSetTest`; in generation `GreedyRosterGeneratorTest`; at publication `SchedulingServiceTest`, `RosteringHttpTest`; stored by `JdbcShiftRepository`, `JdbcShiftRepositoryTest` ([ADR-034](../ADRs/ADR-034-count-working-days-in-each-shifts-own-time-zone.md)). The zone sent is the browser's, so a site in another zone cannot yet be planned for — [#136](https://github.com/NaimElijah/HrSched/issues/136)* |
@@ -177,8 +177,8 @@ A roster moves `DRAFT → PUBLISHED → SUPERSEDED`, and no other transition is 
 roster is authoritative for any given moment, which is what R11 enforces.
 
 A swap request moves from `REQUESTED` to exactly one of approved or rejected (F17), withdrawn (F29)
-or lapsed (R33), and each of those is final. Approved and rejected exist today; withdrawn and lapsed
-are not built yet.
+or lapsed (R33), and each of those is final. Approved, rejected and lapsed exist today; withdrawn is
+not built yet ([#91](https://github.com/NaimElijah/HrSched/issues/91)).
 
 **Only a Scheduler builds rosters.** An Admin manages people, qualifications and the constraint
 set and cannot define shifts, generate or publish — F1/F3/F11 against F8/F9/F10.

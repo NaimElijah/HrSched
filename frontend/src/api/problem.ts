@@ -87,7 +87,10 @@ export class ApiError extends Error {
     return this.status === 404;
   }
 
-  /** True when somebody else already decided what the caller was trying to decide. */
+  /**
+   * True when the request clashes with something already settled: a swap somebody else decided, one
+   * that lapsed with its roster, or a shift that already has a swap waiting.
+   */
   get isConflict(): boolean {
     return this.status === 409;
   }

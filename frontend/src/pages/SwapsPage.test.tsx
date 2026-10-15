@@ -130,6 +130,21 @@ describe('the queue', () => {
     expect(screen.queryByRole('button', { name: /^Decline/ })).not.toBeInTheDocument();
   });
 
+  /**
+   * R33: a request whose roster was replaced is over, though nobody decided it. It says so, and
+   * offers nothing to decide, because the server would refuse either answer.
+   */
+  it('GivenALapsedSwap_WhenListed_ThenItSaysWhyAndOffersNoDecision', async () => {
+    aQueue({ '/api/swaps': { status: 200, body: [{ ...PENDING, status: 'LAPSED' }] } });
+
+    show();
+
+    const row = await rowOfTheShift();
+    expect(within(row).getByText('lapsed: its roster was replaced')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Approve/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Decline/ })).not.toBeInTheDocument();
+  });
+
   it('GivenNoSwaps_WhenOpened_ThenItSaysNothingHasBeenAskedFor', async () => {
     aQueue({ '/api/swaps': { status: 200, body: [] } });
 
