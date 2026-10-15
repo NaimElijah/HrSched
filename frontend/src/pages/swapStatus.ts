@@ -10,4 +10,5 @@ export const SWAP_STATUS: Record<SwapRequest['status'], string> = {
   REQUESTED: 'waiting on a Scheduler',
   APPROVED: 'approved',
   REJECTED: 'declined',
+  LAPSED: 'lapsed: its roster was replaced',
 };
