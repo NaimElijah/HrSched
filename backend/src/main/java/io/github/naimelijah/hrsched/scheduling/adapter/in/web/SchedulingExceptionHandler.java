@@ -13,6 +13,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableExc
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
@@ -231,6 +232,19 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("No longer pending");
+    return problem;
+  }
+
+  /**
+   * A second ask for a shift whose first is still waiting (R32). A conflict, like a second
+   * decision: nothing about the ask was malformed, the assignment is simply already spoken for
+   * until a Scheduler answers or its roster is replaced.
+   */
+  @ExceptionHandler(SwapAlreadyRequestedException.class)
+  public ProblemDetail handleAlreadyRequested(SwapAlreadyRequestedException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    problem.setTitle("Already requested");
     return problem;
   }
 

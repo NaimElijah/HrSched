@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
@@ -191,6 +192,46 @@ class JdbcSwapRequestRepositoryTest {
     repository.save(naming(RIVAL, roster, TEN));
 
     assertThat(repository.findPendingNaming(ACME, roster)).isEmpty();
+  }
+
+  /**
+   * The schema backstop for R32, as {@code roster_one_published_per_moment} is for R11. Raising a
+   * request checks for a pending one under the publication lock; a writer that skipped the lock is
+   * refused here instead, with the same refusal.
+   */
+  @Test
+  void GivenAPendingRequest_WhenASecondIsStoredForTheSameAssignment_ThenTheSchemaRefusesIt() {
+    SwapRequest first = request(ACME, NINE);
+    repository.save(first);
+
+    assertThatThrownBy(() -> repository.save(sameAssignment(first, TEN)))
+        .isInstanceOf(SwapAlreadyRequestedException.class);
+    assertThat(repository.findByOrganisation(ACME)).containsExactly(first);
+  }
+
+  /** Only a pending request holds its assignment; once decided, another may be raised for it. */
+  @Test
+  void GivenADecidedRequest_WhenASecondIsStoredForTheSameAssignment_ThenItIsStored() {
+    SwapRequest first = request(ACME, NINE);
+    repository.save(first);
+    repository.save(first.rejected());
+    SwapRequest second = sameAssignment(first, TEN);
+
+    repository.save(second);
+
+    assertThat(repository.findById(ACME, second.id())).contains(second);
+  }
+
+  /** Another request for the same roster, shift and requester; whom it asks does not matter. */
+  private static SwapRequest sameAssignment(SwapRequest of, Instant raisedAt) {
+    return new SwapRequest(
+        SwapRequestId.newId(),
+        of.organisation(),
+        of.roster(),
+        of.shift(),
+        of.requester(),
+        EmployeeId.newId(),
+        raisedAt);
   }
 
   private static SwapRequest naming(

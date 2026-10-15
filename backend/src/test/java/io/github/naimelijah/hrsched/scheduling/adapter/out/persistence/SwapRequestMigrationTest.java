@@ -11,6 +11,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
@@ -30,6 +31,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * <p>V7: a request still pending against a roster that was already superseded lapses (R33), as it
  * would have had the rule existed when the roster was replaced. Nobody is told; a migration has no
  * caller to tell anybody on behalf of.
+ *
+ * <p>V8: of several requests pending for one assignment, the oldest keeps waiting and the rest
+ * lapse (R32), so the index that keeps it to one can be built over what was already there.
  */
 class SwapRequestMigrationTest {
 
@@ -42,6 +46,7 @@ class SwapRequestMigrationTest {
   private static final OffsetDateTime PUBLISHED = OffsetDateTime.parse("2026-09-01T09:00:00Z");
   private static final OffsetDateTime REPLACED = OffsetDateTime.parse("2026-09-03T09:00:00Z");
   private static final OffsetDateTime RAISED = OffsetDateTime.parse("2026-09-02T09:00:00Z");
+  private static final OffsetDateTime LATER = OffsetDateTime.parse("2026-09-02T10:00:00Z");
 
   private final RosterId superseded = RosterId.newId();
   private final RosterId current = RosterId.newId();
@@ -105,6 +110,51 @@ class SwapRequestMigrationTest {
     assertThat(statusOf(rejected)).isEqualTo(SwapRequestStatus.REJECTED);
   }
 
+  /** The order a Scheduler works through the queue: the first raised is the one still waiting. */
+  @Test
+  void GivenSeveralRequestsPendingForOneAssignment_WhenMigrated_ThenOnlyTheOldestIsStillPending() {
+    UUID shift = UUID.randomUUID();
+    UUID requester = UUID.randomUUID();
+    SwapRequestId later = requestOn(current, shift, requester, "REQUESTED", LATER);
+    SwapRequestId oldest = requestOn(current, shift, requester, "REQUESTED", RAISED);
+
+    migrateToTheLatest();
+
+    assertThat(statusOf(oldest)).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(statusOf(later)).isEqualTo(SwapRequestStatus.LAPSED);
+  }
+
+  /**
+   * Two raised in the same instant still need one to keep, and the identity breaks the tie as it
+   * does in the queue. Whichever it is, exactly one is left waiting.
+   */
+  @Test
+  void GivenTwoRequestsPendingForOneAssignmentRaisedTogether_WhenMigrated_ThenExactlyOneWaits() {
+    UUID shift = UUID.randomUUID();
+    UUID requester = UUID.randomUUID();
+    SwapRequestId one = requestOn(current, shift, requester, "REQUESTED", RAISED);
+    SwapRequestId other = requestOn(current, shift, requester, "REQUESTED", RAISED);
+
+    migrateToTheLatest();
+
+    assertThat(List.of(statusOf(one), statusOf(other)))
+        .containsExactlyInAnyOrder(SwapRequestStatus.REQUESTED, SwapRequestStatus.LAPSED);
+  }
+
+  /** A decided request never held the assignment, so it neither lapses nor makes another lapse. */
+  @Test
+  void GivenADecidedAndAPendingRequestForOneAssignment_WhenMigrated_ThenBothAreKept() {
+    UUID shift = UUID.randomUUID();
+    UUID requester = UUID.randomUUID();
+    SwapRequestId rejected = requestOn(current, shift, requester, "REJECTED", RAISED);
+    SwapRequestId pending = requestOn(current, shift, requester, "REQUESTED", LATER);
+
+    migrateToTheLatest();
+
+    assertThat(statusOf(rejected)).isEqualTo(SwapRequestStatus.REJECTED);
+    assertThat(statusOf(pending)).isEqualTo(SwapRequestStatus.REQUESTED);
+  }
+
   private SwapRequestStatus statusOf(SwapRequestId request) {
     return new JdbcSwapRequestRepository(jdbc)
         .findById(ACME, request)
@@ -134,6 +184,11 @@ class SwapRequestMigrationTest {
   }
 
   private SwapRequestId requestOn(RosterId roster, String status) {
+    return requestOn(roster, UUID.randomUUID(), UUID.randomUUID(), status, RAISED);
+  }
+
+  private SwapRequestId requestOn(
+      RosterId roster, UUID shift, UUID requester, String status, OffsetDateTime raisedAt) {
     SwapRequestId id = SwapRequestId.newId();
     jdbc.sql(
             """
@@ -145,11 +200,11 @@ class SwapRequestMigrationTest {
         .param("id", id.value())
         .param("organisation", ACME.value())
         .param("roster", roster.value())
-        .param("shift", UUID.randomUUID())
-        .param("requester", UUID.randomUUID())
+        .param("shift", shift)
+        .param("requester", requester)
         .param("counterparty", UUID.randomUUID())
         .param("status", status)
-        .param("requestedAt", RAISED)
+        .param("requestedAt", raisedAt)
         .update();
     return id;
   }

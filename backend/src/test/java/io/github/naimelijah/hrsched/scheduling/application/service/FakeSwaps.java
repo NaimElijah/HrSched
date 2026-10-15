@@ -34,8 +34,10 @@ final class FakeSwaps implements SwapRequestRepository {
 
   /**
    * Refuses a decision over a decision, as {@code JdbcSwapRequestRepository} does. A fake that
-   * accepted it would let a use case pass here and fail in production. The refusal of an identity
-   * another organisation holds is not mirrored; {@code JdbcSwapRequestRepositoryTest} proves it.
+   * accepted it would let a use case pass here and fail in production. Two refusals are not
+   * mirrored, and {@code JdbcSwapRequestRepositoryTest} proves both: an identity another
+   * organisation holds, and a second pending request for one assignment, which raising a request
+   * refuses before it saves (R32).
    */
   @Override
   public void save(SwapRequest request) {

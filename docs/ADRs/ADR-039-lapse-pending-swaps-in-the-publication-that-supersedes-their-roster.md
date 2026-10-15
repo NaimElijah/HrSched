@@ -68,8 +68,29 @@ ADR-027's lock beyond publishing.
   lapse would turn that lapse into a decision over a decision. The store refuses that, and the whole
   publication would go with it.
 
-**Requests stored before this rule lapse in V7.** V7 lapses those still pending on a roster already
-superseded, and tells nobody: a migration has no caller to tell anybody on behalf of.
+**One pending request per assignment (R32), and the assignment is the roster, the shift and the
+person on it.** Whoever it asks does not matter.
+
+- `requestSwap` refuses a second pending request with `SwapAlreadyRequestedException`, a 409
+  "Already requested". It checks under the publication lock, through the same `findPendingNaming`
+  the lapse uses.
+- The partial unique index `swap_request_one_pending_per_assignment` (V8) is the backstop for a
+  writer that skipped the lock, as `roster_one_published_per_moment` is for R11. The adapter answers
+  its violation with the same refusal.
+- **The roster is part of the assignment** because a request names one. The same shift carried by
+  a replacement roster is another assignment. A shift straddling two authoritative rosters could
+  therefore have a request pending on each: what such a shift means for the person on it is #135,
+  the owner's open question, and this leaves it open rather than deciding it here.
+
+**Requests stored before these rules are brought into line by V7 and V8.**
+
+- **V7** lapses those still pending on a roster already superseded.
+- **V8** keeps the oldest of several pending for one assignment, in the order a Scheduler works the
+  queue, and lapses the rest. That is the only way it can build its index over what was already
+  there. `LAPSED` is the only final state a Scheduler did not choose. Nothing is deployed yet, so no
+  real request is affected.
+
+Neither migration tells anybody: a migration has no caller to tell anybody on behalf of.
 
 **What this does to earlier decisions:**
 
@@ -94,6 +115,8 @@ superseded, and tells nobody: a migration has no caller to tell anybody on behal
   supersedes the roster they name. That is R33 as written. Each requester is told, and may raise
   their request again against the replacement. Revisit if the owner decides a swap approval should
   carry the other requests across to the replacement.
+- **A requester who wants to ask somebody else must wait** until a Scheduler answers or the roster
+  is replaced, because withdrawing a request (F29) is not built yet (#91).
 - **`SchedulingService` now depends on the swap store and the notifier.** Both are driven ports of
   its own context, so no architecture rule objects, but publication now knows that swap requests
   exist.
@@ -111,4 +134,6 @@ superseded, and tells nobody: a migration has no caller to tell anybody on behal
 | **Pass only the approved request's identity to the publication** | A smaller signature. Rejected because the publication would then lapse everything except that identity and leave the decision to the caller, so a caller that forgot to decide it would leave a request pending on a superseded roster. Passing the decided request lets the publication store it, and leaves nothing to forget. |
 | **Infer the approved request from the replacement** (its assignment removed, the counterparty's added) | No new parameter. Rejected because a Scheduler can build that same roster by hand. Its publication would then leave a request pending on a superseded roster, approved by nobody. |
 | **Lapse lazily, when a request is read** | No change to publication. Rejected because R33 says the parties are told, and telling needs a moment at which the lapse happens. |
+| **One pending request per shift and person, across rosters** | Closer to "one place to be" for a shift carried by two rosters (R35). Rejected because it decides #135, an open question of the owner's, and because a request names one roster, whose replacement is another assignment. |
+| **Mark duplicates found by V8 `REJECTED`** | A familiar state. Rejected because it would claim that a Scheduler declined them. |
 | **Lapse in a separate step after the publication commits** | Keeps publication ignorant of swaps. Rejected because the lapse would happen outside the transaction that caused it. A failure between the two would leave a request pending on a superseded roster, and no single use case would own it. |

@@ -27,6 +27,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableExc
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
@@ -978,6 +979,88 @@ class SwapServiceTest {
     service.rejectSwap(scheduler(ACME), ACME, request);
 
     assertThat(log.calls()).first().isEqualTo(CallLog.Call.LOCK_PUBLICATIONS);
+  }
+
+  // --- R32: an assignment has at most one pending swap request ------------------------------
+
+  @Test
+  void GivenAPendingSwap_WhenTheSameShiftIsAskedForAgain_ThenItIsRefused() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    RequestSwapCommand asking = new RequestSwapCommand(ACME, original.id(), shift, ada, grace);
+    service.requestSwap(themself(ACME, ada), asking);
+
+    assertThatThrownBy(() -> service.requestSwap(themself(ACME, ada), asking))
+        .isInstanceOf(SwapAlreadyRequestedException.class);
+  }
+
+  /**
+   * One per assignment, not one per pair: asking somebody else while the first is still waiting
+   * would let two Schedulers approve two different handovers of one shift.
+   */
+  @Test
+  void GivenAPendingSwap_WhenTheSameShiftIsAskedOfAnotherColleague_ThenItIsStillRefused() {
+    EmployeeId alan = available(ACME, "Alan", Set.of());
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    service.requestSwap(
+        themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+
+    assertThatThrownBy(
+            () ->
+                service.requestSwap(
+                    themself(ACME, ada),
+                    new RequestSwapCommand(ACME, original.id(), shift, ada, alan)))
+        .isInstanceOf(SwapAlreadyRequestedException.class);
+  }
+
+  @Test
+  void GivenARefusedAskForTheSameShift_WhenItIsRefused_ThenNothingIsStoredOrToldForIt() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    RequestSwapCommand asking = new RequestSwapCommand(ACME, original.id(), shift, ada, grace);
+    service.requestSwap(themself(ACME, ada), asking);
+    notifier.told.clear();
+    audit.forget();
+
+    assertThatThrownBy(() -> service.requestSwap(themself(ACME, ada), asking));
+
+    assertThat(swaps.findByOrganisation(ACME)).hasSize(1);
+    assertThat(notifier.told).isEmpty();
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.SWAP_REQUESTED);
+  }
+
+  /** A rejected request no longer waits on anybody, so it no longer holds the assignment. */
+  @Test
+  void GivenARejectedSwap_WhenTheSameShiftIsAskedForAgain_ThenItIsAccepted() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    RequestSwapCommand asking = new RequestSwapCommand(ACME, original.id(), shift, ada, grace);
+    SwapRequestId first = service.requestSwap(themself(ACME, ada), asking);
+    service.rejectSwap(scheduler(ACME), ACME, first);
+
+    SwapRequestId second = service.requestSwap(themself(ACME, ada), asking);
+
+    assertThat(swaps.byId(second).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+  }
+
+  /**
+   * A lapsed request named the roster that was replaced. The shift on the replacement is another
+   * assignment, so asking for it again is a new request rather than a second one.
+   */
+  @Test
+  void GivenALapsedSwap_WhenTheShiftIsAskedForOnTheReplacement_ThenItIsAccepted() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    service.requestSwap(
+        themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    Roster replacement = publishedWith(ada, shift);
+
+    SwapRequestId again =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, replacement.id(), shift, ada, grace));
+
+    assertThat(swaps.byId(again).status()).isEqualTo(SwapRequestStatus.REQUESTED);
   }
 
   // --- ADR-030: the platform operator is refused by every tenant use case -------------------

@@ -18,6 +18,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
@@ -105,6 +106,12 @@ public class SwapService implements RequestSwapsUseCase {
     Assignment theirs = new Assignment(command.shift(), command.requester());
     if (!published.assignments().contains(theirs)) {
       throw new UnknownAssignmentException(published.id(), theirs);
+    }
+    // R32: one pending request per assignment, whoever it asks. Checked under the lock taken above,
+    // so two asks at once take turns; the schema refuses a writer that skipped it.
+    if (swaps.findPendingNaming(command.organisation(), command.roster()).stream()
+        .anyMatch(pending -> pending.given().equals(theirs))) {
+      throw new SwapAlreadyRequestedException(command.roster(), command.shift());
     }
     // Eligibility is deliberately NOT checked here. Deciding whether a colleague may cover a shift
     // means reading the workforce directory, and an Employee may not - listing colleagues discloses

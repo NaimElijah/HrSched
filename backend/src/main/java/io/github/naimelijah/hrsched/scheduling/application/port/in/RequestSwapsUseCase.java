@@ -35,6 +35,8 @@ public interface RequestSwapsUseCase {
    *     roster is not the one currently published
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException if the
    *     requester does not actually cover that shift
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException if
+   *     that assignment already has a request waiting on a Scheduler, whoever it asks (R32)
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException if the
    *     two parties are the same person
    *     <p>Whether the colleague may actually cover the shift is <strong>not</strong> decided here.

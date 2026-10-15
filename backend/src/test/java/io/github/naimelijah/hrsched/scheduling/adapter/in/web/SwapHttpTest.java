@@ -478,4 +478,22 @@ class SwapHttpTest {
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.title").value("No longer pending"));
   }
+
+  /** R32 over HTTP: a second ask for the same shift is a conflict, not a second request. */
+  @Test
+  void GivenAPendingSwap_WhenTheSameShiftIsAskedForAgain_ThenItIsAConflict() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada Lovelace");
+    String grace = addEmployee(organisation, "Grace Hopper");
+    Rostered rostered = publishedFor(organisation, ada);
+    String body =
+        "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
+            .formatted(rostered.roster(), rostered.shift(), ada, grace);
+    created(asThemself(mockMvc, post("/api/swaps"), organisation, ada).content(body));
+
+    mockMvc
+        .perform(asThemself(mockMvc, post("/api/swaps"), organisation, ada).content(body))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.title").value("Already requested"));
+  }
 }
