@@ -151,6 +151,13 @@ export const scheduling = {
 
   currentConstraints: (): Promise<ConstraintSet> => api.get<ConstraintSet>('/api/constraints'),
 
+  /**
+   * One version of the rules as it was written: what a roster naming that version was judged
+   * against (Q9). Throws an ApiError with status 404 when the organisation has no such version.
+   */
+  constraintsAt: (version: number): Promise<ConstraintSet> =>
+    api.get<ConstraintSet>(path`/api/constraints/${String(version)}`),
+
   reviseConstraints: (constraints: ConstraintSetRequest): Promise<ConstraintSet> =>
     api.put<ConstraintSet>('/api/constraints', constraints),
 };

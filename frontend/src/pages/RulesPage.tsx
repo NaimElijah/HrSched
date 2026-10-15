@@ -4,6 +4,12 @@ import type { ConstraintSet, ConstraintSetRequest } from '../api/scheduling';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
+import { RULE_FIELDS, type RuleField } from './ruleFields';
+
+function configured(set: ConstraintSet | null, key: RuleField): string {
+  const value = set === null ? null : set[key];
+  return value === null || value === undefined ? '' : String(value);
+}
 
 /**
  * Admin: this organisation's working-time rules.
@@ -17,37 +23,23 @@ import { useSessionKey } from '../auth/SessionProvider';
  * in would delete every other rule. Clearing a field is how a rule is switched off, and it must be
  * the only way.
  */
-const FIELDS = [
-  ['minimumRestMinutes', 'Minimum rest between assignments (minutes)'],
-  ['maximumDailyMinutes', 'Maximum daily working time (minutes)'],
-  ['maximumWeeklyMinutes', 'Maximum working time over the roster period (minutes)'],
-  ['maximumConsecutiveDays', 'Maximum consecutive working days'],
-] as const;
-
-type Field = (typeof FIELDS)[number][0];
-
-function configured(set: ConstraintSet | null, key: Field): string {
-  const value = set === null ? null : set[key];
-  return value === null || value === undefined ? '' : String(value);
-}
-
 export function RulesPage() {
   // Only what the admin has actually typed. Everything else is derived from the loaded rules, so
   // no effect syncs two copies of the same state — and an empty string is a real edit meaning
   // "switch this rule off", which is why it is distinct from an absent key.
-  const [edits, setEdits] = useState<Partial<Record<Field, string>>>({});
+  const [edits, setEdits] = useState<Partial<Record<RuleField, string>>>({});
   const [failure, setFailure] = useState<unknown>(null);
   const sessionKey = useSessionKey();
 
   const current = useAsync(() => scheduling.currentConstraints(), sessionKey);
   const loaded = current.value;
 
-  const shown = (key: Field): string => edits[key] ?? configured(loaded, key);
+  const shown = (key: RuleField): string => edits[key] ?? configured(loaded, key);
 
   async function revise(event: React.FormEvent) {
     event.preventDefault();
     setFailure(null);
-    const number = (key: Field): number | undefined => {
+    const number = (key: RuleField): number | undefined => {
       const value = shown(key).trim();
       return value === '' ? undefined : Number(value);
     };
@@ -85,7 +77,7 @@ export function RulesPage() {
       </ul>
 
       <form onSubmit={revise} className="grid">
-        {FIELDS.map(([key, label]) => (
+        {RULE_FIELDS.map(([key, label]) => (
           <label key={key}>
             {label}
             <input

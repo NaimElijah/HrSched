@@ -200,6 +200,74 @@ describe('the rosters page', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this'),
     );
   });
+
+  /**
+   * Q9: a published roster keeps the version that approved it. The number alone tells a reader
+   * nothing once the rules have been revised, so it opens the rules as they were under it.
+   */
+  it('GivenAPublishedRoster_WhenItsVersionIsOpened_ThenTheRulesThatApprovedItAreShown', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 2 };
+    aDraft({
+      '/api/rosters': { status: 200, body: [published] },
+      // Invented, and recognisable. The current rules may be anything; only version 2 is asked for.
+      '/api/constraints/2': {
+        status: 200,
+        body: {
+          version: 2,
+          constraints: ['maximum daily working time'],
+          maximumDailyMinutes: 601,
+        },
+      },
+    });
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Version 2' }));
+
+    const rules = await screen.findByRole('region', { name: 'Rules of version 2' });
+    expect(await within(rules).findByText('601')).toBeInTheDocument();
+    expect(rules).toHaveTextContent('Maximum daily working time (minutes)');
+    expect(rules).not.toHaveTextContent('Minimum rest');
+  });
+
+  it('GivenAVersionThatEnforcedNothing_WhenOpened_ThenItSaysSoRatherThanShowingNothing', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
+    aDraft({
+      '/api/rosters': { status: 200, body: [published] },
+      '/api/constraints/1': { status: 200, body: { version: 1, constraints: [] } },
+    });
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Version 1' }));
+
+    const rules = await screen.findByRole('region', { name: 'Rules of version 1' });
+    expect(
+      await within(rules).findByText('No working-time rule was enforced under this version.'),
+    ).toBeInTheDocument();
+  });
+
+  it('GivenTheRulesCannotBeRead_WhenAVersionIsOpened_ThenTheFailureIsShown', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 2 };
+    aDraft({
+      '/api/rosters': { status: 200, body: [published] },
+      '/api/constraints/2': { status: 500, body: { detail: 'The rule store is unavailable.' } },
+    });
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Version 2' }));
+
+    const rules = await screen.findByRole('region', { name: 'Rules of version 2' });
+    expect(await within(rules).findByRole('alert')).toHaveTextContent(
+      'The rule store is unavailable.',
+    );
+  });
+
+  it('GivenADraft_WhenListed_ThenItOffersNoRulesToOpen', async () => {
+    aDraft();
+    renderPage();
+
+    expect(await screen.findByRole('button', { name: 'Open' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Version/ })).not.toBeInTheDocument();
+  });
 });
 
 describe('the board of a draft', () => {
