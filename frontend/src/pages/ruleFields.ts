@@ -11,4 +11,5 @@ export const RULE_FIELDS = [
   ['maximumConsecutiveDays', 'Maximum consecutive working days'],
 ] as const;
 
+/** The name of one threshold a constraint set carries, as the API spells it. */
 export type RuleField = (typeof RULE_FIELDS)[number][0];
