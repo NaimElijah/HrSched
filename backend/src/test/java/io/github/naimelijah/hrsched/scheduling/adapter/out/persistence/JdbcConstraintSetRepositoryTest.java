@@ -181,6 +181,40 @@ class JdbcConstraintSetRepositoryTest {
     assertThat(repository.findVersion(ACME, 2)).isEmpty();
   }
 
+  /**
+   * Every organisation's second version is called 2, so the rules a version carries must be scoped
+   * to their organisation as surely as the version itself is. Only two organisations holding the
+   * same number tell the two scopes apart; with different numbers, a rule query missing its
+   * organisation would still find nothing of anybody else's.
+   */
+  @Test
+  void GivenBothOrganisationsAtTheSameVersion_WhenWeFindIt_ThenItCarriesOnlyOurRules() {
+    ConstraintSet ours = bothAtVersionTwo();
+
+    assertThat(repository.findVersion(ACME, 2)).contains(ours);
+  }
+
+  @Test
+  void GivenBothOrganisationsAtTheSameVersion_WhenWeReadTheCurrentSet_ThenItCarriesOnlyOurRules() {
+    ConstraintSet ours = bothAtVersionTwo();
+
+    assertThat(repository.findCurrent(ACME)).contains(ours);
+  }
+
+  /** Stores a version 2 for each organisation, with different rules, and returns ours. */
+  private ConstraintSet bothAtVersionTwo() {
+    ConstraintSet ours =
+        ConstraintSet.initial(ACME).revisedTo(List.of(new MaximumConsecutiveWorkingDays(4)));
+    repository.save(ours);
+    repository.save(
+        ConstraintSet.initial(RIVAL)
+            .revisedTo(
+                List.of(
+                    new MaximumConsecutiveWorkingDays(5),
+                    new MaximumDailyWorkingTime(Duration.ofHours(7)))));
+    return ours;
+  }
+
   @Test
   void GivenAVersionNeverStored_WhenFound_ThenNothingIsFound() {
     repository.save(
