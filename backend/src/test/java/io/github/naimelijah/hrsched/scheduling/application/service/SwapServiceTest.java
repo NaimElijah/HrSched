@@ -85,6 +85,8 @@ class SwapServiceTest {
       new TimeRange(Instant.parse("2026-10-06T08:00:00Z"), Instant.parse("2026-10-06T16:00:00Z"));
   private static final TimeRange NEXT_WEEK =
       new TimeRange(Instant.parse("2026-10-12T00:00:00Z"), Instant.parse("2026-10-19T00:00:00Z"));
+  private static final TimeRange NEXT_MONDAY_DAY =
+      new TimeRange(Instant.parse("2026-10-12T08:00:00Z"), Instant.parse("2026-10-12T16:00:00Z"));
 
   /** Fixed, so the time a request records is something these tests state rather than tolerate. */
   private static final Instant RAISED_AT = Instant.parse("2026-10-01T09:30:00Z");
@@ -865,6 +867,38 @@ class SwapServiceTest {
             new Told("APPROVED", ada, two.adas()),
             new Told("LAPSED", two.alan(), two.alans()),
             new Told("LAPSED", grace, two.alans()));
+  }
+
+  /** One publication can supersede several rosters, and each takes its pending requests with it. */
+  @Test
+  void GivenPendingSwapsOnTwoRosters_WhenOnePublicationSupersedesBoth_ThenBothLapse() {
+    ShiftId monday = aShift(Set.of());
+    Roster thisWeek = publishedWith(ada, monday);
+    ShiftId nextMonday =
+        scheduling.defineShift(
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, NEXT_MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+    Roster nextDraft =
+        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK));
+    scheduling.assign(
+        scheduler(ACME), new AssignToShiftCommand(ACME, nextDraft.id(), nextMonday, ada));
+    Roster nextWeek = scheduling.publish(scheduler(ACME), ACME, nextDraft.id());
+    SwapRequestId first =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, thisWeek.id(), monday, ada, grace));
+    SwapRequestId second =
+        service.requestSwap(
+            themself(ACME, ada),
+            new RequestSwapCommand(ACME, nextWeek.id(), nextMonday, ada, grace));
+    Roster bothWeeks =
+        scheduling.generateDraft(
+            scheduler(ACME),
+            new GenerateRosterCommand(ACME, new TimeRange(THE_WEEK.start(), NEXT_WEEK.end())));
+
+    scheduling.publish(scheduler(ACME), ACME, bothWeeks.id());
+
+    assertThat(swaps.byId(first).status()).isEqualTo(SwapRequestStatus.LAPSED);
+    assertThat(swaps.byId(second).status()).isEqualTo(SwapRequestStatus.LAPSED);
   }
 
   /**
