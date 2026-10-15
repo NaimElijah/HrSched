@@ -71,7 +71,7 @@ implemented; `not yet` means the requirement is decided and the linked issue tra
 | F18 | Any member | See swap requests: every one for an Admin or a Scheduler, and only those they are party to for anybody else | `SwapService`, `SwapServiceTest`, `SwapHttpTest` |
 | F19 | Admin | Set an employee's contracted hours, and clear them | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest`. *Clearing: not yet — [#83](https://github.com/NaimElijah/HrSched/issues/83).* |
 | F20 | Any member | See the organisation's qualifications | `QualificationService`, `QualificationServiceTest`, `QualificationHttpTest` |
-| F21 | Any member | See the organisation's working-time rules, with their thresholds | `SchedulingService`, `RosteringHttpTest`. *Tested as an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
+| F21 | Any member | See the organisation's working-time rules, with their thresholds | `SchedulingService`, `RosteringHttpTest`. *Tested as an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* Any earlier version too, which is what a roster published under it was judged against (Q9): `JdbcConstraintSetRepositoryTest`, `SchedulingServiceTest`, `RosteringHttpTest.GivenRulesRevisedAfterPublication_WhenTheRosterVersionIsRead_ThenItIsTheRulesItPassed`, as an Employee. |
 | F22 | Admin | Remove an employee who leaves | not yet — [#84](https://github.com/NaimElijah/HrSched/issues/84) |
 | F23 | Admin | Correct an employee's name | not yet — [#85](https://github.com/NaimElijah/HrSched/issues/85) |
 | F24 | Admin | Revoke a qualification from an employee | not yet — [#86](https://github.com/NaimElijah/HrSched/issues/86) |

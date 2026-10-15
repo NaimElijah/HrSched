@@ -18,11 +18,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
 
 /**
- * What the constraint store promises, and the one thing it now promises that it did not.
+ * What the constraint store promises.
  *
  * <p>Every version is kept, keyed by {@code (organisation, version)}, because a published roster
- * records the version that approved it. {@code findCurrent} reads the highest, so the behaviour
- * callers see is unchanged; what changed is that the earlier versions are still there.
+ * records the version that approved it. {@code findCurrent} reads the highest; {@code findVersion}
+ * reads any one of them back, which is what makes that record worth keeping (Q9).
  *
  * <p><strong>Every number below is invented to make a case pass or fail.</strong> None is taken
  * from any jurisdiction, and none may be.
@@ -141,6 +141,86 @@ class JdbcConstraintSetRepositoryTest {
     repository.save(second.revisedTo(List.of(new MaximumConsecutiveWorkingDays(5))));
 
     assertThat(storedVersions()).containsExactly(1, 2, 3);
+  }
+
+  /**
+   * Q9: a published roster keeps the version that approved it, and changes are never retroactive.
+   * Storing that version is worth something only if it reads back with the rules it had then, once
+   * the organisation has moved on.
+   */
+  @Test
+  void GivenARevisedSet_WhenAnEarlierVersionIsFound_ThenItCarriesTheRulesItHadThen() {
+    ConstraintSet second =
+        ConstraintSet.initial(ACME).revisedTo(List.of(new MaximumConsecutiveWorkingDays(4)));
+    repository.save(second);
+    repository.save(second.revisedTo(List.of(new MaximumConsecutiveWorkingDays(5))));
+
+    assertThat(repository.findVersion(ACME, 2)).contains(second);
+  }
+
+  /**
+   * A version that switched every rule off is a version, not a missing one: the roster it approved
+   * was approved with nothing enforced, and saying so is the answer.
+   */
+  @Test
+  void GivenAVersionEnforcingNothing_WhenFound_ThenItIsAnEmptySetRatherThanAbsent() {
+    ConstraintSet second =
+        ConstraintSet.initial(ACME).revisedTo(List.of(new MaximumConsecutiveWorkingDays(4)));
+    ConstraintSet third = second.revisedTo(List.of());
+    repository.save(second);
+    repository.save(third);
+
+    assertThat(repository.findVersion(ACME, 3)).contains(third);
+  }
+
+  @Test
+  void GivenAnotherOrganisationsVersion_WhenFoundByUs_ThenNothingIsFound() {
+    repository.save(
+        ConstraintSet.initial(RIVAL).revisedTo(List.of(new MaximumConsecutiveWorkingDays(4))));
+
+    assertThat(repository.findVersion(ACME, 2)).isEmpty();
+  }
+
+  /**
+   * Every organisation's second version is called 2, so the rules a version carries must be scoped
+   * to their organisation as surely as the version itself is. Only two organisations holding the
+   * same number tell the two scopes apart; with different numbers, a rule query missing its
+   * organisation would still find nothing of anybody else's.
+   */
+  @Test
+  void GivenBothOrganisationsAtTheSameVersion_WhenWeFindIt_ThenItCarriesOnlyOurRules() {
+    ConstraintSet ours = bothAtVersionTwo();
+
+    assertThat(repository.findVersion(ACME, 2)).contains(ours);
+  }
+
+  @Test
+  void GivenBothOrganisationsAtTheSameVersion_WhenWeReadTheCurrentSet_ThenItCarriesOnlyOurRules() {
+    ConstraintSet ours = bothAtVersionTwo();
+
+    assertThat(repository.findCurrent(ACME)).contains(ours);
+  }
+
+  /** Stores a version 2 for each organisation, with different rules, and returns ours. */
+  private ConstraintSet bothAtVersionTwo() {
+    ConstraintSet ours =
+        ConstraintSet.initial(ACME).revisedTo(List.of(new MaximumConsecutiveWorkingDays(4)));
+    repository.save(ours);
+    repository.save(
+        ConstraintSet.initial(RIVAL)
+            .revisedTo(
+                List.of(
+                    new MaximumConsecutiveWorkingDays(5),
+                    new MaximumDailyWorkingTime(Duration.ofHours(7)))));
+    return ours;
+  }
+
+  @Test
+  void GivenAVersionNeverStored_WhenFound_ThenNothingIsFound() {
+    repository.save(
+        ConstraintSet.initial(ACME).revisedTo(List.of(new MaximumConsecutiveWorkingDays(4))));
+
+    assertThat(repository.findVersion(ACME, 3)).isEmpty();
   }
 
   /**

@@ -17,6 +17,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingExcept
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownConstraintVersionException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
@@ -241,6 +242,7 @@ public class SchedulingExceptionHandler {
     UnknownAssigneeException.class,
     UnknownAssignmentException.class,
     UnknownSwapRequestException.class,
+    UnknownConstraintVersionException.class,
     CrossTenantAccessException.class
   })
   public ProblemDetail handleUnknown(RuntimeException exception) {

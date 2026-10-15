@@ -577,9 +577,6 @@ authentication (ADR-011, ADR-028 to ADR-032) are settled, so what remains blocki
   person and ignores fairness, preferences and disruption — the three things that make a roster
   good rather than merely legal. A solver is the next substantial piece of work.
 - **Objectives are not modelled**, so there is nothing for a solver to optimise against yet.
-- **Constraint versions are stored but cannot be read back.** Every revision is kept now, keyed by
-  version, so the record a published roster holds is no longer worthless — but the port offers only
-  `findCurrent`, so reading a historical version still needs a method nobody has asked for.
 - **A shift's zone is the Scheduler's browser's.** Working-time days are counted in each shift's
   own zone (R36, ADR-034), and the Shifts page sends the zone it read the typed times in. Planning
   a site in another zone, and seeing which zone a shift is counted in, are #136. Shifts stored

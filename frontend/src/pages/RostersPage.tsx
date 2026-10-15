@@ -4,6 +4,7 @@ import type { Employee } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
+import { ApprovingRules } from './ApprovingRules';
 import { RosterBoard } from './RosterBoard';
 
 /**
@@ -30,6 +31,9 @@ export function RostersPage({
   const sessionKey = useSessionKey();
   const [failure, setFailure] = useState<unknown>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  // The constraint version whose rules are open, so a published roster can be checked against the
+  // rules it actually passed rather than today's (Q9).
+  const [rulesOf, setRulesOf] = useState<number | null>(null);
   // Bumped whenever the list changes a roster, so an open board is rebuilt from what is now stored.
   // A change made on the board does not bump it: the board already holds what the server returned.
   const [revision, setRevision] = useState(0);
@@ -82,34 +86,47 @@ export function RostersPage({
           </tr>
         </thead>
         <tbody>
-          {(rosters.value ?? []).map((roster) => (
-            <tr key={roster.id}>
-              <td>
-                {new Date(roster.start).toLocaleDateString()} to{' '}
-                {new Date(roster.end).toLocaleDateString()}
-                <br />
-                <code>{roster.id}</code>
-              </td>
-              <td>{roster.status}</td>
-              <td>{roster.assignments.length}</td>
-              <td>{roster.validatedAgainstConstraintVersion ?? '—'}</td>
-              <td>
-                <button type="button" onClick={() => setSelected(roster.id)}>
-                  Open
-                </button>
-                {roster.status === 'DRAFT' ? (
-                  <button
-                    type="button"
-                    onClick={() => void act(() => scheduling.publishRoster(roster.id))}
-                  >
-                    Publish
+          {(rosters.value ?? []).map((roster) => {
+            const version = roster.validatedAgainstConstraintVersion;
+            return (
+              <tr key={roster.id}>
+                <td>
+                  {new Date(roster.start).toLocaleDateString()} to{' '}
+                  {new Date(roster.end).toLocaleDateString()}
+                  <br />
+                  <code>{roster.id}</code>
+                </td>
+                <td>{roster.status}</td>
+                <td>{roster.assignments.length}</td>
+                <td>
+                  {version === null ? (
+                    '—'
+                  ) : (
+                    <button type="button" onClick={() => setRulesOf(version)}>
+                      Version {version}
+                    </button>
+                  )}
+                </td>
+                <td>
+                  <button type="button" onClick={() => setSelected(roster.id)}>
+                    Open
                   </button>
-                ) : null}
-              </td>
-            </tr>
-          ))}
+                  {roster.status === 'DRAFT' ? (
+                    <button
+                      type="button"
+                      onClick={() => void act(() => scheduling.publishRoster(roster.id))}
+                    >
+                      Publish
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+
+      {rulesOf === null ? null : <ApprovingRules version={rulesOf} />}
 
       {selected === null ? null : (
         <RosterBoard

@@ -173,6 +173,21 @@ public class SchedulingService
   }
 
   @Override
+  public Optional<ConstraintSet> findConstraints(
+      Actor actor, OrganisationId organisation, int version) {
+    actor.requireAccessTo(organisation);
+    // The empty first version is never stored, because reading the rules stores nothing and the
+    // first revision writes version two. A roster published before anybody revised anything still
+    // names it, so it is answered from the domain rather than reported missing.
+    return constraintSets
+        .findVersion(organisation, version)
+        .or(
+            () ->
+                Optional.of(ConstraintSet.initial(organisation))
+                    .filter(initial -> initial.version() == version));
+  }
+
+  @Override
   public Roster generateDraft(Actor actor, GenerateRosterCommand command) {
     authorise(actor, command.organisation(), MAY_SCHEDULE);
     List<Shift> toCover = shifts.findWithin(command.organisation(), command.period());

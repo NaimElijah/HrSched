@@ -200,6 +200,119 @@ describe('the rosters page', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this'),
     );
   });
+
+  /**
+   * Q9: a published roster keeps the version that approved it. The number alone tells a reader
+   * nothing once the rules have been revised, so it opens the rules as they were under it.
+   */
+  it('GivenAPublishedRoster_WhenItsVersionIsOpened_ThenTheRulesThatApprovedItAreShown', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 2 };
+    aDraft({
+      '/api/rosters': { status: 200, body: [published] },
+      // Invented, and recognisable. The current rules may be anything; only version 2 is asked for.
+      '/api/constraints/2': {
+        status: 200,
+        body: {
+          version: 2,
+          constraints: ['maximum daily working time'],
+          minimumRestMinutes: null,
+          maximumDailyMinutes: 601,
+          maximumWeeklyMinutes: null,
+          maximumConsecutiveDays: null,
+        },
+      },
+    });
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Version 2' }));
+
+    const rules = await screen.findByRole('region', { name: 'Rules of version 2' });
+    expect(await within(rules).findByText('601')).toBeInTheDocument();
+    expect(rules).toHaveTextContent('Maximum daily working time (minutes)');
+    expect(rules).not.toHaveTextContent('Minimum rest');
+  });
+
+  it('GivenAVersionThatEnforcedNothing_WhenOpened_ThenItSaysSoRatherThanShowingNothing', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
+    aDraft({
+      '/api/rosters': { status: 200, body: [published] },
+      '/api/constraints/1': {
+        status: 200,
+        body: {
+          version: 1,
+          constraints: [],
+          minimumRestMinutes: null,
+          maximumDailyMinutes: null,
+          maximumWeeklyMinutes: null,
+          maximumConsecutiveDays: null,
+        },
+      },
+    });
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Version 1' }));
+
+    const rules = await screen.findByRole('region', { name: 'Rules of version 1' });
+    expect(
+      await within(rules).findByText('No working-time rule was enforced under this version.'),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * What a version enforced is the server's to say. A rule this page has no label for yet must
+   * still be named rather than read as "nothing was enforced", which would be a false account of
+   * what a roster was judged against.
+   */
+  it('GivenARuleThePageHasNoLabelFor_WhenItsVersionIsOpened_ThenTheRuleIsStillNamed', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 3 };
+    aDraft({
+      '/api/rosters': { status: 200, body: [published] },
+      '/api/constraints/3': {
+        status: 200,
+        body: {
+          version: 3,
+          constraints: ['a rule added after this page was written'],
+          minimumRestMinutes: null,
+          maximumDailyMinutes: null,
+          maximumWeeklyMinutes: null,
+          maximumConsecutiveDays: null,
+        },
+      },
+    });
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Version 3' }));
+
+    const rules = await screen.findByRole('region', { name: 'Rules of version 3' });
+    expect(
+      await within(rules).findByText('a rule added after this page was written'),
+    ).toBeInTheDocument();
+    expect(rules).not.toHaveTextContent('No working-time rule was enforced');
+  });
+
+  it('GivenTheRulesCannotBeRead_WhenAVersionIsOpened_ThenTheFailureIsShown', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 2 };
+    aDraft({
+      '/api/rosters': { status: 200, body: [published] },
+      '/api/constraints/2': { status: 500, body: { detail: 'The rule store is unavailable.' } },
+    });
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Version 2' }));
+
+    const rules = await screen.findByRole('region', { name: 'Rules of version 2' });
+    expect(await within(rules).findByRole('alert')).toHaveTextContent(
+      'The rule store is unavailable.',
+    );
+  });
+
+  it('GivenADraft_WhenListed_ThenItOffersNoRulesToOpen', async () => {
+    aDraft();
+    renderPage();
+
+    expect(await screen.findByRole('button', { name: 'Open' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Version/ })).not.toBeInTheDocument();
+  });
 });
 
 describe('the board of a draft', () => {
