@@ -100,6 +100,9 @@ public interface PlanRostersUseCase {
    *     if a roster overlapping it was published at the same time by a writer that did not take
    *     turns. Publishing through this port always does (ADR-027), so this means some other writer
    *     skipped the publication lock (ADR-026)
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if a
+   *     request it lapses was decided meanwhile, which again needs a writer that skipped the lock.
+   *     Refused before anything is recorded
    */
   Roster publish(Actor actor, OrganisationId organisation, RosterId roster);
 

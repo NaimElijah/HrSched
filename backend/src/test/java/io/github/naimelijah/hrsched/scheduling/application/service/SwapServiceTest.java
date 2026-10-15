@@ -13,6 +13,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstra
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestRepository;
 import io.github.naimelijah.hrsched.scheduling.application.service.RecordingNotifier.Told;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
@@ -864,6 +865,75 @@ class SwapServiceTest {
             new Told("APPROVED", ada, two.adas()),
             new Told("LAPSED", two.alan(), two.alans()),
             new Told("LAPSED", grace, two.alans()));
+  }
+
+  /**
+   * A lapse that cannot be stored refuses the whole publication, and the transaction takes back
+   * every write before it, but never an audit line or a notification once raised. So every lapse is
+   * stored before anything is recorded or told, and a refusal part-way leaves no account of the
+   * lapses before it, nor of a supersession that never happened.
+   */
+  @Test
+  void GivenALapseThatCannotBeStored_WhenPublishing_ThenNothingIsRecordedOrToldFirst() {
+    twoPendingOnOneRoster();
+    SchedulingService publishing =
+        new SchedulingService(
+            shifts,
+            rosters,
+            constraintSets,
+            new RefusesTheSecondLapse(swaps),
+            workforce,
+            new AssignsNobody(),
+            notifier,
+            audit,
+            Clock.fixed(RAISED_AT, ZoneOffset.UTC));
+    Roster replacement =
+        publishing.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+    notifier.told.clear();
+    audit.forget();
+
+    assertThatThrownBy(() -> publishing.publish(scheduler(ACME), ACME, replacement.id()))
+        .isInstanceOf(SwapNotPendingException.class);
+
+    assertThat(audit.changes()).isEmpty();
+    assertThat(notifier.told).isEmpty();
+  }
+
+  /**
+   * Stands for a writer that skipped the publication lock and decided a request while a publication
+   * was lapsing it: the second lapse finds it no longer pending.
+   */
+  private static final class RefusesTheSecondLapse implements SwapRequestRepository {
+
+    private final SwapRequestRepository store;
+    private int lapses;
+
+    RefusesTheSecondLapse(SwapRequestRepository store) {
+      this.store = store;
+    }
+
+    @Override
+    public void save(SwapRequest request) {
+      if (request.status() == SwapRequestStatus.LAPSED && ++lapses == 2) {
+        throw new SwapNotPendingException(request.id(), SwapRequestStatus.REJECTED);
+      }
+      store.save(request);
+    }
+
+    @Override
+    public Optional<SwapRequest> findById(OrganisationId organisation, SwapRequestId id) {
+      return store.findById(organisation, id);
+    }
+
+    @Override
+    public List<SwapRequest> findByOrganisation(OrganisationId organisation) {
+      return store.findByOrganisation(organisation);
+    }
+
+    @Override
+    public List<SwapRequest> findPendingNaming(OrganisationId organisation, RosterId roster) {
+      return store.findPendingNaming(organisation, roster);
+    }
   }
 
   private record TwoPending(SwapRequestId adas, SwapRequestId alans, EmployeeId alan) {}

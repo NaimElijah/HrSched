@@ -23,8 +23,8 @@ Forces:
   the very roster the approved request names, so that request is pending, on a roster being
   superseded, at the moment the publication runs.
 - **A publication's guarantees rest on taking turns** (ADR-027) and on being one transaction
-  (ADR-023). Audit lines are log entries that outlive a rollback (ADR-018), so nothing may be
-  recorded before a write that can still fail.
+  (ADR-023). Audit lines are log entries that outlive a rollback (ADR-018), so a write that can
+  still fail belongs before the records describing what it was part of.
 - **A decision was final in the domain but not in the store.** The swap upsert overwrote any
   status, so two writers that each read a request as pending each saved their decision, and the
   last one won.
@@ -35,11 +35,16 @@ Forces:
 ## Decision
 
 **A publication lapses every request still pending on each roster it supersedes, inside its own
-transaction, after the published roster is stored.**
+transaction.**
 
-- `SchedulingService.publish` reads `SwapRequestRepository.findPendingNaming` for each roster it
-  superseded. For each request it finds, it saves `lapsed()`, records `SWAP_LAPSED`, and tells the
-  requester and the counterparty through `Notifier.swapLapsed`.
+- Before it records anything, `SchedulingService.publish` reads
+  `SwapRequestRepository.findPendingNaming` for each roster it supersedes, and saves each request
+  `lapsed()`.
+- Once the published roster is stored, it records `SWAP_LAPSED` for each, and tells the requester
+  and the counterparty through `Notifier.swapLapsed`.
+- So a lapse refused part-way leaves no audit line behind. The one refusal that can still follow a
+  record is ADR-027's `RosterPublicationConflictException`, which needs a writer that skipped the
+  lock.
 - **`LAPSED` is a final state of its own.** It is not `REJECTED`, because nobody decided it.
 - Approving a lapsed request is a 409, "No longer pending". The same answer is given to a request
   decided twice.
@@ -47,8 +52,8 @@ transaction, after the published roster is stored.**
 **Approval names the request it settles, already decided.**
 
 - `PlanRostersUseCase.publishApproving(actor, organisation, replacement, approved)` is `publish` with
-  one addition: it stores the approved request after the published roster and **before** the lapse
-  looks for pending requests, so the lapse never takes it for one of them.
+  one addition: it stores the approved request **before** the lapse looks for pending requests, so
+  the lapse never takes it for one of them.
 - It refuses, before writing anything, an argument it could not have been asked to settle: one not
   `APPROVED`, one of another organisation, or one naming a roster this publication does not
   supersede.

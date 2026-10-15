@@ -458,11 +458,12 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   become a way round rules generation cannot get round
   ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)). A refused approval
   takes the replacement draft with it, because the use case is one transaction (ADR-023).
-- **A publication lapses the swap requests waiting on what it supersedes (R33).** Once the published
-  roster is stored, `SchedulingService.publish` reads `findPendingNaming` for each roster it
-  superseded, saves each request `LAPSED`, records `SWAP_LAPSED` and tells both parties - all in
-  the publication's transaction. A swap approval stores its own request as approved before that
-  read, so it is never lapsed with the others; every other request on that roster is. The swap
+- **A publication lapses the swap requests waiting on what it supersedes (R33).** Before it records
+  anything, `SchedulingService.publish` reads `findPendingNaming` for each roster it supersedes and
+  saves each request `LAPSED`. Once the published roster is stored, it records `SWAP_LAPSED` for
+  each and tells both parties - all in the publication's transaction. A swap approval stores its
+  own request as approved before that read, so it is never lapsed with the others; every other
+  request on that roster is. The swap
   upsert only ever changes a request still `REQUESTED`, so no decision is written over another.
   The same lookup keeps an assignment - roster, shift and person - to one pending request when one
   is raised (R32), and the partial unique index `swap_request_one_pending_per_assignment` refuses a

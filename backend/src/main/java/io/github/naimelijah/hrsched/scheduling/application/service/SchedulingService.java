@@ -331,13 +331,16 @@ public class SchedulingService
     // Read under the lock, from the history the lock froze, and once: the rosters this supersedes
     // stop governing at the very moment this one starts to (R37, ADR-037).
     Instant at = Roster.nextMomentOfRecord(clock.instant(), existing);
+    // The swap writes come before anything is recorded. A refusal part-way through takes the
+    // writes back, but never an audit line (ADR-023). The approval is stored first, so the lapse
+    // that follows never takes it for a request still pending.
+    approving.ifPresent(swaps::save);
+    List<SwapRequest> lapsed = lapsePendingSwapsOn(organisation, replaced);
     supersede(actor, organisation, replaced, at);
     Roster published = draft.publishedUnder(constraints.version(), at);
     rosters.save(published);
     recorded(actor, organisation, SchedulingChange.ROSTER_PUBLISHED, published.id().value());
-    // Stored before the lapse looks for requests still pending, so it is never taken for one.
-    approving.ifPresent(swaps::save);
-    lapsePendingSwapsOn(actor, organisation, replaced);
+    tellOfLapses(actor, organisation, lapsed);
     return published;
   }
 
@@ -364,21 +367,31 @@ public class SchedulingService
   }
 
   /**
-   * R33: a request still waiting on a roster this publication superseded has nothing left to
-   * approve. Each lapses, is recorded, and both its parties are told, in this publication's
-   * transaction. Runs once the publication is stored, because an audit line outlives the rollback
-   * of a save that fails after it (ADR-023).
+   * R33: a request still waiting on a roster this publication supersedes has nothing left to
+   * approve, so each lapses, in this publication's transaction. Stores them and nothing else; they
+   * are recorded and told once the publication is stored ({@link #tellOfLapses}).
+   *
+   * @return the requests it lapsed
    */
-  private void lapsePendingSwapsOn(
-      Actor actor, OrganisationId organisation, List<Roster> superseded) {
+  private List<SwapRequest> lapsePendingSwapsOn(
+      OrganisationId organisation, List<Roster> superseded) {
+    List<SwapRequest> lapsed = new ArrayList<>();
     for (Roster roster : superseded) {
       for (SwapRequest pending : swaps.findPendingNaming(organisation, roster.id())) {
-        SwapRequest lapsed = pending.lapsed();
-        swaps.save(lapsed);
-        recorded(actor, organisation, SchedulingChange.SWAP_LAPSED, lapsed.id().value());
-        notifier.swapLapsed(actor, organisation, lapsed.requester(), lapsed.id());
-        notifier.swapLapsed(actor, organisation, lapsed.counterparty(), lapsed.id());
+        SwapRequest ended = pending.lapsed();
+        swaps.save(ended);
+        lapsed.add(ended);
       }
+    }
+    return lapsed;
+  }
+
+  /** Records each lapse, and tells both its parties (R33). */
+  private void tellOfLapses(Actor actor, OrganisationId organisation, List<SwapRequest> lapsed) {
+    for (SwapRequest request : lapsed) {
+      recorded(actor, organisation, SchedulingChange.SWAP_LAPSED, request.id().value());
+      notifier.swapLapsed(actor, organisation, request.requester(), request.id());
+      notifier.swapLapsed(actor, organisation, request.counterparty(), request.id());
     }
   }
 
