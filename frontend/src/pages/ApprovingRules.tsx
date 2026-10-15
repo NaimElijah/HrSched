@@ -15,13 +15,12 @@ export function ApprovingRules({ version }: { version: number }) {
   const sessionKey = useSessionKey();
   const rules = useAsync(() => scheduling.constraintsAt(version), `${sessionKey}#${version}`);
   const loaded = rules.value;
-  // The server leaves an unset threshold out of the body rather than sending null.
   const enforced =
     loaded === null
       ? []
       : RULE_FIELDS.flatMap(([key, label]) => {
           const value = loaded[key];
-          return value === null || value === undefined ? [] : [{ key, label, value }];
+          return value === null ? [] : [{ key, label, value }];
         });
 
   return (

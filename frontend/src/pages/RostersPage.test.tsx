@@ -215,7 +215,10 @@ describe('the rosters page', () => {
         body: {
           version: 2,
           constraints: ['maximum daily working time'],
+          minimumRestMinutes: null,
           maximumDailyMinutes: 601,
+          maximumWeeklyMinutes: null,
+          maximumConsecutiveDays: null,
         },
       },
     });
@@ -233,7 +236,17 @@ describe('the rosters page', () => {
     const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
     aDraft({
       '/api/rosters': { status: 200, body: [published] },
-      '/api/constraints/1': { status: 200, body: { version: 1, constraints: [] } },
+      '/api/constraints/1': {
+        status: 200,
+        body: {
+          version: 1,
+          constraints: [],
+          minimumRestMinutes: null,
+          maximumDailyMinutes: null,
+          maximumWeeklyMinutes: null,
+          maximumConsecutiveDays: null,
+        },
+      },
     });
     renderPage();
 
