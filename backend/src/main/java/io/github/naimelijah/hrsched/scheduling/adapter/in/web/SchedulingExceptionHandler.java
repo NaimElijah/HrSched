@@ -220,15 +220,17 @@ public class SchedulingExceptionHandler {
   }
 
   /**
-   * A swap decided twice. Two Schedulers with the same request open is the ordinary way this
-   * happens, so it is a conflict rather than a bad request: nothing about what the second one sent
-   * was wrong, it just arrived after somebody else had answered.
+   * A swap request that is no longer waiting on anybody: decided twice, or decided after it lapsed
+   * (R33). Two Schedulers with the same request open is the ordinary way the first happens, and a
+   * newer roster replacing the one it names is the way the second does. Either way it is a conflict
+   * rather than a bad request: nothing about what was sent was wrong, it just arrived after the
+   * request had ended. Titled for both, because nobody decided a lapse.
    */
   @ExceptionHandler(SwapNotPendingException.class)
-  public ProblemDetail handleAlreadyDecided(SwapNotPendingException exception) {
+  public ProblemDetail handleNoLongerPending(SwapNotPendingException exception) {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
-    problem.setTitle("Already decided");
+    problem.setTitle("No longer pending");
     return problem;
   }
 

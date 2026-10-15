@@ -4,6 +4,7 @@ import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingH
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.as;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.asThemself;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -424,5 +425,57 @@ class SwapHttpTest {
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.detail").value("No such resource."));
+  }
+
+  /**
+   * R33 end to end. The Scheduler publishes a roster for the same day before deciding Ada's
+   * request, which replaces the roster it names. The request lapses in that publication, both
+   * parties find it in their inbox, and it can no longer be approved.
+   */
+  @Test
+  void GivenAPendingSwap_WhenItsRosterIsReplaced_ThenItLapsesAndBothPartiesAreTold()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada Lovelace");
+    String grace = addEmployee(organisation, "Grace Hopper");
+    Rostered rostered = publishedFor(organisation, ada);
+    String swap =
+        JsonPath.read(
+            created(
+                asThemself(mockMvc, post("/api/swaps"), organisation, ada)
+                    .content(
+                        "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
+                            .formatted(rostered.roster(), rostered.shift(), ada, grace))),
+            "$.id");
+    String replacement =
+        JsonPath.read(
+            created(
+                as(mockMvc, post("/api/rosters"), organisation, "SCHEDULER")
+                    .content(
+                        "{\"start\":\"2026-12-07T00:00:00Z\",\"end\":\"2026-12-08T00:00:00Z\"}")),
+            "$.id");
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                post("/api/rosters/" + replacement + "/publication"),
+                organisation,
+                "SCHEDULER"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/swaps/" + swap), organisation, "SCHEDULER"))
+        .andExpect(jsonPath("$.status").value("LAPSED"));
+    mockMvc
+        .perform(asThemself(mockMvc, get("/api/notifications"), organisation, ada))
+        .andExpect(jsonPath("$[*].kind", hasItem("SWAP_LAPSED")));
+    mockMvc
+        .perform(asThemself(mockMvc, get("/api/notifications"), organisation, grace))
+        .andExpect(jsonPath("$[*].kind", hasItem("SWAP_LAPSED")));
+    mockMvc
+        .perform(as(mockMvc, post("/api/swaps/" + swap + "/approval"), organisation, "SCHEDULER"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.title").value("No longer pending"));
   }
 }

@@ -39,4 +39,10 @@ final class RecordingNotifier implements Notifier {
       Actor actor, OrganisationId organisation, EmployeeId party, SwapRequestId request) {
     told.add(new Told("REJECTED", party, request));
   }
+
+  @Override
+  public void swapLapsed(
+      Actor actor, OrganisationId organisation, EmployeeId party, SwapRequestId request) {
+    told.add(new Told("LAPSED", party, request));
+  }
 }

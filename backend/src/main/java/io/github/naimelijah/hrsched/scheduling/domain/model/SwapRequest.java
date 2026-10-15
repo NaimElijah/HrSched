@@ -109,6 +109,15 @@ public final class SwapRequest {
     return decided(SwapRequestStatus.REJECTED);
   }
 
+  /**
+   * @return this request marked as lapsed, because the roster it names was superseded before
+   *     anybody decided it (R33)
+   * @throws SwapNotPendingException if it has already been decided
+   */
+  public SwapRequest lapsed() {
+    return decided(SwapRequestStatus.LAPSED);
+  }
+
   private SwapRequest decided(SwapRequestStatus outcome) {
     if (status != SwapRequestStatus.REQUESTED) {
       throw new SwapNotPendingException(id, status);

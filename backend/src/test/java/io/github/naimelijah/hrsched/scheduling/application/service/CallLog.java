@@ -18,7 +18,8 @@ final class CallLog {
     FIND_ROSTER,
     FIND_ROSTERS,
     FIND_SWAP_REQUEST,
-    FIND_SWAP_REQUESTS
+    FIND_SWAP_REQUESTS,
+    FIND_PENDING_SWAP_REQUESTS
   }
 
   private final List<Call> calls = new ArrayList<>();

@@ -28,6 +28,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException;
@@ -78,6 +79,10 @@ class SwapServiceTest {
       new TimeRange(Instant.parse("2026-10-05T08:00:00Z"), Instant.parse("2026-10-05T16:00:00Z"));
   private static final TimeRange THE_WEEK =
       new TimeRange(Instant.parse("2026-10-05T00:00:00Z"), Instant.parse("2026-10-12T00:00:00Z"));
+  private static final TimeRange TUESDAY_DAY =
+      new TimeRange(Instant.parse("2026-10-06T08:00:00Z"), Instant.parse("2026-10-06T16:00:00Z"));
+  private static final TimeRange NEXT_WEEK =
+      new TimeRange(Instant.parse("2026-10-12T00:00:00Z"), Instant.parse("2026-10-19T00:00:00Z"));
 
   /** Fixed, so the time a request records is something these tests state rather than tolerate. */
   private static final Instant RAISED_AT = Instant.parse("2026-10-01T09:30:00Z");
@@ -111,8 +116,10 @@ class SwapServiceTest {
             shifts,
             rosters,
             constraintSets,
+            swaps,
             workforce,
             new AssignsNobody(),
+            notifier,
             audit,
             Clock.fixed(RAISED_AT, ZoneOffset.UTC));
     service =
@@ -750,6 +757,227 @@ class SwapServiceTest {
         List<Shift> toCover, List<RosterCandidate> candidates, ConstraintSet constraints) {
       return List.of();
     }
+  }
+
+  // --- R33: a pending request lapses when the roster it names is superseded ------------------
+
+  /** Ada asks Grace to take her shift on a roster that is then replaced before anybody decides. */
+  private SwapRequestId pendingOnARosterThenReplaced() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    notifier.told.clear();
+    audit.forget();
+    publishedWith(ada, shift);
+    return request;
+  }
+
+  /**
+   * A request names the roster it was raised against. Once a newer roster replaces that one, there
+   * is nothing left for a Scheduler to approve, so the publication that replaced it lapses it.
+   */
+  @Test
+  void GivenAPendingSwap_WhenItsRosterIsSuperseded_ThenItLapses() {
+    SwapRequestId request = pendingOnARosterThenReplaced();
+
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.LAPSED);
+  }
+
+  /** Both parties were waiting on an answer, and a lapse is one; R33 says they are told. */
+  @Test
+  void GivenAPendingSwap_WhenItsRosterIsSuperseded_ThenBothPartiesAreToldItLapsed() {
+    SwapRequestId request = pendingOnARosterThenReplaced();
+
+    assertThat(notifier.told)
+        .containsExactlyInAnyOrder(
+            new Told("LAPSED", ada, request), new Told("LAPSED", grace, request));
+  }
+
+  /**
+   * Recorded as its own change, because nobody asked for it, and after the publication is stored:
+   * an audit line outlives the rollback of a save that fails after it (ADR-023).
+   */
+  @Test
+  void GivenAPendingSwap_WhenItLapses_ThenTheLapseIsRecordedAfterThePublication() {
+    pendingOnARosterThenReplaced();
+
+    assertThat(audit.changes())
+        .containsSubsequence(
+            SchedulingChange.ROSTER_SUPERSEDED,
+            SchedulingChange.ROSTER_PUBLISHED,
+            SchedulingChange.SWAP_LAPSED);
+  }
+
+  @Test
+  void GivenALapsedSwap_WhenApproving_ThenItIsRefusedAsNoLongerPending() {
+    SwapRequestId request = pendingOnARosterThenReplaced();
+
+    assertThatThrownBy(() -> service.approveSwap(scheduler(ACME), ACME, request))
+        .isInstanceOf(SwapNotPendingException.class);
+  }
+
+  /** Lapsing follows supersession, and a roster for another week supersedes nothing. */
+  @Test
+  void GivenAPendingSwap_WhenARosterForAnotherWeekIsPublished_ThenItIsStillPending() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    Roster nextWeek =
+        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK));
+
+    scheduling.publish(scheduler(ACME), ACME, nextWeek.id());
+
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+  }
+
+  /**
+   * Approving one swap publishes a replacement, which supersedes the roster every other request on
+   * it names. Those lapse, as R33 says; the one being approved does not, because approving is what
+   * settled it.
+   */
+  @Test
+  void GivenTwoPendingSwapsOnOneRoster_WhenOneIsApproved_ThenOnlyTheOtherLapses() {
+    TwoPending two = twoPendingOnOneRoster();
+
+    service.approveSwap(scheduler(ACME), ACME, two.adas());
+
+    assertThat(swaps.byId(two.adas()).status()).isEqualTo(SwapRequestStatus.APPROVED);
+    assertThat(swaps.byId(two.alans()).status()).isEqualTo(SwapRequestStatus.LAPSED);
+  }
+
+  /** The approved request's parties hear that it was approved, and never that it lapsed. */
+  @Test
+  void GivenTwoPendingSwapsOnOneRoster_WhenOneIsApproved_ThenEachIsToldOnlyWhatBecameOfTheirs() {
+    TwoPending two = twoPendingOnOneRoster();
+    notifier.told.clear();
+
+    service.approveSwap(scheduler(ACME), ACME, two.adas());
+
+    assertThat(notifier.told)
+        .containsExactlyInAnyOrder(
+            new Told("APPROVED", grace, two.adas()),
+            new Told("APPROVED", ada, two.adas()),
+            new Told("LAPSED", two.alan(), two.alans()),
+            new Told("LAPSED", grace, two.alans()));
+  }
+
+  private record TwoPending(SwapRequestId adas, SwapRequestId alans, EmployeeId alan) {}
+
+  /** Ada on Monday and Alan on Tuesday, each asking Grace, on one published roster. */
+  private TwoPending twoPendingOnOneRoster() {
+    EmployeeId alan = available(ACME, "Alan", Set.of());
+    ShiftId monday = aShift(Set.of());
+    ShiftId tuesday =
+        scheduling.defineShift(
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, TUESDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+    Roster draft =
+        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+    scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), monday, ada));
+    scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), tuesday, alan));
+    Roster original = scheduling.publish(scheduler(ACME), ACME, draft.id());
+    SwapRequestId adas =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), monday, ada, grace));
+    SwapRequestId alans =
+        service.requestSwap(
+            themself(ACME, alan),
+            new RequestSwapCommand(ACME, original.id(), tuesday, alan, grace));
+    return new TwoPending(adas, alans, alan);
+  }
+
+  // publishApproving is how approval tells a publication which request it settles. It refuses a
+  // request it could not have been asked to settle, before it writes anything.
+
+  @Test
+  void GivenARequestStillPending_WhenPublishedAsApproved_ThenItIsRefusedAndNothingChanges() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    Roster replacement =
+        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+
+    assertThatThrownBy(
+            () ->
+                scheduling.publishApproving(
+                    scheduler(ACME), ACME, replacement.id(), swaps.byId(request)))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+  }
+
+  @Test
+  void GivenAnotherOrganisationsRequest_WhenPublishedAsApproved_ThenItIsRefusedAndNothingChanges() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequest theirs =
+        new SwapRequest(SwapRequestId.newId(), RIVAL, original.id(), shift, ada, grace, RAISED_AT)
+            .approved();
+    Roster replacement =
+        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+
+    assertThatThrownBy(
+            () -> scheduling.publishApproving(scheduler(ACME), ACME, replacement.id(), theirs))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+  }
+
+  @Test
+  void GivenARequestOnARosterThisDoesNotSupersede_WhenPublishedAsApproved_ThenItIsRefused() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequest elsewhere =
+        new SwapRequest(SwapRequestId.newId(), ACME, RosterId.newId(), shift, ada, grace, RAISED_AT)
+            .approved();
+    Roster replacement =
+        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+
+    assertThatThrownBy(
+            () -> scheduling.publishApproving(scheduler(ACME), ACME, replacement.id(), elsewhere))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+  }
+
+  /**
+   * A request read against a roster that a publication in flight is about to supersede would be
+   * stored after that publication looked for requests to lapse, and wait forever on a roster nobody
+   * works to. Raising one takes turns with publications, so it sees what they committed.
+   */
+  @Test
+  void GivenAPublishedRoster_WhenAskingForASwap_ThenTheOrganisationsPublicationsWaitFirst() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    log.forget();
+
+    service.requestSwap(
+        themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+
+    assertThat(log.calls()).first().isEqualTo(CallLog.Call.LOCK_PUBLICATIONS);
+  }
+
+  /**
+   * A rejection takes turns with publications too. Otherwise a publication could read a request as
+   * pending, the rejection commit, and the lapse then be refused as a decision over a decision,
+   * taking the whole publication down with it.
+   */
+  @Test
+  void
+      GivenAPendingSwap_WhenRejecting_ThenTheOrganisationsPublicationsWaitBeforeTheRequestIsRead() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    log.forget();
+
+    service.rejectSwap(scheduler(ACME), ACME, request);
+
+    assertThat(log.calls()).first().isEqualTo(CallLog.Call.LOCK_PUBLICATIONS);
   }
 
   // --- ADR-030: the platform operator is refused by every tenant use case -------------------

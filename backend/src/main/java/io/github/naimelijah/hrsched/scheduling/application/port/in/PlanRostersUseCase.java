@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.application.port.in;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.List;
@@ -76,6 +77,9 @@ public interface PlanRostersUseCase {
   /**
    * Publishes a draft, after checking it against the organisation current rules.
    *
+   * <p>Every roster it supersedes takes its pending swap requests with it: each lapses, and both
+   * its parties are told, in the same transaction (R33).
+   *
    * @param actor whoever is publishing it; must be a Scheduler
    * @param organisation whose roster
    * @param roster which draft
@@ -98,6 +102,34 @@ public interface PlanRostersUseCase {
    *     skipped the publication lock (ADR-026)
    */
   Roster publish(Actor actor, OrganisationId organisation, RosterId roster);
+
+  /**
+   * Publishes the replacement roster that approving a swap builds (ADR-022), and stores the
+   * approval with it.
+   *
+   * <p>Exactly {@link #publish}, with one difference. The roster it supersedes is the one the
+   * approved request names, so every other request still pending on that roster lapses (R33) and
+   * this one must not. Storing the approval here, with the publication and before the lapse, is
+   * what keeps it from being taken for one of them (ADR-039).
+   *
+   * <p>Only {@code SwapService} has a reason to call this. It records the approval and tells the
+   * parties itself once this returns, after the approval is stored.
+   *
+   * @param actor whoever is approving; must be a Scheduler
+   * @param organisation whose roster
+   * @param replacement the draft carrying the swap
+   * @param approved the request this publication settles, already approved
+   * @return the published replacement
+   * @throws IllegalArgumentException if {@code approved} is not approved, belongs to another
+   *     organisation, or names a roster this publication does not supersede. Refused before
+   *     anything is written
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if the
+   *     stored request stopped being pending meanwhile, which needs a writer that skipped the
+   *     publication lock
+   * @see #publish for everything else this refuses
+   */
+  Roster publishApproving(
+      Actor actor, OrganisationId organisation, RosterId replacement, SwapRequest approved);
 
   /**
    * @param actor whoever is asking; an Admin or a Scheduler of the organisation (R12)

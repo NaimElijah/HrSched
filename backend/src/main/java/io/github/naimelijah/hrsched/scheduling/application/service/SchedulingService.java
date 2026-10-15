@@ -13,11 +13,13 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.ViewOwnSchedu
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.Notifier;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
@@ -32,6 +34,8 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
@@ -97,12 +101,16 @@ public class SchedulingService
   private final ShiftRepository shifts;
   private final RosterRepository rosters;
   private final ConstraintSetRepository constraintSets;
+  private final SwapRequestRepository swaps;
   private final WorkforceDirectory workforce;
   private final RosterGenerator generator;
+  private final Notifier notifier;
   private final AuditTrail audit;
   private final Clock clock;
 
   /**
+   * @param swaps the requests a publication lapses when it supersedes the roster they name (R33)
+   * @param notifier how the parties to a lapsed request are told
    * @param clock what a publication reads the time from, so that when it happened is an input a
    *     test supplies rather than an ambient fact
    */
@@ -110,15 +118,19 @@ public class SchedulingService
       ShiftRepository shifts,
       RosterRepository rosters,
       ConstraintSetRepository constraintSets,
+      SwapRequestRepository swaps,
       WorkforceDirectory workforce,
       RosterGenerator generator,
+      Notifier notifier,
       AuditTrail audit,
       Clock clock) {
     this.shifts = Objects.requireNonNull(shifts, "shifts must not be null");
     this.rosters = Objects.requireNonNull(rosters, "rosters must not be null");
     this.constraintSets = Objects.requireNonNull(constraintSets, "constraintSets must not be null");
+    this.swaps = Objects.requireNonNull(swaps, "swaps must not be null");
     this.workforce = Objects.requireNonNull(workforce, "workforce must not be null");
     this.generator = Objects.requireNonNull(generator, "generator must not be null");
+    this.notifier = Objects.requireNonNull(notifier, "notifier must not be null");
     this.audit = Objects.requireNonNull(audit, "audit must not be null");
     this.clock = Objects.requireNonNull(clock, "clock must not be null");
   }
@@ -264,6 +276,25 @@ public class SchedulingService
 
   @Override
   public Roster publish(Actor actor, OrganisationId organisation, RosterId rosterId) {
+    return publish(actor, organisation, rosterId, Optional.empty());
+  }
+
+  @Override
+  public Roster publishApproving(
+      Actor actor, OrganisationId organisation, RosterId replacement, SwapRequest approved) {
+    Objects.requireNonNull(approved, "approved must not be null");
+    return publish(actor, organisation, replacement, Optional.of(approved));
+  }
+
+  /**
+   * @param approving the swap request this publication settles, if a swap approval is what builds
+   *     it. It is stored as approved rather than lapsed with the rest (ADR-039)
+   */
+  private Roster publish(
+      Actor actor,
+      OrganisationId organisation,
+      RosterId rosterId,
+      Optional<SwapRequest> approving) {
     authorise(actor, organisation, MAY_SCHEDULE);
     // Before anything is read. What this supersedes is decided from what it reads, and a
     // publication still in flight would otherwise be invisible to it (ADR-027).
@@ -291,18 +322,64 @@ public class SchedulingService
       throw new RosterNotCompliantException(violations);
     }
 
+    List<Roster> replaced =
+        existing.stream().filter(roster -> roster.isSupersededBy(draft)).toList();
+    // Before anything is written, for the reason requireDraft is: a refusal after the supersession
+    // would leave audit lines for a publication that never happened.
+    approving.ifPresent(request -> requireSettledBy(request, organisation, replaced));
+
     // Read under the lock, from the history the lock froze, and once: the rosters this supersedes
     // stop governing at the very moment this one starts to (R37, ADR-037).
     Instant at = Roster.nextMomentOfRecord(clock.instant(), existing);
-    supersede(
-        actor,
-        organisation,
-        existing.stream().filter(roster -> roster.isSupersededBy(draft)).toList(),
-        at);
+    supersede(actor, organisation, replaced, at);
     Roster published = draft.publishedUnder(constraints.version(), at);
     rosters.save(published);
     recorded(actor, organisation, SchedulingChange.ROSTER_PUBLISHED, published.id().value());
+    // Stored before the lapse looks for requests still pending, so it is never taken for one.
+    approving.ifPresent(swaps::save);
+    lapsePendingSwapsOn(actor, organisation, replaced);
     return published;
+  }
+
+  /**
+   * An approval names the request it settles so that the lapse leaves it alone. Anything else in
+   * that place is a caller's mistake, never a state a user can reach, so it is refused as one.
+   */
+  private static void requireSettledBy(
+      SwapRequest approved, OrganisationId organisation, List<Roster> replaced) {
+    if (approved.status() != SwapRequestStatus.APPROVED) {
+      throw new IllegalArgumentException(
+          "Only an approved swap request can be published as approved, not one that is "
+              + approved.status());
+    }
+    if (!approved.organisation().equals(organisation)) {
+      throw new IllegalArgumentException(
+          "Swap request %s belongs to another organisation".formatted(approved.id().value()));
+    }
+    if (replaced.stream().noneMatch(roster -> roster.id().equals(approved.roster()))) {
+      throw new IllegalArgumentException(
+          "Swap request %s names a roster this publication does not supersede"
+              .formatted(approved.id().value()));
+    }
+  }
+
+  /**
+   * R33: a request still waiting on a roster this publication superseded has nothing left to
+   * approve. Each lapses, is recorded, and both its parties are told, in this publication's
+   * transaction. Runs once the publication is stored, because an audit line outlives the rollback
+   * of a save that fails after it (ADR-023).
+   */
+  private void lapsePendingSwapsOn(
+      Actor actor, OrganisationId organisation, List<Roster> superseded) {
+    for (Roster roster : superseded) {
+      for (SwapRequest pending : swaps.findPendingNaming(organisation, roster.id())) {
+        SwapRequest lapsed = pending.lapsed();
+        swaps.save(lapsed);
+        recorded(actor, organisation, SchedulingChange.SWAP_LAPSED, lapsed.id().value());
+        notifier.swapLapsed(actor, organisation, lapsed.requester(), lapsed.id());
+        notifier.swapLapsed(actor, organisation, lapsed.counterparty(), lapsed.id());
+      }
+    }
   }
 
   @Override

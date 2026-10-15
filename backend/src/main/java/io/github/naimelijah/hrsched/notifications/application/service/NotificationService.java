@@ -119,6 +119,7 @@ public class NotificationService implements NotifyUseCase, ReadNotificationsUseC
       case SWAP_REQUESTED -> NotificationKind.SWAP_REQUESTED;
       case SWAP_APPROVED -> NotificationKind.SWAP_APPROVED;
       case SWAP_REJECTED -> NotificationKind.SWAP_REJECTED;
+      case SWAP_LAPSED -> NotificationKind.SWAP_LAPSED;
     };
   }
 
@@ -127,6 +128,7 @@ public class NotificationService implements NotifyUseCase, ReadNotificationsUseC
       case SWAP_REQUESTED -> NotifiableEvent.SWAP_REQUESTED;
       case SWAP_APPROVED -> NotifiableEvent.SWAP_APPROVED;
       case SWAP_REJECTED -> NotifiableEvent.SWAP_REJECTED;
+      case SWAP_LAPSED -> NotifiableEvent.SWAP_LAPSED;
     };
   }
 

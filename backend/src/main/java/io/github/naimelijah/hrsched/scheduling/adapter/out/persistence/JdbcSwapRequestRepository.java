@@ -98,6 +98,22 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
         .list();
   }
 
+  @Override
+  public List<SwapRequest> findPendingNaming(OrganisationId organisation, RosterId roster) {
+    return jdbc.sql(
+            """
+            SELECT id, organisation_id, roster_id, shift_id, requester_id, counterparty_id,
+                   status, requested_at
+            FROM swap_request
+            WHERE organisation_id = :organisation AND roster_id = :roster AND status = 'REQUESTED'
+            ORDER BY requested_at, id
+            """)
+        .param("organisation", organisation.value())
+        .param("roster", roster.value())
+        .query(JdbcSwapRequestRepository::toSwapRequest)
+        .list();
+  }
+
   /**
    * Rebuilds through the aggregate's own transitions: a decided request is constructed pending and
    * then decided, because that is the only route the domain offers to a decided one.
@@ -116,6 +132,7 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
       case REQUESTED -> pending;
       case APPROVED -> pending.approved();
       case REJECTED -> pending.rejected();
+      case LAPSED -> pending.lapsed();
     };
   }
 

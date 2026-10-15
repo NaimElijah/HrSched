@@ -1,11 +1,13 @@
 package io.github.naimelijah.hrsched.scheduling.application.service;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestRepository;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +58,17 @@ final class FakeSwaps implements SwapRequestRepository {
     log.add(CallLog.Call.FIND_SWAP_REQUESTS);
     return stored.values().stream()
         .filter(request -> request.organisation().equals(organisation))
+        .toList();
+  }
+
+  @Override
+  public List<SwapRequest> findPendingNaming(OrganisationId organisation, RosterId roster) {
+    log.add(CallLog.Call.FIND_PENDING_SWAP_REQUESTS);
+    return stored.values().stream()
+        .filter(request -> request.organisation().equals(organisation))
+        .filter(request -> request.roster().equals(roster))
+        .filter(request -> request.status() == SwapRequestStatus.REQUESTED)
+        .sorted(Comparator.comparing(SwapRequest::requestedAt))
         .toList();
   }
 

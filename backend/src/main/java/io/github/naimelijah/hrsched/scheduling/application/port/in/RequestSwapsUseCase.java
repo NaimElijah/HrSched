@@ -69,8 +69,8 @@ public interface RequestSwapsUseCase {
    * @param organisation whose swap
    * @param request which one
    * @return the newly published roster, which supersedes the one the request was raised against
-   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if it has
-   *     already been decided
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if it is
+   *     no longer pending: already decided, or lapsed because its roster was superseded (R33)
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException if
    *     the colleague does not hold what the shift demands
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException if the
@@ -90,8 +90,8 @@ public interface RequestSwapsUseCase {
    * @param actor whoever is rejecting; must be a Scheduler
    * @param organisation whose swap
    * @param request which one
-   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if it has
-   *     already been decided
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if it is
+   *     no longer pending: already decided, or lapsed because its roster was superseded (R33)
    */
   void rejectSwap(Actor actor, OrganisationId organisation, SwapRequestId request);
 }

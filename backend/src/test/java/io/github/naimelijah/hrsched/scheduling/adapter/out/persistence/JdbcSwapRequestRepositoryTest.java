@@ -153,6 +153,59 @@ class JdbcSwapRequestRepositoryTest {
   }
 
   @Test
+  void GivenALapsedRequest_WhenReadBack_ThenItKeepsItsLapse() {
+    SwapRequest lapsed = request(ACME, TEN).lapsed();
+    repository.save(lapsed);
+
+    assertThat(repository.findById(ACME, lapsed.id()))
+        .get()
+        .extracting(SwapRequest::status)
+        .isEqualTo(SwapRequestStatus.LAPSED);
+  }
+
+  /**
+   * What a publication lapses when it supersedes a roster (R33): the requests still waiting on that
+   * roster, oldest first, and none that were already decided or name another roster.
+   */
+  @Test
+  void GivenRequestsOnSeveralRosters_WhenFindingThosePendingOnOne_ThenOnlyItsWaitingOnesComeBack() {
+    RosterId superseded = RosterId.newId();
+    SwapRequest later = naming(ACME, superseded, ELEVEN);
+    SwapRequest earlier = naming(ACME, superseded, NINE);
+    repository.save(later);
+    repository.save(earlier);
+    repository.save(naming(ACME, superseded, TEN).rejected());
+    repository.save(naming(ACME, RosterId.newId(), TEN));
+
+    assertThat(repository.findPendingNaming(ACME, superseded)).containsExactly(earlier, later);
+  }
+
+  /**
+   * One test per tenancy decision, not a table (CLAUDE.md). A roster's identity is never shared
+   * between organisations, so another organisation's request naming it is a forged one; it must
+   * still never come back, nor be lapsed by our publication.
+   */
+  @Test
+  void GivenAnotherOrganisationsRequestNamingTheRoster_WhenFindingOursPending_ThenItIsNotThere() {
+    RosterId roster = RosterId.newId();
+    repository.save(naming(RIVAL, roster, TEN));
+
+    assertThat(repository.findPendingNaming(ACME, roster)).isEmpty();
+  }
+
+  private static SwapRequest naming(
+      OrganisationId organisation, RosterId roster, Instant raisedAt) {
+    return new SwapRequest(
+        SwapRequestId.newId(),
+        organisation,
+        roster,
+        ShiftId.newId(),
+        EmployeeId.newId(),
+        EmployeeId.newId(),
+        raisedAt);
+  }
+
+  @Test
   void GivenARequest_WhenReadBack_ThenItKeepsTheTimeItWasRaised() {
     SwapRequest ours = request(ACME, TEN);
     repository.save(ours);

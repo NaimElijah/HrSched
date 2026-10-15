@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.scheduling.application.port.out;
 
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -34,4 +35,13 @@ public interface SwapRequestRepository {
    *     keep insertion order, and no store owes anybody that (ADR-004)
    */
   List<SwapRequest> findByOrganisation(OrganisationId organisation);
+
+  /**
+   * What a publication lapses when it supersedes a roster (R33).
+   *
+   * @param organisation whose requests; another organisation's are never returned
+   * @param roster the roster the requests name
+   * @return every request still {@code REQUESTED} that names that roster, oldest first
+   */
+  List<SwapRequest> findPendingNaming(OrganisationId organisation, RosterId roster);
 }

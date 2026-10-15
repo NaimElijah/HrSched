@@ -97,6 +97,10 @@ public class SwapService implements RequestSwapsUseCase {
   @Override
   public SwapRequestId requestSwap(Actor actor, RequestSwapCommand command) {
     authoriseSelfOrManager(actor, command.organisation(), command.requester());
+    // Before the roster is read. A publication in flight may be about to supersede it, and a
+    // request stored after that publication looked for requests to lapse would wait for ever on a
+    // roster nobody works to (R33, ADR-039).
+    rosters.lockPublicationsOf(command.organisation());
     Roster published = publishedRoster(command.organisation(), command.roster());
     Assignment theirs = new Assignment(command.shift(), command.requester());
     if (!published.assignments().contains(theirs)) {
@@ -180,13 +184,15 @@ public class SwapService implements RequestSwapsUseCase {
             .withAssignments(swapped(current, request));
     rosters.save(replacement);
 
-    // Publishing is what checks the rules, supersedes what it replaces, and records both. If the
-    // swap would break a rule this throws and nothing below runs, so the request stays pending; the
-    // use case's transaction then takes the replacement draft with it, leaving nothing half-built
-    // (ADR-023).
-    Roster publishedReplacement = planRosters.publish(actor, organisation, replacement.id());
+    // Publishing is what checks the rules, supersedes what it replaces, and records both. It stores
+    // the approval too, before lapsing the other requests on the roster it supersedes, so this one
+    // is not lapsed with them (R33, ADR-039). If the swap would break a rule this throws and
+    // nothing
+    // below runs, so the request stays pending; the use case's transaction then takes the
+    // replacement draft with it, leaving nothing half-built (ADR-023).
+    Roster publishedReplacement =
+        planRosters.publishApproving(actor, organisation, replacement.id(), request.approved());
 
-    swaps.save(request.approved());
     recorded(actor, organisation, SchedulingChange.SWAP_APPROVED, request.id().value());
     notifier.swapApproved(actor, organisation, request.counterparty(), request.id());
     notifier.swapApproved(actor, organisation, request.requester(), request.id());
@@ -196,6 +202,10 @@ public class SwapService implements RequestSwapsUseCase {
   @Override
   public void rejectSwap(Actor actor, OrganisationId organisation, SwapRequestId id) {
     authorise(actor, organisation, MAY_DECIDE);
+    // Takes turns with publications, as approving does. A publication lapses what it reads as
+    // pending, and a rejection committing in between would turn that lapse into a decision over a
+    // decision, refused along with the whole publication.
+    rosters.lockPublicationsOf(organisation);
     SwapRequest request = pending(organisation, id);
 
     swaps.save(request.rejected());
