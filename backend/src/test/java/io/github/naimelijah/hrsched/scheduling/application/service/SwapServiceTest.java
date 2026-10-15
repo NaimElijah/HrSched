@@ -1023,7 +1023,8 @@ class SwapServiceTest {
     notifier.told.clear();
     audit.forget();
 
-    assertThatThrownBy(() -> service.requestSwap(themself(ACME, ada), asking));
+    assertThatThrownBy(() -> service.requestSwap(themself(ACME, ada), asking))
+        .isInstanceOf(SwapAlreadyRequestedException.class);
 
     assertThat(swaps.findByOrganisation(ACME)).hasSize(1);
     assertThat(notifier.told).isEmpty();
