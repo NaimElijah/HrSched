@@ -168,7 +168,7 @@ about. The rules are the coarse outer line; the use case behind each route is wh
 | `POST`/`GET /api/organisations` | `OPERATOR` |
 | `GET /api/organisations/{id}` | any role; the use case decides whose |
 | `/api/accounts/**` | `ADMIN` |
-| `/api/employees/**`, `/api/qualifications/**`, `/api/shifts/**`, `/api/constraints`, `/api/rosters/**`, `/api/me/**`, `/api/swaps/**`, `/api/notifications/**` | any tenant role |
+| `/api/employees/**`, `/api/qualifications/**`, `/api/shifts/**`, `/api/constraints/**`, `/api/rosters/**`, `/api/me/**`, `/api/swaps/**`, `/api/notifications/**` | any tenant role |
 | anything else | nobody |
 
 **A verified signature is not enough, and that is the point.** The decoder proves a token is one
@@ -442,11 +442,13 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   has one `actingIn(actor)` helper over `Actor.requireTenantMembership()`, which is the only way an
   organisation enters a request
   ([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)).
-- **Every constraint version is stored, but only the current one can be read back.** The table is
-  keyed `(organisation_id, version)`, so revising no longer discards what came before — which is
-  what makes a published roster's record of the version that approved it worth anything. The port
-  still offers only `findCurrent`; reading a historical version needs a method nobody has asked for
-  yet.
+- **Every constraint version is stored, and any of them can be read back.** The table is keyed
+  `(organisation_id, version)`, so revising never discards what came before, and
+  `GET /api/constraints/{version}` answers the rules a roster naming that version was judged
+  against (Q9). **Version one is never stored:** reading the rules stores nothing, and the first
+  revision writes version two. Every organisation starts bound by the empty set, so
+  `SchedulingService.findConstraints` answers version one from `ConstraintSet.initial` when no row
+  holds it, and `roster.validated_against_constraint_version` carries no foreign key.
 - **Approving a swap publishes a replacement; it never edits.** `SwapService` builds the roster that
   would have been published had the swap been in it, and then calls `PlanRostersUseCase.publish` -
   the same door generation and manual assignment go through. So the constraint check, the

@@ -13,6 +13,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownConstraintVersionException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
@@ -128,6 +129,24 @@ public class SchedulingController {
   public ConstraintSetResponse currentConstraints(@AuthenticationPrincipal Actor actor) {
     return ConstraintSetResponse.from(
         configureConstraints.currentConstraints(actor, actingIn(actor)));
+  }
+
+  /**
+   * Reads back one version of the rules: what a roster published under it was judged against,
+   * however they have changed since (Q9). Any member may, as for the current rules (F21).
+   *
+   * @param version which revision, as a roster names it
+   * @return that version's rules, with their thresholds
+   * @throws UnknownConstraintVersionException answered as a 404 problem detail when this
+   *     organisation has no version by that number
+   */
+  @GetMapping("/constraints/{version}")
+  public ConstraintSetResponse findConstraints(
+      @AuthenticationPrincipal Actor actor, @PathVariable int version) {
+    return configureConstraints
+        .findConstraints(actor, actingIn(actor), version)
+        .map(ConstraintSetResponse::from)
+        .orElseThrow(() -> new UnknownConstraintVersionException(version));
   }
 
   @PostMapping("/rosters")

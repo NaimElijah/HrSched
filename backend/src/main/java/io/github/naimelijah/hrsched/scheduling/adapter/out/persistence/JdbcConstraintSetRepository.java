@@ -22,9 +22,8 @@ import org.springframework.stereotype.Repository;
  *
  * <p>Keyed by {@code (organisation_id, version)} rather than by organisation alone, so every
  * revision is kept. A published roster records the constraint version that approved it, and that
- * record is worthless if the version cannot be read back — the debt the port records. The port
- * still only offers {@code findCurrent}, which reads the highest version; retrieving a historical
- * one needs a method nobody has asked for yet.
+ * record is worthless if the version cannot be read back: {@code findCurrent} reads the highest
+ * version, and {@code findVersion} any one of them (Q9).
  *
  * <p><strong>No threshold appears in this class, and none may.</strong> A rest period or an hours
  * cap is a value an organisation configured, and every one of them arrives here as data.
@@ -138,6 +137,23 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
         .map(
             version ->
                 new ConstraintSet(organisation, version, constraintsOf(organisation, version)));
+  }
+
+  @Override
+  public Optional<ConstraintSet> findVersion(OrganisationId organisation, int version) {
+    // The version's own row, not its constraints: a version that switched every rule off has no
+    // constraint rows at all, and it is still a version.
+    return jdbc.sql(
+            """
+            SELECT version FROM constraint_set
+            WHERE organisation_id = :organisation AND version = :version
+            """)
+        .param("organisation", organisation.value())
+        .param("version", version)
+        .query(Integer.class)
+        .optional()
+        .map(
+            stored -> new ConstraintSet(organisation, stored, constraintsOf(organisation, stored)));
   }
 
   private List<WorkingTimeConstraint> constraintsOf(OrganisationId organisation, int version) {

@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.application.port.in;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import java.util.Optional;
 
 /**
  * Driving port: setting the working-time rules an organisation is bound by.
@@ -29,4 +30,18 @@ public interface ConfigureConstraintsUseCase {
    * @return the current rules, or the empty first version if they were never revised
    */
   ConstraintSet currentConstraints(Actor actor, OrganisationId organisation);
+
+  /**
+   * Reads back one version of the rules, as it was when it was written: what a roster published
+   * under that version was judged against, however the rules have changed since (Q9). Any member
+   * may, as for the current rules (F21).
+   *
+   * @param actor whoever is asking; must be a member of the organisation
+   * @param organisation whose rules to read
+   * @param version which revision, as a roster names it in {@code
+   *     validatedAgainstConstraintVersion}
+   * @return that version, empty if the organisation has none by that number. Version one is the
+   *     empty first version, whether or not the rules have been revised since
+   */
+  Optional<ConstraintSet> findConstraints(Actor actor, OrganisationId organisation, int version);
 }
