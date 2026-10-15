@@ -17,9 +17,18 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The tenant predicate and the ordering this adapter promises.
@@ -36,6 +45,9 @@ class JdbcSwapRequestRepositoryTest {
   private static final Instant NINE = Instant.parse("2026-10-01T09:00:00Z");
   private static final Instant TEN = Instant.parse("2026-10-01T10:00:00Z");
   private static final Instant ELEVEN = Instant.parse("2026-10-01T11:00:00Z");
+
+  /** How long a racing writer may take before the test calls it stuck rather than slow. */
+  private static final long STUCK_AFTER_SECONDS = 30;
 
   private final JdbcSwapRequestRepository repository =
       new JdbcSwapRequestRepository(PostgresDatabase.jdbcClient());
@@ -209,6 +221,19 @@ class JdbcSwapRequestRepositoryTest {
     assertThat(repository.findByOrganisation(ACME)).containsExactly(first);
   }
 
+  /**
+   * Only a unique violation is a second ask. Anything else the schema refuses stays what it is: a
+   * request of an organisation nobody registered breaks a foreign key, and must not be reported as
+   * R32, or a refusal that means a bug would read as one a user can act on.
+   */
+  @Test
+  void GivenARequestOfNoRegisteredOrganisation_WhenStored_ThenItIsNotTakenForASecondAsk() {
+    SwapRequest orphan = request(OrganisationId.newId(), TEN);
+
+    assertThatThrownBy(() -> repository.save(orphan))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
   /** Only a pending request holds its assignment; once decided, another may be raised for it. */
   @Test
   void GivenADecidedRequest_WhenASecondIsStoredForTheSameAssignment_ThenItIsStored() {
@@ -290,6 +315,87 @@ class JdbcSwapRequestRepositoryTest {
     assertThatThrownBy(() -> repository.save(pending.rejected()))
         .isInstanceOf(SwapNotPendingException.class)
         .hasMessageContaining("APPROVED");
+  }
+
+  /**
+   * The race itself. One writer approves the request and holds its row; a second, which also read
+   * it pending, saves a rejection and waits for that row. The approval commits only once the
+   * rejection is waiting, so the rejection is judged against what the approval committed, not
+   * against what it read.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenADecisionWaitingOnAnother_WhenTheFirstCommits_ThenTheSecondIsRefused()
+      throws Exception {
+    SwapRequest pending = request(ACME, TEN);
+    repository.save(pending);
+    TransactionTemplate transaction = new TransactionTemplate(PostgresDatabase.transactions());
+    AtomicInteger rejecter = new AtomicInteger();
+    CountDownLatch rejecting = new CountDownLatch(1);
+    ExecutorService second = Executors.newSingleThreadExecutor();
+    try {
+      Future<?> rejection =
+          transaction.execute(
+              approving -> {
+                repository.save(pending.approved());
+                Future<?> waiting =
+                    second.submit(
+                        () ->
+                            transaction.executeWithoutResult(
+                                rejectingIt -> {
+                                  rejecter.set(backendServingThisTransaction());
+                                  rejecting.countDown();
+                                  repository.save(pending.rejected());
+                                }));
+                awaitWaitingOnALock(rejecter, rejecting);
+                return waiting;
+              });
+
+      assertThatThrownBy(() -> rejection.get(STUCK_AFTER_SECONDS, TimeUnit.SECONDS))
+          .hasCauseInstanceOf(SwapNotPendingException.class);
+    } finally {
+      second.shutdownNow();
+      if (!second.awaitTermination(STUCK_AFTER_SECONDS, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("The second writer is still holding its connection");
+      }
+    }
+    assertThat(repository.findById(ACME, pending.id()))
+        .get()
+        .extracting(SwapRequest::status)
+        .isEqualTo(SwapRequestStatus.APPROVED);
+  }
+
+  /** The PostgreSQL backend serving the calling thread's transaction, which joins it. */
+  private static int backendServingThisTransaction() {
+    return PostgresDatabase.jdbcClient()
+        .sql("SELECT pg_backend_pid()")
+        .query(Integer.class)
+        .single();
+  }
+
+  /**
+   * Returns once the other writer is waiting for a lock some other transaction holds. Asks
+   * PostgreSQL rather than sleeping; the bound only fails a test that would otherwise hang.
+   */
+  private static void awaitWaitingOnALock(AtomicInteger backend, CountDownLatch known) {
+    try {
+      if (!known.await(STUCK_AFTER_SECONDS, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("The other writer never started");
+      }
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Interrupted waiting for the other writer", interrupted);
+    }
+    long giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(STUCK_AFTER_SECONDS);
+    while (!PostgresDatabase.jdbcClient()
+        .sql("SELECT cardinality(pg_blocking_pids(:pid)) > 0")
+        .param("pid", backend.get())
+        .query(Boolean.class)
+        .single()) {
+      if (System.nanoTime() > giveUpAt) {
+        throw new IllegalStateException("The other writer never waited for a lock");
+      }
+    }
   }
 
   @Test
