@@ -1,8 +1,10 @@
 package io.github.naimelijah.hrsched.scheduling.application.service;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestRepository;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,8 +30,17 @@ final class FakeSwaps implements SwapRequestRepository {
     this.log = log;
   }
 
+  /**
+   * Refuses a decision over a decision, as {@code JdbcSwapRequestRepository} does. A fake that
+   * accepted it would let a use case pass here and fail in production. The refusal of an identity
+   * another organisation holds is not mirrored; {@code JdbcSwapRequestRepositoryTest} proves it.
+   */
   @Override
   public void save(SwapRequest request) {
+    SwapRequest before = stored.get(request.id());
+    if (before != null && before.status() != SwapRequestStatus.REQUESTED) {
+      throw new SwapNotPendingException(request.id(), before.status());
+    }
     stored.put(request.id(), request);
   }
 

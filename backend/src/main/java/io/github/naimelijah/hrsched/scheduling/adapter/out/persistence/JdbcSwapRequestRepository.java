@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestRepository;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
@@ -55,6 +56,7 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
                                            status = EXCLUDED.status,
                                            requested_at = EXCLUDED.requested_at
             WHERE swap_request.organisation_id = EXCLUDED.organisation_id
+              AND swap_request.status = 'REQUESTED'
             """)
             .param("id", request.id().value())
             .param("organisation", request.organisation().value())
@@ -65,7 +67,7 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
             .param("status", request.status().name())
             .param("requestedAt", request.requestedAt().atOffset(ZoneOffset.UTC))
             .update();
-    requireStored(stored, request.id().value());
+    requireStored(stored, request);
   }
 
   @Override
@@ -118,16 +120,37 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
   }
 
   /**
-   * A save carries no {@code OrganisationId}, so the upsert's {@code WHERE} is the only thing
-   * standing between a re-used identity and another tenant's row. It makes the mismatched case
-   * affect nothing rather than overwrite; this turns that silence into a refusal, because a write
-   * that quietly did nothing is the worse of the two failures.
+   * The upsert's {@code WHERE} refuses two things by affecting nothing, and this turns that silence
+   * into the right refusal, because a write that quietly did nothing is the worst of the failures.
+   *
+   * <ul>
+   *   <li><strong>A decision over a decision.</strong> A request leaves {@code REQUESTED} once and
+   *       for all, so a second writer that read it pending is refused here, against what the first
+   *       committed, rather than overwriting a decision whose parties were already told.
+   *   <li><strong>Another tenant's identity.</strong> The only thing standing between a re-used
+   *       identity and another organisation's row. The read below is scoped too, so that row is
+   *       never described.
+   * </ul>
    */
-  private static void requireStored(int rows, UUID id) {
-    if (rows == 0) {
-      throw new IllegalStateException(
-          "Refused to store %s: that identity already belongs to another organisation"
-              .formatted(id));
+  private void requireStored(int rows, SwapRequest request) {
+    if (rows > 0) {
+      return;
     }
+    UUID id = request.id().value();
+    SwapRequestStatus stored =
+        jdbc.sql(
+                """
+                SELECT status FROM swap_request WHERE id = :id AND organisation_id = :organisation
+                """)
+            .param("id", id)
+            .param("organisation", request.organisation().value())
+            .query((row, rowNumber) -> SwapRequestStatus.valueOf(row.getString("status")))
+            .optional()
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "Refused to store %s: that identity already belongs to another organisation"
+                            .formatted(id)));
+    throw new SwapNotPendingException(request.id(), stored);
   }
 }

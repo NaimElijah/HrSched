@@ -14,6 +14,14 @@ import java.util.Optional;
  */
 public interface SwapRequestRepository {
 
+  /**
+   * Stores a request, or a decision about one.
+   *
+   * @param request the request as it now stands
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if the
+   *     stored request has already left {@code REQUESTED}. A decision is final, so a second one is
+   *     refused rather than written over the first, whichever writer read it pending
+   */
   void save(SwapRequest request);
 
   Optional<SwapRequest> findById(OrganisationId organisation, SwapRequestId id);

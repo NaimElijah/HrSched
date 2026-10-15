@@ -1,9 +1,11 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
@@ -176,6 +178,66 @@ class JdbcSwapRequestRepositoryTest {
         .containsExactly(
             org.assertj.core.groups.Tuple.tuple(first.id(), SwapRequestStatus.APPROVED),
             org.assertj.core.groups.Tuple.tuple(second.id(), SwapRequestStatus.REQUESTED));
+  }
+
+  /**
+   * A decision is final in the store as well as in the domain. Two writers can each read a request
+   * while it is pending and each decide it: two Schedulers, or a Scheduler and a publication that
+   * lapses it. The second must be refused rather than overwrite the first, whose parties have
+   * already been told. The guard is in the statement, so a writer that waited on the row is judged
+   * against what the first one committed.
+   */
+  @Test
+  void GivenADecidedRequest_WhenAnotherDecisionIsSavedOverIt_ThenItIsRefusedAsNoLongerPending() {
+    SwapRequest pending = request(ACME, TEN);
+    repository.save(pending);
+    repository.save(pending.approved());
+
+    assertThatThrownBy(() -> repository.save(pending.rejected()))
+        .isInstanceOf(SwapNotPendingException.class)
+        .hasMessageContaining("APPROVED");
+  }
+
+  @Test
+  void GivenADecidedRequest_WhenAnotherDecisionIsRefused_ThenTheStoredDecisionStands() {
+    SwapRequest pending = request(ACME, TEN);
+    repository.save(pending);
+    repository.save(pending.approved());
+
+    assertThatThrownBy(() -> repository.save(pending.rejected()));
+
+    assertThat(repository.findById(ACME, pending.id()))
+        .get()
+        .extracting(SwapRequest::status)
+        .isEqualTo(SwapRequestStatus.APPROVED);
+  }
+
+  /**
+   * The identity guard still answers as it did. Refusing a final state reads the stored row back to
+   * name its status, and that read is scoped too, so another organisation's row is never described.
+   */
+  @Test
+  void
+      GivenAnIdentityHeldByAnotherOrganisation_WhenSavedOverIt_ThenItIsRefusedWithoutNamingTheirs() {
+    SwapRequest theirs = request(RIVAL, TEN).approved();
+    repository.save(theirs);
+    SwapRequest ours =
+        new SwapRequest(
+            theirs.id(),
+            ACME,
+            theirs.roster(),
+            theirs.shift(),
+            theirs.requester(),
+            theirs.counterparty(),
+            TEN);
+
+    assertThatThrownBy(() -> repository.save(ours))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageNotContaining("APPROVED");
+    assertThat(repository.findById(RIVAL, theirs.id()))
+        .get()
+        .extracting(SwapRequest::status)
+        .isEqualTo(SwapRequestStatus.APPROVED);
   }
 
   /**
