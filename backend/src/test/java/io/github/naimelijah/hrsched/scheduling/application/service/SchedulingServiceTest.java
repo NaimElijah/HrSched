@@ -109,7 +109,15 @@ class SchedulingServiceTest {
 
   private SchedulingService withClock(Clock clock) {
     return new SchedulingService(
-        shifts, rosters, constraintSets, workforce, new FirstFitGenerator(), audit, clock);
+        shifts,
+        rosters,
+        constraintSets,
+        new FakeSwaps(new CallLog()),
+        workforce,
+        new FirstFitGenerator(),
+        new RecordingNotifier(),
+        audit,
+        clock);
   }
 
   /** Reads a second later every time it is asked, so a use case reading it twice is caught. */
@@ -194,6 +202,85 @@ class SchedulingServiceTest {
         .describedAs("a roster breaking the rules cannot be published, and there is no override")
         .isInstanceOf(RosterNotCompliantException.class);
     assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
+  }
+
+  /**
+   * Q9: a published roster keeps the version that approved it, and tightening a rule afterwards is
+   * never retroactive. The roster names a number; this is the number turned back into the rules, so
+   * anybody asking what the roster was judged against gets the answer that held then.
+   */
+  @Test
+  void
+      GivenRulesRevisedAfterPublication_WhenTheRosterVersionIsReadBack_ThenItHasTheRulesItPassed() {
+    available(ACME, "Ada");
+    service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+    // Invented: ten hours a day, which the eight-hour shift satisfies.
+    ConstraintSet approving =
+        service.reviseConstraints(
+            admin(ACME),
+            new ReviseConstraintsCommand(
+                ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(10)))));
+    Roster published = publishTheWeek();
+    // Invented: one hour a day, which that same roster would now break.
+    service.reviseConstraints(
+        admin(ACME),
+        new ReviseConstraintsCommand(
+            ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(1)))));
+
+    assertThat(
+            service.findConstraints(
+                admin(ACME), ACME, published.validatedAgainstConstraintVersion()))
+        .contains(approving);
+  }
+
+  /**
+   * Version one is never stored: reading the rules stores nothing, and the first revision writes
+   * version two. A roster published before anybody revised anything still names version one, and
+   * the rules that approved it were the empty set, so that is what reading it back answers — even
+   * after the rules have changed since.
+   */
+  @Test
+  void GivenRulesRevisedSince_WhenTheFirstVersionIsReadBack_ThenItIsTheEmptySetThatApprovedIt() {
+    available(ACME, "Ada");
+    service.defineShift(
+        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+    Roster published = publishTheWeek();
+    // Invented: one hour a day.
+    service.reviseConstraints(
+        admin(ACME),
+        new ReviseConstraintsCommand(
+            ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(1)))));
+
+    assertThat(
+            service.findConstraints(
+                admin(ACME), ACME, published.validatedAgainstConstraintVersion()))
+        .contains(ConstraintSet.initial(ACME));
+  }
+
+  @Test
+  void GivenAVersionNeverWritten_WhenReadBack_ThenNothingIsFound() {
+    service.reviseConstraints(admin(ACME), new ReviseConstraintsCommand(ACME, List.of()));
+
+    assertThat(service.findConstraints(admin(ACME), ACME, 3)).isEmpty();
+  }
+
+  /** F21: any member may see the rules, and an earlier version is the rules as they were. */
+  @Test
+  void GivenAnEmployee_WhenReadingAnEarlierVersion_ThenItIsAnswered() {
+    service.reviseConstraints(admin(ACME), new ReviseConstraintsCommand(ACME, List.of()));
+
+    assertThat(
+            service.findConstraints(new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE), ACME, 1))
+        .contains(ConstraintSet.initial(ACME));
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingOurEarlierVersion_ThenItIsRefused() {
+    service.reviseConstraints(admin(ACME), new ReviseConstraintsCommand(ACME, List.of()));
+
+    assertThatThrownBy(() -> service.findConstraints(admin(RIVAL), ACME, 2))
+        .isInstanceOf(CrossTenantAccessException.class);
   }
 
   @Test
@@ -1367,6 +1454,12 @@ class SchedulingServiceTest {
   @Test
   void GivenTheOperator_WhenReadingTheConstraintSet_ThenItIsRefused() {
     assertThatThrownBy(() -> service.currentConstraints(anOperator(), ACME))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingAnEarlierConstraintVersion_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.findConstraints(anOperator(), ACME, 1))
         .isInstanceOf(NotATenantMemberException.class);
   }
 

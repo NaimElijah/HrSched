@@ -3,6 +3,8 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestRepository;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
@@ -16,6 +18,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.core.NestedExceptionUtils;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -33,6 +37,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class JdbcSwapRequestRepository implements SwapRequestRepository {
 
+  /** PostgreSQL's SQLSTATE for {@code unique_violation}. */
+  private static final String UNIQUE_VIOLATION = "23505";
+
   private final JdbcClient jdbc;
 
   public JdbcSwapRequestRepository(JdbcClient jdbc) {
@@ -41,6 +48,20 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
 
   @Override
   public void save(SwapRequest request) {
+    try {
+      store(request);
+    } catch (DataAccessException refused) {
+      // ON CONFLICT (id) absorbs the primary key, so the only unique index a pending request can
+      // still break is the one keeping an assignment to one pending request (R32, V8). Raising a
+      // request checks first, under the publication lock; this answers a writer that skipped it.
+      if (request.status() == SwapRequestStatus.REQUESTED && isUniqueViolation(refused)) {
+        throw new SwapAlreadyRequestedException(request.roster(), request.shift());
+      }
+      throw refused;
+    }
+  }
+
+  private void store(SwapRequest request) {
     int stored =
         jdbc.sql(
                 """
@@ -55,6 +76,7 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
                                            status = EXCLUDED.status,
                                            requested_at = EXCLUDED.requested_at
             WHERE swap_request.organisation_id = EXCLUDED.organisation_id
+              AND swap_request.status = 'REQUESTED'
             """)
             .param("id", request.id().value())
             .param("organisation", request.organisation().value())
@@ -65,7 +87,7 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
             .param("status", request.status().name())
             .param("requestedAt", request.requestedAt().atOffset(ZoneOffset.UTC))
             .update();
-    requireStored(stored, request.id().value());
+    requireStored(stored, request);
   }
 
   @Override
@@ -97,6 +119,26 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
   }
 
   /**
+   * The status is written as a literal rather than bound, so the planner can see that the partial
+   * index on pending requests (V8) answers it, whichever roster is asked for.
+   */
+  @Override
+  public List<SwapRequest> findPendingNaming(OrganisationId organisation, RosterId roster) {
+    return jdbc.sql(
+            """
+            SELECT id, organisation_id, roster_id, shift_id, requester_id, counterparty_id,
+                   status, requested_at
+            FROM swap_request
+            WHERE organisation_id = :organisation AND roster_id = :roster AND status = 'REQUESTED'
+            ORDER BY requested_at, id
+            """)
+        .param("organisation", organisation.value())
+        .param("roster", roster.value())
+        .query(JdbcSwapRequestRepository::toSwapRequest)
+        .list();
+  }
+
+  /**
    * Rebuilds through the aggregate's own transitions: a decided request is constructed pending and
    * then decided, because that is the only route the domain offers to a decided one.
    */
@@ -114,20 +156,47 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
       case REQUESTED -> pending;
       case APPROVED -> pending.approved();
       case REJECTED -> pending.rejected();
+      case LAPSED -> pending.lapsed();
     };
   }
 
+  private static boolean isUniqueViolation(DataAccessException refused) {
+    return NestedExceptionUtils.getMostSpecificCause(refused) instanceof SQLException cause
+        && UNIQUE_VIOLATION.equals(cause.getSQLState());
+  }
+
   /**
-   * A save carries no {@code OrganisationId}, so the upsert's {@code WHERE} is the only thing
-   * standing between a re-used identity and another tenant's row. It makes the mismatched case
-   * affect nothing rather than overwrite; this turns that silence into a refusal, because a write
-   * that quietly did nothing is the worse of the two failures.
+   * The upsert's {@code WHERE} refuses two things by affecting nothing, and this turns that silence
+   * into the right refusal, because a write that quietly did nothing is the worst of the failures.
+   *
+   * <ul>
+   *   <li><strong>A decision over a decision.</strong> A request leaves {@code REQUESTED} once and
+   *       for all, so a second writer that read it pending is refused here, against what the first
+   *       committed, rather than overwriting a decision whose parties were already told.
+   *   <li><strong>Another tenant's identity.</strong> The only thing standing between a re-used
+   *       identity and another organisation's row. The read below is scoped too, so that row is
+   *       never described.
+   * </ul>
    */
-  private static void requireStored(int rows, UUID id) {
-    if (rows == 0) {
-      throw new IllegalStateException(
-          "Refused to store %s: that identity already belongs to another organisation"
-              .formatted(id));
+  private void requireStored(int rows, SwapRequest request) {
+    if (rows > 0) {
+      return;
     }
+    UUID id = request.id().value();
+    SwapRequestStatus stored =
+        jdbc.sql(
+                """
+                SELECT status FROM swap_request WHERE id = :id AND organisation_id = :organisation
+                """)
+            .param("id", id)
+            .param("organisation", request.organisation().value())
+            .query((row, rowNumber) -> SwapRequestStatus.valueOf(row.getString("status")))
+            .optional()
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "Refused to store %s: that identity already belongs to another organisation"
+                            .formatted(id)));
+    throw new SwapNotPendingException(request.id(), stored);
   }
 }

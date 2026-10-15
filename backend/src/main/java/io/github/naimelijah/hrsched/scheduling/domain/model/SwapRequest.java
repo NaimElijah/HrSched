@@ -8,9 +8,10 @@ import java.util.Objects;
 /**
  * One person asking for a shift of theirs to be covered by a named colleague.
  *
- * <p>An entity: two requests about the same shift by the same pair are still separate things a
- * Scheduler has to answer, so equality is by {@link SwapRequestId} alone. Immutable, like every
- * aggregate here — deciding one returns a new instance.
+ * <p>An entity: a request that ended and another raised later about the same shift by the same pair
+ * are still two requests, each with its own outcome, so equality is by {@link SwapRequestId} alone.
+ * Only one of them may be pending at a time (R32). Immutable, like every aggregate here — deciding
+ * one returns a new instance.
  *
  * <p><strong>This models a transfer, not a two-way exchange.</strong> The requester's assignment
  * moves to the counterparty, and nothing of the counterparty's moves back. F7 says "request a swap
@@ -107,6 +108,15 @@ public final class SwapRequest {
    */
   public SwapRequest rejected() {
     return decided(SwapRequestStatus.REJECTED);
+  }
+
+  /**
+   * @return this request marked as lapsed, because the roster it names was superseded before
+   *     anybody decided it (R33)
+   * @throws SwapNotPendingException if it has already been decided
+   */
+  public SwapRequest lapsed() {
+    return decided(SwapRequestStatus.LAPSED);
   }
 
   private SwapRequest decided(SwapRequestStatus outcome) {

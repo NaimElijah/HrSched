@@ -1,9 +1,12 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
@@ -14,9 +17,18 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The tenant predicate and the ordering this adapter promises.
@@ -33,6 +45,9 @@ class JdbcSwapRequestRepositoryTest {
   private static final Instant NINE = Instant.parse("2026-10-01T09:00:00Z");
   private static final Instant TEN = Instant.parse("2026-10-01T10:00:00Z");
   private static final Instant ELEVEN = Instant.parse("2026-10-01T11:00:00Z");
+
+  /** How long a racing writer may take before the test calls it stuck rather than slow. */
+  private static final long STUCK_AFTER_SECONDS = 30;
 
   private final JdbcSwapRequestRepository repository =
       new JdbcSwapRequestRepository(PostgresDatabase.jdbcClient());
@@ -151,6 +166,112 @@ class JdbcSwapRequestRepositoryTest {
   }
 
   @Test
+  void GivenALapsedRequest_WhenReadBack_ThenItKeepsItsLapse() {
+    SwapRequest lapsed = request(ACME, TEN).lapsed();
+    repository.save(lapsed);
+
+    assertThat(repository.findById(ACME, lapsed.id()))
+        .get()
+        .extracting(SwapRequest::status)
+        .isEqualTo(SwapRequestStatus.LAPSED);
+  }
+
+  /**
+   * What a publication lapses when it supersedes a roster (R33): the requests still waiting on that
+   * roster, oldest first, and none that were already decided or name another roster.
+   */
+  @Test
+  void GivenRequestsOnSeveralRosters_WhenFindingThosePendingOnOne_ThenOnlyItsWaitingOnesComeBack() {
+    RosterId superseded = RosterId.newId();
+    SwapRequest later = naming(ACME, superseded, ELEVEN);
+    SwapRequest earlier = naming(ACME, superseded, NINE);
+    repository.save(later);
+    repository.save(earlier);
+    repository.save(naming(ACME, superseded, TEN).rejected());
+    repository.save(naming(ACME, RosterId.newId(), TEN));
+
+    assertThat(repository.findPendingNaming(ACME, superseded)).containsExactly(earlier, later);
+  }
+
+  /**
+   * One test per tenancy decision, not a table (CLAUDE.md). A roster's identity is never shared
+   * between organisations, so another organisation's request naming it is a forged one; it must
+   * still never come back, nor be lapsed by our publication.
+   */
+  @Test
+  void GivenAnotherOrganisationsRequestNamingTheRoster_WhenFindingOursPending_ThenItIsNotThere() {
+    RosterId roster = RosterId.newId();
+    repository.save(naming(RIVAL, roster, TEN));
+
+    assertThat(repository.findPendingNaming(ACME, roster)).isEmpty();
+  }
+
+  /**
+   * The schema backstop for R32, as {@code roster_one_published_per_moment} is for R11. Raising a
+   * request checks for a pending one under the publication lock; a writer that skipped the lock is
+   * refused here instead, with the same refusal.
+   */
+  @Test
+  void GivenAPendingRequest_WhenASecondIsStoredForTheSameAssignment_ThenTheSchemaRefusesIt() {
+    SwapRequest first = request(ACME, NINE);
+    repository.save(first);
+
+    assertThatThrownBy(() -> repository.save(sameAssignment(first, TEN)))
+        .isInstanceOf(SwapAlreadyRequestedException.class);
+    assertThat(repository.findByOrganisation(ACME)).containsExactly(first);
+  }
+
+  /**
+   * Only a unique violation is a second ask. Anything else the schema refuses stays what it is: a
+   * request of an organisation nobody registered breaks a foreign key, and must not be reported as
+   * R32, or a refusal that means a bug would read as one a user can act on.
+   */
+  @Test
+  void GivenARequestOfNoRegisteredOrganisation_WhenStored_ThenItIsNotTakenForASecondAsk() {
+    SwapRequest orphan = request(OrganisationId.newId(), TEN);
+
+    assertThatThrownBy(() -> repository.save(orphan))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  /** Only a pending request holds its assignment; once decided, another may be raised for it. */
+  @Test
+  void GivenADecidedRequest_WhenASecondIsStoredForTheSameAssignment_ThenItIsStored() {
+    SwapRequest first = request(ACME, NINE);
+    repository.save(first);
+    repository.save(first.rejected());
+    SwapRequest second = sameAssignment(first, TEN);
+
+    repository.save(second);
+
+    assertThat(repository.findById(ACME, second.id())).contains(second);
+  }
+
+  /** Another request for the same roster, shift and requester; whom it asks does not matter. */
+  private static SwapRequest sameAssignment(SwapRequest of, Instant raisedAt) {
+    return new SwapRequest(
+        SwapRequestId.newId(),
+        of.organisation(),
+        of.roster(),
+        of.shift(),
+        of.requester(),
+        EmployeeId.newId(),
+        raisedAt);
+  }
+
+  private static SwapRequest naming(
+      OrganisationId organisation, RosterId roster, Instant raisedAt) {
+    return new SwapRequest(
+        SwapRequestId.newId(),
+        organisation,
+        roster,
+        ShiftId.newId(),
+        EmployeeId.newId(),
+        EmployeeId.newId(),
+        raisedAt);
+  }
+
+  @Test
   void GivenARequest_WhenReadBack_ThenItKeepsTheTimeItWasRaised() {
     SwapRequest ours = request(ACME, TEN);
     repository.save(ours);
@@ -176,6 +297,147 @@ class JdbcSwapRequestRepositoryTest {
         .containsExactly(
             org.assertj.core.groups.Tuple.tuple(first.id(), SwapRequestStatus.APPROVED),
             org.assertj.core.groups.Tuple.tuple(second.id(), SwapRequestStatus.REQUESTED));
+  }
+
+  /**
+   * A decision is final in the store as well as in the domain. Two writers can each read a request
+   * while it is pending and each decide it: two Schedulers, or a Scheduler and a publication that
+   * lapses it. The second must be refused rather than overwrite the first, whose parties have
+   * already been told. The guard is in the statement, so a writer that waited on the row is judged
+   * against what the first one committed.
+   */
+  @Test
+  void GivenADecidedRequest_WhenAnotherDecisionIsSavedOverIt_ThenItIsRefusedAsNoLongerPending() {
+    SwapRequest pending = request(ACME, TEN);
+    repository.save(pending);
+    repository.save(pending.approved());
+
+    assertThatThrownBy(() -> repository.save(pending.rejected()))
+        .isInstanceOf(SwapNotPendingException.class)
+        .hasMessageContaining("APPROVED");
+  }
+
+  /**
+   * The race itself. One writer approves the request and holds its row; a second, which also read
+   * it pending, saves a rejection and waits for that row. The approval commits only once the
+   * rejection is waiting, so the rejection is judged against what the approval committed, not
+   * against what it read.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenADecisionWaitingOnAnother_WhenTheFirstCommits_ThenTheSecondIsRefused()
+      throws Exception {
+    SwapRequest pending = request(ACME, TEN);
+    repository.save(pending);
+    TransactionTemplate transaction = new TransactionTemplate(PostgresDatabase.transactions());
+    AtomicInteger rejecter = new AtomicInteger();
+    CountDownLatch rejecting = new CountDownLatch(1);
+    ExecutorService second = Executors.newSingleThreadExecutor();
+    try {
+      Future<?> rejection =
+          transaction.execute(
+              approving -> {
+                repository.save(pending.approved());
+                Future<?> waiting =
+                    second.submit(
+                        () ->
+                            transaction.executeWithoutResult(
+                                rejectingIt -> {
+                                  rejecter.set(backendServingThisTransaction());
+                                  rejecting.countDown();
+                                  repository.save(pending.rejected());
+                                }));
+                awaitWaitingOnALock(rejecter, rejecting);
+                return waiting;
+              });
+
+      assertThatThrownBy(() -> rejection.get(STUCK_AFTER_SECONDS, TimeUnit.SECONDS))
+          .hasCauseInstanceOf(SwapNotPendingException.class);
+    } finally {
+      second.shutdownNow();
+      if (!second.awaitTermination(STUCK_AFTER_SECONDS, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("The second writer is still holding its connection");
+      }
+    }
+    assertThat(repository.findById(ACME, pending.id()))
+        .get()
+        .extracting(SwapRequest::status)
+        .isEqualTo(SwapRequestStatus.APPROVED);
+  }
+
+  /** The PostgreSQL backend serving the calling thread's transaction, which joins it. */
+  private static int backendServingThisTransaction() {
+    return PostgresDatabase.jdbcClient()
+        .sql("SELECT pg_backend_pid()")
+        .query(Integer.class)
+        .single();
+  }
+
+  /**
+   * Returns once the other writer is waiting for a lock some other transaction holds. Asks
+   * PostgreSQL rather than sleeping; the bound only fails a test that would otherwise hang.
+   */
+  private static void awaitWaitingOnALock(AtomicInteger backend, CountDownLatch known) {
+    try {
+      if (!known.await(STUCK_AFTER_SECONDS, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("The other writer never started");
+      }
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Interrupted waiting for the other writer", interrupted);
+    }
+    long giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(STUCK_AFTER_SECONDS);
+    while (!PostgresDatabase.jdbcClient()
+        .sql("SELECT cardinality(pg_blocking_pids(:pid)) > 0")
+        .param("pid", backend.get())
+        .query(Boolean.class)
+        .single()) {
+      if (System.nanoTime() > giveUpAt) {
+        throw new IllegalStateException("The other writer never waited for a lock");
+      }
+    }
+  }
+
+  @Test
+  void GivenADecidedRequest_WhenAnotherDecisionIsRefused_ThenTheStoredDecisionStands() {
+    SwapRequest pending = request(ACME, TEN);
+    repository.save(pending);
+    repository.save(pending.approved());
+
+    assertThatThrownBy(() -> repository.save(pending.rejected()));
+
+    assertThat(repository.findById(ACME, pending.id()))
+        .get()
+        .extracting(SwapRequest::status)
+        .isEqualTo(SwapRequestStatus.APPROVED);
+  }
+
+  /**
+   * The identity guard still answers as it did. Refusing a final state reads the stored row back to
+   * name its status, and that read is scoped too, so another organisation's row is never described.
+   */
+  @Test
+  void
+      GivenAnIdentityHeldByAnotherOrganisation_WhenSavedOverIt_ThenItIsRefusedWithoutNamingTheirs() {
+    SwapRequest theirs = request(RIVAL, TEN).approved();
+    repository.save(theirs);
+    SwapRequest ours =
+        new SwapRequest(
+            theirs.id(),
+            ACME,
+            theirs.roster(),
+            theirs.shift(),
+            theirs.requester(),
+            theirs.counterparty(),
+            TEN);
+
+    assertThatThrownBy(() -> repository.save(ours))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageNotContaining("APPROVED");
+    assertThat(repository.findById(RIVAL, theirs.id()))
+        .get()
+        .extracting(SwapRequest::status)
+        .isEqualTo(SwapRequestStatus.APPROVED);
   }
 
   /**

@@ -450,6 +450,93 @@ class RosteringHttpTest {
         .andExpect(jsonPath("$.validatedAgainstConstraintVersion").value(2));
   }
 
+  /**
+   * Q9 end to end: the version a published roster names reads back as the rules it passed, after
+   * the organisation has revised them. Any member may see the rules (F21), so an Employee asks.
+   */
+  @Test
+  void GivenRulesRevisedAfterPublication_WhenTheRosterVersionIsRead_ThenItIsTheRulesItPassed()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-11-16T08:00:00Z", "2026-11-16T16:00:00Z", 1);
+    // Invented values, chosen to be recognisable in the response. They are not any statute's.
+    mockMvc
+        .perform(
+            as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
+                .content("{\"maximumDailyMinutes\":601}"))
+        .andExpect(status().isOk());
+    String roster = generateRoster(organisation, "2026-11-16T00:00:00Z", "2026-11-17T00:00:00Z");
+    String published =
+        mockMvc
+            .perform(
+                as(
+                    mockMvc,
+                    post("/api/rosters/" + roster + "/publication"),
+                    organisation,
+                    "SCHEDULER"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    int version = JsonPath.read(published, "$.validatedAgainstConstraintVersion");
+    mockMvc
+        .perform(
+            as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
+                .content("{\"maximumDailyMinutes\":602}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/constraints/" + version), organisation, "EMPLOYEE"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.version").value(version))
+        .andExpect(jsonPath("$.maximumDailyMinutes").value(601));
+  }
+
+  @Test
+  void GivenNoSuchConstraintVersion_WhenReadingIt_ThenTheMissIsAProblemDetail() throws Exception {
+    mockMvc
+        .perform(as(mockMvc, get("/api/constraints/99"), anOrganisation(mockMvc), "ADMIN"))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.title").value("Not found"))
+        .andExpect(jsonPath("$.detail").value("No such resource."));
+  }
+
+  /**
+   * Every organisation's second version is called 2, so the only thing standing between us and
+   * theirs is the query's scope. Reading it must look exactly like reading a version nobody wrote.
+   */
+  @Test
+  void GivenAnotherOrganisationsVersion_WhenReadingIt_ThenTheAnswerIsTheOneForNoVersionAtAll()
+      throws Exception {
+    mockMvc
+        .perform(
+            as(mockMvc, put("/api/constraints"), anOrganisation(mockMvc), "ADMIN")
+                .content("{\"maximumConsecutiveDays\":3}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.version").value(2));
+    String ours = anOrganisation(mockMvc);
+
+    Map<String, Object> theirs = notFoundWithoutInstance("/api/constraints/2", ours);
+    Map<String, Object> none = notFoundWithoutInstance("/api/constraints/99", ours);
+
+    assertThat(theirs).isEqualTo(none);
+  }
+
+  /**
+   * Reaching the binder at all proves the route is named in the security chain: an unnamed one is
+   * refused before it is dispatched (ADR-032), and would answer 403 here instead.
+   */
+  @Test
+  void GivenAConstraintVersionThatIsNotANumber_WhenReadingIt_ThenItIsABadRequest()
+      throws Exception {
+    mockMvc
+        .perform(as(mockMvc, get("/api/constraints/latest"), anOrganisation(mockMvc), "ADMIN"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+  }
+
   @Test
   void GivenUnavailableStaff_WhenGeneratingARoster_ThenTheShiftIsLeftUncovered() throws Exception {
     String organisation = anOrganisation(mockMvc);

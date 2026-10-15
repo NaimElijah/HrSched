@@ -78,6 +78,21 @@ class NotificationServiceTest {
                 raised, NotifiableEvent.SWAP_REQUESTED, subject, NOON, false));
   }
 
+  /** R33: a swap whose roster was replaced before anybody decided it is told to its parties. */
+  @Test
+  void GivenASwapThatLapsed_WhenItsPartyIsNotified_ThenTheirInboxSaysItLapsed() {
+    UUID subject = UUID.randomUUID();
+
+    NotificationId raised =
+        service.notify(
+            themself(ACME, GRACE),
+            new NotifyCommand(ACME, ADA, NotifiableEvent.SWAP_LAPSED, subject));
+
+    assertThat(service.findMine(themself(ACME, ADA), ACME))
+        .containsExactly(
+            new PublishedNotification(raised, NotifiableEvent.SWAP_LAPSED, subject, NOON, false));
+  }
+
   /** The clock is injected, so this is a fact the test states rather than one it tolerates. */
   @Test
   void GivenAFixedClock_WhenSomebodyIsNotified_ThenTheNotificationCarriesThatMoment() {

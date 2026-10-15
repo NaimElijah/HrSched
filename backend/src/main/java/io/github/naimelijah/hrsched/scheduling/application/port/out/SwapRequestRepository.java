@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.scheduling.application.port.out;
 
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -14,6 +15,17 @@ import java.util.Optional;
  */
 public interface SwapRequestRepository {
 
+  /**
+   * Stores a request, or a decision about one.
+   *
+   * @param request the request as it now stands
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if the
+   *     stored request has already left {@code REQUESTED}. A decision is final, so a second one is
+   *     refused rather than written over the first, whichever writer read it pending
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException if
+   *     it is pending and its assignment already has another pending request (R32). Raising a
+   *     request checks first; this is the backstop for a writer that skipped the publication lock
+   */
   void save(SwapRequest request);
 
   Optional<SwapRequest> findById(OrganisationId organisation, SwapRequestId id);
@@ -26,4 +38,13 @@ public interface SwapRequestRepository {
    *     keep insertion order, and no store owes anybody that (ADR-004)
    */
   List<SwapRequest> findByOrganisation(OrganisationId organisation);
+
+  /**
+   * What a publication lapses when it supersedes a roster (R33).
+   *
+   * @param organisation whose requests; another organisation's are never returned
+   * @param roster the roster the requests name
+   * @return every request still {@code REQUESTED} that names that roster, oldest first
+   */
+  List<SwapRequest> findPendingNaming(OrganisationId organisation, RosterId roster);
 }

@@ -175,21 +175,24 @@ public class UseCaseConfiguration {
       ShiftRepository shifts,
       RosterRepository rosters,
       ConstraintSetRepository constraintSets,
+      SwapRequestRepository swaps,
       WorkforceDirectory workforce,
       RosterGenerator generator,
+      Notifier notifier,
       AuditTrail audit,
       Clock clock,
       PlatformTransactionManager transactions) {
     return transactional(
-        new SchedulingService(shifts, rosters, constraintSets, workforce, generator, audit, clock),
+        new SchedulingService(
+            shifts, rosters, constraintSets, swaps, workforce, generator, notifier, audit, clock),
         transactions);
   }
 
   /**
    * Swapping composes publication rather than repeating it, so this bean depends on the driving
    * port the scheduling service implements. Spring resolves that against the {@code
-   * schedulingService} bean above; there is no cycle, because nothing in scheduling depends on
-   * swaps.
+   * schedulingService} bean above. There is no cycle: publication lapses swap requests (R33)
+   * through the swap store and the notifier, both driven ports, and never through this bean.
    */
   @Bean
   SwapService swapService(

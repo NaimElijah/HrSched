@@ -21,5 +21,11 @@ public enum NotificationKind {
   SWAP_APPROVED,
 
   /** A swap the person being told is party to was rejected, and nothing changed. */
-  SWAP_REJECTED
+  SWAP_REJECTED,
+
+  /**
+   * A swap the person being told is party to ended undecided, because the roster it named was
+   * replaced first. Nothing changed because of it.
+   */
+  SWAP_LAPSED
 }

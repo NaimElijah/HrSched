@@ -106,7 +106,7 @@ public class SecurityConfiguration {
     "/api/employees/**",
     "/api/qualifications/**",
     "/api/shifts/**",
-    "/api/constraints",
+    "/api/constraints/**",
     "/api/rosters/**",
     "/api/me/**",
     "/api/swaps/**",

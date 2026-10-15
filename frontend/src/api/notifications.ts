@@ -1,7 +1,7 @@
 import { api, path } from './client';
 
 /** The kinds this build knows how to put into words. */
-export type NotificationKind = 'SWAP_REQUESTED' | 'SWAP_APPROVED' | 'SWAP_REJECTED';
+export type NotificationKind = 'SWAP_REQUESTED' | 'SWAP_APPROVED' | 'SWAP_REJECTED' | 'SWAP_LAPSED';
 
 /**
  * Mirrors NotificationResponse: that something happened, what it was about, and when.

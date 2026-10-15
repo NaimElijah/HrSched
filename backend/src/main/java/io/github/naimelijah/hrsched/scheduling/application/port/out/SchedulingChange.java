@@ -47,6 +47,13 @@ public enum SchedulingChange {
   SWAP_REJECTED,
 
   /**
+   * A pending swap request ended undecided because the roster it named was superseded (R33).
+   * Recorded per request, beside the ROSTER_SUPERSEDED that caused it, because nobody asked for it
+   * either.
+   */
+  SWAP_LAPSED,
+
+  /**
    * A published roster stopped being authoritative because a newer one overlapped it. Recorded
    * separately because nobody asked for it: it is a consequence of publishing something else, and
    * without its own entry a roster would appear to demote itself.
