@@ -226,27 +226,23 @@ public final class Account {
   }
 
   /**
+   * Changes what the account is within its organisation: the role and the employee link together.
+   *
+   * <p>One transition rather than one for each, because what may be true of an account is a rule
+   * about the pair — changed one at a time, an account could pass through a state neither the
+   * caller nor the rules intended on its way to the one asked for.
+   *
    * @param role the role this account is to hold in its organisation, never {@code null}
-   * @return the account in that role
+   * @param employee the personnel record this account is, empty for nobody's, never {@code null}
+   * @return the account in that role, linked to that employee
    * @throws OperatorBelongsToNoOrganisationException if this is the platform operator, which holds
-   *     no role
+   *     no role and is nobody's employee
    */
-  public Account withRole(Role role) {
+  public Account withMembership(Role role, Optional<EmployeeId> employee) {
     Objects.requireNonNull(role, "role must not be null");
-    TenantMembership tenant = requireTenantMembership();
-    return withMembership(new TenantMembership(tenant.organisation(), role, tenant.employee()));
-  }
-
-  /**
-   * @param employee the personnel record this account is, empty to unlink it
-   * @return the account linked to that employee
-   * @throws OperatorBelongsToNoOrganisationException if this is the platform operator, which is
-   *     nobody's employee
-   */
-  public Account linkedTo(Optional<EmployeeId> employee) {
     Objects.requireNonNull(employee, "employee must not be null");
     TenantMembership tenant = requireTenantMembership();
-    return withMembership(new TenantMembership(tenant.organisation(), tenant.role(), employee));
+    return replacingMembership(new TenantMembership(tenant.organisation(), role, employee));
   }
 
   /**
@@ -351,7 +347,7 @@ public final class Account {
     throw new OperatorBelongsToNoOrganisationException(id);
   }
 
-  private Account withMembership(Membership changed) {
+  private Account replacingMembership(Membership changed) {
     return new Account(
         id,
         signInName,

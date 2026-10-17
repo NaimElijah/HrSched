@@ -167,8 +167,12 @@ class JdbcAccountRepositoryTest {
   @Test
   void GivenAnEmployeeAlreadyLinkedInTheOrganisation_WhenLinkingAnotherAccount_ThenItIsRefused() {
     EmployeeId ada = EmployeeId.newId();
-    repository.save(tenant(ACME, "first@example.com", Role.EMPLOYEE).linkedTo(Optional.of(ada)));
-    Account second = tenant(ACME, "second@example.com", Role.EMPLOYEE).linkedTo(Optional.of(ada));
+    repository.save(
+        tenant(ACME, "first@example.com", Role.EMPLOYEE)
+            .withMembership(Role.EMPLOYEE, Optional.of(ada)));
+    Account second =
+        tenant(ACME, "second@example.com", Role.EMPLOYEE)
+            .withMembership(Role.EMPLOYEE, Optional.of(ada));
 
     assertThatThrownBy(() -> repository.save(second))
         .isInstanceOfSatisfying(
@@ -184,8 +188,11 @@ class JdbcAccountRepositoryTest {
   void GivenAnEmployeeLinkedInAnotherOrganisation_WhenLinkingOneOfOurs_ThenItIsAccepted() {
     EmployeeId shared = EmployeeId.newId();
     repository.save(
-        tenant(RIVAL, "theirs@example.com", Role.EMPLOYEE).linkedTo(Optional.of(shared)));
-    Account ours = tenant(ACME, "ours@example.com", Role.EMPLOYEE).linkedTo(Optional.of(shared));
+        tenant(RIVAL, "theirs@example.com", Role.EMPLOYEE)
+            .withMembership(Role.EMPLOYEE, Optional.of(shared)));
+    Account ours =
+        tenant(ACME, "ours@example.com", Role.EMPLOYEE)
+            .withMembership(Role.EMPLOYEE, Optional.of(shared));
 
     assertThatCode(() -> repository.save(ours)).doesNotThrowAnyException();
   }
@@ -195,7 +202,7 @@ class JdbcAccountRepositoryTest {
     Account stored = tenant(ACME, "ada@example.com", Role.EMPLOYEE);
     repository.save(stored);
 
-    repository.save(stored.withRole(Role.SCHEDULER).disabled());
+    repository.save(stored.withMembership(Role.SCHEDULER, Optional.empty()).disabled());
 
     Account found = repository.find(ACME, stored.id()).orElseThrow();
     assertThat(found.membership())

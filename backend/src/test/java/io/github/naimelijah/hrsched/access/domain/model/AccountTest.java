@@ -125,7 +125,7 @@ class AccountTest {
   void GivenAnOperatorAccount_WhenGivenARole_ThenItIsRefused() {
     Account account = operator(UserId.newId());
 
-    assertThatThrownBy(() -> account.withRole(Role.ADMIN))
+    assertThatThrownBy(() -> account.withMembership(Role.ADMIN, Optional.empty()))
         .isInstanceOf(OperatorBelongsToNoOrganisationException.class);
   }
 
@@ -134,15 +134,16 @@ class AccountTest {
     Account account = operator(UserId.newId());
     Optional<EmployeeId> ada = Optional.of(EmployeeId.newId());
 
-    assertThatThrownBy(() -> account.linkedTo(ada))
+    assertThatThrownBy(() -> account.withMembership(Role.EMPLOYEE, ada))
         .isInstanceOf(OperatorBelongsToNoOrganisationException.class);
   }
 
   @Test
   void GivenATenantAccount_WhenGivenAnotherRole_ThenItKeepsEverythingElse() {
-    Account account = tenant(UserId.newId(), Role.EMPLOYEE, Optional.of(EmployeeId.newId()));
+    Optional<EmployeeId> ada = Optional.of(EmployeeId.newId());
+    Account account = tenant(UserId.newId(), Role.EMPLOYEE, ada);
 
-    Account promoted = account.withRole(Role.SCHEDULER);
+    Account promoted = account.withMembership(Role.SCHEDULER, ada);
 
     assertThat(promoted.actor())
         .isInstanceOfSatisfying(
@@ -156,7 +157,7 @@ class AccountTest {
     EmployeeId ada = EmployeeId.newId();
     Account account = tenant(UserId.newId(), Role.EMPLOYEE, Optional.empty());
 
-    Account linked = account.linkedTo(Optional.of(ada));
+    Account linked = account.withMembership(Role.EMPLOYEE, Optional.of(ada));
 
     assertThat(linked.actor())
         .isInstanceOfSatisfying(
@@ -167,7 +168,7 @@ class AccountTest {
   void GivenALinkedTenantAccount_WhenUnlinked_ThenItsActorCarriesNobody() {
     Account account = tenant(UserId.newId(), Role.EMPLOYEE, Optional.of(EmployeeId.newId()));
 
-    Account unlinked = account.linkedTo(Optional.empty());
+    Account unlinked = account.withMembership(Role.EMPLOYEE, Optional.empty());
 
     assertThat(unlinked.actor())
         .isInstanceOfSatisfying(TenantActor.class, actor -> assertThat(actor.employee()).isEmpty());
