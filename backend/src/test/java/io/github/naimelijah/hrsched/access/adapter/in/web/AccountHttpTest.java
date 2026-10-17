@@ -63,6 +63,14 @@ class AccountHttpTest {
   /** Invented, and what an account replaces the password somebody else chose for it with. */
   private static final String THEIR_OWN_PASSWORD = "a password that admin chose themselves";
 
+  /**
+   * The one sentence every R34 refusal answers with, whichever of creating, changing or restoring
+   * was refused: it is what the Admin reads, so it has to be true of all three.
+   */
+  private static final String UNLINKED_EMPLOYEE_REFUSED =
+      "An Employee account must be linked to one of this organisation's employees; one that is not"
+          + " cannot be restored until it is.";
+
   /** Invented: when an account {@link #migrated} stands for was created. */
   private static final Instant STORED_BEFORE_R34 = Instant.parse("2026-09-01T09:00:00Z");
 
@@ -420,7 +428,8 @@ class AccountHttpTest {
         .perform(
             with(post("/api/accounts"), admin(acme)).content(creating(signInName, Role.EMPLOYEE)))
         .andExpect(status().isUnprocessableEntity())
-        .andExpect(jsonPath("$.title").value("Employee account not linked"));
+        .andExpect(jsonPath("$.title").value("Employee account not linked"))
+        .andExpect(jsonPath("$.detail").value(UNLINKED_EMPLOYEE_REFUSED));
 
     mockMvc.perform(signInAs(signInName, A_PASSWORD)).andExpect(status().isUnauthorized());
   }
@@ -454,7 +463,8 @@ class AccountHttpTest {
         .perform(
             with(put("/api/accounts/%s/activation".formatted(account)), admin)
                 .content("{\"active\":true}"))
-        .andExpect(status().isUnprocessableEntity());
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.detail").value(UNLINKED_EMPLOYEE_REFUSED));
 
     mockMvc
         .perform(

@@ -59,6 +59,10 @@ const ROBIN = {
   weeklyContractedMinutes: null,
 };
 
+/** What the backend answers every R34 refusal with, copied from AccessExceptionHandler. */
+const UNLINKED_EMPLOYEE_REFUSED =
+  "An Employee account must be linked to one of this organisation's employees; one that is not cannot be restored until it is.";
+
 /** Invented for these tests. Nothing here suggests what a real password should look like. */
 const A_PASSWORD = 'an invented temporary password';
 
@@ -169,7 +173,7 @@ describe('creating an account', () => {
         status: 422,
         body: {
           title: 'Employee account not linked',
-          detail: "An Employee account must be linked to one of this organisation's employees.",
+          detail: UNLINKED_EMPLOYEE_REFUSED,
         },
       },
     });
@@ -179,9 +183,7 @@ describe('creating an account', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        "An Employee account must be linked to one of this organisation's employees.",
-      ),
+      expect(screen.getByRole('alert')).toHaveTextContent(UNLINKED_EMPLOYEE_REFUSED),
     );
     const init = callsTo(stub, 'POST', '/api/accounts')[0]?.[1];
     expect(JSON.parse(String(init?.body))).not.toHaveProperty('employee');
@@ -388,7 +390,7 @@ describe('changing an account', () => {
         status: 422,
         body: {
           title: 'Employee account not linked',
-          detail: 'Link it before restoring it.',
+          detail: UNLINKED_EMPLOYEE_REFUSED,
         },
       },
     });
@@ -400,7 +402,7 @@ describe('changing an account', () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Link it before restoring it.'),
+      expect(screen.getByRole('alert')).toHaveTextContent(UNLINKED_EMPLOYEE_REFUSED),
     );
   });
 

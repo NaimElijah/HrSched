@@ -178,16 +178,17 @@ public class AccessExceptionHandler {
 
   /**
    * An Employee account linked to nobody: asked for at creation, made by a change of role or link,
-   * or restored while still unlinked (R34). One sentence answers all three, because what the Admin
-   * must do is the same: name the employee first.
+   * or restored while still unlinked (R34). One sentence answers all three, so it says only what
+   * holds of each: the account needs an employee, and restoring waits for one. The refusal does not
+   * know which of the three it is answering, and a sentence true of one alone misleads the others.
    */
   @ExceptionHandler(UnlinkedEmployeeAccountException.class)
   public ProblemDetail handleUnlinkedEmployeeAccount(UnlinkedEmployeeAccountException exception) {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.UNPROCESSABLE_ENTITY,
-            "An Employee account must be linked to one of this organisation's employees. Link it"
-                + " before restoring it.");
+            "An Employee account must be linked to one of this organisation's employees; one that"
+                + " is not cannot be restored until it is.");
     problem.setTitle("Employee account not linked");
     return problem;
   }
