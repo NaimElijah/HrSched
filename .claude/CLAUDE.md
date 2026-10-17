@@ -64,6 +64,8 @@ Two buildable projects: `backend/` (Maven Wrapper, no global Maven needed) and `
 
 From the **root**: `npm run setup` · `npm run dev` · `npm run verify` (runs both gates).
 
+From `backend/`:
+
 - Build + test + format + architecture (**the whole gate; what CI runs**): `./mvnw verify`
 - Run: `./mvnw spring-boot:run` — serves on `http://localhost:8080`
 - Test (all): `./mvnw test`

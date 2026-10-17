@@ -13,12 +13,18 @@ sees the file.
 `frontend/` is a React 19 SPA built by Vite (ADR-013):
 
 - `src/api/` — the typed client. `client.ts` is the **only** module that calls `fetch` or names a
-  header, and the bearer token is the only identity it sends; `problem.ts` validates the error body
-  rather than casting it; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts`
-  mirror the backend DTOs, one module per context.
+  header. Every request carries the bearer token except refresh and sign-out, whose credential is
+  the refresh cookie plus `X-Requested-With` (ADR-028). `session.ts` holds the access token in
+  memory; `problem.ts` validates the error body rather than casting it; `scheduling.ts`,
+  `workforce.ts`, `access.ts` and `notifications.ts` mirror the backend DTOs, one module per
+  context.
 - `src/auth/` — `SessionProvider` and the sign-in, change-password and session-bar screens
   (ADR-011, ADR-028).
 - `src/pages/` — one screen per capability. Pages never call `fetch` directly.
+- `src/components/` — what several pages share: `ErrorBoundary`, `Feedback`, `useAsync`,
+  `localDates`.
+- `src/test-support/` — `routeTo` replaces `fetch` with a router that answers anything unmatched
+  with a 404, and `renderSignedIn` renders a screen as somebody already signed in.
 
 ## Conventions
 
