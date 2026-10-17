@@ -1,24 +1,45 @@
+<!--
+Maintainers: this file is loaded into every session and every subagent, so it holds only what
+applies everywhere: commands, workflow and the rules that cross both projects. Keep it under about
+130 lines. Backend-only guidance goes in backend/CLAUDE.md, frontend-only guidance in
+frontend/CLAUDE.md; each loads the first time a file beneath it is read or edited. Facts about one
+machine belong in auto memory, not here. This comment is stripped before Claude sees the file.
+-->
+
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+HrSched generates and publishes staff rosters for many organisations at once. The domain is
+modelled and works end to end: sign in, define people and shifts, configure working-time rules,
+generate a roster, publish it. Four contexts — `scheduling`, `workforce`, `access`,
+`notifications` — plus a `shared` kernel, with the hexagon and the context boundaries enforced by
+build-failing tests.
 
-## State of the repository
+## Rules that hold everywhere
 
-The domain is modelled and works end to end: sign in, define people and shifts, configure
-working-time rules, generate a roster, publish it. Four contexts — `scheduling`, `workforce`,
-`access`, `notifications` — plus a `shared` kernel, with the hexagon and the context boundaries
-enforced by build-failing tests.
+- **Multi-tenant.** Every aggregate belongs to exactly one organisation and every query is
+  scoped to it. A cross-tenant read is a security incident, not a bug.
+- **No number from any statute is ever written down** — not in a class, not in a migration, not
+  as the default of a form field. Working-time rules are a *configured constraint set*: a rest
+  period or an hours cap is a value in a `ConstraintSet`, and the schema stores a limit without
+  ever defaulting one. A jurisdiction is a preset whose numbers come from the statute, with the
+  source cited. Test values are invented on purpose, and are labelled as such.
+- **Constraints are invariants.** A roster violating its constraint set cannot be published,
+  and there is no override.
+- **Who is acting comes from the access token and nothing else.** HrSched holds its own accounts
+  and signs its own tokens (ADR-011, ADR-028); the organisation comes from the acting account,
+  never from a header, a path or a body (ADR-031). **`SecurityConfiguration` ends in `denyAll`**
+  (ADR-032).
+- **Never let unverifiable data pass a check.** If evidence a rule needs cannot be loaded, refuse
+  — a skipped assignment is a roster published with hours nobody counted.
+- **NEVER log personal data.** Names, absence and contracted hours say things about a person's
+  health and household, and a log is copied to places a database is not.
+- **New code belongs to a context.** If it fits none of the existing ones, that is a new
+  bounded context and a new ADR, not a new top-level package.
+- **Do not add an ORM.** Persistence is hand-written SQL against PostgreSQL (ADR-004).
 
-**Authentication is real, and the header placeholder is gone.** HrSched holds its own accounts and
-signs its own tokens (ADR-011, ADR-028). Every controller takes the acting identity from
-`@AuthenticationPrincipal Actor`, and the organisation from that actor through each adapter's
-`actingIn` helper — never from a header, a path or a body (ADR-031). `X-User`, `X-Role`,
-`X-Organisation` and `X-Employee` are read by nothing; do not reintroduce them.
-**`SecurityConfiguration` ends in `denyAll`** (ADR-032), so a new route is unreachable until it is
-named there — that second edit is the decision about who may call it, not a formality. The URL
-rules are the coarse outer line; the use case behind each route is what decides.
+How the backend enforces each of these is in `backend/CLAUDE.md`.
 
-Two things are **not** what they look like:
+## Two things are not what they look like
 
 - **Generation is greedy, not optimised.** Automatic generation is the point of the product and
   a real implementation is a solver; `GreedyRosterGenerator` exists to prove the port (ADR-005).
@@ -28,51 +49,43 @@ Two things are **not** what they look like:
   only wherever stdout is collected (ADR-018). The requirement is now a durable trail an Admin
   reads for their own organisation (Q20, #31); how long it is kept is Q23.
 
-`docs/requirements/requirements.md` was reviewed row by row with the repo owner on 2026-09-22.
-Many rows say `not yet`: the requirement is decided and an issue tracks building it, so the code
-is behind the document on purpose. What is still `TODO` there, and every open question, is a
-question for the repo owner, not a gap for an agent to fill in. Do not invent a requirement, a
-domain rule, or a persistence choice to make a document look complete.
+## Requirements and decisions
 
-Every question that blocked modelling is answered — see `docs/requirements/requirements.md`.
-Three consequences bind everything written from now on:
+Many rows of `docs/requirements/requirements.md` say `not yet`: the requirement is decided and an
+issue tracks building it, so the code is behind the document on purpose. What is still `TODO`
+there, and every open question, is a question for the repo owner, not a gap for an agent to fill
+in. Do not invent a requirement, a domain rule, or a persistence choice to make a document look
+complete.
 
-- **Multi-tenant.** Every aggregate belongs to exactly one organisation and every query is
-  scoped to it. A cross-tenant read is a security incident, not a bug.
-- **No legal threshold is ever hardcoded.** Working-time rules are a *configured constraint
-  set*; a jurisdiction is a preset, and a preset's numbers must come from the statute with the
-  source cited. Never write a rest period or an hours cap as a constant.
-- **Constraints are invariants.** A roster violating its constraint set cannot be published,
-  and there is no override.
+A new ADR takes the highest number in **either** table of `docs/ADRs/README.md`, plus one — never
+a gap. The gaps (today 010, 035, 036) are reserved under "Decisions waiting to be recorded". The
+index row lands in the same commit as the ADR.
 
-Persistence is settled (ADR-004): PostgreSQL, hand-written SQL through `JdbcClient`, Flyway
-migrations, one schema with `organisation_id` on every aggregate root (child tables are reached
-only through their root). **Do not add an ORM.** The domain may
-not carry `jakarta.persistence` annotations — the architecture test fails on them — so JPA would
-need a parallel annotated model and would buy only behaviour a hexagonal adapter must not leak.
+## Git
 
-**Docker must be running to build.** The tests use a real PostgreSQL through Testcontainers, one
-container shared by the suite. There is no in-memory fallback and no skip-when-Docker-is-absent, on
-purpose: a check that quietly does not run still reports green.
-
-**Every use case is one transaction**, wrapped in `UseCaseConfiguration` rather than annotated,
-because the architecture test forbids Spring in the application layer (ADR-023). A new use case gets
-that for free by being registered there — which is already mandatory.
-
-**No number from any statute belongs in a migration either.** The schema stores a working-time
-limit as a value; it never defaults one.
+- Branch `type/short-kebab-description` off `dev`, and open the pull request **into `dev`**. `dev`
+  reaches `main` only through a pull request of its own, so a feature branch never targets
+  `main`, whatever a tool assumes the default branch is.
+- Commits follow Conventional Commits, `type(scope): subject`, one logical change each.
+- CI runs on every push, and on pull requests to `main` and `dev`.
 
 ## Commands
 
 Two buildable projects: `backend/` (Maven Wrapper, no global Maven needed) and `frontend/`
 (npm). The repository root builds nothing itself but orchestrates both (ADR-014).
 
-From the **root**: `npm run setup` · `npm run dev` · `npm run verify` (runs both gates).
+From the **root**: `npm run setup` · `npm run dev` · `npm run verify` (runs both gates) ·
+`npm run verify:backend` / `npm run verify:frontend` (one gate).
+
+From `backend/`:
 
 - Build + test + format + architecture (**the whole gate; what CI runs**): `./mvnw verify`
 - Run: `./mvnw spring-boot:run` — serves on `http://localhost:8080`
 - Test (all): `./mvnw test`
-- Test (single class): `./mvnw test -Dtest=HexagonalArchitectureTest`
+- Test (single class): `./mvnw spotless:apply test -Dtest=HexagonalArchitectureTest`. Spotless's
+  check is bound to `validate`, so without the `spotless:apply` a formatting slip fails the run
+  before any test runs. For a deliberate mutation that Spotless would rewrite, pass
+  `-Dspotless.check.skip=true` instead.
 - Format check / fix: `./mvnw spotless:check` / `./mvnw spotless:apply`
 - Coverage: written by `./mvnw verify` to `target/site/jacoco/index.html`. `./mvnw test` alone
   writes none — the report goal binds to `verify`. Nothing fails on it (ADR-015).
@@ -87,51 +100,24 @@ From `frontend/`:
 On Windows without a POSIX shell, use `mvnw.cmd`; it is a batch/PowerShell polyglot, so PowerShell
 must be on `PATH`. Add `-B` for non-interactive output.
 
+**Docker must be running to build.** The tests use a real PostgreSQL through Testcontainers, one
+container shared by the suite. There is no in-memory fallback and no skip-when-Docker-is-absent, on
+purpose: a check that quietly does not run still reports green.
+
+**Read the log, not the exit code.** `mvnw.cmd`, which `npm run verify` and `npm run dev` call on
+Windows, has exited 0 and has exited 1 when Maven never started. A run has passed only when its log
+shows `Tests run:` and `BUILD SUCCESS`. From a POSIX shell, use `./mvnw`.
+
+**Local sign-in.** `npm run dev` and `./mvnw spring-boot:run` bootstrap the operator `operator` /
+`local-development-only`, whose password must be changed at first sign-in (ADR-029). The compose
+database keeps its data between runs, so from then on only the changed password works;
+`docker compose -f backend/compose.yaml down -v` starts over, deleting every local row.
+
 ## Layout
 
 Repository root: `backend/`, `frontend/`, `docs/`, `scripts/`, `package.json`, `LICENSE`,
 `README.md`. The two projects build independently (ADR-007); `scripts/run.mjs` only orchestrates
 and must never accumulate build logic (ADR-014).
-
-Inside `backend/src/main/java/io/github/naimelijah/hrsched/`, the package path *is* the
-dependency rule — see ADR-003 and ADR-006. Every context repeats the same shape:
-
-- `shared/domain/model/` — the kernel: identities (`OrganisationId`, `EmployeeId`,
-  `QualificationId`, `UserId`), `TimeRange`, and the sealed `Actor`. Depends on no context, and
-  must stay that way. Do not put behaviour here.
-- `<context>/domain/model/` — entities and value objects. **JDK imports only.**
-- `<context>/application/port/in/` — driving ports (use case interfaces) and commands.
-- `<context>/application/port/out/` — driven ports (what the application needs outside).
-- `<context>/application/service/` — use case implementations. **No Spring annotations.**
-- `<context>/adapter/in/web/` — controllers, DTOs, exception translation. May use Spring.
-- `<context>/adapter/out/persistence/` — driven port implementations. May use Spring. Each
-  `Jdbc*Repository` owns its own SQL; there is deliberately no shared helper package, because
-  `ContextPackages` would treat a new top-level package as a bounded context and every context
-  touching it would fail the cross-context rule.
-
-Contexts today: `scheduling` (shifts, rosters, constraints, generation), `workforce` (employees,
-qualifications, availability), `access` (organisations, accounts, sessions and tokens),
-`notifications` (what somebody has been told). At the root beside them sit
-`configuration/` and `HrSchedApplication`.
-
-A context may reference another context's `application.port.in` package and **nothing else**
-(ADR-008). Consuming one belongs in an adapter — see
-`scheduling/adapter/out/workforce/WorkforceDirectoryAdapter`, the only class in scheduling that
-names another context.
-
-`frontend/` is a React 19 SPA built by Vite (ADR-013):
-
-- `src/api/` — the typed client. `client.ts` is the **only** module that calls `fetch` or names a
-  header, and the bearer token is the only identity it sends; `problem.ts` validates the error body
-  rather than casting it; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts`
-  mirror the backend DTOs, one module per context.
-- `src/auth/` — `SessionProvider` and the sign-in, change-password and session-bar screens. It
-  replaced `src/identity/`, the acting-as placeholder, when sign-in landed (ADR-011, ADR-028).
-- `src/pages/` — one screen per capability. Pages never call `fetch` directly.
-
-Also inside `backend/`: `src/main/resources/db/migration/` holds the Flyway migrations — the only
-way the schema changes — and `compose.yaml` holds the local database, beside the backend rather
-than at the root because Boot looks in the working directory.
 
 Outside `backend/`:
 
@@ -140,110 +126,6 @@ Outside `backend/`:
   verify command. **No path filters:** a wrongly filtered check is skipped silently and still
   reports green.
 
-## Conventions
-
-- **Dependencies point inward, and contexts are independent. Both are enforced.**
-  `HexagonalArchitectureTest` fails the build if the domain imports Spring, if the application
-  touches an adapter, if a context reaches past another context's published ports, if the kernel
-  depends on a context, or if a context's own layers form a cycle. Do not weaken or delete a rule
-  to make code pass — the rule is the point. Deleting one because it is provably unable to fail
-  is a different thing, and needs the proof.
-- **NEVER write a working-time threshold as a constant.** No number from any statute belongs in
-  any class. A minimum rest period is a value in a `ConstraintSet`, supplied as configuration. A
-  jurisdiction is a preset whose numbers must be sourced from the statute and cited. Test values
-  are invented on purpose, and are labelled as such.
-- **Tenancy is in every signature.** Repository lookups take an `OrganisationId`; there is no
-  `findById(EmployeeId)`. Use cases take an `Actor` and call `requireAccessTo` first. A
-  cross-tenant attempt is a 404, never a 403 — a 403 confirms the resource exists.
-- **`UserId` and `EmployeeId` are never compared.** They are different identities on purpose. To
-  ask whether an actor is the person being acted on, use `TenantActor.isThemself` — the link is
-  carried, not inferred from matching UUIDs (ADR-012).
-- **Only a Scheduler builds rosters.** `MAY_SCHEDULE` is `{SCHEDULER}`; an Admin manages people,
-  qualifications and the constraint set. The role javadoc and the requirements table agree, and
-  the permission sets must follow them rather than the other way round.
-- **Never let unverifiable data pass a check.** If evidence a rule needs cannot be loaded, refuse
-  — a skipped assignment is a roster published with hours nobody counted.
-- **New code belongs to a context.** If it fits none of the existing ones, that is a new
-  bounded context and a new ADR, not a new top-level package.
-- **`@ParameterizedTest` is an accepted idiom, for data-only rows.** `junit-jupiter-params` comes
-  with the Boot BOM; no dependency to add. Use it where the rows differ only in *data* and the
-  assertion sentence is identical — null-check batteries, blank-name batteries, the identity
-  records, exception-type lists, and *parsing* a value out of a request. Do **not** use it for a
-  permission or tenancy
-  **decision**: who may do what, and who may see whose data. A parameterised isolation test reads
-  as a table and hides which row is the one whose failure is a security incident. Nor for rows
-  that differ in setup, or whose comment explains *why* — the comment then belongs to no row. If a
-  table passes about a dozen rows, split it.
-- **Instrumentation lives in adapters, and three rules enforce it.** Nothing prints anywhere; the
-  domain may not touch `org.slf4j`, `ch.qos.logback` or `java.util.logging`; and neither the domain
-  nor the application layer may touch `io.micrometer` or `io.opentelemetry`. So Micrometer's
-  `@Timed` and `@Counted` cannot go on a use case, and a service that needs to record something
-  records it through a driven port. See ADR-016 to ADR-018.
-- **NEVER log personal data.** Names, absence and contracted hours say things about a person's
-  health and household, and a log is copied to places a database is not. `AuditedChange` carries a
-  bare `UUID` subject so a name is *unrepresentable*, not merely discouraged, and
-  `SchedulingAuditLogTest`/`WorkforceAuditLogTest` assert every field is an identifier or an enum.
-  Attach fields with slf4j `addKeyValue`, never by interpolating them into the message: the message
-  is a constant, and everything variable is a field the ECS encoder publishes as JSON.
-- **The audit port is per context on purpose.** `scheduling` and `workforce` each own an
-  `AuditTrail` and an `AuditedChange` with their own change enum. They are different types, not
-  duplication, and anything shared would have to enter the kernel ADR-008 keeps small. The
-  collision shows up only in `UseCaseConfiguration`, which writes one of them out in full.
-- **Recording happens after the save, and a refused act records nothing.** An entry for something
-  that then failed to store is a record of something that did not happen. `publish` records inside
-  the supersede loop as well as for itself — the rosters it demotes did not demote themselves.
-- **Two `@Component` classes may not share a simple name.** Spring derives a bean name from it
-  alone, so identically-named adapters in two contexts collide, and they collide at startup rather
-  than at compile time. Hence `SchedulingAuditLog` and `WorkforceAuditLog`.
-- **Boot disables metrics export under test.** `/actuator/prometheus` answers 404 in a
-  `@SpringBootTest` while working in production; `@AutoConfigureMetrics` opts back in, at the cost
-  of a second Spring context. `MetricsHttpTest` is the only test here that does not share the one
-  the others use.
-- **When adding an architecture rule, watch it fail first.** All ten rules here have been
-  observed failing on a deliberately introduced violation, then reverted. A rule that has only
-  ever been green proves nothing — one rule was deleted after it turned out it could no longer
-  fail, being fully subsumed by what is now
-  `contexts_touch_only_published_ports_of_other_contexts`. The same applies to a test: a fix
-  whose test was never seen failing has not been shown to fix anything.
-- **Who is acting is an argument, never an ambient read.** `SecurityContextHolder` is forbidden
-  outside `configuration.security`, where one Spring callback has no parameter to take the caller
-  from. A use case takes an `Actor`; a controller receives one through `@AuthenticationPrincipal`.
-- **Adding a use case:** pick the context → domain concept → port in/out → service (no
-  annotation) → register in `UseCaseConfiguration` → adapters → tests. Forgetting the bean
-  registration fails at startup, not at compile time.
-- **Entities vs value objects.** `Shift` and `Employee` are classes with identity equality,
-  because two shifts with the same period — or two people with the same name — are still
-  different things. `ShiftId`, `ShiftPeriod` and `EmployeeId` are records because they *are*
-  their values. Do not turn an entity into a record.
-- **Invariants live in constructors,** so illegal states cannot be represented and callers
-  never have to check.
-- **The formatter is authoritative.** google-java-format is not configurable — 2-space indent,
-  fixed wrapping. Never hand-format; run `./mvnw spotless:apply`.
-- **The UI enforces nothing, and must not pretend to.** Every rule is the backend's. A screen that
-  looks like it satisfies a requirement is not evidence the rule holds, which is why the
-  `Enforced by` column in `requirements.md` names only backend classes and tests.
-- **Never put a suggested working-time number in the UI.** A default in a form field is a legal
-  threshold chosen by a developer, which is the exact thing this codebase refuses to contain.
-- **Frontend versions are ahead of most published guidance.** React 19, Vite 8, TypeScript 6,
-  ESLint 10, Vitest 4. Check the installed package before trusting a recalled API — the same
-  discipline the Spring Boot 4.x renames forced. Already found this way: Vitest 4 moves the `test`
-  key off Vite's config type (import `defineConfig` from `vitest/config`), and
-  `eslint-plugin-react-hooks` 7 exposes flat config under `configs.flat`.
-- **`pom.xml` is indented with tabs** (Spring Initializr's convention) while Java is 2-space.
-  `.editorconfig` encodes both; this is deliberate, not drift.
-
-## Spring Boot 4.x renamed things
-
-Training data and nearly every tutorial still use the 3.x names, which will not compile.
-Verified against the jars in this project:
-
-| 3.x | 4.1.1 |
-| --- | --- |
-| `spring-boot-starter-web` | `spring-boot-starter-webmvc` |
-| `spring-boot-starter-test` | split: `spring-boot-starter-webmvc-test`, `-actuator-test`, `-jackson-test` |
-| `org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest` | `org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest` |
-| `@MockBean` | `@MockitoBean` (`org.springframework.test.context.bean.override.mockito`) |
-| `com.fasterxml.jackson.databind` | `tools.jackson.databind` (Jackson 3) |
-
-When unsure, inspect the jar (`unzip -l ~/.m2/repository/...`) or run `./mvnw dependency:tree`.
-Do not guess.
+Guidance for each project lives beside it, and loads the first time a file beneath it is read or
+edited: `backend/CLAUDE.md` (the hexagon, persistence, testing, Spring Boot 4) and
+`frontend/CLAUDE.md` (the SPA's layout and what the UI may not do).
