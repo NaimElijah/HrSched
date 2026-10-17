@@ -40,6 +40,11 @@ final class StubAccountRepository implements AccountRepository {
     return account;
   }
 
+  /**
+   * Refuses a taken sign-in name and a second account for one employee, as {@code
+   * JdbcAccountRepository} does. Its refusal of an identity another organisation holds, or the
+   * operator does, is not mirrored; {@code JdbcAccountRepositoryTest} proves that one.
+   */
   @Override
   public void save(Account account) {
     findBySignInName(account.signInName())

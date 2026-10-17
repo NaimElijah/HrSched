@@ -30,6 +30,9 @@ public interface AccountRepository {
    * @throws SignInNameTakenException if another account already signs in under that name
    * @throws EmployeeAlreadyLinkedException if another account in the same organisation is already
    *     linked to that employee
+   * @throws IllegalStateException if another organisation holds an account with that identity, or
+   *     the operator does while this one belongs to an organisation, or the other way round: a save
+   *     never moves an account between organisations, nor turns it into or out of the operator
    */
   void save(Account account);
 

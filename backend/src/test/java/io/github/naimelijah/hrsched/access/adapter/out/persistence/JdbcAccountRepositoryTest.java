@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.EmployeeAlreadyLinkedException;
 import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
+import io.github.naimelijah.hrsched.access.domain.model.Membership;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
 import io.github.naimelijah.hrsched.access.domain.model.PasswordHash;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
@@ -203,6 +204,83 @@ class JdbcAccountRepositoryTest {
     assertThat(repository.findAll(ACME)).hasSize(1);
   }
 
+  /**
+   * {@code save} is the one repository method carrying no {@code OrganisationId}, so the upsert is
+   * the only thing standing between a re-used identity and another tenant's row. Without it, saving
+   * moved the account into the caller's organisation rather than refusing.
+   */
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenItIsRefused() {
+    Account theirs = tenant(RIVAL, "theirs@example.com", Role.SCHEDULER);
+    repository.save(theirs);
+
+    assertThatThrownBy(() -> repository.save(overwriting(theirs, anAdminOf(ACME))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("another organisation");
+  }
+
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenTheirRowIsUntouched() {
+    Account theirs = tenant(RIVAL, "theirs@example.com", Role.SCHEDULER);
+    repository.save(theirs);
+
+    assertThatThrownBy(() -> repository.save(overwriting(theirs, anAdminOf(ACME))))
+        .isInstanceOf(IllegalStateException.class);
+
+    Account stored = repository.find(RIVAL, theirs.id()).orElseThrow();
+    assertThat(stored.signInName()).isEqualTo(theirs.signInName());
+    assertThat(stored.membership()).isEqualTo(theirs.membership());
+    assertThat(repository.find(ACME, theirs.id())).isEmpty();
+  }
+
+  /** Without the guard, a tenant account saved under the operator's identity made it an Admin. */
+  @Test
+  void GivenTheOperatorsIdentity_WhenATenantAccountIsSavedOverIt_ThenTheOperatorStaysOne() {
+    Account operator = operator("operator@example.com");
+    repository.save(operator);
+
+    assertThatThrownBy(() -> repository.save(overwriting(operator, anAdminOf(ACME))))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(repository.findBySignInName(new SignInName("operator@example.com")))
+        .get()
+        .extracting(Account::membership)
+        .isEqualTo(new OperatorMembership());
+  }
+
+  /** Without the guard, the operator saved under a tenant's identity turned it into an operator. */
+  @Test
+  void GivenATenantsIdentity_WhenTheOperatorIsSavedOverIt_ThenTheTenantStaysOne() {
+    Account theirs = tenant(RIVAL, "theirs@example.com", Role.SCHEDULER);
+    repository.save(theirs);
+
+    assertThatThrownBy(() -> repository.save(overwriting(theirs, new OperatorMembership())))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(repository.find(RIVAL, theirs.id()))
+        .get()
+        .extracting(Account::membership)
+        .isEqualTo(theirs.membership());
+  }
+
+  /**
+   * The operator's row carries no organisation, and {@code NULL = NULL} is not true, so a guard
+   * comparing with {@code =} would refuse every save of it — and sign-in saves it after a failure.
+   */
+  @Test
+  void GivenTheOperator_WhenSavedAgain_ThenTheChangeIsStored() {
+    Account operator = operator("operator@example.com");
+    repository.save(operator);
+
+    repository.save(
+        operator.recordFailedSignIn(CREATED_AT, new LockoutPolicy(3, Duration.ofMinutes(15))));
+
+    assertThat(repository.findBySignInName(new SignInName("operator@example.com")))
+        .get()
+        .extracting(Account::failedSignIns)
+        .isEqualTo(1);
+  }
+
   @Test
   void GivenAFreeSignInName_WhenSavingIfAbsent_ThenItIsStoredAndTrueIsReturned() {
     Account operator = operator("operator@example.com");
@@ -291,6 +369,19 @@ class JdbcAccountRepositoryTest {
         new TenantMembership(organisation, role, Optional.empty()),
         false,
         CREATED_AT);
+  }
+
+  /**
+   * @return ours, under their identity, with a sign-in name nobody holds, so that only the guard
+   *     can refuse it
+   */
+  private static Account overwriting(Account theirs, Membership membership) {
+    return new Account(
+        theirs.id(), new SignInName("ours@example.com"), HASH, membership, false, CREATED_AT);
+  }
+
+  private static TenantMembership anAdminOf(OrganisationId organisation) {
+    return new TenantMembership(organisation, Role.ADMIN, Optional.empty());
   }
 
   private static Account operator(String signInName) {
