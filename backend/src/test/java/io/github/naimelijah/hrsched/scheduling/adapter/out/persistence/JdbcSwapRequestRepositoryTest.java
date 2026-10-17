@@ -415,7 +415,7 @@ class JdbcSwapRequestRepositoryTest {
   /**
    * Their request is still pending, so the status clause of the upsert's {@code WHERE} would let
    * the write through: only the organisation clause stands between our request and their row. Every
-   * field differs from theirs, so an overwrite would show.
+   * field but its status differs from theirs, so an overwrite would show.
    */
   @Test
   void GivenAPendingRequestOfAnotherOrganisation_WhenSavingOverIt_ThenItIsRefused() {
