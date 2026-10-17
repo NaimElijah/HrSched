@@ -136,7 +136,8 @@ class JdbcNotificationRepositoryTest {
   /**
    * {@code save} is the one repository method carrying no {@code OrganisationId}, so the upsert is
    * the only thing standing between a re-used identity and another tenant's row. Ours differs in
-   * every column the upsert would overwrite, so an overwrite would show.
+   * every column the upsert would overwrite but {@code read}, which is false on both, so an
+   * overwrite would show.
    */
   @Test
   void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenItIsRefused() {
