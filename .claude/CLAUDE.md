@@ -49,7 +49,7 @@ How the backend enforces each of these is in `backend/CLAUDE.md`.
   only wherever stdout is collected (ADR-018). The requirement is now a durable trail an Admin
   reads for their own organisation (Q20, #31); how long it is kept is Q23.
 
-## Requirements
+## Requirements and decisions
 
 Many rows of `docs/requirements/requirements.md` say `not yet`: the requirement is decided and an
 issue tracks building it, so the code is behind the document on purpose. What is still `TODO`
@@ -57,19 +57,35 @@ there, and every open question, is a question for the repo owner, not a gap for 
 in. Do not invent a requirement, a domain rule, or a persistence choice to make a document look
 complete.
 
+A new ADR takes the highest number in **either** table of `docs/ADRs/README.md`, plus one — never
+a gap. The gaps (today 010, 035, 036) are reserved under "Decisions waiting to be recorded". The
+index row lands in the same commit as the ADR.
+
+## Git
+
+- Branch `type/short-kebab-description` off `dev`, and open the pull request **into `dev`**. `dev`
+  reaches `main` only through a pull request of its own, so a feature branch never targets
+  `main`, whatever a tool assumes the default branch is.
+- Commits follow Conventional Commits, `type(scope): subject`, one logical change each.
+- CI runs on every push, and on pull requests to `main` and `dev`.
+
 ## Commands
 
 Two buildable projects: `backend/` (Maven Wrapper, no global Maven needed) and `frontend/`
 (npm). The repository root builds nothing itself but orchestrates both (ADR-014).
 
-From the **root**: `npm run setup` · `npm run dev` · `npm run verify` (runs both gates).
+From the **root**: `npm run setup` · `npm run dev` · `npm run verify` (runs both gates) ·
+`npm run verify:backend` / `npm run verify:frontend` (one gate).
 
 From `backend/`:
 
 - Build + test + format + architecture (**the whole gate; what CI runs**): `./mvnw verify`
 - Run: `./mvnw spring-boot:run` — serves on `http://localhost:8080`
 - Test (all): `./mvnw test`
-- Test (single class): `./mvnw test -Dtest=HexagonalArchitectureTest`
+- Test (single class): `./mvnw spotless:apply test -Dtest=HexagonalArchitectureTest`. Spotless's
+  check is bound to `validate`, so without the `spotless:apply` a formatting slip fails the run
+  before any test runs. For a deliberate mutation that Spotless would rewrite, pass
+  `-Dspotless.check.skip=true` instead.
 - Format check / fix: `./mvnw spotless:check` / `./mvnw spotless:apply`
 - Coverage: written by `./mvnw verify` to `target/site/jacoco/index.html`. `./mvnw test` alone
   writes none — the report goal binds to `verify`. Nothing fails on it (ADR-015).
@@ -87,6 +103,15 @@ must be on `PATH`. Add `-B` for non-interactive output.
 **Docker must be running to build.** The tests use a real PostgreSQL through Testcontainers, one
 container shared by the suite. There is no in-memory fallback and no skip-when-Docker-is-absent, on
 purpose: a check that quietly does not run still reports green.
+
+**Read the log, not the exit code.** `mvnw.cmd`, which `npm run verify` and `npm run dev` call on
+Windows, has exited 0 and has exited 1 when Maven never started. A run has passed only when its log
+shows `Tests run:` and `BUILD SUCCESS`. From a POSIX shell, use `./mvnw`.
+
+**Local sign-in.** `npm run dev` and `./mvnw spring-boot:run` bootstrap the operator `operator` /
+`local-development-only`, whose password must be changed at first sign-in (ADR-029). The compose
+database keeps its data between runs, so from then on only the changed password works;
+`docker compose -f backend/compose.yaml down -v` starts over, deleting every local row.
 
 ## Layout
 

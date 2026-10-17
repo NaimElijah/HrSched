@@ -97,7 +97,7 @@ prefix is unreachable until it is named. Either way, checking who may call it is
 a formality. The URL rules are the coarse outer line; the use case behind each route is what
 decides.
 
-## Persistence and transactions
+## Persistence
 
 Persistence is settled (ADR-004): PostgreSQL, hand-written SQL through `JdbcClient`, Flyway
 migrations, one schema with `organisation_id` on every aggregate root (child tables are reached
@@ -105,9 +105,36 @@ only through their root). The domain may not carry `jakarta.persistence` annotat
 architecture test fails on them — so JPA would need a parallel annotated model and would buy only
 behaviour a hexagonal adapter must not leak.
 
-**Every use case is one transaction**, wrapped in `UseCaseConfiguration` rather than annotated,
-because the architecture test forbids Spring in the application layer (ADR-023). A new use case gets
-that for free by being registered there — which is already mandatory.
+- **Migrations.** Name one `V<n>__<rule_in_snake_case>.sql` and open it with a comment giving the
+  rule, the ADR and the reasoning. **Never edit an applied migration**; correct it in the next, as
+  V6 and V8 do. A backfill is explicit and invents nothing. An index on a root leads with
+  `organisation_id`, and a foreign key stays inside one context. A migration that rewrites stored
+  rows gets a test that migrates to the version before, inserts rows as that version stored them,
+  then migrates on — as `AppendOnlyRosterHistoryMigrationTest` does.
+- **Conflicts come from the database, not from version columns.** An exclusion violation or
+  deadlock on a published save (SQLState 23P01, 40P01) becomes
+  `RosterPublicationConflictException`, a 409. A revision that loses a race must let its unique
+  violation surface — never `ON CONFLICT DO NOTHING`. An upsert guards tenancy with
+  `WHERE <table>.organisation_id = EXCLUDED.organisation_id`.
+
+## Transactions, concurrency and time
+
+- **Every use case is one transaction**, wrapped in `UseCaseConfiguration` rather than annotated,
+  because the architecture test forbids Spring in the application layer (ADR-023). A new use case
+  gets that for free by being registered there — which is already mandatory. The wrapper,
+  `TransactionalUseCases`, is a subclass proxy: a service must stay non-final, a service calling
+  its own method bypasses it, and only methods named `find…` run read-only.
+- **Publications within an organisation take turns.** `RosterRepository.lockPublicationsOf` takes
+  a transaction-scoped advisory lock, before any read the decision depends on: in `publish`, and
+  in raising, approving and rejecting a swap (ADR-027, ADR-039). It throws outside a use case's
+  transaction. R35 has no schema backstop; the lock is all that holds it (ADR-033).
+- **Roster history is append-only** (R37, ADR-037). A roster's status is not stored but derived
+  from `published_at` and `superseded_at`, each written once, at the moment
+  `Roster.nextMomentOfRecord` gives.
+- **Time is an input.** A use case reads an injected `Clock` (`Clock.systemUTC()` in
+  `UseCaseConfiguration`), never `Instant.now()` or the database's clock. A `Shift` carries its own
+  `ZoneId`, with no default: working-time days are counted in that zone, instants are stored as
+  UTC, and the HTTP boundary validates the zone id (R36, ADR-034).
 
 ## Audit and instrumentation
 
@@ -127,9 +154,12 @@ that for free by being registered there — which is already mandatory.
   different types, not duplication, and anything shared would have to enter the kernel ADR-008
   keeps small. The collision shows up only in `UseCaseConfiguration`, which writes three of them
   out in full.
-- **Recording happens after the save, and a refused act records nothing.** An entry for something
-  that then failed to store is a record of something that did not happen. `publish` records inside
-  the supersede loop as well as for itself — the rosters it demotes did not demote themselves.
+- **Refuse before the first write; record after the save.** An audit line outlives the rollback of
+  a refusal that came after it (#133), so every check that can refuse runs before anything is
+  written, and every write that can still fail runs before anything is recorded. An entry for
+  something that then failed to store is a record of something that did not happen. `publish`
+  records inside the supersede loop as well as for itself — the rosters it demotes did not demote
+  themselves.
 - **Two `@Component` classes may not share a simple name.** Spring derives a bean name from it
   alone, so identically-named adapters in two contexts collide, and they collide at startup rather
   than at compile time. Hence `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog` and
@@ -152,6 +182,17 @@ that for free by being registered there — which is already mandatory.
   `.claude/CLAUDE.md`.
 
 ## Testing
+
+- **One PostgreSQL for the whole suite.** `PostgresDatabase` holds a container started once and
+  never stopped; `PostgresBackedApplication` hands it to Spring with `destroyMethod = ""`, so
+  closing a context cannot stop it. A Spring test carries exactly
+  `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`, to share the
+  one context.
+- **Isolation.** An HTTP test onboards a fresh organisation through `TestTenants`; an adapter
+  test, which runs without Spring, calls `PostgresDatabase.empty()` first.
+- **Fakes are hand-written**, package-private beside the service tests that use them, and copy the
+  real adapter's refusals — a fake that accepts what the database refuses tests nothing.
+- **Invented values are labelled** in the class javadoc and again on each value.
 
 **`@ParameterizedTest` is an accepted idiom, for data-only rows.** `junit-jupiter-params` comes
 with the Boot BOM; no dependency to add. Use it where the rows differ only in *data* and the
