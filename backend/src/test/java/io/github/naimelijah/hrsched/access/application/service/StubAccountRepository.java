@@ -41,12 +41,22 @@ final class StubAccountRepository implements AccountRepository {
   }
 
   /**
-   * Refuses a taken sign-in name and a second account for one employee, as {@code
-   * JdbcAccountRepository} does. Its refusal of an identity another organisation holds, or the
-   * operator does, is not mirrored; {@code JdbcAccountRepositoryTest} proves that one.
+   * Refuses what {@code JdbcAccountRepository} refuses: a taken sign-in name, a second account for
+   * one employee, and an identity another organisation holds, or the operator does. Comparing the
+   * two {@code Optional} organisations is the adapter's {@code IS NOT DISTINCT FROM}: the
+   * operator's is empty, and equal only to another empty one.
    */
   @Override
   public void save(Account account) {
+    stored.stream()
+        .filter(existing -> existing.id().equals(account.id()))
+        .filter(existing -> !existing.organisation().equals(account.organisation()))
+        .findAny()
+        .ifPresent(
+            existing -> {
+              throw new IllegalStateException(
+                  "this fake holds that identity in another organisation, or as the operator");
+            });
     findBySignInName(account.signInName())
         .filter(existing -> !existing.id().equals(account.id()))
         .ifPresent(
