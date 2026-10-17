@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.workforce.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
@@ -101,5 +102,34 @@ class JdbcQualificationRepositoryTest {
     repository.save(qualification(ACME, "Forklift"));
 
     assertThat(repository.findByOrganisation(ACME)).hasSize(2);
+  }
+
+  /**
+   * {@code save} is the one repository method carrying no {@code OrganisationId}, so the upsert is
+   * the only thing standing between a re-used identity and another tenant's row. A cross-tenant
+   * write is a security incident rather than a bug.
+   */
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenItIsRefused() {
+    Qualification theirs = qualification(RIVAL, "Their Qualification");
+    repository.save(theirs);
+
+    assertThatThrownBy(() -> repository.save(new Qualification(theirs.id(), ACME, "Forklift")))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("another organisation");
+  }
+
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenTheirRowIsUntouched() {
+    Qualification theirs = qualification(RIVAL, "Their Qualification");
+    repository.save(theirs);
+
+    assertThatThrownBy(() -> repository.save(new Qualification(theirs.id(), ACME, "Forklift")))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(repository.findById(RIVAL, theirs.id()))
+        .get()
+        .extracting(Qualification::name)
+        .isEqualTo("Their Qualification");
   }
 }
