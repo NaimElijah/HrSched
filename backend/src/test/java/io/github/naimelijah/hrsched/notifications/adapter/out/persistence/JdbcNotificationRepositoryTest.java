@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.notifications.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.notifications.domain.model.Notification;
 import io.github.naimelijah.hrsched.notifications.domain.model.NotificationId;
@@ -18,7 +19,9 @@ import org.junit.jupiter.api.Test;
  *
  * <p>Two filters, not one. Every read is scoped by organisation like its siblings, and also by
  * recipient — because an inbox handed to the wrong colleague is a disclosure even inside the right
- * tenant. The tests whose failure would be a security incident are the two isolation ones.
+ * tenant. The tests whose failure would be a security incident are the isolation ones: the two
+ * reads that must not cross an organisation or reach a colleague, and the two saves that must not
+ * write over another organisation's notification.
  */
 class JdbcNotificationRepositoryTest {
 
@@ -128,5 +131,46 @@ class JdbcNotificationRepositoryTest {
         .singleElement()
         .extracting(Notification::isRead)
         .isEqualTo(false);
+  }
+
+  /**
+   * {@code save} is the one repository method carrying no {@code OrganisationId}, so the upsert is
+   * the only thing standing between a re-used identity and another tenant's row. Ours differs in
+   * every column the upsert would overwrite, so an overwrite would show.
+   */
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenItIsRefused() {
+    Notification theirs = at(RIVAL, ADA, Instant.parse("2026-10-05T12:00:00Z"));
+    notifications.save(theirs);
+
+    assertThatThrownBy(() -> notifications.save(overwriting(theirs)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("another organisation");
+  }
+
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenTheirRowIsUntouched() {
+    Notification theirs = at(RIVAL, ADA, Instant.parse("2026-10-05T12:00:00Z"));
+    notifications.save(theirs);
+
+    assertThatThrownBy(() -> notifications.save(overwriting(theirs)))
+        .isInstanceOf(IllegalStateException.class);
+
+    // Read through the recipient's inbox, because an overwrite would have moved it to somebody
+    // else.
+    assertThat(notifications.findFor(RIVAL, ADA))
+        .singleElement()
+        .extracting(Notification::subject)
+        .isEqualTo(theirs.subject());
+  }
+
+  private static Notification overwriting(Notification theirs) {
+    return new Notification(
+        theirs.id(),
+        ACME,
+        GRACE,
+        NotificationKind.SWAP_APPROVED,
+        UUID.randomUUID(),
+        Instant.parse("2026-10-06T12:00:00Z"));
   }
 }
