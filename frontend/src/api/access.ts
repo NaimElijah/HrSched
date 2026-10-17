@@ -14,7 +14,11 @@ export interface Account {
   readonly id: string;
   readonly signInName: string;
   readonly role: TenantRole;
-  /** The personnel record this account is, or null for somebody who is never rostered. */
+  /**
+   * The personnel record this account is, or null for somebody who is never rostered. An Employee
+   * account is always linked (R34), but for one stored unlinked before that rule, which is disabled
+   * until it is linked.
+   */
   readonly employee: string | null;
   readonly active: boolean;
   readonly passwordChangeRequired: boolean;

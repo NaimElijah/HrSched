@@ -41,12 +41,31 @@ const GRACE = {
   createdAt: '2026-03-02T09:00:00Z',
 };
 
+/** The personnel record GRACE's account is linked to. Invented, like every identifier here. */
+const GRACE_HOPPER = {
+  id: '77777777-7777-4777-8777-777777777777',
+  name: 'Grace Hopper',
+  qualifications: [],
+  unavailability: [],
+  weeklyContractedMinutes: null,
+};
+
+/** Somebody this organisation employs whom no account is linked to yet. */
+const ROBIN = {
+  id: '55555555-5555-4555-8555-555555555555',
+  name: 'Robin Example',
+  qualifications: [],
+  unavailability: [],
+  weeklyContractedMinutes: null,
+};
+
 /** Invented for these tests. Nothing here suggests what a real password should look like. */
 const A_PASSWORD = 'an invented temporary password';
 
 function theOrganisation(overrides: Record<string, Answer> = {}) {
   return routeTo({
     '/api/accounts': { status: 200, body: [ADA, GRACE] },
+    '/api/employees': { status: 200, body: [GRACE_HOPPER, ROBIN] },
     ...overrides,
   });
 }
@@ -128,22 +147,44 @@ describe('creating an account', () => {
     });
   });
 
-  it('GivenAnEmployeeIdentifier_WhenCreating_ThenTheLinkIsSent', async () => {
+  it('GivenAnEmployeeChosen_WhenCreating_ThenTheLinkIsSent', async () => {
     const stub = theOrganisation({ 'POST /api/accounts': { status: 201, body: null } });
     show();
 
     await fillIn('grace@example.com', 'EMPLOYEE', A_PASSWORD);
-    await userEvent.type(
-      screen.getByLabelText('Employee identifier (optional)'),
-      '77777777-7777-4777-8777-777777777777',
-    );
+    const choice = screen.getByLabelText('Employee');
+    await within(choice).findByRole('option', { name: `Robin Example · ${ROBIN.id}` });
+    await userEvent.selectOptions(choice, ROBIN.id);
     await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     await waitFor(() => expect(callsTo(stub, 'POST', '/api/accounts')).toHaveLength(1));
     const init = callsTo(stub, 'POST', '/api/accounts')[0]?.[1];
-    expect(JSON.parse(String(init?.body))).toMatchObject({
-      employee: '77777777-7777-4777-8777-777777777777',
+    expect(JSON.parse(String(init?.body))).toMatchObject({ employee: ROBIN.id });
+  });
+
+  /** The backend decides whether an Employee may be linked to nobody (R34); the form sends it on. */
+  it('GivenNoEmployeeChosen_WhenCreatingAnEmployee_ThenTheBackendsRefusalIsShown', async () => {
+    const stub = theOrganisation({
+      'POST /api/accounts': {
+        status: 422,
+        body: {
+          title: 'Employee account not linked',
+          detail: "An Employee account must be linked to one of this organisation's employees.",
+        },
+      },
     });
+    show();
+
+    await fillIn('robin@example.com', 'EMPLOYEE', A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        "An Employee account must be linked to one of this organisation's employees.",
+      ),
+    );
+    const init = callsTo(stub, 'POST', '/api/accounts')[0]?.[1];
+    expect(JSON.parse(String(init?.body))).not.toHaveProperty('employee');
   });
 
   it('GivenNoSignInName_WhenCreating_ThenNothingIsSent', async () => {
@@ -241,6 +282,126 @@ describe('changing an account', () => {
       role: 'EMPLOYEE',
       employee: '77777777-7777-4777-8777-777777777777',
     });
+  });
+
+  it('GivenEmployees_WhenListed_ThenEachIsOfferedByNameAndIdentifier', async () => {
+    theOrganisation();
+    show();
+
+    await screen.findByRole('cell', { name: 'ada@example.com' });
+    const choice = within(rowFor('ada@example.com')).getByLabelText('Employee for ada@example.com');
+    expect(
+      await within(choice).findByRole('option', { name: `Robin Example · ${ROBIN.id}` }),
+    ).toBeInTheDocument();
+    expect(within(choice).getByRole('option', { name: 'Not linked' })).toBeInTheDocument();
+    expect(choice).toHaveValue('');
+  });
+
+  it('GivenAnAccount_WhenLinkedToAnEmployee_ThenTheLinkIsSentWithItsRole', async () => {
+    const stub = theOrganisation({
+      'PUT /api/accounts/11111111-1111-4111-8111-111111111111/membership': {
+        status: 204,
+        body: null,
+      },
+    });
+    show();
+
+    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await within(rowFor('ada@example.com')).findByRole('option', {
+      name: `Robin Example · ${ROBIN.id}`,
+    });
+    await userEvent.selectOptions(
+      within(rowFor('ada@example.com')).getByLabelText('Employee for ada@example.com'),
+      ROBIN.id,
+    );
+
+    await waitFor(() =>
+      expect(
+        callsTo(stub, 'PUT', '/api/accounts/11111111-1111-4111-8111-111111111111/membership'),
+      ).toHaveLength(1),
+    );
+    const init = callsTo(
+      stub,
+      'PUT',
+      '/api/accounts/11111111-1111-4111-8111-111111111111/membership',
+    )[0]?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({ role: 'ADMIN', employee: ROBIN.id });
+  });
+
+  it('GivenALinkedAccount_WhenSetToNotLinked_ThenTheLinkIsLeftOut', async () => {
+    const stub = theOrganisation({
+      'PUT /api/accounts/99999999-9999-4999-8999-999999999999/membership': {
+        status: 204,
+        body: null,
+      },
+    });
+    show();
+
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const choice = within(rowFor('grace@example.com')).getByLabelText(
+      'Employee for grace@example.com',
+    );
+    await waitFor(() => expect(choice).toHaveValue(GRACE_HOPPER.id));
+    await userEvent.selectOptions(choice, '');
+
+    await waitFor(() =>
+      expect(
+        callsTo(stub, 'PUT', '/api/accounts/99999999-9999-4999-8999-999999999999/membership'),
+      ).toHaveLength(1),
+    );
+    const init = callsTo(
+      stub,
+      'PUT',
+      '/api/accounts/99999999-9999-4999-8999-999999999999/membership',
+    )[0]?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({ role: 'SCHEDULER' });
+  });
+
+  /** A link the list does not hold still shows as a link, never as "Not linked". */
+  it('GivenALinkToSomebodyNotListed_WhenShown_ThenItIsShownByItsIdentifier', async () => {
+    const elsewhere = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    theOrganisation({
+      '/api/accounts': { status: 200, body: [{ ...GRACE, employee: elsewhere }] },
+    });
+    show();
+
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const choice = within(rowFor('grace@example.com')).getByLabelText(
+      'Employee for grace@example.com',
+    );
+    expect(choice).toHaveValue(elsewhere);
+    expect(within(choice).getByRole('option', { name: elsewhere })).toBeInTheDocument();
+  });
+
+  /** An Employee account V9 disabled is restored only once linked (R34); the backend says so. */
+  it('GivenAnEmployeeAccountLinkedToNobody_WhenRestored_ThenTheBackendsRefusalIsShown', async () => {
+    const unlinked = {
+      ...GRACE,
+      role: 'EMPLOYEE' as const,
+      employee: null,
+      locked: false,
+      passwordChangeRequired: false,
+    };
+    theOrganisation({
+      '/api/accounts': { status: 200, body: [unlinked] },
+      'PUT /api/accounts/99999999-9999-4999-8999-999999999999/activation': {
+        status: 422,
+        body: {
+          title: 'Employee account not linked',
+          detail: 'Link it before restoring it.',
+        },
+      },
+    });
+    show();
+
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await userEvent.click(
+      within(rowFor('grace@example.com')).getByRole('button', { name: 'Restore' }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Link it before restoring it.'),
+    );
   });
 
   it('GivenTheLastAdmin_WhenDemoted_ThenTheBackendsRefusalIsShown', async () => {
