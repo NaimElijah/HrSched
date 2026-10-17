@@ -303,9 +303,10 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 - **Tenancy is in every signature, on purpose.** Repository lookups take an `OrganisationId`, so
   a cross-tenant read cannot be written by forgetting a filter. See
   [ADR-009](../ADRs/ADR-009-tenant-isolation-in-the-domain.md). A `save` takes no organisation of
-  its own, so every upsert by identity guards the write instead: its `ON CONFLICT … DO UPDATE`
-  applies only where the stored row's organisation is the one being saved, and a save that so
-  touched no row throws rather than overwrite another organisation's, or the operator's, row.
+  its own, so the upsert of every aggregate an organisation owns guards the write instead: its
+  `ON CONFLICT … DO UPDATE` applies only where the stored row's organisation is the one being
+  saved, and a save that so touched no row throws rather than overwrite another organisation's, or
+  the operator's, row. The register of organisations is the exception, having no owner to compare.
 - **A cross-tenant attempt returns 404, never 403.** A 403 would confirm the resource exists in
   another organisation.
 - **Over HTTP that 404 is produced by the repositories, not by the tenant guard.** A request acts
