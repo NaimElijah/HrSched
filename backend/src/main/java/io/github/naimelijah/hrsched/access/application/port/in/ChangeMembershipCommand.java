@@ -16,7 +16,8 @@ import java.util.Optional;
  * @param organisation the organisation the account belongs to
  * @param account which account to change
  * @param role what it may do from now on
- * @param employee the personnel record it is, empty to unlink it
+ * @param employee the personnel record it is, empty to unlink it, which the Employee role refuses
+ *     (R34)
  */
 public record ChangeMembershipCommand(
     OrganisationId organisation, UserId account, Role role, Optional<EmployeeId> employee) {

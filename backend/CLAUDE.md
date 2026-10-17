@@ -97,8 +97,8 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
 - **Conflicts come from the database, not from version columns.** An exclusion violation or
   deadlock on a published save (SQLState 23P01, 40P01) becomes `RosterPublicationConflictException`,
   a 409. A revision that loses a race lets its unique violation surface — never
-  `ON CONFLICT DO NOTHING`. An upsert guards tenancy with
-  `WHERE <table>.organisation_id = EXCLUDED.organisation_id`.
+  `ON CONFLICT DO NOTHING`. An upsert's `WHERE` keeps `organisation_id` equal to `EXCLUDED`'s
+  (`IS NOT DISTINCT FROM` on `account`), and a write that touched no row is refused.
 
 ## Transactions, concurrency and time
 

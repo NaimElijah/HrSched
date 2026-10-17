@@ -15,7 +15,8 @@ import java.util.Optional;
  * @param signInName the name the account will sign in with
  * @param temporaryPassword the password it is given, which its owner must replace
  * @param role what it may do
- * @param employee the personnel record it is, null for somebody who is never rostered
+ * @param employee the personnel record it is, null for somebody who is never rostered, which the
+ *     Employee role refuses (R34)
  */
 public record CreateAccountRequest(
     String signInName, String temporaryPassword, Role role, String employee) {

@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.EmployeeAlreadyLinkedException;
 import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
+import io.github.naimelijah.hrsched.access.domain.model.Membership;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
 import io.github.naimelijah.hrsched.access.domain.model.PasswordHash;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
@@ -140,7 +141,7 @@ class JdbcAccountRepositoryTest {
 
   @Test
   void GivenAName_WhenFindingBySignInNameInADifferentCase_ThenTheSameAccountIsReturned() {
-    Account stored = tenant(ACME, "Ada@Example.com", Role.EMPLOYEE);
+    Account stored = tenant(ACME, "Ada@Example.com", Role.SCHEDULER);
     repository.save(stored);
 
     assertThat(repository.findBySignInName(new SignInName("  ADA@EXAMPLE.COM ")))
@@ -156,7 +157,7 @@ class JdbcAccountRepositoryTest {
   @Test
   void GivenATakenSignInNameInAnyOrganisation_WhenSaving_ThenItIsRefused() {
     repository.save(tenant(RIVAL, "ada@example.com", Role.ADMIN));
-    Account sameName = tenant(ACME, "ada@example.com", Role.EMPLOYEE);
+    Account sameName = tenant(ACME, "ada@example.com", Role.SCHEDULER);
 
     assertThatThrownBy(() -> repository.save(sameName))
         .isInstanceOf(SignInNameTakenException.class)
@@ -166,8 +167,8 @@ class JdbcAccountRepositoryTest {
   @Test
   void GivenAnEmployeeAlreadyLinkedInTheOrganisation_WhenLinkingAnotherAccount_ThenItIsRefused() {
     EmployeeId ada = EmployeeId.newId();
-    repository.save(tenant(ACME, "first@example.com", Role.EMPLOYEE).linkedTo(Optional.of(ada)));
-    Account second = tenant(ACME, "second@example.com", Role.EMPLOYEE).linkedTo(Optional.of(ada));
+    repository.save(employee(ACME, "first@example.com", ada));
+    Account second = employee(ACME, "second@example.com", ada);
 
     assertThatThrownBy(() -> repository.save(second))
         .isInstanceOfSatisfying(
@@ -182,25 +183,101 @@ class JdbcAccountRepositoryTest {
   @Test
   void GivenAnEmployeeLinkedInAnotherOrganisation_WhenLinkingOneOfOurs_ThenItIsAccepted() {
     EmployeeId shared = EmployeeId.newId();
-    repository.save(
-        tenant(RIVAL, "theirs@example.com", Role.EMPLOYEE).linkedTo(Optional.of(shared)));
-    Account ours = tenant(ACME, "ours@example.com", Role.EMPLOYEE).linkedTo(Optional.of(shared));
+    repository.save(employee(RIVAL, "theirs@example.com", shared));
+    Account ours = employee(ACME, "ours@example.com", shared);
 
     assertThatCode(() -> repository.save(ours)).doesNotThrowAnyException();
   }
 
   @Test
   void GivenAnUpdatedAccount_WhenSavedAgain_ThenTheChangeIsStored() {
-    Account stored = tenant(ACME, "ada@example.com", Role.EMPLOYEE);
+    Account stored = tenant(ACME, "ada@example.com", Role.ADMIN);
     repository.save(stored);
 
-    repository.save(stored.withRole(Role.SCHEDULER).disabled());
+    repository.save(stored.withMembership(Role.SCHEDULER, Optional.empty()).disabled());
 
     Account found = repository.find(ACME, stored.id()).orElseThrow();
     assertThat(found.membership())
         .isEqualTo(new TenantMembership(ACME, Role.SCHEDULER, Optional.empty()));
     assertThat(found.active()).isFalse();
     assertThat(repository.findAll(ACME)).hasSize(1);
+  }
+
+  /**
+   * {@code save} is the one repository method carrying no {@code OrganisationId}, so the upsert is
+   * the only thing standing between a re-used identity and another tenant's row. Without it, saving
+   * moved the account into the caller's organisation rather than refusing.
+   */
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenItIsRefused() {
+    Account theirs = tenant(RIVAL, "theirs@example.com", Role.SCHEDULER);
+    repository.save(theirs);
+
+    assertThatThrownBy(() -> repository.save(overwriting(theirs, anAdminOf(ACME))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("another organisation");
+  }
+
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenTheirRowIsUntouched() {
+    Account theirs = tenant(RIVAL, "theirs@example.com", Role.SCHEDULER);
+    repository.save(theirs);
+
+    assertThatThrownBy(() -> repository.save(overwriting(theirs, anAdminOf(ACME))))
+        .isInstanceOf(IllegalStateException.class);
+
+    Account stored = repository.find(RIVAL, theirs.id()).orElseThrow();
+    assertThat(stored.signInName()).isEqualTo(theirs.signInName());
+    assertThat(stored.membership()).isEqualTo(theirs.membership());
+    assertThat(repository.find(ACME, theirs.id())).isEmpty();
+  }
+
+  /** Without the guard, a tenant account saved under the operator's identity made it an Admin. */
+  @Test
+  void GivenTheOperatorsIdentity_WhenATenantAccountIsSavedOverIt_ThenTheOperatorStaysOne() {
+    Account operator = operator("operator@example.com");
+    repository.save(operator);
+
+    assertThatThrownBy(() -> repository.save(overwriting(operator, anAdminOf(ACME))))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(repository.findBySignInName(new SignInName("operator@example.com")))
+        .get()
+        .extracting(Account::membership)
+        .isEqualTo(new OperatorMembership());
+  }
+
+  /** Without the guard, the operator saved under a tenant's identity turned it into an operator. */
+  @Test
+  void GivenATenantsIdentity_WhenTheOperatorIsSavedOverIt_ThenTheTenantStaysOne() {
+    Account theirs = tenant(RIVAL, "theirs@example.com", Role.SCHEDULER);
+    repository.save(theirs);
+
+    assertThatThrownBy(() -> repository.save(overwriting(theirs, new OperatorMembership())))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(repository.find(RIVAL, theirs.id()))
+        .get()
+        .extracting(Account::membership)
+        .isEqualTo(theirs.membership());
+  }
+
+  /**
+   * The operator's row carries no organisation, and {@code NULL = NULL} is not true, so a guard
+   * comparing with {@code =} would refuse every save of it — and sign-in saves it after a failure.
+   */
+  @Test
+  void GivenTheOperator_WhenSavedAgain_ThenTheChangeIsStored() {
+    Account operator = operator("operator@example.com");
+    repository.save(operator);
+
+    repository.save(
+        operator.recordFailedSignIn(CREATED_AT, new LockoutPolicy(3, Duration.ofMinutes(15))));
+
+    assertThat(repository.findBySignInName(new SignInName("operator@example.com")))
+        .get()
+        .extracting(Account::failedSignIns)
+        .isEqualTo(1);
   }
 
   @Test
@@ -289,6 +366,31 @@ class JdbcAccountRepositoryTest {
         new SignInName(signInName),
         HASH,
         new TenantMembership(organisation, role, Optional.empty()),
+        false,
+        CREATED_AT);
+  }
+
+  /**
+   * @return ours, under their identity, with a sign-in name nobody holds, so that only the guard
+   *     can refuse it
+   */
+  private static Account overwriting(Account theirs, Membership membership) {
+    return new Account(
+        theirs.id(), new SignInName("ours@example.com"), HASH, membership, false, CREATED_AT);
+  }
+
+  private static TenantMembership anAdminOf(OrganisationId organisation) {
+    return new TenantMembership(organisation, Role.ADMIN, Optional.empty());
+  }
+
+  /** An Employee account, which is always linked to somebody (R34). */
+  private static Account employee(
+      OrganisationId organisation, String signInName, EmployeeId linked) {
+    return new Account(
+        UserId.newId(),
+        new SignInName(signInName),
+        HASH,
+        new TenantMembership(organisation, Role.EMPLOYEE, Optional.of(linked)),
         false,
         CREATED_AT);
   }

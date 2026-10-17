@@ -100,7 +100,7 @@ Three rules hold this together, and each fails the build when broken:
 | Component | Responsibility |
 | --- | --- |
 | `shared.domain.model` | The kernel: `OrganisationId`, `UserId`, `EmployeeId`, `QualificationId`, `Role`, `TimeRange`, and the sealed `Actor` (`TenantActor`, `Operator`). Identities and pure values that cross contexts, with no behaviour of their own. A `TenantActor` also carries the `EmployeeId` it is, when it is one ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). |
-| `access.domain.model` | `Organisation` — the tenant itself — and `Account`, what signs in. An account's `Membership` is sealed into one organisation in one role, or the platform operator, so an operator carrying a role or an employee link is unrepresentable. `SignInName` and `PasswordHash` both print as redacted. Otherwise deliberately small: the tenancy *types* live in the kernel because every context needs them. |
+| `access.domain.model` | `Organisation` — the tenant itself — and `Account`, what signs in. An account's `Membership` is sealed into one organisation in one role, or the platform operator, so an operator carrying a role or an employee link is unrepresentable. So is an Employee account that may be used while linked to nobody (R34): the only one linked to nobody at all was stored before the rule, and migration `V9` disabled it until it is linked. `SignInName` and `PasswordHash` both print as redacted. Otherwise deliberately small: the tenancy *types* live in the kernel because every context needs them. |
 | `access.application` | Signing in, renewing and ending a session, reading one's own session and changing one's own password (F14); bootstrapping the platform operator; administering an organisation's own accounts (F15); and onboarding, listing and reading organisations (F13), with the register they live in. Onboarding creates the organisation and its first Admin account in one transaction, so a refused account leaves no organisation behind; that account is created needing a password change, because the one it was given was typed by somebody else. Account administration takes the organisation's advisory lock before it reads, because R14 — an organisation keeps at least one active Admin — is decided by reading and then writing. Onboarding and listing are the platform `Operator`'s alone — the guard is the inverse of every other one here, asking whether the actor belongs to a tenant rather than which role they hold in it. See [ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md). |
 | `notifications.domain.model` | `Notification` — something one person has been told, and whether they have seen it. It carries identifiers, a kind, a time and a flag, and **there is nowhere in it to put a sentence or a name** ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `notifications.application` | Raising and reading notifications. `NotifyUseCase` is this context's **published API** and is deliberately not on a controller; `ReadNotificationsUseCase` is strictly self-service, and whose inbox is read comes from the acting identity rather than from any parameter. Takes a `Clock`, so when something happened is an input rather than an ambient fact. |
@@ -302,7 +302,11 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   than another — are a separate concept that is not modelled.
 - **Tenancy is in every signature, on purpose.** Repository lookups take an `OrganisationId`, so
   a cross-tenant read cannot be written by forgetting a filter. See
-  [ADR-009](../ADRs/ADR-009-tenant-isolation-in-the-domain.md).
+  [ADR-009](../ADRs/ADR-009-tenant-isolation-in-the-domain.md). A `save` takes no organisation of
+  its own, so the upsert of every aggregate an organisation owns guards the write instead: its
+  `ON CONFLICT … DO UPDATE` applies only where the stored row's organisation is the one being
+  saved, and a save that so touched no row throws rather than overwrite another organisation's, or
+  the operator's, row. The register of organisations is the exception, having no owner to compare.
 - **A cross-tenant attempt returns 404, never 403.** A 403 would confirm the resource exists in
   another organisation.
 - **Over HTTP that 404 is produced by the repositories, not by the tenant guard.** A request acts

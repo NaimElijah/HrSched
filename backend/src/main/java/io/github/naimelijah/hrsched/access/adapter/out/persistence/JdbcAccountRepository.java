@@ -33,10 +33,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 /**
  * Driven adapter storing accounts in PostgreSQL.
  *
- * <p>Every read but one filters on {@code organisation_id}, so the platform operator — whose row
+ * <p>Every read but two filters on {@code organisation_id}, so the platform operator — whose row
  * carries none — is invisible to a tenant's own administration rather than merely hidden by a use
- * case. The exception is {@link #findBySignInName(SignInName)}, which sign-in needs because it has
- * only a name to go on; the port says why that is safe.
+ * case. The exceptions are {@link #findBySignInName(SignInName)}, which sign-in needs because it
+ * has only a name to go on, and {@link #findForAuthentication(UserId)}, which needs only the
+ * identity a token names; the port says why each is safe.
  *
  * <p>Two different collisions arrive as the same SQLState, so this adapter tells them apart by the
  * name of the constraint that failed. The driver is a runtime-only dependency (ADR-004), so
@@ -77,13 +78,21 @@ public class JdbcAccountRepository implements AccountRepository {
               :lockedUntil, :createdAt)
       """;
 
-  /** Replaces the stored version of an account that is already there, by identity. */
+  /**
+   * Replaces the stored version of an account that is already there, by identity, and only within
+   * the organisation it belongs to.
+   *
+   * <p>{@code IS NOT DISTINCT FROM} rather than {@code =}, because the operator's row carries no
+   * organisation and {@code NULL = NULL} is not true: an {@code =} would refuse every save of the
+   * operator. A failed sign-in saves it, and so does every password change, the bootstrapped
+   * operator's forced first change included. {@code account_membership_consistent} ties a missing
+   * organisation to the operator's kind, so the guard also keeps an account from changing kind, and
+   * neither column is in the {@code SET}: once the guard holds, neither can differ.
+   */
   private static final String ON_CONFLICT_REPLACE =
       """
       ON CONFLICT (id) DO UPDATE SET sign_in_name = EXCLUDED.sign_in_name,
                                      password_hash = EXCLUDED.password_hash,
-                                     kind = EXCLUDED.kind,
-                                     organisation_id = EXCLUDED.organisation_id,
                                      role = EXCLUDED.role,
                                      employee_id = EXCLUDED.employee_id,
                                      active = EXCLUDED.active,
@@ -91,6 +100,7 @@ public class JdbcAccountRepository implements AccountRepository {
                                      failed_sign_ins = EXCLUDED.failed_sign_ins,
                                      locked_until = EXCLUDED.locked_until,
                                      created_at = EXCLUDED.created_at
+      WHERE account.organisation_id IS NOT DISTINCT FROM EXCLUDED.organisation_id
       """;
 
   private final JdbcClient jdbc;
@@ -181,9 +191,25 @@ public class JdbcAccountRepository implements AccountRepository {
   }
 
   private void store(Account account) {
-    jdbc.sql(INSERT_ACCOUNT + ON_CONFLICT_REPLACE)
-        .params(parametersOf(account, tenantMembershipOf(account)))
-        .update();
+    int stored =
+        jdbc.sql(INSERT_ACCOUNT + ON_CONFLICT_REPLACE)
+            .params(parametersOf(account, tenantMembershipOf(account)))
+            .update();
+    requireStored(stored, account.id().value());
+  }
+
+  /**
+   * The upsert's {@code WHERE} is the only thing standing between a re-used identity and another
+   * tenant's row. It makes the mismatched case affect nothing rather than overwrite; this turns
+   * that silence into a refusal, because a write that quietly did nothing is the worse of the two
+   * failures.
+   */
+  private static void requireStored(int rows, UUID id) {
+    if (rows == 0) {
+      throw new IllegalStateException(
+          "Refused to store %s: another organisation, or the operator, holds that identity"
+              .formatted(id));
+    }
   }
 
   private static Map<String, Object> parametersOf(

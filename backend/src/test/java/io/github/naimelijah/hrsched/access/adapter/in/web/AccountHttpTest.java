@@ -10,12 +10,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
+import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
+import io.github.naimelijah.hrsched.access.domain.model.Account;
+import io.github.naimelijah.hrsched.access.domain.model.SignInName;
+import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
+import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,7 +63,20 @@ class AccountHttpTest {
   /** Invented, and what an account replaces the password somebody else chose for it with. */
   private static final String THEIR_OWN_PASSWORD = "a password that admin chose themselves";
 
+  /**
+   * The one sentence every R34 refusal answers with, whichever of creating, changing or restoring
+   * was refused: it is what the Admin reads, so it has to be true of all three.
+   */
+  private static final String UNLINKED_EMPLOYEE_REFUSED =
+      "An Employee account must be linked to one of this organisation's employees; one that is not"
+          + " cannot be restored until it is.";
+
+  /** Invented: when an account {@link #migrated} stands for was created. */
+  private static final Instant STORED_BEFORE_R34 = Instant.parse("2026-09-01T09:00:00Z");
+
   @Autowired private MockMvc mockMvc;
+  @Autowired private AccountRepository accounts;
+  @Autowired private PasswordHasher passwords;
 
   private OrganisationId anOrganisation() throws Exception {
     String body =
@@ -101,6 +122,44 @@ class AccountHttpTest {
             .getResponse()
             .getContentAsString();
     return JsonPath.read(body, "$.id");
+  }
+
+  /**
+   * Stores, through the repository, an Employee account linked to nobody, as V9 left one: disabled.
+   * No request can make one, so none is driven.
+   *
+   * @return its identifier
+   */
+  private String migrated(OrganisationId organisation, String signInName) {
+    UserId id = UserId.newId();
+    accounts.save(
+        new Account(
+            id,
+            new SignInName(signInName),
+            passwords.hash(A_PASSWORD),
+            new TenantMembership(organisation, Role.EMPLOYEE, Optional.empty()),
+            false,
+            false,
+            0,
+            Optional.empty(),
+            STORED_BEFORE_R34));
+    return id.value().toString();
+  }
+
+  /**
+   * @return the identifier of an Employee account this Admin just created, linked to that employee
+   */
+  private String createLinked(String adminToken, String signInName, String employee)
+      throws Exception {
+    String location =
+        mockMvc
+            .perform(
+                with(post("/api/accounts"), adminToken).content(linkedTo(signInName, employee)))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getHeader("Location");
+    return location.substring(location.lastIndexOf('/') + 1);
   }
 
   private MockHttpServletRequestBuilder signInAs(String signInName, String password) {
@@ -155,7 +214,7 @@ class AccountHttpTest {
         mockMvc
             .perform(
                 with(post("/api/accounts"), admin(anOrganisation()))
-                    .content(creating(signInName, Role.EMPLOYEE)))
+                    .content(creating(signInName, Role.SCHEDULER)))
             .andExpect(status().isCreated())
             .andReturn()
             .getResponse()
@@ -168,7 +227,7 @@ class AccountHttpTest {
   void GivenASignInNameAlreadyTaken_WhenCreatingAnAccount_ThenItIsAConflict() throws Exception {
     String admin = admin(anOrganisation());
     String taken = anInventedSignInName();
-    create(admin, taken, Role.EMPLOYEE);
+    create(admin, taken, Role.ADMIN);
 
     mockMvc
         .perform(with(post("/api/accounts"), admin).content(creating(taken, Role.SCHEDULER)))
@@ -183,13 +242,13 @@ class AccountHttpTest {
   void GivenANameTakenInAnotherOrganisation_WhenCreatingAnAccount_ThenItIsAConflictThatSaysNothing()
       throws Exception {
     String taken = anInventedSignInName();
-    create(admin(anOrganisation()), taken, Role.EMPLOYEE);
+    create(admin(anOrganisation()), taken, Role.SCHEDULER);
 
     String body =
         mockMvc
             .perform(
                 with(post("/api/accounts"), admin(anOrganisation()))
-                    .content(creating(taken, Role.EMPLOYEE)))
+                    .content(creating(taken, Role.SCHEDULER)))
             .andExpect(status().isConflict())
             .andReturn()
             .getResponse()
@@ -205,7 +264,7 @@ class AccountHttpTest {
         .perform(
             with(post("/api/accounts"), admin(anOrganisation()))
                 .content(
-                    "{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\",\"role\":\"EMPLOYEE\"}"
+                    "{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\",\"role\":\"SCHEDULER\"}"
                         .formatted(anInventedSignInName(), TOO_SHORT)))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.reason").value("TOO_SHORT"));
@@ -295,7 +354,7 @@ class AccountHttpTest {
   @Test
   void GivenAnAccount_WhenListed_ThenNoPasswordHashIsAnywhereInTheAnswer() throws Exception {
     OrganisationId acme = anOrganisation();
-    create(admin(acme), anInventedSignInName(), Role.EMPLOYEE);
+    create(admin(acme), anInventedSignInName(), Role.SCHEDULER);
 
     String body =
         mockMvc
@@ -357,6 +416,75 @@ class AccountHttpTest {
         .andExpect(status().isForbidden());
   }
 
+  // An Employee account is always linked to an employee (R34)
+
+  @Test
+  void GivenAnEmployeeAccountLinkedToNobody_WhenCreated_ThenItIsUnprocessableAndNothingIsCreated()
+      throws Exception {
+    OrganisationId acme = anOrganisation();
+    String signInName = anInventedSignInName();
+
+    mockMvc
+        .perform(
+            with(post("/api/accounts"), admin(acme)).content(creating(signInName, Role.EMPLOYEE)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.title").value("Employee account not linked"))
+        .andExpect(jsonPath("$.detail").value(UNLINKED_EMPLOYEE_REFUSED));
+
+    mockMvc.perform(signInAs(signInName, A_PASSWORD)).andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void GivenAnEmployeeAccount_WhenItsLinkIsTakenAway_ThenItIsUnprocessable() throws Exception {
+    OrganisationId acme = anOrganisation();
+    String admin = admin(acme);
+    String account = createLinked(admin, anInventedSignInName(), anEmployee(acme));
+
+    mockMvc
+        .perform(
+            with(put("/api/accounts/%s/membership".formatted(account)), admin)
+                .content("{\"role\":\"EMPLOYEE\"}"))
+        .andExpect(status().isUnprocessableEntity());
+  }
+
+  /**
+   * The whole way back for an account V9 disabled: Restore is refused while it is linked to nobody,
+   * linking it leaves it disabled, and restoring it then lets its holder sign in again.
+   */
+  @Test
+  void GivenAnEmployeeAccountLinkedToNobody_WhenLinkedThenRestored_ThenItSignsInAgain()
+      throws Exception {
+    OrganisationId acme = anOrganisation();
+    String admin = admin(acme);
+    String signInName = anInventedSignInName();
+    String account = migrated(acme, signInName);
+
+    mockMvc
+        .perform(
+            with(put("/api/accounts/%s/activation".formatted(account)), admin)
+                .content("{\"active\":true}"))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.detail").value(UNLINKED_EMPLOYEE_REFUSED));
+
+    mockMvc
+        .perform(
+            with(put("/api/accounts/%s/membership".formatted(account)), admin)
+                .content("{\"role\":\"EMPLOYEE\",\"employee\":\"%s\"}".formatted(anEmployee(acme))))
+        .andExpect(status().isNoContent());
+    // Linking is not restoring.
+    mockMvc.perform(signInAs(signInName, A_PASSWORD)).andExpect(status().isUnauthorized());
+
+    mockMvc
+        .perform(
+            with(put("/api/accounts/%s/activation".formatted(account)), admin)
+                .content("{\"active\":true}"))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(signInAs(signInName, A_PASSWORD))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.session.role").value("EMPLOYEE"));
+  }
+
   // Changing what an account is
 
   @Test
@@ -364,18 +492,18 @@ class AccountHttpTest {
     OrganisationId acme = anOrganisation();
     String admin = admin(acme);
     String signInName = anInventedSignInName();
-    String account = create(admin, signInName, Role.EMPLOYEE);
+    String account = create(admin, signInName, Role.SCHEDULER);
 
     mockMvc
         .perform(
             with(put("/api/accounts/%s/membership".formatted(account)), admin)
-                .content("{\"role\":\"SCHEDULER\"}"))
+                .content("{\"role\":\"ADMIN\"}"))
         .andExpect(status().isNoContent());
 
     mockMvc
         .perform(signInAs(signInName, A_PASSWORD))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.session.role").value("SCHEDULER"));
+        .andExpect(jsonPath("$.session.role").value("ADMIN"));
   }
 
   /** There is no way back from an organisation with no Admin: nobody outside it may act inside. */
@@ -406,7 +534,7 @@ class AccountHttpTest {
   /** A 404 rather than a 403: saying otherwise would confirm that account exists. */
   @Test
   void GivenAnAccountOfAnotherOrganisation_WhenChangingIt_ThenItIsNotFound() throws Exception {
-    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.EMPLOYEE);
+    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.SCHEDULER);
 
     mockMvc
         .perform(
@@ -576,7 +704,7 @@ class AccountHttpTest {
   @Test
   void GivenAnAccountOfAnotherOrganisation_WhenResettingItsPassword_ThenItIsNotFound()
       throws Exception {
-    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.EMPLOYEE);
+    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.SCHEDULER);
 
     mockMvc
         .perform(

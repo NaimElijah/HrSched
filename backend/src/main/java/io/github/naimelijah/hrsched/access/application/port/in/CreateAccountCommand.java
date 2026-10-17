@@ -19,7 +19,8 @@ import java.util.Optional;
  * @param signInName the name it will sign in with, unique across the platform
  * @param temporaryPassword the password it is given, which its owner must replace
  * @param role what it may do in that organisation
- * @param employee the personnel record it is, empty for somebody who is never rostered
+ * @param employee the personnel record it is, empty for somebody who is never rostered; never empty
+ *     for the Employee role (R34)
  */
 public record CreateAccountCommand(
     OrganisationId organisation,

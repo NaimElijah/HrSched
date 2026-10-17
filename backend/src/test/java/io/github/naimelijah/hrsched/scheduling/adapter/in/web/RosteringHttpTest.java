@@ -140,6 +140,10 @@ class RosteringHttpTest {
         .andExpect(jsonPath("$.length()").value(0));
   }
 
+  /**
+   * A Scheduler, because an account holding the Employee role is always linked to somebody (R34),
+   * and only the other roles can be nobody's.
+   */
   @Test
   void GivenNoPersonnelRecordIsClaimed_WhenReadingTheirOwnSchedule_ThenItIsForbidden()
       throws Exception {
@@ -147,7 +151,7 @@ class RosteringHttpTest {
 
     mockMvc
         .perform(
-            as(mockMvc, get("/api/me/schedule"), organisation, "EMPLOYEE")
+            as(mockMvc, get("/api/me/schedule"), organisation, "SCHEDULER")
                 .param("from", "2026-11-09T00:00:00Z")
                 .param("to", "2026-11-10T00:00:00Z"))
         .andExpect(status().isForbidden());
