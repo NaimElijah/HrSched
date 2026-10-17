@@ -75,6 +75,11 @@ public final class TestTenants {
   }
 
   /**
+   * An Employee account is linked to a personnel identity invented here, which no workforce record
+   * holds: R34 requires the link, and a test asking only what the role may do never reads the
+   * record behind it. A test acting as a particular person uses {@link #asThemself} instead. Every
+   * other role is linked to nobody.
+   *
    * @param mockMvc the test's own client
    * @param organisation the organisation the account belongs to
    * @param role what it may do there
@@ -82,7 +87,10 @@ public final class TestTenants {
    */
   public static String tokenFor(MockMvc mockMvc, OrganisationId organisation, Role role)
       throws Exception {
-    return tenantToken(mockMvc, new TenantMembership(organisation, role, Optional.empty()));
+    Optional<EmployeeId> link =
+        role == Role.EMPLOYEE ? Optional.of(EmployeeId.newId()) : Optional.empty();
+    return tenantToken(
+        mockMvc, nameFor(organisation, role), new TenantMembership(organisation, role, link));
   }
 
   /**
@@ -133,7 +141,9 @@ public final class TestTenants {
   public static String tokenForEmployee(
       MockMvc mockMvc, OrganisationId organisation, EmployeeId employee) throws Exception {
     return tenantToken(
-        mockMvc, new TenantMembership(organisation, Role.EMPLOYEE, Optional.of(employee)));
+        mockMvc,
+        "suite-employee-%s@example.com".formatted(employee.value()),
+        new TenantMembership(organisation, Role.EMPLOYEE, Optional.of(employee)));
   }
 
   /**
@@ -174,32 +184,26 @@ public final class TestTenants {
   }
 
   /**
-   * One account per membership, not one per call.
+   * One account per sign-in name, not one per call.
    *
-   * <p>The name is derived from what the membership <em>is</em> rather than invented, and the
-   * reason is a rule rather than tidiness: an employee may hold at most one account, so a fresh
-   * account per call would make the second request of any test that acts as the same person fail
-   * with a link conflict. Deriving it makes the second call a no-op instead.
+   * <p>The name is derived from what the account <em>is</em> — the person it is, or the role and
+   * organisation it acts in — rather than invented, and the reason is a rule rather than tidiness:
+   * an employee may hold at most one account, so a fresh account per call would make the second
+   * request of any test that acts as the same person fail with a link conflict. Deriving it makes
+   * the second call a no-op instead, keeping whatever the first call stored.
    *
    * <p>Two tests still never share one, because they never share an organisation: every test
    * onboards its own, and an employee identity is unique across all of them.
    */
-  private static String tenantToken(MockMvc mockMvc, TenantMembership membership) throws Exception {
-    String name = nameFor(membership);
+  private static String tenantToken(MockMvc mockMvc, String name, TenantMembership membership)
+      throws Exception {
     ensure(mockMvc, name, membership);
     return signIn(mockMvc, name);
   }
 
-  private static String nameFor(TenantMembership membership) {
-    return membership
-        .employee()
-        .map(employee -> "suite-employee-%s@example.com".formatted(employee.value()))
-        .orElseGet(
-            () ->
-                "suite-%s-%s@example.com"
-                    .formatted(
-                        membership.role().name().toLowerCase(Locale.ROOT),
-                        membership.organisation().value()));
+  private static String nameFor(OrganisationId organisation, Role role) {
+    return "suite-%s-%s@example.com"
+        .formatted(role.name().toLowerCase(Locale.ROOT), organisation.value());
   }
 
   /** Stores the account only if its name is free, so calling this again changes nothing. */
