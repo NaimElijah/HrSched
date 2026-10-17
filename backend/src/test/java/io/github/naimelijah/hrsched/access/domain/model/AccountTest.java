@@ -64,7 +64,7 @@ class AccountTest {
   @Test
   void
       GivenThresholdMinusOneFailures_WhenOneMoreFails_ThenTheAccountIsLockedForTheConfiguredDuration() {
-    Account account = tenant(UserId.newId(), Role.EMPLOYEE, Optional.empty());
+    Account account = tenant(UserId.newId(), Role.SCHEDULER, Optional.empty());
 
     Account twiceFailed =
         account
@@ -118,14 +118,14 @@ class AccountTest {
 
   @Test
   void GivenAnAccountThatNeverFailed_WhenAskedWhetherItIsLocked_ThenItIsNot() {
-    assertThat(tenant(UserId.newId(), Role.EMPLOYEE, Optional.empty()).isLockedAt(NOW)).isFalse();
+    assertThat(tenant(UserId.newId(), Role.SCHEDULER, Optional.empty()).isLockedAt(NOW)).isFalse();
   }
 
   @Test
   void GivenAnOperatorAccount_WhenGivenARole_ThenItIsRefused() {
     Account account = operator(UserId.newId());
 
-    assertThatThrownBy(() -> account.withRole(Role.ADMIN))
+    assertThatThrownBy(() -> account.withMembership(Role.ADMIN, Optional.empty()))
         .isInstanceOf(OperatorBelongsToNoOrganisationException.class);
   }
 
@@ -134,15 +134,16 @@ class AccountTest {
     Account account = operator(UserId.newId());
     Optional<EmployeeId> ada = Optional.of(EmployeeId.newId());
 
-    assertThatThrownBy(() -> account.linkedTo(ada))
+    assertThatThrownBy(() -> account.withMembership(Role.EMPLOYEE, ada))
         .isInstanceOf(OperatorBelongsToNoOrganisationException.class);
   }
 
   @Test
   void GivenATenantAccount_WhenGivenAnotherRole_ThenItKeepsEverythingElse() {
-    Account account = tenant(UserId.newId(), Role.EMPLOYEE, Optional.of(EmployeeId.newId()));
+    Optional<EmployeeId> ada = Optional.of(EmployeeId.newId());
+    Account account = tenant(UserId.newId(), Role.EMPLOYEE, ada);
 
-    Account promoted = account.withRole(Role.SCHEDULER);
+    Account promoted = account.withMembership(Role.SCHEDULER, ada);
 
     assertThat(promoted.actor())
         .isInstanceOfSatisfying(
@@ -154,9 +155,9 @@ class AccountTest {
   @Test
   void GivenATenantAccount_WhenLinkedToAnEmployee_ThenItsActorCarriesThem() {
     EmployeeId ada = EmployeeId.newId();
-    Account account = tenant(UserId.newId(), Role.EMPLOYEE, Optional.empty());
+    Account account = tenant(UserId.newId(), Role.SCHEDULER, Optional.empty());
 
-    Account linked = account.linkedTo(Optional.of(ada));
+    Account linked = account.withMembership(Role.SCHEDULER, Optional.of(ada));
 
     assertThat(linked.actor())
         .isInstanceOfSatisfying(
@@ -165,9 +166,9 @@ class AccountTest {
 
   @Test
   void GivenALinkedTenantAccount_WhenUnlinked_ThenItsActorCarriesNobody() {
-    Account account = tenant(UserId.newId(), Role.EMPLOYEE, Optional.of(EmployeeId.newId()));
+    Account account = tenant(UserId.newId(), Role.SCHEDULER, Optional.of(EmployeeId.newId()));
 
-    Account unlinked = account.linkedTo(Optional.empty());
+    Account unlinked = account.withMembership(Role.SCHEDULER, Optional.empty());
 
     assertThat(unlinked.actor())
         .isInstanceOfSatisfying(TenantActor.class, actor -> assertThat(actor.employee()).isEmpty());
@@ -199,7 +200,7 @@ class AccountTest {
     UserId id = UserId.newId();
 
     assertThat(tenant(id, Role.ADMIN, Optional.empty()))
-        .isEqualTo(tenant(id, Role.EMPLOYEE, Optional.empty()))
+        .isEqualTo(tenant(id, Role.SCHEDULER, Optional.empty()))
         .isNotEqualTo(tenant(UserId.newId(), Role.ADMIN, Optional.empty()));
   }
 
@@ -256,6 +257,108 @@ class AccountTest {
     assertThat(account.createdAt()).isEqualTo(CREATED_AT);
   }
 
+  // An Employee account is always linked to an employee (R34)
+
+  @Test
+  void GivenAnEmployeeLinkedToNobody_WhenCreatingTheAccount_ThenItIsRefused() {
+    assertThatThrownBy(() -> tenant(UserId.newId(), Role.EMPLOYEE, Optional.empty()))
+        .isInstanceOf(UnlinkedEmployeeAccountException.class);
+  }
+
+  @Test
+  void GivenAnActiveEmployeeLinkedToNobody_WhenRebuildingTheAccount_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                new Account(
+                    UserId.newId(),
+                    ADA,
+                    HASH,
+                    new TenantMembership(ACME, Role.EMPLOYEE, Optional.empty()),
+                    true,
+                    false,
+                    0,
+                    Optional.empty(),
+                    CREATED_AT))
+        .isInstanceOf(UnlinkedEmployeeAccountException.class);
+  }
+
+  /** What V9 left of an account stored before the rule: it loads, and it may not be used. */
+  @Test
+  void GivenADisabledEmployeeLinkedToNobody_WhenRebuildingTheAccount_ThenItIsKeptDisabled() {
+    Account migrated = migrated(UserId.newId());
+
+    assertThat(migrated.active()).isFalse();
+    assertThat(migrated.membership())
+        .isEqualTo(new TenantMembership(ACME, Role.EMPLOYEE, Optional.empty()));
+  }
+
+  @Test
+  void GivenADisabledEmployeeLinkedToNobody_WhenEnabled_ThenItIsRefused() {
+    Account migrated = migrated(UserId.newId());
+
+    assertThatThrownBy(migrated::enabled).isInstanceOf(UnlinkedEmployeeAccountException.class);
+  }
+
+  @Test
+  void GivenAnEmployeeAccount_WhenUnlinked_ThenItIsRefused() {
+    Account account = tenant(UserId.newId(), Role.EMPLOYEE, Optional.of(EmployeeId.newId()));
+
+    assertThatThrownBy(() -> account.withMembership(Role.EMPLOYEE, Optional.empty()))
+        .isInstanceOf(UnlinkedEmployeeAccountException.class);
+  }
+
+  /**
+   * Refused although the account is disabled, because R34 holds of every Employee account: only one
+   * stored before the rule is ever found unlinked, and no change makes another.
+   */
+  @Test
+  void GivenADisabledAccountLinkedToNobody_WhenMadeAnEmployee_ThenItIsRefused() {
+    Account disabled = tenant(UserId.newId(), Role.SCHEDULER, Optional.empty()).disabled();
+
+    assertThatThrownBy(() -> disabled.withMembership(Role.EMPLOYEE, Optional.empty()))
+        .isInstanceOf(UnlinkedEmployeeAccountException.class);
+  }
+
+  /** The operator holds no role at all, so that refusal answers first (R31). */
+  @Test
+  void GivenAnOperatorAccount_WhenMadeAnEmployeeLinkedToNobody_ThenItIsRefusedAsTheOperator() {
+    Account account = operator(UserId.newId());
+
+    assertThatThrownBy(() -> account.withMembership(Role.EMPLOYEE, Optional.empty()))
+        .isInstanceOf(OperatorBelongsToNoOrganisationException.class);
+  }
+
+  /** Linking does not restore the account: an Admin restores it as an act of its own. */
+  @Test
+  void GivenADisabledEmployeeLinkedToNobody_WhenLinked_ThenItIsStillDisabled() {
+    EmployeeId ada = EmployeeId.newId();
+
+    Account linked = migrated(UserId.newId()).withMembership(Role.EMPLOYEE, Optional.of(ada));
+
+    assertThat(linked.active()).isFalse();
+    assertThat(linked.membership())
+        .isEqualTo(new TenantMembership(ACME, Role.EMPLOYEE, Optional.of(ada)));
+    assertThat(linked.enabled().active()).isTrue();
+  }
+
+  /** Sign-in refuses a disabled account, but a wrong password is still counted against it. */
+  @Test
+  void GivenADisabledEmployeeLinkedToNobody_WhenASignInFails_ThenTheFailureIsCounted() {
+    Account counted = migrated(UserId.newId()).recordFailedSignIn(NOW, LOCK_AFTER_THREE);
+
+    assertThat(counted.failedSignIns()).isEqualTo(1);
+    assertThat(counted.active()).isFalse();
+  }
+
+  @Test
+  void GivenAnUnlinkedEmployeeRefusal_WhenPrinted_ThenItNamesTheAccountAndNothingElse() {
+    UserId id = UserId.newId();
+
+    assertThatThrownBy(() -> migrated(id).enabled())
+        .hasMessageContaining(id.value().toString())
+        .hasMessageNotContaining("ada@example.com");
+  }
+
   private static Account tenant(UserId id, Role role, Optional<EmployeeId> employee) {
     return new Account(
         id, ADA, HASH, new TenantMembership(ACME, role, employee), false, CREATED_AT);
@@ -265,9 +368,23 @@ class AccountTest {
     return new Account(id, ADA, HASH, new OperatorMembership(), false, CREATED_AT);
   }
 
+  /** An Employee account stored linked to nobody before R34, as V9 left it: disabled. */
+  private static Account migrated(UserId id) {
+    return new Account(
+        id,
+        ADA,
+        HASH,
+        new TenantMembership(ACME, Role.EMPLOYEE, Optional.empty()),
+        false,
+        false,
+        0,
+        Optional.empty(),
+        CREATED_AT);
+  }
+
   /** An account that reached the threshold at {@code now}, so its lock runs from there. */
   private static Account lockedAt(Instant now) {
-    return tenant(UserId.newId(), Role.EMPLOYEE, Optional.empty())
+    return tenant(UserId.newId(), Role.SCHEDULER, Optional.empty())
         .recordFailedSignIn(now, LOCK_AFTER_THREE)
         .recordFailedSignIn(now, LOCK_AFTER_THREE)
         .recordFailedSignIn(now, LOCK_AFTER_THREE);

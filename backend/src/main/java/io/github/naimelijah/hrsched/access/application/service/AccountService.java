@@ -154,7 +154,7 @@ public class AccountService implements BootstrapOperatorUseCase, ManageAccountsU
       requireOrganisationKeepsAnAdmin(command.organisation(), account);
     }
     requireEmployedHere(actor, command.organisation(), command.employee());
-    accounts.save(account.withRole(command.role()).linkedTo(command.employee()));
+    accounts.save(account.withMembership(command.role(), command.employee()));
     recorded(
         actor, command.organisation(), AccessChange.ACCOUNT_MEMBERSHIP_CHANGED, command.account());
   }

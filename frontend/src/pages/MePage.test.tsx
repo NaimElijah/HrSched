@@ -79,7 +79,8 @@ function bodyOfFirstWrite(stub: ReturnType<typeof stubbed>): Record<string, unkn
  *
  * It comes from the session rather than from anything typed: a user is not an employee, and the
  * two are linked by the account (ADR-012). An account with no link has nobody for "my" schedule to
- * be about, which is the case several tests below are here for.
+ * be about, which is the case several tests below are here for. Only a Scheduler or an Admin can be
+ * that account: an Employee account is always linked (R34).
  */
 let employeeLink: string | null = null;
 
@@ -89,7 +90,13 @@ function actingAsEmployee(employee: string | null) {
 
 function show() {
   render(
-    <SignedIn session={{ ...A_TENANT, role: 'EMPLOYEE', employee: employeeLink }}>
+    <SignedIn
+      session={{
+        ...A_TENANT,
+        role: employeeLink === null ? 'SCHEDULER' : 'EMPLOYEE',
+        employee: employeeLink,
+      }}
+    >
       <MePage span={SPAN} people={[]} />
     </SignedIn>,
   );

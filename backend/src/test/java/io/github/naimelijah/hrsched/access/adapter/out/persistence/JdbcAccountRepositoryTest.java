@@ -141,7 +141,7 @@ class JdbcAccountRepositoryTest {
 
   @Test
   void GivenAName_WhenFindingBySignInNameInADifferentCase_ThenTheSameAccountIsReturned() {
-    Account stored = tenant(ACME, "Ada@Example.com", Role.EMPLOYEE);
+    Account stored = tenant(ACME, "Ada@Example.com", Role.SCHEDULER);
     repository.save(stored);
 
     assertThat(repository.findBySignInName(new SignInName("  ADA@EXAMPLE.COM ")))
@@ -157,7 +157,7 @@ class JdbcAccountRepositoryTest {
   @Test
   void GivenATakenSignInNameInAnyOrganisation_WhenSaving_ThenItIsRefused() {
     repository.save(tenant(RIVAL, "ada@example.com", Role.ADMIN));
-    Account sameName = tenant(ACME, "ada@example.com", Role.EMPLOYEE);
+    Account sameName = tenant(ACME, "ada@example.com", Role.SCHEDULER);
 
     assertThatThrownBy(() -> repository.save(sameName))
         .isInstanceOf(SignInNameTakenException.class)
@@ -167,8 +167,8 @@ class JdbcAccountRepositoryTest {
   @Test
   void GivenAnEmployeeAlreadyLinkedInTheOrganisation_WhenLinkingAnotherAccount_ThenItIsRefused() {
     EmployeeId ada = EmployeeId.newId();
-    repository.save(tenant(ACME, "first@example.com", Role.EMPLOYEE).linkedTo(Optional.of(ada)));
-    Account second = tenant(ACME, "second@example.com", Role.EMPLOYEE).linkedTo(Optional.of(ada));
+    repository.save(employee(ACME, "first@example.com", ada));
+    Account second = employee(ACME, "second@example.com", ada);
 
     assertThatThrownBy(() -> repository.save(second))
         .isInstanceOfSatisfying(
@@ -183,19 +183,18 @@ class JdbcAccountRepositoryTest {
   @Test
   void GivenAnEmployeeLinkedInAnotherOrganisation_WhenLinkingOneOfOurs_ThenItIsAccepted() {
     EmployeeId shared = EmployeeId.newId();
-    repository.save(
-        tenant(RIVAL, "theirs@example.com", Role.EMPLOYEE).linkedTo(Optional.of(shared)));
-    Account ours = tenant(ACME, "ours@example.com", Role.EMPLOYEE).linkedTo(Optional.of(shared));
+    repository.save(employee(RIVAL, "theirs@example.com", shared));
+    Account ours = employee(ACME, "ours@example.com", shared);
 
     assertThatCode(() -> repository.save(ours)).doesNotThrowAnyException();
   }
 
   @Test
   void GivenAnUpdatedAccount_WhenSavedAgain_ThenTheChangeIsStored() {
-    Account stored = tenant(ACME, "ada@example.com", Role.EMPLOYEE);
+    Account stored = tenant(ACME, "ada@example.com", Role.ADMIN);
     repository.save(stored);
 
-    repository.save(stored.withRole(Role.SCHEDULER).disabled());
+    repository.save(stored.withMembership(Role.SCHEDULER, Optional.empty()).disabled());
 
     Account found = repository.find(ACME, stored.id()).orElseThrow();
     assertThat(found.membership())
@@ -382,6 +381,18 @@ class JdbcAccountRepositoryTest {
 
   private static TenantMembership anAdminOf(OrganisationId organisation) {
     return new TenantMembership(organisation, Role.ADMIN, Optional.empty());
+  }
+
+  /** An Employee account, which is always linked to somebody (R34). */
+  private static Account employee(
+      OrganisationId organisation, String signInName, EmployeeId linked) {
+    return new Account(
+        UserId.newId(),
+        new SignInName(signInName),
+        HASH,
+        new TenantMembership(organisation, Role.EMPLOYEE, Optional.of(linked)),
+        false,
+        CREATED_AT);
   }
 
   private static Account operator(String signInName) {

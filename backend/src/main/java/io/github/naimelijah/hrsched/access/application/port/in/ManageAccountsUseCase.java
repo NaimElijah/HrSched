@@ -6,6 +6,7 @@ import io.github.naimelijah.hrsched.access.domain.model.NotAnEmployeeHereExcepti
 import io.github.naimelijah.hrsched.access.domain.model.SignInNameTakenException;
 import io.github.naimelijah.hrsched.access.domain.model.UnacceptablePasswordException;
 import io.github.naimelijah.hrsched.access.domain.model.UnknownAccountException;
+import io.github.naimelijah.hrsched.access.domain.model.UnlinkedEmployeeAccountException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -40,6 +41,8 @@ public interface ManageAccountsUseCase {
    * @throws UnacceptablePasswordException if the temporary password does not satisfy the policy
    * @throws SignInNameTakenException if another account already signs in under that name
    * @throws NotAnEmployeeHereException if the employee named is not one of this organisation's
+   * @throws UnlinkedEmployeeAccountException if it holds the Employee role and names no employee
+   *     (R34)
    */
   UserId createAccount(Actor actor, CreateAccountCommand command);
 
@@ -66,6 +69,8 @@ public interface ManageAccountsUseCase {
    * @throws UnknownAccountException if that organisation holds no such account
    * @throws LastActiveAdminException if it would leave the organisation with no active Admin
    * @throws NotAnEmployeeHereException if the employee named is not one of this organisation's
+   * @throws UnlinkedEmployeeAccountException if it is to hold the Employee role and names no
+   *     employee (R34)
    */
   void changeMembership(Actor actor, ChangeMembershipCommand command);
 
@@ -80,6 +85,8 @@ public interface ManageAccountsUseCase {
    * @throws CrossTenantAccessException if the actor may not act in that organisation
    * @throws UnknownAccountException if that organisation holds no such account
    * @throws LastActiveAdminException if disabling it would leave no active Admin
+   * @throws UnlinkedEmployeeAccountException if restoring an Employee account linked to nobody,
+   *     which must be linked first: linking it does not restore it (R34)
    */
   void setAccountActive(Actor actor, SetAccountActiveCommand command);
 
