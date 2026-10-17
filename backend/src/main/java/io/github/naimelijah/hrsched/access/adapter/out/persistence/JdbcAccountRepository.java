@@ -84,9 +84,10 @@ public class JdbcAccountRepository implements AccountRepository {
    *
    * <p>{@code IS NOT DISTINCT FROM} rather than {@code =}, because the operator's row carries no
    * organisation and {@code NULL = NULL} is not true: an {@code =} would refuse every save of the
-   * operator, which sign-in makes after each attempt. {@code account_membership_consistent} ties a
-   * missing organisation to the operator's kind, so the guard also keeps an account from changing
-   * kind, and neither column is in the {@code SET}: once the guard holds, neither can differ.
+   * operator. A failed sign-in saves it, and so does every password change, the bootstrapped
+   * operator's forced first change included. {@code account_membership_consistent} ties a missing
+   * organisation to the operator's kind, so the guard also keeps an account from changing kind, and
+   * neither column is in the {@code SET}: once the guard holds, neither can differ.
    */
   private static final String ON_CONFLICT_REPLACE =
       """
