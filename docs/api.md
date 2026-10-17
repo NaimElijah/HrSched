@@ -39,8 +39,9 @@ A sign-in returns a short-lived access token and sets a rotating refresh cookie:
 ([ADR-028](ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md)). An account
 whose password somebody else chose gets a token that can do one thing, change that password; every
 other route answers `403` until it does. The new password must be at least 15 characters. Changing
-it revokes every earlier session, so only the token in that response works. This first sign-in is
-real output from a local run, with the token shortened:
+it revokes every earlier session, so only the token in that response works. A first sign-in answers
+like this, with the token shortened and every identifier invented. An Employee account is always
+linked to an employee (R34), so `employee` is null only for the other roles:
 
 ```json
 {
@@ -52,7 +53,7 @@ real output from a local run, with the token shortened:
     "kind": "TENANT",
     "organisation": "71261a62-1718-42f9-9ada-83f0e7dda61f",
     "role": "EMPLOYEE",
-    "employee": null,
+    "employee": "5d0c8f3e-2b6a-4e19-9c47-0a3f61e8b2d4",
     "signInName": "robin@example.com",
     "passwordChangeRequired": true
   }
@@ -121,3 +122,5 @@ merging into it, and every limit is optional: one left out is not enforced.
 - **A concurrent publication.** An overlapping roster published at the same moment answers `409`,
   titled `Published concurrently`.
 - **A roster that is no longer a draft.** It answers `400`.
+- **An Employee account linked to nobody.** Creating one, taking the link away from one, or
+  restoring one stored unlinked before R34 answers `422` titled `Employee account not linked`.

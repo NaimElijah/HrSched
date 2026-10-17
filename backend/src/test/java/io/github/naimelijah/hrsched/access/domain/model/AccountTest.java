@@ -257,6 +257,108 @@ class AccountTest {
     assertThat(account.createdAt()).isEqualTo(CREATED_AT);
   }
 
+  // An Employee account is always linked to an employee (R34)
+
+  @Test
+  void GivenAnEmployeeLinkedToNobody_WhenCreatingTheAccount_ThenItIsRefused() {
+    assertThatThrownBy(() -> tenant(UserId.newId(), Role.EMPLOYEE, Optional.empty()))
+        .isInstanceOf(UnlinkedEmployeeAccountException.class);
+  }
+
+  @Test
+  void GivenAnActiveEmployeeLinkedToNobody_WhenRebuildingTheAccount_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                new Account(
+                    UserId.newId(),
+                    ADA,
+                    HASH,
+                    new TenantMembership(ACME, Role.EMPLOYEE, Optional.empty()),
+                    true,
+                    false,
+                    0,
+                    Optional.empty(),
+                    CREATED_AT))
+        .isInstanceOf(UnlinkedEmployeeAccountException.class);
+  }
+
+  /** What V9 left of an account stored before the rule: it loads, and it may not be used. */
+  @Test
+  void GivenADisabledEmployeeLinkedToNobody_WhenRebuildingTheAccount_ThenItIsKeptDisabled() {
+    Account migrated = migrated(UserId.newId());
+
+    assertThat(migrated.active()).isFalse();
+    assertThat(migrated.membership())
+        .isEqualTo(new TenantMembership(ACME, Role.EMPLOYEE, Optional.empty()));
+  }
+
+  @Test
+  void GivenADisabledEmployeeLinkedToNobody_WhenEnabled_ThenItIsRefused() {
+    Account migrated = migrated(UserId.newId());
+
+    assertThatThrownBy(migrated::enabled).isInstanceOf(UnlinkedEmployeeAccountException.class);
+  }
+
+  @Test
+  void GivenAnEmployeeAccount_WhenUnlinked_ThenItIsRefused() {
+    Account account = tenant(UserId.newId(), Role.EMPLOYEE, Optional.of(EmployeeId.newId()));
+
+    assertThatThrownBy(() -> account.withMembership(Role.EMPLOYEE, Optional.empty()))
+        .isInstanceOf(UnlinkedEmployeeAccountException.class);
+  }
+
+  /**
+   * Refused although the account is disabled, because R34 holds of every Employee account: only one
+   * stored before the rule is ever found unlinked, and no change makes another.
+   */
+  @Test
+  void GivenADisabledAccountLinkedToNobody_WhenMadeAnEmployee_ThenItIsRefused() {
+    Account disabled = tenant(UserId.newId(), Role.SCHEDULER, Optional.empty()).disabled();
+
+    assertThatThrownBy(() -> disabled.withMembership(Role.EMPLOYEE, Optional.empty()))
+        .isInstanceOf(UnlinkedEmployeeAccountException.class);
+  }
+
+  /** The operator holds no role at all, so that refusal answers first (R31). */
+  @Test
+  void GivenAnOperatorAccount_WhenMadeAnEmployeeLinkedToNobody_ThenItIsRefusedAsTheOperator() {
+    Account account = operator(UserId.newId());
+
+    assertThatThrownBy(() -> account.withMembership(Role.EMPLOYEE, Optional.empty()))
+        .isInstanceOf(OperatorBelongsToNoOrganisationException.class);
+  }
+
+  /** Linking does not restore the account: an Admin restores it as an act of its own. */
+  @Test
+  void GivenADisabledEmployeeLinkedToNobody_WhenLinked_ThenItIsStillDisabled() {
+    EmployeeId ada = EmployeeId.newId();
+
+    Account linked = migrated(UserId.newId()).withMembership(Role.EMPLOYEE, Optional.of(ada));
+
+    assertThat(linked.active()).isFalse();
+    assertThat(linked.membership())
+        .isEqualTo(new TenantMembership(ACME, Role.EMPLOYEE, Optional.of(ada)));
+    assertThat(linked.enabled().active()).isTrue();
+  }
+
+  /** Sign-in refuses a disabled account, but a wrong password is still counted against it. */
+  @Test
+  void GivenADisabledEmployeeLinkedToNobody_WhenASignInFails_ThenTheFailureIsCounted() {
+    Account counted = migrated(UserId.newId()).recordFailedSignIn(NOW, LOCK_AFTER_THREE);
+
+    assertThat(counted.failedSignIns()).isEqualTo(1);
+    assertThat(counted.active()).isFalse();
+  }
+
+  @Test
+  void GivenAnUnlinkedEmployeeRefusal_WhenPrinted_ThenItNamesTheAccountAndNothingElse() {
+    UserId id = UserId.newId();
+
+    assertThatThrownBy(() -> migrated(id).enabled())
+        .hasMessageContaining(id.value().toString())
+        .hasMessageNotContaining("ada@example.com");
+  }
+
   private static Account tenant(UserId id, Role role, Optional<EmployeeId> employee) {
     return new Account(
         id, ADA, HASH, new TenantMembership(ACME, role, employee), false, CREATED_AT);
@@ -264,6 +366,20 @@ class AccountTest {
 
   private static Account operator(UserId id) {
     return new Account(id, ADA, HASH, new OperatorMembership(), false, CREATED_AT);
+  }
+
+  /** An Employee account stored linked to nobody before R34, as V9 left it: disabled. */
+  private static Account migrated(UserId id) {
+    return new Account(
+        id,
+        ADA,
+        HASH,
+        new TenantMembership(ACME, Role.EMPLOYEE, Optional.empty()),
+        false,
+        false,
+        0,
+        Optional.empty(),
+        CREATED_AT);
   }
 
   /** An account that reached the threshold at {@code now}, so its lock runs from there. */

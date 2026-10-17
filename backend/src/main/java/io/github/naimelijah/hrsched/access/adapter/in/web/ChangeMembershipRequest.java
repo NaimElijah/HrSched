@@ -9,7 +9,8 @@ import java.util.Optional;
  *
  * <p>The employee link is part of it rather than a request of its own: an account is somebody in a
  * role, and setting the two separately would leave a moment where they disagreed. An absent {@code
- * employee} therefore unlinks the account, and is not the same as leaving it alone.
+ * employee} therefore unlinks the account, and is not the same as leaving it alone; an Employee
+ * account refuses it (R34).
  *
  * @param role what the account may do from now on
  * @param employee the personnel record it is, null to unlink it

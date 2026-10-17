@@ -15,7 +15,9 @@ import java.util.Optional;
  *
  * <p>The employee link is product data rather than authentication, and is deliberately not an
  * assumption that the two identifiers match (ADR-012). It is empty for somebody who is never
- * rostered — an administrator who does not work shifts.
+ * rostered — an administrator who does not work shifts. An Employee is always linked (R34), and
+ * {@link Account} holds that rule rather than this record, because an Employee account stored
+ * unlinked before the rule must still be loaded to be linked.
  *
  * @param organisation the single organisation this account belongs to
  * @param role what it may do within that organisation

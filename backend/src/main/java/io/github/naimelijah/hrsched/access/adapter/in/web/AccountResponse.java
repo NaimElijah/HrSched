@@ -17,7 +17,8 @@ import java.util.UUID;
  * @param id the account
  * @param signInName the name it signs in with
  * @param role what it may do
- * @param employee the personnel record it is, null for somebody who is never rostered
+ * @param employee the personnel record it is, null for somebody who is never rostered, or for an
+ *     Employee account disabled until it is linked
  * @param active whether it may sign in and act
  * @param passwordChangeRequired whether it still holds a password somebody else chose
  * @param locked whether consecutive failures have locked it

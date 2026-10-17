@@ -10,6 +10,7 @@ import io.github.naimelijah.hrsched.access.domain.model.SignInNameTakenException
 import io.github.naimelijah.hrsched.access.domain.model.UnacceptablePasswordException;
 import io.github.naimelijah.hrsched.access.domain.model.UnknownAccountException;
 import io.github.naimelijah.hrsched.access.domain.model.UnknownOrganisationException;
+import io.github.naimelijah.hrsched.access.domain.model.UnlinkedEmployeeAccountException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.micrometer.core.instrument.Counter;
@@ -172,6 +173,22 @@ public class AccessExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.UNPROCESSABLE_ENTITY, "No such employee in this organisation.");
     problem.setTitle("Unknown employee");
+    return problem;
+  }
+
+  /**
+   * An Employee account linked to nobody: asked for at creation, made by a change of role or link,
+   * or restored while still unlinked (R34). One sentence answers all three, because what the Admin
+   * must do is the same: name the employee first.
+   */
+  @ExceptionHandler(UnlinkedEmployeeAccountException.class)
+  public ProblemDetail handleUnlinkedEmployeeAccount(UnlinkedEmployeeAccountException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "An Employee account must be linked to one of this organisation's employees. Link it"
+                + " before restoring it.");
+    problem.setTitle("Employee account not linked");
     return problem;
   }
 

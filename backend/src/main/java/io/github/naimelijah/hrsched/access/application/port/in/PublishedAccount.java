@@ -21,7 +21,8 @@ import java.util.Optional;
  * @param id the account
  * @param signInName the name it signs in with
  * @param role what it may do in its organisation
- * @param employee the personnel record it is, empty for somebody who is never rostered
+ * @param employee the personnel record it is, empty for somebody who is never rostered, or for an
+ *     Employee account stored unlinked before R34, which is disabled until it is linked
  * @param active whether it may sign in and act
  * @param passwordChangeRequired whether it still holds a password somebody else chose
  * @param locked whether too many consecutive failures have locked it, as of the moment asked

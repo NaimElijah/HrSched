@@ -185,6 +185,30 @@ class SessionServiceTest {
     assertThat(after.lockedUntil()).isEqualTo(locked.lockedUntil());
   }
 
+  /** What V9 left of an Employee account stored linked to nobody: it cannot sign in. */
+  @Test
+  void GivenAnEmployeeAccountLinkedToNobody_WhenSigningInWithTheRightPassword_ThenItIsRefused() {
+    accounts.given(
+        new Account(
+            UserId.newId(),
+            new SignInName(ADA),
+            passwords.hash(RIGHT_PASSWORD),
+            new TenantMembership(ACME, Role.EMPLOYEE, Optional.empty()),
+            false,
+            false,
+            0,
+            Optional.empty(),
+            NOW.minus(Duration.ofDays(1))));
+
+    SignInOutcome outcome = service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            SignInOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(SignInRefusal.DISABLED));
+    assertThat(sessions.started()).isEmpty();
+  }
+
   @Test
   void GivenADisabledAccount_WhenSigningInWithTheRightPassword_ThenItIsRefused() {
     accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()).disabled());

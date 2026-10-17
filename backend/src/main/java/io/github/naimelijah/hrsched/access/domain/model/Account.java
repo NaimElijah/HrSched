@@ -27,6 +27,11 @@ import java.util.Optional;
  *
  * <p>Holds no password, only an encoded {@link PasswordHash}, and can neither check nor produce
  * one. Verifying a password belongs to the hasher adapter, because only it knows the encoding.
+ *
+ * <p>An account holding the Employee role is always linked to an employee (R34). No transition
+ * makes one linked to nobody, and no constructor makes one usable. The one such account that can
+ * exist was stored before the rule: migration {@code V9} disabled it, the rebuilding constructor
+ * still loads it so that it can be linked, and it can be restored only once it is.
  */
 public final class Account {
 
@@ -51,6 +56,7 @@ public final class Account {
    *     for an account created with a temporary password somebody else chose
    * @param createdAt when it was provisioned, never {@code null}
    * @throws NullPointerException if any reference argument is null
+   * @throws UnlinkedEmployeeAccountException if it holds the Employee role linked to nobody (R34)
    */
   public Account(
       UserId id,
@@ -88,6 +94,8 @@ public final class Account {
    * @param createdAt when it was provisioned, never {@code null}
    * @throws NullPointerException if any reference argument is null
    * @throws IllegalArgumentException if {@code failedSignIns} is negative
+   * @throws UnlinkedEmployeeAccountException if it is active and holds the Employee role linked to
+   *     nobody (R34); a disabled one is what {@code V9} left of an account stored before the rule
    */
   public Account(
       UserId id,
@@ -108,6 +116,9 @@ public final class Account {
     if (failedSignIns < 0) {
       throw new IllegalArgumentException(
           "An account cannot have failed a negative number of times");
+    }
+    if (active && isAnUnlinkedEmployee(membership)) {
+      throw new UnlinkedEmployeeAccountException(id);
     }
     this.active = active;
     this.passwordChangeRequired = passwordChangeRequired;
@@ -211,6 +222,8 @@ public final class Account {
 
   /**
    * @return the account, usable again; enabling one already enabled is not an error
+   * @throws UnlinkedEmployeeAccountException if it holds the Employee role linked to nobody, which
+   *     must be linked before it may be used (R34)
    */
   public Account enabled() {
     return new Account(
@@ -228,21 +241,27 @@ public final class Account {
   /**
    * Changes what the account is within its organisation: the role and the employee link together.
    *
-   * <p>One transition rather than one for each, because what may be true of an account is a rule
-   * about the pair — changed one at a time, an account could pass through a state neither the
-   * caller nor the rules intended on its way to the one asked for.
+   * <p>One transition rather than one for each, because R34 is a rule about the pair: an account
+   * holding the Employee role is always linked to an employee. Changed one at a time, an unlinked
+   * Scheduler becoming a linked Employee would be an unlinked Employee in between.
    *
    * @param role the role this account is to hold in its organisation, never {@code null}
    * @param employee the personnel record this account is, empty for nobody's, never {@code null}
    * @return the account in that role, linked to that employee
    * @throws OperatorBelongsToNoOrganisationException if this is the platform operator, which holds
    *     no role and is nobody's employee
+   * @throws UnlinkedEmployeeAccountException if the role is Employee and the link empty, whether or
+   *     not the account is active: no change makes an Employee linked to nobody (R34)
    */
   public Account withMembership(Role role, Optional<EmployeeId> employee) {
     Objects.requireNonNull(role, "role must not be null");
     Objects.requireNonNull(employee, "employee must not be null");
     TenantMembership tenant = requireTenantMembership();
-    return replacingMembership(new TenantMembership(tenant.organisation(), role, employee));
+    TenantMembership changed = new TenantMembership(tenant.organisation(), role, employee);
+    if (isAnUnlinkedEmployee(changed)) {
+      throw new UnlinkedEmployeeAccountException(id);
+    }
+    return replacingMembership(changed);
   }
 
   /**
@@ -345,6 +364,12 @@ public final class Account {
       return tenant;
     }
     throw new OperatorBelongsToNoOrganisationException(id);
+  }
+
+  private static boolean isAnUnlinkedEmployee(Membership membership) {
+    return membership instanceof TenantMembership tenant
+        && tenant.role() == Role.EMPLOYEE
+        && tenant.employee().isEmpty();
   }
 
   private Account replacingMembership(Membership changed) {
