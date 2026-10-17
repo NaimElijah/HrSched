@@ -8,25 +8,38 @@ machine belong in auto memory, not here. This comment is stripped before Claude 
 
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+HrSched generates and publishes staff rosters for many organisations at once. The domain is
+modelled and works end to end: sign in, define people and shifts, configure working-time rules,
+generate a roster, publish it. Four contexts — `scheduling`, `workforce`, `access`,
+`notifications` — plus a `shared` kernel, with the hexagon and the context boundaries enforced by
+build-failing tests.
 
-## State of the repository
+## Rules that hold everywhere
 
-The domain is modelled and works end to end: sign in, define people and shifts, configure
-working-time rules, generate a roster, publish it. Four contexts — `scheduling`, `workforce`,
-`access`, `notifications` — plus a `shared` kernel, with the hexagon and the context boundaries
-enforced by build-failing tests.
+- **Multi-tenant.** Every aggregate belongs to exactly one organisation and every query is
+  scoped to it. A cross-tenant read is a security incident, not a bug.
+- **No number from any statute is ever written down** — not in a class, not in a migration, not
+  as the default of a form field. Working-time rules are a *configured constraint set*: a rest
+  period or an hours cap is a value in a `ConstraintSet`, and the schema stores a limit without
+  ever defaulting one. A jurisdiction is a preset whose numbers come from the statute, with the
+  source cited. Test values are invented on purpose, and are labelled as such.
+- **Constraints are invariants.** A roster violating its constraint set cannot be published,
+  and there is no override.
+- **Who is acting comes from the access token and nothing else.** HrSched holds its own accounts
+  and signs its own tokens (ADR-011, ADR-028); the organisation comes from the acting account,
+  never from a header, a path or a body (ADR-031). **`SecurityConfiguration` ends in `denyAll`**
+  (ADR-032).
+- **Never let unverifiable data pass a check.** If evidence a rule needs cannot be loaded, refuse
+  — a skipped assignment is a roster published with hours nobody counted.
+- **NEVER log personal data.** Names, absence and contracted hours say things about a person's
+  health and household, and a log is copied to places a database is not.
+- **New code belongs to a context.** If it fits none of the existing ones, that is a new
+  bounded context and a new ADR, not a new top-level package.
+- **Do not add an ORM.** Persistence is hand-written SQL against PostgreSQL (ADR-004).
 
-**Authentication is real, and the header placeholder is gone.** HrSched holds its own accounts and
-signs its own tokens (ADR-011, ADR-028). Every controller takes the acting identity from
-`@AuthenticationPrincipal Actor`, and the organisation from that actor through each adapter's
-`actingIn` helper — never from a header, a path or a body (ADR-031). `X-User`, `X-Role`,
-`X-Organisation` and `X-Employee` are read by nothing; do not reintroduce them.
-**`SecurityConfiguration` ends in `denyAll`** (ADR-032), so a new route is unreachable until it is
-named there — that second edit is the decision about who may call it, not a formality. The URL
-rules are the coarse outer line; the use case behind each route is what decides.
+How the backend enforces each of these is in `backend/CLAUDE.md`.
 
-Two things are **not** what they look like:
+## Two things are not what they look like
 
 - **Generation is greedy, not optimised.** Automatic generation is the point of the product and
   a real implementation is a solver; `GreedyRosterGenerator` exists to prove the port (ADR-005).
@@ -36,26 +49,13 @@ Two things are **not** what they look like:
   only wherever stdout is collected (ADR-018). The requirement is now a durable trail an Admin
   reads for their own organisation (Q20, #31); how long it is kept is Q23.
 
-`docs/requirements/requirements.md` was reviewed row by row with the repo owner on 2026-09-22.
-Many rows say `not yet`: the requirement is decided and an issue tracks building it, so the code
-is behind the document on purpose. What is still `TODO` there, and every open question, is a
-question for the repo owner, not a gap for an agent to fill in. Do not invent a requirement, a
-domain rule, or a persistence choice to make a document look complete.
+## Requirements
 
-Every question that blocked modelling is answered — see `docs/requirements/requirements.md`.
-Three consequences bind everything written from now on:
-
-- **Multi-tenant.** Every aggregate belongs to exactly one organisation and every query is
-  scoped to it. A cross-tenant read is a security incident, not a bug.
-- **No legal threshold is ever hardcoded.** Working-time rules are a *configured constraint
-  set*; a jurisdiction is a preset, and a preset's numbers must come from the statute with the
-  source cited. Never write a rest period or an hours cap as a constant.
-- **Constraints are invariants.** A roster violating its constraint set cannot be published,
-  and there is no override.
-
-**Docker must be running to build.** The tests use a real PostgreSQL through Testcontainers, one
-container shared by the suite. There is no in-memory fallback and no skip-when-Docker-is-absent, on
-purpose: a check that quietly does not run still reports green.
+Many rows of `docs/requirements/requirements.md` say `not yet`: the requirement is decided and an
+issue tracks building it, so the code is behind the document on purpose. What is still `TODO`
+there, and every open question, is a question for the repo owner, not a gap for an agent to fill
+in. Do not invent a requirement, a domain rule, or a persistence choice to make a document look
+complete.
 
 ## Commands
 
@@ -82,6 +82,10 @@ From `frontend/`:
 On Windows without a POSIX shell, use `mvnw.cmd`; it is a batch/PowerShell polyglot, so PowerShell
 must be on `PATH`. Add `-B` for non-interactive output.
 
+**Docker must be running to build.** The tests use a real PostgreSQL through Testcontainers, one
+container shared by the suite. There is no in-memory fallback and no skip-when-Docker-is-absent, on
+purpose: a check that quietly does not run still reports green.
+
 ## Layout
 
 Repository root: `backend/`, `frontend/`, `docs/`, `scripts/`, `package.json`, `LICENSE`,
@@ -98,16 +102,3 @@ Outside `backend/`:
 Guidance for each project lives beside it, and loads the first time a file beneath it is read or
 edited: `backend/CLAUDE.md` (the hexagon, persistence, testing, Spring Boot 4) and
 `frontend/CLAUDE.md` (the SPA's layout and what the UI may not do).
-
-## Conventions
-
-- **Never let unverifiable data pass a check.** If evidence a rule needs cannot be loaded, refuse
-  — a skipped assignment is a roster published with hours nobody counted.
-- **New code belongs to a context.** If it fits none of the existing ones, that is a new
-  bounded context and a new ADR, not a new top-level package.
-- **NEVER log personal data.** Names, absence and contracted hours say things about a person's
-  health and household, and a log is copied to places a database is not. `AuditedChange` carries a
-  bare `UUID` subject so a name is *unrepresentable*, not merely discouraged, and
-  `SchedulingAuditLogTest`/`WorkforceAuditLogTest` assert every field is an identifier or an enum.
-  Attach fields with slf4j `addKeyValue`, never by interpolating them into the message: the message
-  is a constant, and everything variable is a field the ECS encoder publishes as JSON.

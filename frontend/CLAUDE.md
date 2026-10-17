@@ -16,8 +16,8 @@ sees the file.
   header, and the bearer token is the only identity it sends; `problem.ts` validates the error body
   rather than casting it; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts`
   mirror the backend DTOs, one module per context.
-- `src/auth/` — `SessionProvider` and the sign-in, change-password and session-bar screens. It
-  replaced `src/identity/`, the acting-as placeholder, when sign-in landed (ADR-011, ADR-028).
+- `src/auth/` — `SessionProvider` and the sign-in, change-password and session-bar screens
+  (ADR-011, ADR-028).
 - `src/pages/` — one screen per capability. Pages never call `fetch` directly.
 
 ## Conventions
@@ -25,8 +25,8 @@ sees the file.
 - **The UI enforces nothing, and must not pretend to.** Every rule is the backend's. A screen that
   looks like it satisfies a requirement is not evidence the rule holds, which is why the
   `Enforced by` column in `requirements.md` names only backend classes and tests.
-- **Never put a suggested working-time number in the UI.** A default in a form field is a legal
-  threshold chosen by a developer, which is the exact thing this codebase refuses to contain.
+- **Never put a suggested working-time number in a form field.** A default is a legal threshold
+  chosen by a developer — the statute rule in `.claude/CLAUDE.md` covers the UI too.
 - **Frontend versions are ahead of most published guidance.** React 19, Vite 8, TypeScript 6,
   ESLint 10, Vitest 4. Check the installed package before trusting a recalled API — the same
   discipline the Spring Boot 4.x renames forced. Already found this way: Vitest 4 moves the `test`

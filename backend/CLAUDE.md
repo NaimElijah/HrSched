@@ -8,21 +8,6 @@ This comment is stripped before Claude sees the file.
 
 # backend/CLAUDE.md
 
-## Persistence, transactions, migrations
-
-Persistence is settled (ADR-004): PostgreSQL, hand-written SQL through `JdbcClient`, Flyway
-migrations, one schema with `organisation_id` on every aggregate root (child tables are reached
-only through their root). **Do not add an ORM.** The domain may
-not carry `jakarta.persistence` annotations — the architecture test fails on them — so JPA would
-need a parallel annotated model and would buy only behaviour a hexagonal adapter must not leak.
-
-**Every use case is one transaction**, wrapped in `UseCaseConfiguration` rather than annotated,
-because the architecture test forbids Spring in the application layer (ADR-023). A new use case gets
-that for free by being registered there — which is already mandatory.
-
-**No number from any statute belongs in a migration either.** The schema stores a working-time
-limit as a value; it never defaults one.
-
 ## Layout
 
 Inside `backend/src/main/java/io/github/naimelijah/hrsched/`, the package path *is* the
@@ -55,7 +40,7 @@ Also inside `backend/`: `src/main/resources/db/migration/` holds the Flyway migr
 way the schema changes — and `compose.yaml` holds the local database, beside the backend rather
 than at the root because Boot looks in the working directory.
 
-## Conventions
+## Architecture tests
 
 - **Dependencies point inward, and contexts are independent. Both are enforced.**
   `HexagonalArchitectureTest` fails the build if the domain imports Spring, if the application
@@ -63,10 +48,26 @@ than at the root because Boot looks in the working directory.
   depends on a context, or if a context's own layers form a cycle. Do not weaken or delete a rule
   to make code pass — the rule is the point. Deleting one because it is provably unable to fail
   is a different thing, and needs the proof.
-- **NEVER write a working-time threshold as a constant.** No number from any statute belongs in
-  any class. A minimum rest period is a value in a `ConstraintSet`, supplied as configuration. A
-  jurisdiction is a preset whose numbers must be sourced from the statute and cited. Test values
-  are invented on purpose, and are labelled as such.
+- **When adding an architecture rule, watch it fail first.** All ten rules here have been
+  observed failing on a deliberately introduced violation, then reverted. A rule that has only
+  ever been green proves nothing — one rule was deleted after it turned out it could no longer
+  fail, being fully subsumed by what is now
+  `contexts_touch_only_published_ports_of_other_contexts`. The same applies to a test: a fix
+  whose test was never seen failing has not been shown to fix anything.
+
+## Adding a use case
+
+Pick the context → domain concept → port in/out → service (no annotation) → register in
+`UseCaseConfiguration` → adapters → tests. Forgetting the bean registration fails at startup, not
+at compile time.
+
+## Acting identity and tenancy
+
+- **Who is acting is an argument, never an ambient read.** `SecurityContextHolder` is forbidden
+  outside `configuration.security`, where one Spring callback has no parameter to take the caller
+  from. A use case takes an `Actor`; a controller receives one through `@AuthenticationPrincipal`,
+  and takes the organisation from that actor through its `actingIn` helper. `X-User`, `X-Role`,
+  `X-Organisation` and `X-Employee` are read by nothing; do not reintroduce them.
 - **Tenancy is in every signature.** Repository lookups take an `OrganisationId`; there is no
   `findById(EmployeeId)`. Use cases take an `Actor` and call `requireAccessTo` first. A
   cross-tenant attempt is a 404, never a 403 — a 403 confirms the resource exists.
@@ -76,20 +77,37 @@ than at the root because Boot looks in the working directory.
 - **Only a Scheduler builds rosters.** `MAY_SCHEDULE` is `{SCHEDULER}`; an Admin manages people,
   qualifications and the constraint set. The role javadoc and the requirements table agree, and
   the permission sets must follow them rather than the other way round.
-- **`@ParameterizedTest` is an accepted idiom, for data-only rows.** `junit-jupiter-params` comes
-  with the Boot BOM; no dependency to add. Use it where the rows differ only in *data* and the
-  assertion sentence is identical — null-check batteries, blank-name batteries, the identity
-  records, exception-type lists, and *parsing* a value out of a request. Do **not** use it for a
-  permission or tenancy
-  **decision**: who may do what, and who may see whose data. A parameterised isolation test reads
-  as a table and hides which row is the one whose failure is a security incident. Nor for rows
-  that differ in setup, or whose comment explains *why* — the comment then belongs to no row. If a
-  table passes about a dozen rows, split it.
+
+## The security chain
+
+`SecurityConfiguration` ends in `denyAll`, so a new route is unreachable until it is named there —
+that second edit is the decision about who may call it, not a formality. The URL rules are the
+coarse outer line; the use case behind each route is what decides.
+
+## Persistence and transactions
+
+Persistence is settled (ADR-004): PostgreSQL, hand-written SQL through `JdbcClient`, Flyway
+migrations, one schema with `organisation_id` on every aggregate root (child tables are reached
+only through their root). The domain may not carry `jakarta.persistence` annotations — the
+architecture test fails on them — so JPA would need a parallel annotated model and would buy only
+behaviour a hexagonal adapter must not leak.
+
+**Every use case is one transaction**, wrapped in `UseCaseConfiguration` rather than annotated,
+because the architecture test forbids Spring in the application layer (ADR-023). A new use case gets
+that for free by being registered there — which is already mandatory.
+
+## Audit and instrumentation
+
 - **Instrumentation lives in adapters, and three rules enforce it.** Nothing prints anywhere; the
   domain may not touch `org.slf4j`, `ch.qos.logback` or `java.util.logging`; and neither the domain
   nor the application layer may touch `io.micrometer` or `io.opentelemetry`. So Micrometer's
   `@Timed` and `@Counted` cannot go on a use case, and a service that needs to record something
   records it through a driven port. See ADR-016 to ADR-018.
+- **Personal data is unrepresentable in a log, not merely discouraged.** `AuditedChange` carries a
+  bare `UUID` subject so a name cannot be written, and `SchedulingAuditLogTest`/
+  `WorkforceAuditLogTest` assert every field is an identifier or an enum. Attach fields with slf4j
+  `addKeyValue`, never by interpolating them into the message: the message is a constant, and
+  everything variable is a field the ECS encoder publishes as JSON.
 - **The audit port is per context on purpose.** `scheduling` and `workforce` each own an
   `AuditTrail` and an `AuditedChange` with their own change enum. They are different types, not
   duplication, and anything shared would have to enter the kernel ADR-008 keeps small. The
@@ -104,24 +122,31 @@ than at the root because Boot looks in the working directory.
   `@SpringBootTest` while working in production; `@AutoConfigureMetrics` opts back in, at the cost
   of a second Spring context. `MetricsHttpTest` is the only test here that does not share the one
   the others use.
-- **When adding an architecture rule, watch it fail first.** All ten rules here have been
-  observed failing on a deliberately introduced violation, then reverted. A rule that has only
-  ever been green proves nothing — one rule was deleted after it turned out it could no longer
-  fail, being fully subsumed by what is now
-  `contexts_touch_only_published_ports_of_other_contexts`. The same applies to a test: a fix
-  whose test was never seen failing has not been shown to fix anything.
-- **Who is acting is an argument, never an ambient read.** `SecurityContextHolder` is forbidden
-  outside `configuration.security`, where one Spring callback has no parameter to take the caller
-  from. A use case takes an `Actor`; a controller receives one through `@AuthenticationPrincipal`.
-- **Adding a use case:** pick the context → domain concept → port in/out → service (no
-  annotation) → register in `UseCaseConfiguration` → adapters → tests. Forgetting the bean
-  registration fails at startup, not at compile time.
+
+## Domain modelling
+
 - **Entities vs value objects.** `Shift` and `Employee` are classes with identity equality,
   because two shifts with the same period — or two people with the same name — are still
   different things. `ShiftId`, `ShiftPeriod` and `EmployeeId` are records because they *are*
   their values. Do not turn an entity into a record.
 - **Invariants live in constructors,** so illegal states cannot be represented and callers
   never have to check.
+- **No working-time threshold is a constant**, in a class or a migration — the statute rule in
+  `.claude/CLAUDE.md`.
+
+## Testing
+
+**`@ParameterizedTest` is an accepted idiom, for data-only rows.** `junit-jupiter-params` comes
+with the Boot BOM; no dependency to add. Use it where the rows differ only in *data* and the
+assertion sentence is identical — null-check batteries, blank-name batteries, the identity
+records, exception-type lists, and *parsing* a value out of a request. Do **not** use it for a
+permission or tenancy **decision**: who may do what, and who may see whose data. A parameterised
+isolation test reads as a table and hides which row is the one whose failure is a security
+incident. Nor for rows that differ in setup, or whose comment explains *why* — the comment then
+belongs to no row. If a table passes about a dozen rows, split it.
+
+## Formatting
+
 - **The formatter is authoritative.** google-java-format is not configurable — 2-space indent,
   fixed wrapping. Never hand-format; run `./mvnw spotless:apply`.
 - **`pom.xml` is indented with tabs** (Spring Initializr's convention) while Java is 2-space.
