@@ -1,10 +1,6 @@
-<!--
-Maintainers: this file loads the first time a file under backend/ is read or edited, on top of
-.claude/CLAUDE.md, which every session already has. It holds what only backend work needs. Keep
-it under 200 lines. A rule that also binds the frontend, or that a session must know before it
-opens any file (commands, the highest-stakes invariants), belongs in .claude/CLAUDE.md instead.
-This comment is stripped before Claude sees the file.
--->
+<!-- Maintainers: loads when a file under backend/ is first read or edited, on top of
+.claude/CLAUDE.md. Only what backend work needs, under 200 lines; anything a session must know
+before opening a file belongs in .claude/CLAUDE.md. Stripped before Claude sees the file. -->
 
 # backend/CLAUDE.md
 
@@ -32,8 +28,8 @@ dependency rule — see ADR-003 and ADR-006. Every context repeats the same shap
 
 Contexts today: `scheduling` (shifts, rosters, constraints, generation), `workforce` (employees,
 qualifications, availability), `access` (organisations, accounts, sessions and tokens),
-`notifications` (what somebody has been told). At the root beside them sit
-`configuration/` and `HrSchedApplication`.
+`notifications` (what somebody has been told), beside `configuration/` and `HrSchedApplication`.
+`compose.yaml`, the local database, sits in `backend/` because Boot looks in the working directory.
 
 A context may reference another context's `application.port.in` package and **nothing else**
 (ADR-008). Consuming one belongs in an `adapter/out/<that context>/` class, and there are three:
@@ -41,43 +37,34 @@ A context may reference another context's `application.port.in` package and **no
 `scheduling/adapter/out/notification/NotificationAdapter` and
 `access/adapter/out/workforce/WorkforceEmployeeDirectory`.
 
-Also inside `backend/`: `src/main/resources/db/migration/` holds the Flyway migrations — the only
-way the schema changes — and `compose.yaml` holds the local database, beside the backend rather
-than at the root because Boot looks in the working directory.
-
 ## Architecture tests
 
 - **Dependencies point inward, and contexts are independent. Both are enforced.**
-  `HexagonalArchitectureTest` fails the build if the domain imports Spring, if the application
-  touches an adapter, if a context reaches past another context's published ports, if the kernel
-  depends on a context, or if a context's own layers form a cycle. Do not weaken or delete a rule
-  to make code pass — the rule is the point. Deleting one because it is provably unable to fail
-  is a different thing, and needs the proof.
+  `HexagonalArchitectureTest` fails the build if the domain imports Spring, the application
+  touches an adapter, a context reaches past another's published ports, the kernel depends on a
+  context, or a context's layers form a cycle. Never weaken or delete a rule to make code pass —
+  the rule is the point. Deleting one that provably cannot fail is different, and needs the proof.
 - **When adding an architecture rule, watch it fail first.** All ten rules here have been
-  observed failing on a deliberately introduced violation, then reverted. A rule that has only
-  ever been green proves nothing — one rule was deleted after it turned out it could no longer
-  fail, being fully subsumed by what is now
-  `contexts_touch_only_published_ports_of_other_contexts`. The same applies to a test: a fix
-  whose test was never seen failing has not been shown to fix anything.
+  observed failing on a deliberately introduced violation, then reverted; a rule that has only
+  ever been green proves nothing. The same applies to a test: a fix whose test was never seen
+  failing has not been shown to fix anything.
 
 ## Adding a use case
 
 Pick the context → domain concept → port in/out → service (no annotation) → register in
 `UseCaseConfiguration` → adapters → decide who may call the route in `SecurityConfiguration` →
-tests. Two of those steps fail late rather than at compile time. A forgotten bean registration
-fails at startup. A new controller left out of its context's
-`@RestControllerAdvice(assignableTypes = …)` handler fails silently: its domain exceptions are
-never translated.
+tests. Two steps fail late rather than at compile time: a forgotten bean registration fails at
+startup, and a controller left out of its context's `@RestControllerAdvice(assignableTypes = …)`
+handler fails silently — its domain exceptions are never translated.
 
-## Acting identity and tenancy
+## Acting identity, tenancy and the security chain
 
 - **Who is acting is an argument, never an ambient read.** `SecurityContextHolder` is forbidden
   outside `configuration.security`, where one Spring callback has no parameter to take the caller
-  from. A use case takes an `Actor`; a controller receives one through `@AuthenticationPrincipal`,
-  and takes the organisation from that actor through its `actingIn` helper (`organisationOf` in
-  `AccountController`). `GET /api/organisations/{id}` names in its path which organisation to
-  read, not who is acting, and its use case answers a tenant naming another with a 404. `X-User`,
-  `X-Role`, `X-Organisation` and `X-Employee` are read by nothing; do not reintroduce them.
+  from. A use case takes an `Actor`; a controller gets one through `@AuthenticationPrincipal` and
+  the organisation from it through `actingIn` (`organisationOf` in `AccountController`).
+  `GET /api/organisations/{id}` names what to read, not who acts; a tenant naming another gets a
+  404. Nothing reads `X-User`, `X-Role`, `X-Organisation` or `X-Employee`; never bring them back.
 - **Tenancy is in every signature.** Repository lookups take an `OrganisationId`; there is no
   `findById(EmployeeId)`. Use cases take an `Actor` and call `requireAccessTo` first. A
   cross-tenant attempt is a 404, never a 403 — a 403 confirms the resource exists.
@@ -87,41 +74,36 @@ never translated.
 - **Only a Scheduler builds rosters.** `MAY_SCHEDULE` is `{SCHEDULER}`; an Admin manages people,
   qualifications and the constraint set. The role javadoc and the requirements table agree, and
   the permission sets must follow them rather than the other way round.
-
-## The security chain
-
-`SecurityConfiguration` ends in `denyAll`, so a route no rule matches is refused. Tenant routes
-are matched by family — `/api/rosters/**`, `/api/swaps/**` and the rest of `TENANT_ROUTES` — so a
-new endpoint under an existing prefix is **already open** to every tenant role, and only a new
-prefix is unreachable until it is named. Either way, checking who may call it is the decision, not
-a formality. The URL rules are the coarse outer line; the use case behind each route is what
-decides.
+- **`SecurityConfiguration` ends in `denyAll`.** Tenant routes are matched by family — the
+  `/**` prefixes in `TENANT_ROUTES` — so a new endpoint under an existing prefix is **already
+  open** to every tenant role, and only a new prefix is refused until named. Either way, who may
+  call it is a decision, not a formality. The URL rules are the coarse outer line; the use case
+  behind each route is what decides.
 
 ## Persistence
 
-Persistence is settled (ADR-004): PostgreSQL, hand-written SQL through `JdbcClient`, Flyway
-migrations, one schema with `organisation_id` on every aggregate root (child tables are reached
-only through their root). The domain may not carry `jakarta.persistence` annotations — the
-architecture test fails on them — so JPA would need a parallel annotated model and would buy only
-behaviour a hexagonal adapter must not leak.
+Persistence is settled (ADR-004): PostgreSQL, hand-written SQL through `JdbcClient`, Flyway, one
+schema with `organisation_id` on every aggregate root (child tables are reached only through their
+root). The domain may not carry `jakarta.persistence` annotations — the architecture test fails on
+them — so JPA would need a parallel annotated model, buying only what an adapter must not leak.
 
-- **Migrations.** Name one `V<n>__<rule_in_snake_case>.sql` and open it with a comment giving the
-  rule, the ADR and the reasoning. **Never edit an applied migration**; correct it in the next, as
-  V6 and V8 do. A backfill is explicit and invents nothing. An index on a root leads with
-  `organisation_id`, and a foreign key stays inside one context. A migration that rewrites stored
-  rows gets a test that migrates to the version before, inserts rows as that version stored them,
-  then migrates on — as `AppendOnlyRosterHistoryMigrationTest` does.
+- **Migrations** in `src/main/resources/db/migration/` are the only way the schema changes. Name
+  one `V<n>__<rule_in_snake_case>.sql`, opening with a comment giving the rule, ADR and reasoning.
+  **Never edit an applied migration**; correct it in the next, as V6 and V8 do. A backfill is
+  explicit and invents nothing. An index on a root leads with `organisation_id`; a foreign key
+  stays inside one context. A migration rewriting stored rows gets a test that migrates to the
+  version before, inserts rows as it stored them, then migrates on (see
+  `AppendOnlyRosterHistoryMigrationTest`).
 - **Conflicts come from the database, not from version columns.** An exclusion violation or
-  deadlock on a published save (SQLState 23P01, 40P01) becomes
-  `RosterPublicationConflictException`, a 409. A revision that loses a race must let its unique
-  violation surface — never `ON CONFLICT DO NOTHING`. An upsert guards tenancy with
+  deadlock on a published save (SQLState 23P01, 40P01) becomes `RosterPublicationConflictException`,
+  a 409. A revision that loses a race lets its unique violation surface — never
+  `ON CONFLICT DO NOTHING`. An upsert guards tenancy with
   `WHERE <table>.organisation_id = EXCLUDED.organisation_id`.
 
 ## Transactions, concurrency and time
 
 - **Every use case is one transaction**, wrapped in `UseCaseConfiguration` rather than annotated,
-  because the architecture test forbids Spring in the application layer (ADR-023). A new use case
-  gets that for free by being registered there — which is already mandatory. The wrapper,
+  because the architecture test forbids Spring in the application layer (ADR-023). The wrapper,
   `TransactionalUseCases`, is a subclass proxy: a service must stay non-final, a service calling
   its own method bypasses it, and only methods named `find…` run read-only.
 - **Publications within an organisation take turns.** `RosterRepository.lockPublicationsOf` takes
@@ -139,36 +121,28 @@ behaviour a hexagonal adapter must not leak.
 ## Audit and instrumentation
 
 - **Instrumentation lives in adapters, and three rules enforce it.** Nothing prints anywhere; the
-  domain may not touch `org.slf4j`, `ch.qos.logback` or `java.util.logging`; and neither the domain
-  nor the application layer may touch `io.micrometer` or `io.opentelemetry`. So Micrometer's
-  `@Timed` and `@Counted` cannot go on a use case, and a service that needs to record something
-  records it through a driven port. See ADR-016 to ADR-018.
+  domain may not touch `org.slf4j`, `ch.qos.logback` or `java.util.logging`; neither the domain
+  nor the application layer may touch `io.micrometer` or `io.opentelemetry`. So `@Timed` and
+  `@Counted` cannot go on a use case; a service records through a driven port (ADR-016 to 018).
 - **Personal data is unrepresentable in a log, not merely discouraged.** `AuditedChange` carries a
   bare `UUID` subject so a name cannot be written, and each context's `*AuditLogTest` asserts that
-  nothing it writes is personal data. Attach fields with slf4j
-  `addKeyValue`, never by interpolating them into the message: the message is a constant, and
-  everything variable is a field the ECS encoder publishes as JSON.
+  nothing it writes is personal data. Attach fields with slf4j `addKeyValue`, never by
+  interpolating them: the message is a constant, and everything variable is a field the ECS
+  encoder publishes as JSON.
 - **The audit port is per context on purpose.** Each of the four contexts owns an `AuditTrail`,
-  an `AuditedChange` with its own change enum, and a `*AuditLog` adapter. Access's change carries
-  an `Optional<OrganisationId>`, because an operator's act belongs to no organisation. They are
-  different types, not duplication, and anything shared would have to enter the kernel ADR-008
-  keeps small. The collision shows up only in `UseCaseConfiguration`, which writes three of them
-  out in full.
+  an `AuditedChange` with its own change enum, and a `*AuditLog` adapter; access's change carries
+  an `Optional<OrganisationId>`, as an operator's act belongs to no organisation. Different types,
+  not duplication — anything shared would have to enter the kernel ADR-008 keeps small.
+  `UseCaseConfiguration`, where they collide, writes three out in full.
 - **Refuse before the first write; record after the save.** An audit line outlives the rollback of
-  a refusal that came after it (#133), so every check that can refuse runs before anything is
-  written, and every write that can still fail runs before anything is recorded. An entry for
-  something that then failed to store is a record of something that did not happen. `publish`
-  records inside the supersede loop as well as for itself — the rosters it demotes did not demote
-  themselves.
+  a refusal that came after it (#133): every check that can refuse runs before anything is written,
+  and every write that can still fail runs before anything is recorded. `publish` records inside
+  the supersede loop too — the rosters it demotes did not demote themselves.
 - **Two `@Component` classes may not share a simple name.** Spring derives a bean name from it
-  alone, so identically-named adapters in two contexts collide, and they collide at startup rather
-  than at compile time. Hence `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog` and
-  `NotificationAuditLog`.
-- **Boot disables metrics export under test.** `/actuator/prometheus` answers 404 in a
-  `@SpringBootTest` while working in production; `@AutoConfigureMetrics` opts back in, at the cost
-  of a Spring context of its own. A test shares the suite's context only while its annotations
-  match the others' exactly: `MetricsHttpTest` and the bare smoke test `HrSchedApplicationTests`
-  (no `@AutoConfigureMockMvc`) each start another.
+  alone, so same-named adapters in two contexts collide at startup rather than at compile time.
+  Hence `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog`, `NotificationAuditLog`.
+- **Boot disables metrics export under test**, so `/actuator/prometheus` answers 404 in a
+  `@SpringBootTest` while working in production; `@AutoConfigureMetrics` opts back in.
 
 ## Domain modelling
 
@@ -178,42 +152,37 @@ behaviour a hexagonal adapter must not leak.
   their values. Do not turn an entity into a record.
 - **Invariants live in constructors,** so illegal states cannot be represented and callers
   never have to check.
-- **No working-time threshold is a constant**, in a class or a migration — the statute rule in
-  `.claude/CLAUDE.md`.
+- **No working-time threshold is a constant** — the statute rule in `.claude/CLAUDE.md`.
 
 ## Testing
 
-- **One PostgreSQL for the whole suite.** `PostgresDatabase` holds a container started once and
-  never stopped; `PostgresBackedApplication` hands it to Spring with `destroyMethod = ""`, so
-  closing a context cannot stop it. A Spring test carries exactly
-  `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`, to share the
-  one context.
+- **One container, one context.** `PostgresDatabase` holds a container started once and never
+  stopped; `PostgresBackedApplication` hands it to Spring with `destroyMethod = ""`, so closing a
+  context cannot stop it. A Spring test shares the suite's context only while its annotations are
+  exactly `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`;
+  `MetricsHttpTest` and the bare smoke test `HrSchedApplicationTests` each start another.
 - **Isolation.** An HTTP test onboards a fresh organisation through `TestTenants`; an adapter
   test, which runs without Spring, calls `PostgresDatabase.empty()` first.
 - **Fakes are hand-written**, package-private beside the service tests that use them, and copy the
   real adapter's refusals — a fake that accepts what the database refuses tests nothing.
 - **Invented values are labelled** in the class javadoc and again on each value.
-
-**`@ParameterizedTest` is an accepted idiom, for data-only rows.** `junit-jupiter-params` comes
-with the Boot BOM; no dependency to add. Use it where the rows differ only in *data* and the
-assertion sentence is identical — null-check batteries, blank-name batteries, the identity
-records, exception-type lists, and *parsing* a value out of a request. Do **not** use it for a
-permission or tenancy **decision**: who may do what, and who may see whose data. A parameterised
-isolation test reads as a table and hides which row is the one whose failure is a security
-incident. Nor for rows that differ in setup, or whose comment explains *why* — the comment then
-belongs to no row. If a table passes about a dozen rows, split it.
+- **`@ParameterizedTest` is for data-only rows** (`junit-jupiter-params` comes with the Boot BOM):
+  rows that differ only in *data* under an identical assertion sentence — null-check and
+  blank-name batteries, identity records, exception-type lists, *parsing* a request value. **Not**
+  for a permission or tenancy **decision**: a parameterised isolation test reads as a table and
+  hides which row's failure is a security incident. Nor for rows differing in setup, or whose
+  comment explains *why* — the comment then belongs to no row. Past about a dozen rows, split it.
 
 ## Formatting
 
-- **The formatter is authoritative.** google-java-format is not configurable — 2-space indent,
-  fixed wrapping. Never hand-format; run `./mvnw spotless:apply`.
-- **`pom.xml` is indented with tabs** (Spring Initializr's convention) while Java is 2-space.
-  `.editorconfig` encodes both; this is deliberate, not drift.
+google-java-format is authoritative and not configurable — 2-space indent, fixed wrapping. Never
+hand-format; run `./mvnw spotless:apply`. `pom.xml` is indented with tabs (Spring Initializr's
+convention); `.editorconfig` encodes both, deliberately.
 
 ## Spring Boot 4.x renamed things
 
-Training data and nearly every tutorial still use the 3.x names, which will not compile.
-Verified against the jars in this project:
+Training data and most tutorials use the 3.x names, which will not compile here (verified against
+this project's jars):
 
 | 3.x | 4.1.1 |
 | --- | --- |
@@ -226,7 +195,5 @@ Verified against the jars in this project:
 Also imported here under names only the current majors use:
 `org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics`, and
 Testcontainers 2's non-generic `org.testcontainers.postgresql.PostgreSQLContainer` (1.x:
-`org.testcontainers.containers.PostgreSQLContainer<?>`).
-
-When unsure, inspect the jar (`unzip -l ~/.m2/repository/...`) or run `./mvnw dependency:tree`.
-Do not guess.
+`org.testcontainers.containers.PostgreSQLContainer<?>`). When unsure, inspect the jar
+(`unzip -l ~/.m2/repository/...`) or run `./mvnw dependency:tree`. Do not guess.
