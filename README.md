@@ -88,13 +88,11 @@ flowchart TB
     scheduling["scheduling<br/>shifts, rules, rosters, swaps"]
     notifications["notifications<br/>each person's inbox"]
     kernel["shared kernel<br/>OrganisationId, EmployeeId, TimeRange, Actor, Role"]
-    db[("PostgreSQL")]
 
     scheduling -->|"WorkforceDirectoryAdapter"| workforce
     scheduling -->|"NotificationAdapter"| notifications
     access -->|"WorkforceEmployeeDirectory"| workforce
     access & workforce & scheduling & notifications -.-> kernel
-    access & workforce & scheduling & notifications --> db
 ```
 
 A publication, `POST /api/rosters/{id}/publication`, shows the direction. The bearer token is one
