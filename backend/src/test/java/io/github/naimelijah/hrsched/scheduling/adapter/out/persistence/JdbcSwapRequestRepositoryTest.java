@@ -413,6 +413,56 @@ class JdbcSwapRequestRepositoryTest {
   }
 
   /**
+   * Their request is still pending, so the status clause of the upsert's {@code WHERE} would let
+   * the write through: only the organisation clause stands between our request and their row. Every
+   * field differs from theirs, so an overwrite would show.
+   */
+  @Test
+  void GivenAPendingRequestOfAnotherOrganisation_WhenSavingOverIt_ThenItIsRefused() {
+    SwapRequest theirs = request(RIVAL, TEN);
+    repository.save(theirs);
+    SwapRequest ours =
+        new SwapRequest(
+            theirs.id(),
+            ACME,
+            RosterId.newId(),
+            ShiftId.newId(),
+            EmployeeId.newId(),
+            EmployeeId.newId(),
+            ELEVEN);
+
+    assertThatThrownBy(() -> repository.save(ours))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("another organisation");
+  }
+
+  @Test
+  void GivenAPendingRequestOfAnotherOrganisation_WhenSavingOverIt_ThenTheirRowIsUntouched() {
+    SwapRequest theirs = request(RIVAL, TEN);
+    repository.save(theirs);
+    SwapRequest ours =
+        new SwapRequest(
+            theirs.id(),
+            ACME,
+            RosterId.newId(),
+            ShiftId.newId(),
+            EmployeeId.newId(),
+            EmployeeId.newId(),
+            ELEVEN);
+
+    assertThatThrownBy(() -> repository.save(ours)).isInstanceOf(IllegalStateException.class);
+
+    assertThat(repository.findById(RIVAL, theirs.id()))
+        .get()
+        .satisfies(
+            stored -> {
+              assertThat(stored.roster()).isEqualTo(theirs.roster());
+              assertThat(stored.requester()).isEqualTo(theirs.requester());
+              assertThat(stored.requestedAt()).isEqualTo(TEN);
+            });
+  }
+
+  /**
    * The identity guard still answers as it did. Refusing a final state reads the stored row back to
    * name its status, and that read is scoped too, so another organisation's row is never described.
    */
