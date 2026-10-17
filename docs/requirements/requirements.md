@@ -259,7 +259,11 @@ now owed ([#27](https://github.com/NaimElijah/HrSched/issues/27)).
   second), and by the helper in each web adapter that takes the organisation from the actor
   (`actingIn`; `organisationOf` in `AccountController`), covered by `EmployeeHttpTest`, `RosteringHttpTest`, `SwapHttpTest`, `NotificationHttpTest`
   and `AccountHttpTest`;
-  [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md).*
+  [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md). On the write side, by the
+  guard on every upsert by identity, which refuses to store over another organisation's row:
+  `JdbcAccountRepository`, `JdbcEmployeeRepository`, `JdbcQualificationRepository`,
+  `JdbcShiftRepository`, `JdbcRosterRepository`, `JdbcSwapRequestRepository` and
+  `JdbcNotificationRepository`, each covered by its own `…RepositoryTest`.*
 - **Persistence guarantees** — every accepted write is durable: once a request answers 2xx the
   change has committed and survives a crash or a restart. **A use case is one transaction**, so a
   request refused part-way leaves nothing behind — including the replacement roster a refused swap

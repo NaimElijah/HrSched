@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
@@ -50,6 +51,17 @@ class JdbcShiftRepositoryTest {
 
   private static TimeRange theDay() {
     return between("2026-09-07T00:00:00Z", "2026-09-08T00:00:00Z");
+  }
+
+  /** Ours, under their identity, and differing in every column the upsert would overwrite. */
+  private static Shift overwriting(Shift theirs) {
+    return new Shift(
+        theirs.id(),
+        ACME,
+        between("2026-09-07T09:00:00Z", "2026-09-07T17:00:00Z"),
+        ZoneId.of("Europe/London"),
+        2,
+        Set.of());
   }
 
   @Test
@@ -210,5 +222,35 @@ class JdbcShiftRepositoryTest {
         .get()
         .extracting(Shift::requiredQualifications)
         .isEqualTo(Set.of(crane));
+  }
+
+  /**
+   * {@code save} is the one repository method carrying no {@code OrganisationId}, so the upsert is
+   * the only thing standing between a re-used identity and another tenant's row. A cross-tenant
+   * write is a security incident rather than a bug.
+   */
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenItIsRefused() {
+    Shift theirs = shift(RIVAL, "2026-09-07T08:00:00Z", "2026-09-07T16:00:00Z");
+    repository.save(theirs);
+
+    assertThatThrownBy(() -> repository.save(overwriting(theirs)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("another organisation");
+  }
+
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenSavingOverIt_ThenTheirRowIsUntouched() {
+    Shift theirs = shift(RIVAL, "2026-09-07T08:00:00Z", "2026-09-07T16:00:00Z");
+    repository.save(theirs);
+
+    assertThatThrownBy(() -> repository.save(overwriting(theirs)))
+        .isInstanceOf(IllegalStateException.class);
+
+    // Shift compares by identity, so only a field the overwrite would change can show it did not.
+    assertThat(repository.findById(RIVAL, theirs.id()))
+        .get()
+        .extracting(Shift::period)
+        .isEqualTo(theirs.period());
   }
 }

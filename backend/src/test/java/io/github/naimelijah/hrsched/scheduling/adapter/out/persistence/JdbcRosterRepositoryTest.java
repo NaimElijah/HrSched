@@ -314,10 +314,14 @@ class JdbcRosterRepositoryTest {
   void GivenARosterOfAnotherOrganisation_WhenStoredUnderTheSameIdentityAsOurs_ThenItIsRefused() {
     Roster theirs = draft(RIVAL);
     repository.save(theirs);
-    Roster ours = new Roster(theirs.id(), ACME, THE_WEEK);
+    Roster ours = new Roster(theirs.id(), ACME, THE_NEXT_WEEK);
 
     assertThatThrownBy(() -> repository.save(ours)).isInstanceOf(IllegalStateException.class);
-    assertThat(repository.findById(RIVAL, theirs.id())).contains(theirs);
+    // Roster compares by identity, so only a field the overwrite would change can show it did not.
+    assertThat(repository.findById(RIVAL, theirs.id()))
+        .get()
+        .extracting(Roster::period)
+        .isEqualTo(THE_WEEK);
   }
 
   @Test
