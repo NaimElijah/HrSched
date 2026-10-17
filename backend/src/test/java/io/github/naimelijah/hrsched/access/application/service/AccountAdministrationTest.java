@@ -109,14 +109,20 @@ class AccountAdministrationTest {
         organisation, anInventedSignInName(), A_PASSWORD, role, Optional.empty());
   }
 
-  /** An account that already exists, so a test can change it rather than create it first. */
+  /**
+   * An account that already exists, so a test can change it rather than create it first. An
+   * Employee's is linked to somebody its organisation employs, as R34 requires; every other role's
+   * is linked to nobody.
+   */
   private Account existing(OrganisationId organisation, Role role, boolean active) {
+    Optional<EmployeeId> link =
+        role == Role.EMPLOYEE ? Optional.of(employees.employedBy(organisation)) : Optional.empty();
     Account account =
         new Account(
             UserId.newId(),
             new SignInName(anInventedSignInName()),
             passwords.hash(A_PASSWORD),
-            new TenantMembership(organisation, role, Optional.empty()),
+            new TenantMembership(organisation, role, link),
             false,
             NOW);
     return accounts.given(active ? account : account.disabled());
@@ -144,7 +150,7 @@ class AccountAdministrationTest {
 
     service.createAccount(
         admin(acme),
-        new CreateAccountCommand(acme, signInName, A_PASSWORD, Role.EMPLOYEE, Optional.empty()));
+        new CreateAccountCommand(acme, signInName, A_PASSWORD, Role.SCHEDULER, Optional.empty()));
 
     assertThat(accounts.findBySignInName(new SignInName(signInName)).orElseThrow().passwordHash())
         .isEqualTo(passwords.hash(A_PASSWORD));
@@ -188,7 +194,7 @@ class AccountAdministrationTest {
                 service.createAccount(
                     admin,
                     new CreateAccountCommand(
-                        acme, anInventedSignInName(), TOO_SHORT, Role.EMPLOYEE, Optional.empty())))
+                        acme, anInventedSignInName(), TOO_SHORT, Role.SCHEDULER, Optional.empty())))
         .isInstanceOf(UnacceptablePasswordException.class)
         .hasMessageNotContaining(TOO_SHORT);
 
@@ -201,7 +207,7 @@ class AccountAdministrationTest {
     TenantActor admin = admin(acme);
     String taken = anInventedSignInName();
     service.createAccount(
-        admin, new CreateAccountCommand(acme, taken, A_PASSWORD, Role.EMPLOYEE, Optional.empty()));
+        admin, new CreateAccountCommand(acme, taken, A_PASSWORD, Role.ADMIN, Optional.empty()));
     audit.forget();
 
     assertThatThrownBy(
@@ -315,17 +321,21 @@ class AccountAdministrationTest {
     Account scheduler = existing(acme, Role.SCHEDULER, true);
 
     service.changeMembership(
-        admin, new ChangeMembershipCommand(acme, scheduler.id(), Role.EMPLOYEE, Optional.empty()));
+        admin, new ChangeMembershipCommand(acme, scheduler.id(), Role.ADMIN, Optional.empty()));
 
     assertThat(accounts.find(acme, scheduler.id()).orElseThrow().membership())
-        .isEqualTo(new TenantMembership(acme, Role.EMPLOYEE, Optional.empty()));
+        .isEqualTo(new TenantMembership(acme, Role.ADMIN, Optional.empty()));
   }
 
+  /**
+   * From an unlinked Scheduler to a linked Employee: the change that would pass through an unlinked
+   * Employee if the role and the link were set one after the other.
+   */
   @Test
   void GivenAnAccount_WhenItIsLinkedToAnEmployee_ThenTheLinkIsKept() {
     TenantActor admin = admin(acme);
     existing(acme, Role.ADMIN, true);
-    Account account = existing(acme, Role.EMPLOYEE, true);
+    Account account = existing(acme, Role.SCHEDULER, true);
     EmployeeId ada = employees.employedBy(acme);
 
     service.changeMembership(
@@ -357,10 +367,10 @@ class AccountAdministrationTest {
 
     service.changeMembership(
         admin(acme),
-        new ChangeMembershipCommand(acme, first.id(), Role.EMPLOYEE, Optional.empty()));
+        new ChangeMembershipCommand(acme, first.id(), Role.SCHEDULER, Optional.empty()));
 
     assertThat(accounts.find(acme, first.id()).orElseThrow().membership())
-        .isEqualTo(new TenantMembership(acme, Role.EMPLOYEE, Optional.empty()));
+        .isEqualTo(new TenantMembership(acme, Role.SCHEDULER, Optional.empty()));
   }
 
   /** A disabled Admin is not somebody who can administer, so it does not count as the other one. */
@@ -427,11 +437,11 @@ class AccountAdministrationTest {
   @Test
   void GivenARoleChange_WhenMade_ThenNoSessionIsEnded() {
     existing(acme, Role.ADMIN, true);
-    Account account = existing(acme, Role.SCHEDULER, true);
+    Account account = existing(acme, Role.ADMIN, true);
 
     service.changeMembership(
         admin(acme),
-        new ChangeMembershipCommand(acme, account.id(), Role.EMPLOYEE, Optional.empty()));
+        new ChangeMembershipCommand(acme, account.id(), Role.SCHEDULER, Optional.empty()));
 
     assertThat(sessions.everySessionEndedFor(account.id())).isEmpty();
   }
@@ -439,11 +449,11 @@ class AccountAdministrationTest {
   @Test
   void GivenARoleChange_WhenMade_ThenTheAdministrationLockIsTakenFirst() {
     existing(acme, Role.ADMIN, true);
-    Account account = existing(acme, Role.SCHEDULER, true);
+    Account account = existing(acme, Role.ADMIN, true);
 
     service.changeMembership(
         admin(acme),
-        new ChangeMembershipCommand(acme, account.id(), Role.EMPLOYEE, Optional.empty()));
+        new ChangeMembershipCommand(acme, account.id(), Role.SCHEDULER, Optional.empty()));
 
     assertThat(accounts.lockedAdministrations()).containsExactly(acme);
   }
@@ -647,7 +657,7 @@ class AccountAdministrationTest {
   void GivenAnAccountCreated_WhenRecorded_ThenItIsAgainstTheAdminAndTheOrganisation() {
     TenantActor admin = admin(acme);
 
-    UserId created = service.createAccount(admin, creating(acme, Role.EMPLOYEE));
+    UserId created = service.createAccount(admin, creating(acme, Role.SCHEDULER));
 
     assertThat(audit.of(AccessChange.ACCOUNT_CREATED))
         .containsExactly(

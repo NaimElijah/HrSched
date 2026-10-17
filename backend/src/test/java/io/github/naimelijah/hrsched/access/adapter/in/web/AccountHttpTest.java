@@ -155,7 +155,7 @@ class AccountHttpTest {
         mockMvc
             .perform(
                 with(post("/api/accounts"), admin(anOrganisation()))
-                    .content(creating(signInName, Role.EMPLOYEE)))
+                    .content(creating(signInName, Role.SCHEDULER)))
             .andExpect(status().isCreated())
             .andReturn()
             .getResponse()
@@ -168,7 +168,7 @@ class AccountHttpTest {
   void GivenASignInNameAlreadyTaken_WhenCreatingAnAccount_ThenItIsAConflict() throws Exception {
     String admin = admin(anOrganisation());
     String taken = anInventedSignInName();
-    create(admin, taken, Role.EMPLOYEE);
+    create(admin, taken, Role.ADMIN);
 
     mockMvc
         .perform(with(post("/api/accounts"), admin).content(creating(taken, Role.SCHEDULER)))
@@ -183,13 +183,13 @@ class AccountHttpTest {
   void GivenANameTakenInAnotherOrganisation_WhenCreatingAnAccount_ThenItIsAConflictThatSaysNothing()
       throws Exception {
     String taken = anInventedSignInName();
-    create(admin(anOrganisation()), taken, Role.EMPLOYEE);
+    create(admin(anOrganisation()), taken, Role.SCHEDULER);
 
     String body =
         mockMvc
             .perform(
                 with(post("/api/accounts"), admin(anOrganisation()))
-                    .content(creating(taken, Role.EMPLOYEE)))
+                    .content(creating(taken, Role.SCHEDULER)))
             .andExpect(status().isConflict())
             .andReturn()
             .getResponse()
@@ -205,7 +205,7 @@ class AccountHttpTest {
         .perform(
             with(post("/api/accounts"), admin(anOrganisation()))
                 .content(
-                    "{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\",\"role\":\"EMPLOYEE\"}"
+                    "{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\",\"role\":\"SCHEDULER\"}"
                         .formatted(anInventedSignInName(), TOO_SHORT)))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.reason").value("TOO_SHORT"));
@@ -295,7 +295,7 @@ class AccountHttpTest {
   @Test
   void GivenAnAccount_WhenListed_ThenNoPasswordHashIsAnywhereInTheAnswer() throws Exception {
     OrganisationId acme = anOrganisation();
-    create(admin(acme), anInventedSignInName(), Role.EMPLOYEE);
+    create(admin(acme), anInventedSignInName(), Role.SCHEDULER);
 
     String body =
         mockMvc
@@ -364,18 +364,18 @@ class AccountHttpTest {
     OrganisationId acme = anOrganisation();
     String admin = admin(acme);
     String signInName = anInventedSignInName();
-    String account = create(admin, signInName, Role.EMPLOYEE);
+    String account = create(admin, signInName, Role.SCHEDULER);
 
     mockMvc
         .perform(
             with(put("/api/accounts/%s/membership".formatted(account)), admin)
-                .content("{\"role\":\"SCHEDULER\"}"))
+                .content("{\"role\":\"ADMIN\"}"))
         .andExpect(status().isNoContent());
 
     mockMvc
         .perform(signInAs(signInName, A_PASSWORD))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.session.role").value("SCHEDULER"));
+        .andExpect(jsonPath("$.session.role").value("ADMIN"));
   }
 
   /** There is no way back from an organisation with no Admin: nobody outside it may act inside. */
@@ -406,7 +406,7 @@ class AccountHttpTest {
   /** A 404 rather than a 403: saying otherwise would confirm that account exists. */
   @Test
   void GivenAnAccountOfAnotherOrganisation_WhenChangingIt_ThenItIsNotFound() throws Exception {
-    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.EMPLOYEE);
+    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.SCHEDULER);
 
     mockMvc
         .perform(
@@ -576,7 +576,7 @@ class AccountHttpTest {
   @Test
   void GivenAnAccountOfAnotherOrganisation_WhenResettingItsPassword_ThenItIsNotFound()
       throws Exception {
-    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.EMPLOYEE);
+    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.SCHEDULER);
 
     mockMvc
         .perform(

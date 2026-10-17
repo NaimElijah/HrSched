@@ -165,7 +165,7 @@ class SessionServiceTest {
   void GivenALockedAccount_WhenSigningIn_ThenAPasswordIsStillComparedAndNothingChanges() {
     Account locked =
         accounts.given(
-            tenant(ADA, Role.EMPLOYEE, Optional.empty())
+            tenant(ADA, Role.SCHEDULER, Optional.empty())
                 .recordFailedSignIn(NOW, LOCK_AFTER_THREE)
                 .recordFailedSignIn(NOW, LOCK_AFTER_THREE)
                 .recordFailedSignIn(NOW, LOCK_AFTER_THREE));
@@ -187,7 +187,7 @@ class SessionServiceTest {
 
   @Test
   void GivenADisabledAccount_WhenSigningInWithTheRightPassword_ThenItIsRefused() {
-    accounts.given(tenant(ADA, Role.EMPLOYEE, Optional.empty()).disabled());
+    accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()).disabled());
 
     SignInOutcome outcome = service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
 
@@ -200,7 +200,7 @@ class SessionServiceTest {
 
   @Test
   void GivenAWrongPassword_WhenRefused_ThenTheFailureIsCounted() {
-    accounts.given(tenant(ADA, Role.EMPLOYEE, Optional.empty()));
+    accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
 
     service.signIn(new SignInCommand(ADA, WRONG_PASSWORD));
 
@@ -210,7 +210,7 @@ class SessionServiceTest {
 
   @Test
   void GivenTheLockingFailure_WhenRecorded_ThenAnAccountLockedEntryIsAudited() {
-    accounts.given(tenant(ADA, Role.EMPLOYEE, Optional.empty()));
+    accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
 
     service.signIn(new SignInCommand(ADA, WRONG_PASSWORD));
     service.signIn(new SignInCommand(ADA, WRONG_PASSWORD));
@@ -223,7 +223,7 @@ class SessionServiceTest {
 
   @Test
   void GivenEarlierFailures_WhenSigningInSuccessfully_ThenTheCountResets() {
-    accounts.given(tenant(ADA, Role.EMPLOYEE, Optional.empty()));
+    accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
     service.signIn(new SignInCommand(ADA, WRONG_PASSWORD));
 
     service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
@@ -235,7 +235,7 @@ class SessionServiceTest {
   @Test
   void
       GivenASignIn_WhenItSucceeds_ThenTheRefreshTokenExpiresAtTheIdleLimitOrTheSessionEndWhicheverIsSooner() {
-    accounts.given(tenant(ADA, Role.EMPLOYEE, Optional.empty()));
+    accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
 
     SignInOutcome outcome = service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
 
@@ -253,7 +253,7 @@ class SessionServiceTest {
    */
   @Test
   void GivenASessionShorterThanTheIdleLimit_WhenSigningIn_ThenTheRefreshTokenEndsWithTheSession() {
-    accounts.given(tenant(ADA, Role.EMPLOYEE, Optional.empty()));
+    accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
     SessionService shortLived =
         serviceAt(NOW, new SessionPolicy(Duration.ofMinutes(30), Duration.ofMinutes(30)));
 
@@ -269,7 +269,7 @@ class SessionServiceTest {
 
   @Test
   void GivenASignIn_WhenItSucceeds_ThenTheAuditedSubjectIsTheSessionRatherThanTheAccount() {
-    Account account = accounts.given(tenant(ADA, Role.EMPLOYEE, Optional.empty()));
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
 
     service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
 
@@ -281,7 +281,7 @@ class SessionServiceTest {
 
   @Test
   void GivenAMixedCaseSignInName_WhenSigningIn_ThenItMatches() {
-    accounts.given(tenant(ADA, Role.EMPLOYEE, Optional.empty()));
+    accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
 
     assertThat(service.signIn(new SignInCommand("  ADA@Example.COM ", RIGHT_PASSWORD)))
         .isInstanceOf(SignInOutcome.SignedIn.class);
@@ -295,7 +295,7 @@ class SessionServiceTest {
    */
   @Test
   void GivenTwoRefreshesRacingWithOneToken_WhenTheSecondFindsItReplaced_ThenItIsTreatedAsReuse() {
-    Account account = accounts.given(tenant(ADA, Role.EMPLOYEE, Optional.empty()));
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
     SignInSession session =
         new SignInSession(
             SignInSessionId.newId(), account.id(), NOW, NOW.plus(Duration.ofHours(12)));
@@ -316,7 +316,7 @@ class SessionServiceTest {
 
   @Test
   void GivenARefreshTokenAlreadyReplaced_WhenPresented_ThenTheWholeSessionIsRevoked() {
-    Account account = accounts.given(tenant(ADA, Role.EMPLOYEE, Optional.empty()));
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
     SignInSession session =
         new SignInSession(
             SignInSessionId.newId(), account.id(), NOW, NOW.plus(Duration.ofHours(12)));

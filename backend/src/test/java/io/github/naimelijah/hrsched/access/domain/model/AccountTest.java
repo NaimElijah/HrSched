@@ -64,7 +64,7 @@ class AccountTest {
   @Test
   void
       GivenThresholdMinusOneFailures_WhenOneMoreFails_ThenTheAccountIsLockedForTheConfiguredDuration() {
-    Account account = tenant(UserId.newId(), Role.EMPLOYEE, Optional.empty());
+    Account account = tenant(UserId.newId(), Role.SCHEDULER, Optional.empty());
 
     Account twiceFailed =
         account
@@ -118,7 +118,7 @@ class AccountTest {
 
   @Test
   void GivenAnAccountThatNeverFailed_WhenAskedWhetherItIsLocked_ThenItIsNot() {
-    assertThat(tenant(UserId.newId(), Role.EMPLOYEE, Optional.empty()).isLockedAt(NOW)).isFalse();
+    assertThat(tenant(UserId.newId(), Role.SCHEDULER, Optional.empty()).isLockedAt(NOW)).isFalse();
   }
 
   @Test
@@ -155,9 +155,9 @@ class AccountTest {
   @Test
   void GivenATenantAccount_WhenLinkedToAnEmployee_ThenItsActorCarriesThem() {
     EmployeeId ada = EmployeeId.newId();
-    Account account = tenant(UserId.newId(), Role.EMPLOYEE, Optional.empty());
+    Account account = tenant(UserId.newId(), Role.SCHEDULER, Optional.empty());
 
-    Account linked = account.withMembership(Role.EMPLOYEE, Optional.of(ada));
+    Account linked = account.withMembership(Role.SCHEDULER, Optional.of(ada));
 
     assertThat(linked.actor())
         .isInstanceOfSatisfying(
@@ -166,9 +166,9 @@ class AccountTest {
 
   @Test
   void GivenALinkedTenantAccount_WhenUnlinked_ThenItsActorCarriesNobody() {
-    Account account = tenant(UserId.newId(), Role.EMPLOYEE, Optional.of(EmployeeId.newId()));
+    Account account = tenant(UserId.newId(), Role.SCHEDULER, Optional.of(EmployeeId.newId()));
 
-    Account unlinked = account.withMembership(Role.EMPLOYEE, Optional.empty());
+    Account unlinked = account.withMembership(Role.SCHEDULER, Optional.empty());
 
     assertThat(unlinked.actor())
         .isInstanceOfSatisfying(TenantActor.class, actor -> assertThat(actor.employee()).isEmpty());
@@ -200,7 +200,7 @@ class AccountTest {
     UserId id = UserId.newId();
 
     assertThat(tenant(id, Role.ADMIN, Optional.empty()))
-        .isEqualTo(tenant(id, Role.EMPLOYEE, Optional.empty()))
+        .isEqualTo(tenant(id, Role.SCHEDULER, Optional.empty()))
         .isNotEqualTo(tenant(UserId.newId(), Role.ADMIN, Optional.empty()));
   }
 
@@ -268,7 +268,7 @@ class AccountTest {
 
   /** An account that reached the threshold at {@code now}, so its lock runs from there. */
   private static Account lockedAt(Instant now) {
-    return tenant(UserId.newId(), Role.EMPLOYEE, Optional.empty())
+    return tenant(UserId.newId(), Role.SCHEDULER, Optional.empty())
         .recordFailedSignIn(now, LOCK_AFTER_THREE)
         .recordFailedSignIn(now, LOCK_AFTER_THREE)
         .recordFailedSignIn(now, LOCK_AFTER_THREE);
