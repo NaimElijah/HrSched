@@ -38,3 +38,5 @@ desktop.ini
 
 # Agent state — .claude/ itself stays tracked, only local state is ignored
 .claude/settings.local.json
+# Snapshots and console logs the Playwright MCP browser tools write into the working directory
+.playwright-mcp/
