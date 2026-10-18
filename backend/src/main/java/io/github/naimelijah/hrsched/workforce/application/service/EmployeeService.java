@@ -5,6 +5,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
+import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.workforce.application.port.in.AddEmployeeCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.DeclareUnavailabilityCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.FindRosterableEmployeesUseCase;
@@ -117,6 +118,20 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
       Actor actor, OrganisationId organisation, EmployeeId employee) {
     authorise(actor, organisation, MAY_SEE_EVERYONE);
     return employees.findById(organisation, employee).map(EmployeeService::publish);
+  }
+
+  @Override
+  public List<TimeRange> findUnavailability(
+      Actor actor, OrganisationId organisation, EmployeeId employee) {
+    authoriseSelfOrManager(actor, organisation, employee);
+    return load(organisation, employee).unavailability();
+  }
+
+  @Override
+  public List<ShiftPreference> findPreferences(
+      Actor actor, OrganisationId organisation, EmployeeId employee) {
+    authoriseSelfOrManager(actor, organisation, employee);
+    return load(organisation, employee).preferences();
   }
 
   /**

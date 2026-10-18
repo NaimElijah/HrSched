@@ -4,6 +4,7 @@ import {
   defaultSpan,
   localDate,
   shiftLabel,
+  spanLabel,
   startOfLocalDay,
   timeLabel,
 } from './localDates';
@@ -89,6 +90,23 @@ describe('labelling an instant for a reader', () => {
 
     expect(shiftLabel(start, end)).toBe(
       `${timeLabel(start)} to ${timeLabel(end)} on ${dayLabel(start)}`,
+    );
+  });
+
+  it('GivenASpanWithinOneLocalDay_WhenDescribingIt_ThenItReadsAsAShiftDoes', () => {
+    const start = new Date(2026, 9, 5, 8, 0, 0).toISOString();
+    const end = new Date(2026, 9, 5, 16, 0, 0).toISOString();
+
+    expect(spanLabel(start, end)).toBe(shiftLabel(start, end));
+  });
+
+  /** An absence can last days; naming only the day it starts would hide where it ends. */
+  it('GivenASpanAcrossLocalDays_WhenDescribingIt_ThenBothDaysAreNamed', () => {
+    const start = new Date(2026, 9, 5, 8, 0, 0).toISOString();
+    const end = new Date(2026, 9, 7, 16, 0, 0).toISOString();
+
+    expect(spanLabel(start, end)).toBe(
+      `${timeLabel(start)} on ${dayLabel(start)} to ${timeLabel(end)} on ${dayLabel(end)}`,
     );
   });
 

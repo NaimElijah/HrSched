@@ -21,7 +21,7 @@ exact role. A resource in another organisation answers `404`, the same as one th
 | Tenants | `POST`, `GET /api/organisations`; `GET /api/organisations/{id}` | Operator; a tenant may read only its own |
 | Accounts | `POST`, `GET /api/accounts`; `PUT /{id}/membership`, `/{id}/activation`; `POST /{id}/password` | Admin |
 | People | `POST /api/employees`; `PUT /{id}/qualifications/{qualification}`, `/{id}/contract`; `GET` list and one | Admin; reading also Scheduler |
-| Availability | `POST /api/employees/{id}/unavailability`, `/{id}/preferences` | The person, Admin or Scheduler |
+| Availability | `POST`, `GET /api/employees/{id}/unavailability`, `/{id}/preferences` | The person, Admin or Scheduler |
 | Qualifications | `POST /api/qualifications`; `GET` list and one | Admin; reading any member |
 | Rules | `PUT /api/constraints`; `GET /api/constraints`, `/{version}` | Admin; reading any member |
 | Shifts | `POST /api/shifts`; `GET /api/shifts?from&to`, `/{id}` | Scheduler; reading any member |

@@ -116,6 +116,40 @@ public class EmployeeController {
     return ResponseEntity.noContent().build();
   }
 
+  /**
+   * Reads back the spans somebody declared they cannot work (F6), authorised as declaring is.
+   *
+   * @param id whose declarations to read
+   * @return their declared unavailability
+   * @throws UnknownEmployeeException answered as a 404 problem detail when this organisation holds
+   *     nobody by that identity; somebody else without an Admin or Scheduler role is answered 403
+   *     before that
+   */
+  @GetMapping("/{id}/unavailability")
+  public List<PeriodResponse> findUnavailability(
+      @AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
+    return manageEmployees.findUnavailability(actor, actingIn(actor), new EmployeeId(id)).stream()
+        .map(PeriodResponse::from)
+        .toList();
+  }
+
+  /**
+   * Reads back the soft preferences somebody stated (F6), authorised as stating one is.
+   *
+   * @param id whose preferences to read
+   * @return their stated preferences
+   * @throws UnknownEmployeeException answered as a 404 problem detail when this organisation holds
+   *     nobody by that identity; somebody else without an Admin or Scheduler role is answered 403
+   *     before that
+   */
+  @GetMapping("/{id}/preferences")
+  public List<PreferenceResponse> findPreferences(
+      @AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
+    return manageEmployees.findPreferences(actor, actingIn(actor), new EmployeeId(id)).stream()
+        .map(PreferenceResponse::from)
+        .toList();
+  }
+
   @PostMapping("/{id}/preferences")
   public ResponseEntity<Void> statePreference(
       @AuthenticationPrincipal Actor actor,

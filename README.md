@@ -67,7 +67,8 @@ owner has chosen to leave open for now ([Q15](docs/requirements/requirements.md#
 - **Swap a shift.** An employee asks a colleague to cover, and a Scheduler decides. Approving
   publishes a replacement roster, judged by the same rules. An assignment can have one pending
   request at most, and it lapses with its roster. Both people see every outcome in their inbox.
-- **See your own work.** An employee sees their assignments on published rosters only.
+- **See your own work.** An employee sees their assignments on published rosters only, and reads
+  back the absences and preferences they declared.
 
 What it does not do yet is the thing the product is named for: generation is greedy, not optimised
 ([ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)).

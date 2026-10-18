@@ -4,7 +4,7 @@ import type { RosteredShift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import type { Employee, PreferenceStrength } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
-import { shiftLabel } from '../components/localDates';
+import { shiftLabel, spanLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSession, useSessionKey } from '../auth/SessionProvider';
 import { Inbox } from './Inbox';
@@ -13,9 +13,11 @@ import { Inbox } from './Inbox';
  * Employee self-service: who I am, the work that names me, and when I cannot work.
  *
  * Unavailability is hard — nobody is rostered during it. A preference is soft and never blocks a
- * roster; today nothing consumes preferences at all, because the objectives a generator would
- * optimise are not modelled (ADR-010). This page says so rather than implying the preference will
- * be honoured.
+ * roster; today no generator weighs preferences, because the objectives it would optimise are not
+ * modelled (ADR-010). This page says so rather than implying the preference will be honoured.
+ *
+ * What they declared is read back from the backend rather than remembered from the form (F6), so
+ * the list shows what was stored, including anything an Admin or Scheduler declared for them.
  *
  * Own work comes from published rosters only (F5). Handing a shift to a colleague names that
  * colleague by their employee identifier, because an employee may not list colleagues and so has no
@@ -54,6 +56,14 @@ export function MePage({
       employee === null ? Promise.resolve([]) : scheduling.findOwnSchedule(span.from, span.to),
     `${sessionKey}|${span.from}|${span.to}`,
   );
+  const unavailability = useAsync(
+    () => (employee === null ? Promise.resolve([]) : workforce.findUnavailability(employee)),
+    `${sessionKey}|${employee ?? ''}`,
+  );
+  const preferences = useAsync(
+    () => (employee === null ? Promise.resolve([]) : workforce.findPreferences(employee)),
+    `${sessionKey}|${employee ?? ''}`,
+  );
 
   /**
    * Both availability actions share one period, so it is validated once, here.
@@ -78,9 +88,11 @@ export function MePage({
     return { start: from.toISOString(), end: to.toISOString() };
   }
 
+  /** @param declared the list the action adds to, read again once the backend has stored it */
   async function act(
     action: (when: { start: string; end: string }) => Promise<unknown>,
     message: string,
+    declared: { reload: () => void },
   ) {
     const when = enteredPeriod();
     if (when === null) {
@@ -91,6 +103,7 @@ export function MePage({
     try {
       await action(when);
       setDone(message);
+      declared.reload();
     } catch (error) {
       setFailure(error);
     }
@@ -210,6 +223,7 @@ export function MePage({
             void act(
               (when) => workforce.declareUnavailability(employee, when.start, when.end),
               'Recorded: you cannot work then.',
+              unavailability,
             )
           }
         >
@@ -221,15 +235,48 @@ export function MePage({
             void act(
               (when) => workforce.statePreference(employee, when.start, when.end, strength),
               'Recorded: a preference, which never blocks a roster.',
+              preferences,
             )
           }
         >
           State a preference
         </button>
       </form>
+
+      <h3>What I declared</h3>
+      <h4>Times I cannot work</h4>
+      <Failure error={unavailability.error} />
+      <Busy busy={unavailability.busy} />
+      {unavailability.value?.length === 0 ? (
+        <p>You have declared no time you cannot work.</p>
+      ) : null}
+      <ul className="spans">
+        {(unavailability.value ?? []).map((period) => (
+          // Unique: two declared absences may not overlap (R7), so no two share a span.
+          <li key={`${period.start}|${period.end}`}>{spanLabel(period.start, period.end)}</li>
+        ))}
+      </ul>
+
+      <h4>Preferences</h4>
+      <Failure error={preferences.error} />
+      <Busy busy={preferences.busy} />
+      {preferences.value?.length === 0 ? <p>You have stated no preferences.</p> : null}
+      <ul className="spans">
+        {(preferences.value ?? []).map((preference, index) => (
+          // Indexed: preferences may repeat one another exactly (R26), so a span alone is no key.
+          <li key={`${index}|${preference.start}|${preference.end}|${preference.strength}`}>
+            {`${spanLabel(preference.start, preference.end)}: ${FEELING[preference.strength]}`}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
+
+const FEELING: Readonly<Record<PreferenceStrength, string>> = {
+  PREFERS: 'would like to work this',
+  PREFERS_NOT: 'would rather not work this',
+};
 
 function OwnShift({
   work,

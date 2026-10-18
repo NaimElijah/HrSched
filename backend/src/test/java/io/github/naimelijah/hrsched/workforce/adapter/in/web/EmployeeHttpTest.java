@@ -494,6 +494,129 @@ class EmployeeHttpTest {
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
 
+  // --- F6: reading back what somebody declared ----------------------------------------------
+
+  @Test
+  void GivenTheEmployeeThemself_WhenReadingBackTheirUnavailability_ThenWhatTheyDeclaredIsListed()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    mockMvc
+        .perform(
+            asThemself(
+                    mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, ada)
+                .content("{\"start\":\"2026-11-14T00:00:00Z\",\"end\":\"2026-11-15T00:00:00Z\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            asThemself(
+                mockMvc, get("/api/employees/" + ada + "/unavailability"), organisation, ada))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].start").value("2026-11-14T00:00:00Z"))
+        .andExpect(jsonPath("$[0].end").value("2026-11-15T00:00:00Z"));
+  }
+
+  @Test
+  void GivenTheEmployeeThemself_WhenReadingBackTheirPreferences_ThenWhatTheyStatedIsListed()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    mockMvc
+        .perform(
+            asThemself(mockMvc, post("/api/employees/" + ada + "/preferences"), organisation, ada)
+                .content(
+                    "{\"start\":\"2026-11-16T08:00:00Z\",\"end\":\"2026-11-16T16:00:00Z\","
+                        + "\"strength\":\"PREFERS_NOT\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, get("/api/employees/" + ada + "/preferences"), organisation, ada))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].start").value("2026-11-16T08:00:00Z"))
+        .andExpect(jsonPath("$[0].end").value("2026-11-16T16:00:00Z"))
+        .andExpect(jsonPath("$[0].strength").value("PREFERS_NOT"));
+  }
+
+  @Test
+  void GivenAScheduler_WhenReadingSomebodysPreferences_ThenTheyAreListed() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/employees/" + ada + "/preferences"), organisation, "ADMIN")
+                .content(
+                    "{\"start\":\"2026-11-17T08:00:00Z\",\"end\":\"2026-11-17T16:00:00Z\","
+                        + "\"strength\":\"PREFERS\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            as(mockMvc, get("/api/employees/" + ada + "/preferences"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].strength").value("PREFERS"));
+  }
+
+  @Test
+  void GivenAColleague_WhenReadingSomebodyElsesUnavailability_ThenItIsForbidden() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String grace = addEmployee(organisation, "Grace");
+
+    mockMvc
+        .perform(
+            asThemself(
+                mockMvc, get("/api/employees/" + ada + "/unavailability"), organisation, grace))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenAColleague_WhenReadingSomebodyElsesPreferences_ThenItIsForbidden() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String grace = addEmployee(organisation, "Grace");
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, get("/api/employees/" + ada + "/preferences"), organisation, grace))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenAnEmployeeOfAnotherOrganisation_WhenReadingTheirUnavailabilityThroughOurs_ThenNotFound()
+      throws Exception {
+    String theirs = addEmployee(anOrganisation(mockMvc), "Mole");
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                get("/api/employees/" + theirs + "/unavailability"),
+                anOrganisation(mockMvc),
+                "ADMIN"))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  @Test
+  void GivenAnEmployeeOfAnotherOrganisation_WhenReadingTheirPreferencesThroughOurs_ThenNotFound()
+      throws Exception {
+    String theirs = addEmployee(anOrganisation(mockMvc), "Mole");
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                get("/api/employees/" + theirs + "/preferences"),
+                anOrganisation(mockMvc),
+                "ADMIN"))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
   /**
    * The headers are no longer believed here, and these three are the tests that say so. Before this
    * change the first request added an employee, the second added one as an Admin, and the third
