@@ -32,6 +32,11 @@ export interface Qualification {
 /** How an employee feels about working a span. Soft: it never blocks a roster. */
 export type PreferenceStrength = 'PREFERS' | 'PREFERS_NOT';
 
+/** Mirrors PreferenceResponse: a span, and how its employee feels about working it. */
+export interface StatedPreference extends Period {
+  readonly strength: PreferenceStrength;
+}
+
 export const workforce = {
   findEmployees: (): Promise<Employee[]> => api.get<Employee[]>('/api/employees'),
 
@@ -49,8 +54,39 @@ export const workforce = {
   setContract: (employee: string, weeklyContractedMinutes: number): Promise<void> =>
     api.put<void>(path`/api/employees/${employee}/contract`, { weeklyContractedMinutes }),
 
+  /** What somebody declared they cannot work. The backend answers only them, an Admin or a Scheduler. */
+  findUnavailability: (employee: string): Promise<Period[]> =>
+    api.get<Period[]>(path`/api/employees/${employee}/unavailability`),
+
+  /** What somebody stated they would rather work or not, answered to the same people. */
+  findPreferences: (employee: string): Promise<StatedPreference[]> =>
+    api.get<StatedPreference[]>(path`/api/employees/${employee}/preferences`),
+
   declareUnavailability: (employee: string, start: string, end: string): Promise<void> =>
     api.post<void>(path`/api/employees/${employee}/unavailability`, { start, end }),
+
+  /**
+   * A declaration has no identifier, so it is named by what it says, in the query because a DELETE
+   * carries no body (ADR-040). Send back exactly the instants the read-back returned.
+   */
+  withdrawUnavailability: (employee: string, start: string, end: string): Promise<void> =>
+    api.delete<void>(
+      `${path`/api/employees/${employee}/unavailability`}` +
+        `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+    ),
+
+  /** Named by its span and strength; every identical statement is withdrawn with it (ADR-040). */
+  withdrawPreference: (
+    employee: string,
+    start: string,
+    end: string,
+    strength: PreferenceStrength,
+  ): Promise<void> =>
+    api.delete<void>(
+      `${path`/api/employees/${employee}/preferences`}` +
+        `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}` +
+        `&strength=${encodeURIComponent(strength)}`,
+    ),
 
   statePreference: (
     employee: string,

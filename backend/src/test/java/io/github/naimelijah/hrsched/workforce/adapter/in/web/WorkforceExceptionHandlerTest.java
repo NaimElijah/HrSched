@@ -16,6 +16,7 @@ import io.github.naimelijah.hrsched.workforce.domain.model.InvalidContractTermsE
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidEmployeeNameException;
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidQualificationNameException;
 import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
+import io.github.naimelijah.hrsched.workforce.domain.model.UnknownDeclarationException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -95,7 +96,8 @@ class WorkforceExceptionHandlerTest {
   private static Stream<RuntimeException> unknownRecords() {
     return Stream.of(
         new UnknownEmployeeException(EmployeeId.newId()),
-        new UnknownQualificationException(QualificationId.newId()));
+        new UnknownQualificationException(QualificationId.newId()),
+        new UnknownDeclarationException());
   }
 
   @ParameterizedTest

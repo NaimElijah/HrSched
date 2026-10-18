@@ -123,6 +123,72 @@ class EmployeeTest {
         .isTrue();
   }
 
+  // --- F26: withdrawing a declaration (ADR-040) ---------------------------------------------
+
+  @Test
+  void GivenDeclaredUnavailability_WhenWithdrawingOneSpan_ThenOnlyThatSpanIsGone() {
+    Employee declared = ada().unavailableFor(MONDAY_DAY).unavailableFor(MONDAY_EVENING);
+
+    Employee withdrawn = declared.noLongerUnavailableFor(MONDAY_DAY);
+
+    assertThat(withdrawn.unavailability()).containsExactly(MONDAY_EVENING);
+    assertThat(withdrawn.isAvailableFor(MONDAY_DAY)).isTrue();
+  }
+
+  /** A withdrawal names a declaration; it does not carve a piece out of one. */
+  @Test
+  void GivenASpanThatOnlyOverlapsWhatWasDeclared_WhenWithdrawingIt_ThenItIsRejected() {
+    Employee declared = ada().unavailableFor(MONDAY_DAY);
+    TimeRange mondayMorning =
+        new TimeRange(Instant.parse("2026-09-07T08:00:00Z"), Instant.parse("2026-09-07T12:00:00Z"));
+
+    assertThatThrownBy(() -> declared.noLongerUnavailableFor(mondayMorning))
+        .isInstanceOf(UnknownDeclarationException.class);
+  }
+
+  @Test
+  void GivenAStatedPreference_WhenWithdrawingIt_ThenItIsGone() {
+    ShiftPreference rather = new ShiftPreference(MONDAY_DAY, PreferenceStrength.PREFERS);
+    Employee stated = ada().preferring(rather);
+
+    assertThat(stated.noLongerPreferring(rather).preferences()).isEmpty();
+  }
+
+  /**
+   * Identical statements cannot be told apart (R26 lets them repeat), so withdrawing one withdraws
+   * them all; a statement about the same span with another strength is a different statement.
+   */
+  @Test
+  void GivenAPreferenceStatedTwice_WhenWithdrawingIt_ThenEveryIdenticalStatementIsGone() {
+    ShiftPreference rather = new ShiftPreference(MONDAY_DAY, PreferenceStrength.PREFERS);
+    ShiftPreference ratherNot = new ShiftPreference(MONDAY_DAY, PreferenceStrength.PREFERS_NOT);
+    Employee stated = ada().preferring(rather).preferring(ratherNot).preferring(rather);
+
+    assertThat(stated.noLongerPreferring(rather).preferences()).containsExactly(ratherNot);
+  }
+
+  @Test
+  void GivenAPreferenceOfAnotherStrength_WhenWithdrawingIt_ThenItIsRejected() {
+    Employee stated = ada().preferring(new ShiftPreference(MONDAY_DAY, PreferenceStrength.PREFERS));
+
+    assertThatThrownBy(
+            () ->
+                stated.noLongerPreferring(
+                    new ShiftPreference(MONDAY_DAY, PreferenceStrength.PREFERS_NOT)))
+        .isInstanceOf(UnknownDeclarationException.class);
+  }
+
+  @Test
+  void GivenADeclaration_WhenWithdrawn_ThenTheOriginalIsUntouched() {
+    ShiftPreference rather = new ShiftPreference(MONDAY_EVENING, PreferenceStrength.PREFERS);
+    Employee declared = ada().unavailableFor(MONDAY_DAY).preferring(rather);
+
+    declared.noLongerUnavailableFor(MONDAY_DAY).noLongerPreferring(rather);
+
+    assertThat(declared.unavailability()).containsExactly(MONDAY_DAY);
+    assertThat(declared.preferences()).containsExactly(rather);
+  }
+
   @Test
   void GivenANewEmployee_WhenAskedForContractTerms_ThenThereAreNone() {
     assertThat(ada().contractTerms()).isEmpty();

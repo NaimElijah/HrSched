@@ -70,6 +70,22 @@ export function shiftLabel(start: string, end: string): string {
 }
 
 /**
+ * A span that may run across days, described for a reader.
+ *
+ * A declared absence can last days, and the shift sentence names only the day a span starts, so it
+ * would hide where one ends. Within one local day it reads exactly as a shift does.
+ *
+ * @param start the span's start, an ISO instant
+ * @param end the span's end, an ISO instant
+ * @returns its start and end, each with its own day when they differ, in the reader's locale and zone
+ */
+export function spanLabel(start: string, end: string): string {
+  return localDate(start) === localDate(end)
+    ? shiftLabel(start, end)
+    : `${timeLabel(start)} on ${dayLabel(start)} to ${timeLabel(end)} on ${dayLabel(end)}`;
+}
+
+/**
  * The span the scheduling pages open on: today through a fortnight ahead, in local time.
  *
  * The clock is a parameter rather than a call to `new Date()` inside, so that the one piece of

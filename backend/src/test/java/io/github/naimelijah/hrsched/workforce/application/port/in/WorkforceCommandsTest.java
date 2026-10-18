@@ -22,7 +22,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * What the workforce driving ports accept, and where they stop short.
  *
- * <p>Split into two tables by command family rather than one of sixteen rows: a table long enough
+ * <p>Split into tables by command family rather than one of twenty-four rows: a table long enough
  * to need scrolling stops reading as a sentence and starts reading as a spreadsheet.
  *
  * <p>A command checks completeness, never sensibleness. A blank name passes here and is refused by
@@ -61,6 +61,17 @@ class WorkforceCommandsTest {
         () -> new DefineQualificationCommand(ACME, null));
   }
 
+  private static Stream<ThrowingCallable> nullFieldsOnWithdrawalCommands() {
+    return Stream.of(
+        () -> new WithdrawUnavailabilityCommand(null, ADA, MONDAY_DAY),
+        () -> new WithdrawUnavailabilityCommand(ACME, null, MONDAY_DAY),
+        () -> new WithdrawUnavailabilityCommand(ACME, ADA, null),
+        () -> new WithdrawPreferenceCommand(null, ADA, MONDAY_DAY, PreferenceStrength.PREFERS),
+        () -> new WithdrawPreferenceCommand(ACME, null, MONDAY_DAY, PreferenceStrength.PREFERS),
+        () -> new WithdrawPreferenceCommand(ACME, ADA, null, PreferenceStrength.PREFERS),
+        () -> new WithdrawPreferenceCommand(ACME, ADA, MONDAY_DAY, null));
+  }
+
   @ParameterizedTest
   @MethodSource("nullFieldsOnEmployeeCommands")
   void GivenANullField_WhenConstructingAnEmployeeCommand_ThenItIsRejected(
@@ -71,6 +82,13 @@ class WorkforceCommandsTest {
   @ParameterizedTest
   @MethodSource("nullFieldsOnAvailabilityCommands")
   void GivenANullField_WhenConstructingAnAvailabilityCommand_ThenItIsRejected(
+      ThrowingCallable constructing) {
+    assertThatThrownBy(constructing).isInstanceOf(NullPointerException.class);
+  }
+
+  @ParameterizedTest
+  @MethodSource("nullFieldsOnWithdrawalCommands")
+  void GivenANullField_WhenConstructingAWithdrawalCommand_ThenItIsRejected(
       ThrowingCallable constructing) {
     assertThatThrownBy(constructing).isInstanceOf(NullPointerException.class);
   }

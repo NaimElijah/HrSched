@@ -5,6 +5,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
+import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.workforce.application.port.in.AddEmployeeCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.DeclareUnavailabilityCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.FindRosterableEmployeesUseCase;
@@ -13,6 +14,8 @@ import io.github.naimelijah.hrsched.workforce.application.port.in.ManageEmployee
 import io.github.naimelijah.hrsched.workforce.application.port.in.RosterableEmployee;
 import io.github.naimelijah.hrsched.workforce.application.port.in.SetContractTermsCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.StatePreferenceCommand;
+import io.github.naimelijah.hrsched.workforce.application.port.in.WithdrawPreferenceCommand;
+import io.github.naimelijah.hrsched.workforce.application.port.in.WithdrawUnavailabilityCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.workforce.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
@@ -100,6 +103,28 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
     recorded(actor, command.organisation(), WorkforceChange.PREFERENCE_STATED, command.employee());
   }
 
+  @Override
+  public void withdrawUnavailability(Actor actor, WithdrawUnavailabilityCommand command) {
+    authoriseSelfOrManager(actor, command.organisation(), command.employee());
+    Employee employee = load(command.organisation(), command.employee());
+    employees.save(employee.noLongerUnavailableFor(command.period()));
+    recorded(
+        actor,
+        command.organisation(),
+        WorkforceChange.UNAVAILABILITY_WITHDRAWN,
+        command.employee());
+  }
+
+  @Override
+  public void withdrawPreference(Actor actor, WithdrawPreferenceCommand command) {
+    authoriseSelfOrManager(actor, command.organisation(), command.employee());
+    Employee employee = load(command.organisation(), command.employee());
+    employees.save(
+        employee.noLongerPreferring(new ShiftPreference(command.period(), command.strength())));
+    recorded(
+        actor, command.organisation(), WorkforceChange.PREFERENCE_WITHDRAWN, command.employee());
+  }
+
   /**
    * Restricted to Admins and Schedulers: unavailability is personal data — medical appointments,
    * caring responsibilities — and an employee has no reason to read a colleague's.
@@ -117,6 +142,20 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
       Actor actor, OrganisationId organisation, EmployeeId employee) {
     authorise(actor, organisation, MAY_SEE_EVERYONE);
     return employees.findById(organisation, employee).map(EmployeeService::publish);
+  }
+
+  @Override
+  public List<TimeRange> findUnavailability(
+      Actor actor, OrganisationId organisation, EmployeeId employee) {
+    authoriseSelfOrManager(actor, organisation, employee);
+    return load(organisation, employee).unavailability();
+  }
+
+  @Override
+  public List<ShiftPreference> findPreferences(
+      Actor actor, OrganisationId organisation, EmployeeId employee) {
+    authoriseSelfOrManager(actor, organisation, employee);
+    return load(organisation, employee).preferences();
   }
 
   /**

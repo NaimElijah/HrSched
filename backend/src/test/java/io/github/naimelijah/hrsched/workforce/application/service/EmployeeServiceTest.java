@@ -22,6 +22,8 @@ import io.github.naimelijah.hrsched.workforce.application.port.in.GrantQualifica
 import io.github.naimelijah.hrsched.workforce.application.port.in.RosterableEmployee;
 import io.github.naimelijah.hrsched.workforce.application.port.in.SetContractTermsCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.StatePreferenceCommand;
+import io.github.naimelijah.hrsched.workforce.application.port.in.WithdrawPreferenceCommand;
+import io.github.naimelijah.hrsched.workforce.application.port.in.WithdrawUnavailabilityCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
@@ -29,6 +31,8 @@ import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChan
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
 import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
+import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
+import io.github.naimelijah.hrsched.workforce.domain.model.UnknownDeclarationException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
 import java.time.Duration;
@@ -54,6 +58,8 @@ class EmployeeServiceTest {
   private static final OrganisationId RIVAL = OrganisationId.newId();
   private static final TimeRange MONDAY =
       new TimeRange(Instant.parse("2026-09-07T08:00:00Z"), Instant.parse("2026-09-07T16:00:00Z"));
+  private static final TimeRange TUESDAY =
+      new TimeRange(Instant.parse("2026-09-08T08:00:00Z"), Instant.parse("2026-09-08T16:00:00Z"));
 
   private final StubEmployeeRepository employees = new StubEmployeeRepository();
   private final StubQualificationRepository qualifications = new StubQualificationRepository();
@@ -234,6 +240,323 @@ class EmployeeServiceTest {
     EmployeeId mole = service.addEmployee(admin(RIVAL), new AddEmployeeCommand(RIVAL, "Mole"));
 
     assertThat(service.findEmployee(admin(ACME), ACME, mole)).isEmpty();
+  }
+
+  // --- F6: reading back what somebody declared ----------------------------------------------
+
+  @Test
+  void GivenAnEmployee_WhenReadingTheirOwnDeclarations_ThenBothAreReturned() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor themself = new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(ada));
+    service.declareUnavailability(themself, new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+    service.statePreference(
+        themself, new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS));
+
+    assertThat(service.findUnavailability(themself, ACME, ada)).containsExactly(MONDAY);
+    assertThat(service.findPreferences(themself, ACME, ada))
+        .containsExactly(new ShiftPreference(TUESDAY, PreferenceStrength.PREFERS));
+  }
+
+  @Test
+  void GivenAnAdmin_WhenReadingSomebodysDeclarations_ThenTheyAreReturned() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.declareUnavailability(admin(ACME), new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+
+    assertThat(service.findUnavailability(admin(ACME), ACME, ada)).containsExactly(MONDAY);
+  }
+
+  @Test
+  void GivenAScheduler_WhenReadingSomebodysDeclarations_ThenTheyAreReturned() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.statePreference(
+        admin(ACME), new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS));
+
+    assertThat(service.findPreferences(actor(ACME, Role.SCHEDULER), ACME, ada))
+        .containsExactly(new ShiftPreference(TUESDAY, PreferenceStrength.PREFERS));
+  }
+
+  @Test
+  void GivenAColleague_WhenReadingSomebodyElsesUnavailability_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    EmployeeId grace = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Grace"));
+    TenantActor gracesAccount =
+        new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(grace));
+
+    assertThatThrownBy(() -> service.findUnavailability(gracesAccount, ACME, ada))
+        .describedAs("unavailability is personal data; an employee has no reason to read another's")
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenAColleague_WhenReadingSomebodyElsesPreferences_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    EmployeeId grace = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Grace"));
+    TenantActor gracesAccount =
+        new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(grace));
+
+    assertThatThrownBy(() -> service.findPreferences(gracesAccount, ACME, ada))
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  /**
+   * The organisation is checked against the actor, not only used to scope the lookup. Over HTTP it
+   * always comes from the token, so only the port can be handed a mismatched one.
+   */
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingSomebodysUnavailability_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+
+    assertThatThrownBy(() -> service.findUnavailability(admin(RIVAL), ACME, ada))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingSomebodysPreferences_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+
+    assertThatThrownBy(() -> service.findPreferences(admin(RIVAL), ACME, ada))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenAnotherOrganisationsEmployee_WhenReadingTheirUnavailabilityThroughOurs_ThenUnknown() {
+    EmployeeId mole = service.addEmployee(admin(RIVAL), new AddEmployeeCommand(RIVAL, "Mole"));
+
+    assertThatThrownBy(() -> service.findUnavailability(admin(ACME), ACME, mole))
+        .describedAs("knowing an identity from another tenant must not be enough to read it")
+        .isInstanceOf(UnknownEmployeeException.class);
+  }
+
+  @Test
+  void GivenAnotherOrganisationsEmployee_WhenReadingTheirPreferencesThroughOurs_ThenUnknown() {
+    EmployeeId mole = service.addEmployee(admin(RIVAL), new AddEmployeeCommand(RIVAL, "Mole"));
+
+    assertThatThrownBy(() -> service.findPreferences(admin(ACME), ACME, mole))
+        .isInstanceOf(UnknownEmployeeException.class);
+  }
+
+  // --- F26: withdrawing a declaration (ADR-040) ---------------------------------------------
+
+  @Test
+  void GivenAnEmployee_WhenWithdrawingTheirOwnUnavailability_ThenItIsNoLongerDeclared() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor themself = new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(ada));
+    service.declareUnavailability(themself, new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+
+    service.withdrawUnavailability(themself, new WithdrawUnavailabilityCommand(ACME, ada, MONDAY));
+
+    assertThat(service.findUnavailability(themself, ACME, ada)).isEmpty();
+  }
+
+  @Test
+  void GivenAnAdmin_WhenWithdrawingSomebodysUnavailability_ThenItIsNoLongerDeclared() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.declareUnavailability(admin(ACME), new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+
+    service.withdrawUnavailability(
+        admin(ACME), new WithdrawUnavailabilityCommand(ACME, ada, MONDAY));
+
+    assertThat(service.findUnavailability(admin(ACME), ACME, ada)).isEmpty();
+  }
+
+  @Test
+  void GivenAScheduler_WhenWithdrawingSomebodysPreference_ThenItIsNoLongerStated() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor scheduler = actor(ACME, Role.SCHEDULER);
+    service.statePreference(
+        scheduler, new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS));
+
+    service.withdrawPreference(
+        scheduler, new WithdrawPreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS));
+
+    assertThat(service.findPreferences(scheduler, ACME, ada)).isEmpty();
+  }
+
+  @Test
+  void GivenAColleague_WhenWithdrawingSomebodyElsesUnavailability_ThenItIsRefusedAndKept() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    EmployeeId grace = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Grace"));
+    TenantActor gracesAccount =
+        new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(grace));
+    service.declareUnavailability(admin(ACME), new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+
+    assertThatThrownBy(
+            () ->
+                service.withdrawUnavailability(
+                    gracesAccount, new WithdrawUnavailabilityCommand(ACME, ada, MONDAY)))
+        .describedAs("withdrawing somebody's absence would put them on a roster they cannot work")
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(service.findUnavailability(admin(ACME), ACME, ada)).containsExactly(MONDAY);
+  }
+
+  @Test
+  void GivenAColleague_WhenWithdrawingSomebodyElsesPreference_ThenItIsRefusedAndKept() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    EmployeeId grace = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Grace"));
+    TenantActor gracesAccount =
+        new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(grace));
+    service.statePreference(
+        admin(ACME), new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS));
+
+    assertThatThrownBy(
+            () ->
+                service.withdrawPreference(
+                    gracesAccount,
+                    new WithdrawPreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS)))
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(service.findPreferences(admin(ACME), ACME, ada))
+        .containsExactly(new ShiftPreference(TUESDAY, PreferenceStrength.PREFERS));
+  }
+
+  @Test
+  void GivenAnAdmin_WhenWithdrawingSomebodysPreference_ThenItIsNoLongerStated() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.statePreference(
+        admin(ACME), new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS));
+
+    service.withdrawPreference(
+        admin(ACME), new WithdrawPreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS));
+
+    assertThat(service.findPreferences(admin(ACME), ACME, ada)).isEmpty();
+  }
+
+  @Test
+  void GivenAScheduler_WhenWithdrawingSomebodysUnavailability_ThenItIsNoLongerDeclared() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor scheduler = actor(ACME, Role.SCHEDULER);
+    service.declareUnavailability(scheduler, new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+
+    service.withdrawUnavailability(scheduler, new WithdrawUnavailabilityCommand(ACME, ada, MONDAY));
+
+    assertThat(service.findUnavailability(scheduler, ACME, ada)).isEmpty();
+  }
+
+  @Test
+  void GivenAnotherOrganisationsEmployee_WhenWithdrawingTheirPreferenceThroughOurs_ThenUnknown() {
+    EmployeeId mole = service.addEmployee(admin(RIVAL), new AddEmployeeCommand(RIVAL, "Mole"));
+    service.statePreference(
+        admin(RIVAL), new StatePreferenceCommand(RIVAL, mole, TUESDAY, PreferenceStrength.PREFERS));
+
+    assertThatThrownBy(
+            () ->
+                service.withdrawPreference(
+                    admin(ACME),
+                    new WithdrawPreferenceCommand(ACME, mole, TUESDAY, PreferenceStrength.PREFERS)))
+        .describedAs("knowing an identity from another tenant must not be enough to act on it")
+        .isInstanceOf(UnknownEmployeeException.class);
+    assertThat(service.findPreferences(admin(RIVAL), RIVAL, mole))
+        .containsExactly(new ShiftPreference(TUESDAY, PreferenceStrength.PREFERS));
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenWithdrawingSomebodysUnavailability_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.declareUnavailability(admin(ACME), new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+
+    assertThatThrownBy(
+            () ->
+                service.withdrawUnavailability(
+                    admin(RIVAL), new WithdrawUnavailabilityCommand(ACME, ada, MONDAY)))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(service.findUnavailability(admin(ACME), ACME, ada)).containsExactly(MONDAY);
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenWithdrawingSomebodysPreference_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+
+    assertThatThrownBy(
+            () ->
+                service.withdrawPreference(
+                    admin(RIVAL),
+                    new WithdrawPreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS)))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void
+      GivenAnotherOrganisationsEmployee_WhenWithdrawingTheirUnavailabilityThroughOurs_ThenUnknown() {
+    EmployeeId mole = service.addEmployee(admin(RIVAL), new AddEmployeeCommand(RIVAL, "Mole"));
+    service.declareUnavailability(
+        admin(RIVAL), new DeclareUnavailabilityCommand(RIVAL, mole, MONDAY));
+
+    assertThatThrownBy(
+            () ->
+                service.withdrawUnavailability(
+                    admin(ACME), new WithdrawUnavailabilityCommand(ACME, mole, MONDAY)))
+        .describedAs("knowing an identity from another tenant must not be enough to act on it")
+        .isInstanceOf(UnknownEmployeeException.class);
+    assertThat(service.findUnavailability(admin(RIVAL), RIVAL, mole)).containsExactly(MONDAY);
+  }
+
+  @Test
+  void GivenASpanNeverDeclared_WhenWithdrawingIt_ThenItIsRefusedAndNothingIsRecorded() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.declareUnavailability(admin(ACME), new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+
+    assertThatThrownBy(
+            () ->
+                service.withdrawUnavailability(
+                    admin(ACME), new WithdrawUnavailabilityCommand(ACME, ada, TUESDAY)))
+        .isInstanceOf(UnknownDeclarationException.class);
+    assertThat(audit.of(WorkforceChange.UNAVAILABILITY_WITHDRAWN)).isEmpty();
+    assertThat(service.findUnavailability(admin(ACME), ACME, ada)).containsExactly(MONDAY);
+  }
+
+  /** The same span with the other strength is a different statement, and is not this one. */
+  @Test
+  void GivenAPreferenceNeverStated_WhenWithdrawingIt_ThenItIsRefusedAndNothingIsRecorded() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.statePreference(
+        admin(ACME),
+        new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS_NOT));
+
+    assertThatThrownBy(
+            () ->
+                service.withdrawPreference(
+                    admin(ACME),
+                    new WithdrawPreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS)))
+        .isInstanceOf(UnknownDeclarationException.class);
+    assertThat(audit.of(WorkforceChange.PREFERENCE_WITHDRAWN)).isEmpty();
+    assertThat(service.findPreferences(admin(ACME), ACME, ada))
+        .containsExactly(new ShiftPreference(TUESDAY, PreferenceStrength.PREFERS_NOT));
+  }
+
+  /** As with declaring: only the actor tells somebody's own act from a manager's (ADR-012). */
+  @Test
+  void
+      GivenSomeoneWithdrawingTheirOwnUnavailability_WhenRecorded_ThenTheActorIsThemNotTheirManager() {
+    EmployeeId subject = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor themself =
+        new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(subject));
+    service.declareUnavailability(
+        themself, new DeclareUnavailabilityCommand(ACME, subject, MONDAY));
+
+    service.withdrawUnavailability(
+        themself, new WithdrawUnavailabilityCommand(ACME, subject, MONDAY));
+
+    assertThat(audit.of(WorkforceChange.UNAVAILABILITY_WITHDRAWN))
+        .containsExactly(
+            new AuditedChange(
+                ACME, themself.id(), WorkforceChange.UNAVAILABILITY_WITHDRAWN, subject.value()));
+  }
+
+  @Test
+  void GivenAManagerWithdrawingSomebodysPreference_WhenRecorded_ThenTheSubjectIsTheEmployee() {
+    EmployeeId subject = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor manager = admin(ACME);
+    service.statePreference(
+        manager,
+        new StatePreferenceCommand(ACME, subject, TUESDAY, PreferenceStrength.PREFERS_NOT));
+
+    service.withdrawPreference(
+        manager,
+        new WithdrawPreferenceCommand(ACME, subject, TUESDAY, PreferenceStrength.PREFERS_NOT));
+
+    assertThat(audit.of(WorkforceChange.PREFERENCE_WITHDRAWN))
+        .containsExactly(
+            new AuditedChange(
+                ACME, manager.id(), WorkforceChange.PREFERENCE_WITHDRAWN, subject.value()));
   }
 
   /** In-memory stand-in for the driven port, scoped by organisation exactly as the real one is. */
@@ -457,6 +780,39 @@ class EmployeeServiceTest {
   @Test
   void GivenTheOperator_WhenReadingAnEmployee_ThenItIsRefused() {
     assertThatThrownBy(() -> service.findEmployee(anOperator(), ACME, EmployeeId.newId()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingUnavailability_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.findUnavailability(anOperator(), ACME, EmployeeId.newId()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingPreferences_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.findPreferences(anOperator(), ACME, EmployeeId.newId()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenWithdrawingUnavailability_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.withdrawUnavailability(
+                    anOperator(),
+                    new WithdrawUnavailabilityCommand(ACME, EmployeeId.newId(), MONDAY)))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenWithdrawingAPreference_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.withdrawPreference(
+                    anOperator(),
+                    new WithdrawPreferenceCommand(
+                        ACME, EmployeeId.newId(), MONDAY, PreferenceStrength.PREFERS)))
         .isInstanceOf(NotATenantMemberException.class);
   }
 

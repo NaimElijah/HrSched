@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dayLabel, timeLabel } from '../components/localDates';
+import { dayLabel, spanLabel, timeLabel } from '../components/localDates';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { MePage } from './MePage';
 
@@ -37,20 +37,32 @@ interface Answer {
 }
 
 /**
- * Reading one's own schedule is answered with `schedule` and every write with `write`. Any other read
- * — the inbox on the same page — gets an empty list: what it does with one is Inbox.test's business.
+ * Reading one's own schedule is answered with `schedule`, reading back what they declared with
+ * `unavailability` and `preferences`, and every write with `write`. Any other read — the inbox on the
+ * same page — gets an empty list: what it does with one is Inbox.test's business.
  */
 function stubbed({
   schedule = { status: 200, body: [] },
+  unavailability = { status: 200, body: [] },
+  preferences = { status: 200, body: [] },
   write = { status: 204, body: null },
-}: { schedule?: Answer; write?: Answer } = {}) {
+}: {
+  schedule?: Answer;
+  unavailability?: Answer;
+  preferences?: Answer;
+  write?: Answer;
+} = {}) {
   const stub = vi.fn((path: string, init?: RequestInit) => {
     const answer =
       (init?.method ?? 'GET') !== 'GET'
         ? write
         : path.startsWith('/api/me/schedule')
           ? schedule
-          : { status: 200, body: [] };
+          : path === `/api/employees/${EMPLOYEE}/unavailability`
+            ? unavailability
+            : path === `/api/employees/${EMPLOYEE}/preferences`
+              ? preferences
+              : { status: 200, body: [] };
     return Promise.resolve({
       ok: answer.status < 400,
       status: answer.status,
@@ -325,6 +337,318 @@ describe('handing a shift to a colleague', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Nobody can swap a shift with themself.'),
     );
     expect(screen.queryByText(/^Asked\./)).not.toBeInTheDocument();
+  });
+});
+
+describe('what they declared', () => {
+  // Built from local wall-clock times, so each span falls on the days it names wherever the tests run.
+  const ABSENCE = {
+    start: new Date(2026, 9, 7, 8, 0, 0).toISOString(),
+    end: new Date(2026, 9, 9, 18, 0, 0).toISOString(),
+  };
+  const PREFERENCE = {
+    start: new Date(2026, 9, 12, 8, 0, 0).toISOString(),
+    end: new Date(2026, 9, 12, 16, 0, 0).toISOString(),
+    strength: 'PREFERS_NOT',
+  };
+
+  function readsOf(stub: ReturnType<typeof stubbed>, path: string) {
+    return stub.mock.calls.filter(
+      ([called, init]) => called === path && (init?.method ?? 'GET') === 'GET',
+    );
+  }
+
+  it('GivenDeclaredUnavailability_WhenOpened_ThenEachSpanIsListedWithBothItsDays', async () => {
+    actingAsEmployee(EMPLOYEE);
+    stubbed({ unavailability: { status: 200, body: [ABSENCE] } });
+
+    show();
+
+    expect(await screen.findByText(spanLabel(ABSENCE.start, ABSENCE.end))).toBeInTheDocument();
+  });
+
+  it('GivenAStatedPreference_WhenOpened_ThenItIsListedWithHowTheyFeelAboutIt', async () => {
+    actingAsEmployee(EMPLOYEE);
+    stubbed({ preferences: { status: 200, body: [PREFERENCE] } });
+
+    show();
+
+    expect(
+      await screen.findByText(
+        `${spanLabel(PREFERENCE.start, PREFERENCE.end)}: would rather not work this`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('GivenNothingDeclared_WhenOpened_ThenItSaysSoRatherThanShowingNothing', async () => {
+    actingAsEmployee(EMPLOYEE);
+    stubbed();
+
+    show();
+
+    expect(await screen.findByText('You have declared no time you cannot work.')).toBeVisible();
+    expect(await screen.findByText('You have stated no preferences.')).toBeVisible();
+  });
+
+  /** A refusal read as an empty list would tell somebody their absence was never recorded. */
+  it('GivenTheUnavailabilityReadBackIsRefused_WhenOpened_ThenTheRefusalIsShownRatherThanAnEmptyList', async () => {
+    actingAsEmployee(EMPLOYEE);
+    stubbed({
+      unavailability: { status: 403, body: { detail: 'You may not act on this record.' } },
+    });
+
+    show();
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('You may not act on this record.'),
+    );
+    expect(
+      screen.queryByText('You have declared no time you cannot work.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('GivenThePreferencesReadBackIsRefused_WhenOpened_ThenTheRefusalIsShownRatherThanAnEmptyList', async () => {
+    actingAsEmployee(EMPLOYEE);
+    stubbed({
+      preferences: { status: 403, body: { detail: 'You may not act on this record.' } },
+    });
+
+    show();
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('You may not act on this record.'),
+    );
+    expect(screen.queryByText('You have stated no preferences.')).not.toBeInTheDocument();
+  });
+
+  it('GivenADeclarationAccepted_WhenAnnounced_ThenWhatTheyDeclaredIsReadAgain', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const stub = stubbed();
+    show();
+    const path = `/api/employees/${EMPLOYEE}/unavailability`;
+    await waitFor(() => expect(readsOf(stub, path)).toHaveLength(1));
+
+    await fillSpan('2026-10-05T08:00', '2026-10-05T16:00');
+    await userEvent.click(screen.getByRole('button', { name: 'I cannot work this' }));
+
+    await waitFor(() => expect(readsOf(stub, path)).toHaveLength(2));
+  });
+
+  it('GivenAPreferenceAccepted_WhenAnnounced_ThenTheStatedPreferencesAreReadAgain', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const stub = stubbed();
+    show();
+    const path = `/api/employees/${EMPLOYEE}/preferences`;
+    await waitFor(() => expect(readsOf(stub, path)).toHaveLength(1));
+
+    await fillSpan('2026-10-05T08:00', '2026-10-05T16:00');
+    await userEvent.click(screen.getByRole('button', { name: 'State a preference' }));
+
+    await waitFor(() => expect(readsOf(stub, path)).toHaveLength(2));
+  });
+
+  // --- F26: withdrawing one (ADR-040) ---------------------------------------------------------
+
+  function deletesOf(stub: ReturnType<typeof stubbed>) {
+    return stub.mock.calls.filter(([, init]) => init?.method === 'DELETE');
+  }
+
+  // Microseconds, as PostgreSQL stores them: no Date can produce these strings, so a client that
+  // re-formatted what it read before sending it back would fail the two tests below (ADR-040).
+  const STORED_ABSENCE = {
+    start: '2026-10-07T08:00:00.123456Z',
+    end: '2026-10-09T18:00:00.654321Z',
+  };
+  const STORED_PREFERENCE = {
+    start: '2026-10-12T08:00:00.000001Z',
+    end: '2026-10-12T16:00:00.999999Z',
+    strength: 'PREFERS_NOT',
+  };
+
+  /** A declaration has no identifier, so it is named by sending back exactly what was read. */
+  it('GivenDeclaredUnavailability_WhenWithdrawingIt_ThenItsExactSpanIsSentInTheQuery', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const stub = stubbed({ unavailability: { status: 200, body: [STORED_ABSENCE] } });
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
+
+    await waitFor(() => expect(deletesOf(stub)).toHaveLength(1));
+    expect(deletesOf(stub)[0]?.[0]).toBe(
+      `/api/employees/${EMPLOYEE}/unavailability` +
+        `?start=${encodeURIComponent(STORED_ABSENCE.start)}` +
+        `&end=${encodeURIComponent(STORED_ABSENCE.end)}`,
+    );
+  });
+
+  it('GivenAStatedPreference_WhenWithdrawingIt_ThenItsSpanAndStrengthAreSentInTheQuery', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const stub = stubbed({ preferences: { status: 200, body: [STORED_PREFERENCE] } });
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw preference/ }));
+
+    await waitFor(() => expect(deletesOf(stub)).toHaveLength(1));
+    expect(deletesOf(stub)[0]?.[0]).toBe(
+      `/api/employees/${EMPLOYEE}/preferences` +
+        `?start=${encodeURIComponent(STORED_PREFERENCE.start)}` +
+        `&end=${encodeURIComponent(STORED_PREFERENCE.end)}` +
+        `&strength=PREFERS_NOT`,
+    );
+  });
+
+  it('GivenAWithdrawalAccepted_WhenAnnounced_ThenWhatTheyDeclaredIsReadAgain', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const stub = stubbed({ unavailability: { status: 200, body: [ABSENCE] } });
+    show();
+    const path = `/api/employees/${EMPLOYEE}/unavailability`;
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Withdrawn: that absence no longer keeps you off a roster.'),
+      ).toHaveAttribute('role', 'status'),
+    );
+    await waitFor(() => expect(readsOf(stub, path)).toHaveLength(2));
+  });
+
+  it('GivenTheBackendRefusesTheWithdrawal_WhenWithdrawing_ThenTheRefusalIsShownRatherThanASuccess', async () => {
+    actingAsEmployee(EMPLOYEE);
+    stubbed({
+      unavailability: { status: 200, body: [ABSENCE] },
+      write: { status: 403, body: { detail: 'You may not act on this record.' } },
+    });
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('You may not act on this record.'),
+    );
+    expect(screen.queryByText(/^Withdrawn:/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * Holds every write until released, answering reads at once.
+   *
+   * @returns the release, to be called once the test has looked at the page mid-write
+   */
+  function holdWrites(routed: ReturnType<typeof stubbed>): () => void {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        (init?.method ?? 'GET') === 'GET'
+          ? routed(path, init)
+          : held.then(() => routed(path, init)),
+      ),
+    );
+    return release;
+  }
+
+  /** Each write replaces the person's whole list, so two in flight can undo each other (#33). */
+  it('GivenAWithdrawalInFlight_WhenDeclaring_ThenDeclaringWaitsForIt', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const release = holdWrites(stubbed({ unavailability: { status: 200, body: [ABSENCE] } }));
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
+
+    expect(screen.getByRole('button', { name: 'I cannot work this' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'State a preference' })).toBeDisabled();
+    release();
+    await screen.findByText(/^Withdrawn:/);
+  });
+
+  it('GivenADeclarationInFlight_WhenWithdrawing_ThenWithdrawingWaitsForIt', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const release = holdWrites(stubbed({ unavailability: { status: 200, body: [ABSENCE] } }));
+    show();
+    const withdraw = await screen.findByRole('button', { name: /^Withdraw absence/ });
+
+    await fillSpan('2026-10-05T08:00', '2026-10-05T16:00');
+    await userEvent.click(screen.getByRole('button', { name: 'I cannot work this' }));
+
+    expect(withdraw).toBeDisabled();
+    release();
+    await screen.findByText('Recorded: you cannot work then.');
+  });
+
+  /**
+   * The list read before the withdrawal stays on screen until its replacement arrives, so its
+   * entries must not be offered for withdrawal meanwhile: one just withdrawn would answer 404.
+   */
+  it('GivenAWithdrawalAccepted_WhileTheListIsReadAgain_ThenItsEntriesCannotBeWithdrawn', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const routed = stubbed({ unavailability: { status: 200, body: [ABSENCE] } });
+    const path = `/api/employees/${EMPLOYEE}/unavailability`;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reads = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((called: string, init?: RequestInit) => {
+        const rereading = called === path && (init?.method ?? 'GET') === 'GET' && reads++ > 0;
+        return rereading ? held.then(() => routed(called, init)) : routed(called, init);
+      }),
+    );
+    show();
+    const withdraw = await screen.findByRole('button', { name: /^Withdraw absence/ });
+
+    await userEvent.click(withdraw);
+
+    await screen.findByText(/^Withdrawn:/);
+    expect(withdraw).toBeDisabled();
+    release();
+  });
+
+  /** A refusal may mean the list on screen is stale, withdrawn already by somebody else. */
+  it('GivenAWithdrawalRefused_WhenAnnounced_ThenWhatTheyDeclaredIsReadAgain', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const stub = stubbed({
+      unavailability: { status: 200, body: [ABSENCE] },
+      write: { status: 403, body: { detail: 'You may not act on this record.' } },
+    });
+    show();
+    const path = `/api/employees/${EMPLOYEE}/unavailability`;
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    await waitFor(() => expect(readsOf(stub, path)).toHaveLength(2));
+  });
+
+  it('GivenAWithdrawalInFlight_WhenWithdrawingAgain_ThenOnlyOneRequestIsSent', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const routed = stubbed({ unavailability: { status: 200, body: [ABSENCE] } });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        (init?.method ?? 'GET') === 'GET'
+          ? routed(path, init)
+          : held.then(() => routed(path, init)),
+      ),
+    );
+    show();
+    const withdraw = await screen.findByRole('button', { name: /^Withdraw absence/ });
+
+    await userEvent.click(withdraw);
+    await userEvent.click(withdraw);
+
+    expect(withdraw).toBeDisabled();
+    release();
+    await screen.findByText(/^Withdrawn:/);
+    expect(deletesOf(routed)).toHaveLength(1);
   });
 });
 

@@ -27,5 +27,14 @@ public enum WorkforceChange {
   UNAVAILABILITY_DECLARED,
 
   /** Somebody stated a soft preference, which binds nothing and is honoured where it can be. */
-  PREFERENCE_STATED
+  PREFERENCE_STATED,
+
+  /**
+   * Somebody withdrew time they had declared they cannot work, so they may be rostered across it.
+   * The declaration itself is not kept (ADR-040); this record of the act is.
+   */
+  UNAVAILABILITY_WITHDRAWN,
+
+  /** Somebody withdrew a soft preference they had stated. */
+  PREFERENCE_WITHDRAWN
 }
