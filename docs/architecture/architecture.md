@@ -553,7 +553,12 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   ([ADR-033](../ADRs/ADR-033-judge-r3-across-authoritative-rosters-under-the-publication-lock.md)).
 - **Reading the people of an organisation is restricted to Admins and Schedulers**, because
   unavailability is personal data. Generation reaches the same data through the anti-corruption
-  layer carrying the Scheduler's own identity, so the restriction holds there too.
+  layer carrying the Scheduler's own identity, so the restriction holds there too. One person's
+  own declarations are read the way they are declared instead: `findUnavailability` and
+  `findPreferences` admit the person themself, decided by `TenantActor.isThemself`, or an Admin or
+  Scheduler on their behalf (F6). That answers for one person at a time, so it widens nothing.
+  Preferences reach the API only through that read: `RosterableEmployee` still carries none,
+  because nothing in scheduling weighs them yet.
 - **Every use case is one transaction, and no use case says so.** `UseCaseConfiguration` wraps each
   service in a transactional proxy, because the architecture test forbids Spring inside the
   application layer and so `@Transactional` cannot go where a reader would look for it
