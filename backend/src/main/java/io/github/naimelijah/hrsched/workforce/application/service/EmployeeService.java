@@ -14,6 +14,8 @@ import io.github.naimelijah.hrsched.workforce.application.port.in.ManageEmployee
 import io.github.naimelijah.hrsched.workforce.application.port.in.RosterableEmployee;
 import io.github.naimelijah.hrsched.workforce.application.port.in.SetContractTermsCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.StatePreferenceCommand;
+import io.github.naimelijah.hrsched.workforce.application.port.in.WithdrawPreferenceCommand;
+import io.github.naimelijah.hrsched.workforce.application.port.in.WithdrawUnavailabilityCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.workforce.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
@@ -99,6 +101,28 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
     Employee employee = load(command.organisation(), command.employee());
     employees.save(employee.preferring(new ShiftPreference(command.period(), command.strength())));
     recorded(actor, command.organisation(), WorkforceChange.PREFERENCE_STATED, command.employee());
+  }
+
+  @Override
+  public void withdrawUnavailability(Actor actor, WithdrawUnavailabilityCommand command) {
+    authoriseSelfOrManager(actor, command.organisation(), command.employee());
+    Employee employee = load(command.organisation(), command.employee());
+    employees.save(employee.noLongerUnavailableFor(command.period()));
+    recorded(
+        actor,
+        command.organisation(),
+        WorkforceChange.UNAVAILABILITY_WITHDRAWN,
+        command.employee());
+  }
+
+  @Override
+  public void withdrawPreference(Actor actor, WithdrawPreferenceCommand command) {
+    authoriseSelfOrManager(actor, command.organisation(), command.employee());
+    Employee employee = load(command.organisation(), command.employee());
+    employees.save(
+        employee.noLongerPreferring(new ShiftPreference(command.period(), command.strength())));
+    recorded(
+        actor, command.organisation(), WorkforceChange.PREFERENCE_WITHDRAWN, command.employee());
   }
 
   /**

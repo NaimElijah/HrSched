@@ -17,7 +17,9 @@ import { Inbox } from './Inbox';
  * modelled (ADR-010). This page says so rather than implying the preference will be honoured.
  *
  * What they declared is read back from the backend rather than remembered from the form (F6), so
- * the list shows what was stored, including anything an Admin or Scheduler declared for them.
+ * the list shows what was stored, including anything an Admin or Scheduler declared for them. Each
+ * entry can be withdrawn (F26) by sending back exactly what was read, since a declaration has no
+ * identifier of its own (ADR-040).
  *
  * Own work comes from published rosters only (F5). Handing a shift to a colleague names that
  * colleague by their employee identifier, because an employee may not list colleagues and so has no
@@ -44,6 +46,7 @@ export function MePage({
   const [strength, setStrength] = useState<PreferenceStrength>('PREFERS');
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [writing, setWriting] = useState(false);
 
   // The employee link comes from the session the backend established, never from anything typed:
   // a user is not an employee, and the two are linked by the account rather than by matching ids.
@@ -98,14 +101,38 @@ export function MePage({
     if (when === null) {
       return;
     }
+    await write(() => action(when), message, declared);
+  }
+
+  /**
+   * Declaring, stating and withdrawing take turns. Each one loads this person's declarations and
+   * saves the whole list back, so two in flight at once could undo each other — the last save wins
+   * (#33) — and a span the page had said was recorded would be gone.
+   *
+   * The list is read again whatever the answer: a refusal can mean the list on screen is stale, an
+   * entry withdrawn already by an Admin on the person's behalf or in another tab.
+   *
+   * @param declared the list the write changes, read again once the backend has answered
+   */
+  async function write(
+    action: () => Promise<unknown>,
+    message: string,
+    declared: { reload: () => void },
+  ) {
+    if (writing) {
+      return;
+    }
+    setWriting(true);
     setFailure(null);
     setDone(null);
     try {
-      await action(when);
+      await action();
       setDone(message);
-      declared.reload();
     } catch (error) {
       setFailure(error);
+    } finally {
+      setWriting(false);
+      declared.reload();
     }
   }
 
@@ -219,6 +246,7 @@ export function MePage({
         </label>
         <button
           type="button"
+          disabled={writing}
           onClick={() =>
             void act(
               (when) => workforce.declareUnavailability(employee, when.start, when.end),
@@ -231,6 +259,7 @@ export function MePage({
         </button>
         <button
           type="button"
+          disabled={writing}
           onClick={() =>
             void act(
               (when) => workforce.statePreference(employee, when.start, when.end, strength),
@@ -251,10 +280,29 @@ export function MePage({
         <p>You have declared no time you cannot work.</p>
       ) : null}
       <ul className="spans">
-        {(unavailability.value ?? []).map((period) => (
-          // Unique: two declared absences may not overlap (R7), so no two share a span.
-          <li key={`${period.start}|${period.end}`}>{spanLabel(period.start, period.end)}</li>
-        ))}
+        {(unavailability.value ?? []).map((period) => {
+          const label = spanLabel(period.start, period.end);
+          return (
+            // Unique: two declared absences may not overlap (R7), so no two share a span.
+            <li key={`${period.start}|${period.end}`}>
+              <span>{label}</span>{' '}
+              <button
+                type="button"
+                disabled={writing || unavailability.busy}
+                aria-label={`Withdraw absence: ${label}`}
+                onClick={() =>
+                  void write(
+                    () => workforce.withdrawUnavailability(employee, period.start, period.end),
+                    'Withdrawn: that absence no longer keeps you off a roster.',
+                    unavailability,
+                  )
+                }
+              >
+                Withdraw
+              </button>
+            </li>
+          );
+        })}
       </ul>
 
       <h4>Preferences</h4>
@@ -262,12 +310,35 @@ export function MePage({
       <Busy busy={preferences.busy} />
       {preferences.value?.length === 0 ? <p>You have stated no preferences.</p> : null}
       <ul className="spans">
-        {(preferences.value ?? []).map((preference, index) => (
-          // Indexed: preferences may repeat one another exactly (R26), so a span alone is no key.
-          <li key={`${index}|${preference.start}|${preference.end}|${preference.strength}`}>
-            {`${spanLabel(preference.start, preference.end)}: ${FEELING[preference.strength]}`}
-          </li>
-        ))}
+        {(preferences.value ?? []).map((preference, index) => {
+          const label = `${spanLabel(preference.start, preference.end)}: ${FEELING[preference.strength]}`;
+          return (
+            // Indexed: preferences may repeat one another exactly (R26), so a span alone is no key.
+            <li key={`${index}|${preference.start}|${preference.end}|${preference.strength}`}>
+              <span>{label}</span>{' '}
+              <button
+                type="button"
+                disabled={writing || preferences.busy}
+                aria-label={`Withdraw preference: ${label}`}
+                onClick={() =>
+                  void write(
+                    () =>
+                      workforce.withdrawPreference(
+                        employee,
+                        preference.start,
+                        preference.end,
+                        preference.strength,
+                      ),
+                    'Withdrawn: that preference no longer stands.',
+                    preferences,
+                  )
+                }
+              >
+                Withdraw
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

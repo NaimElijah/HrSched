@@ -115,6 +115,47 @@ public final class Employee {
   }
 
   /**
+   * Withdraws a span this employee declared they cannot work.
+   *
+   * <p>The span is named exactly as it was declared. Declared spans never overlap, so it names at
+   * most one, and a span that only overlaps one is not it: a withdrawal removes a declaration
+   * rather than carving a piece out of it (ADR-040).
+   *
+   * @param period the span exactly as it was declared
+   * @return an employee no longer unavailable for it
+   * @throws UnknownDeclarationException if no declared span is exactly that one
+   */
+  public Employee noLongerUnavailableFor(TimeRange period) {
+    Objects.requireNonNull(period, "period must not be null");
+    List<TimeRange> remaining = new ArrayList<>(unavailability);
+    if (!remaining.remove(period)) {
+      throw new UnknownDeclarationException();
+    }
+    return new Employee(
+        id, organisation, name, qualifications, remaining, preferences, contractTerms);
+  }
+
+  /**
+   * Withdraws a soft preference this employee stated.
+   *
+   * <p>Preferences may repeat one another exactly, and identical statements cannot be told apart,
+   * so every statement equal to this one is withdrawn together (ADR-040).
+   *
+   * @param preference the span and strength exactly as they were stated
+   * @return an employee no longer carrying that preference
+   * @throws UnknownDeclarationException if no stated preference is exactly that one
+   */
+  public Employee noLongerPreferring(ShiftPreference preference) {
+    Objects.requireNonNull(preference, "preference must not be null");
+    List<ShiftPreference> remaining = new ArrayList<>(preferences);
+    if (!remaining.removeIf(preference::equals)) {
+      throw new UnknownDeclarationException();
+    }
+    return new Employee(
+        id, organisation, name, qualifications, unavailability, remaining, contractTerms);
+  }
+
+  /**
    * @param terms what this employee is contracted to work
    * @return an employee on those terms, replacing any previous ones
    */

@@ -559,6 +559,17 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   Scheduler on their behalf (F6). That answers for one person at a time, so it widens nothing.
   Preferences reach the API only through that read: `RosterableEmployee` still carries none,
   because nothing in scheduling weighs them yet.
+- **A declaration is withdrawn by what it says, because it has no identity** (F26). Unavailability
+  is a `TimeRange` and a preference a `ShiftPreference` value inside the `Employee` aggregate, and
+  their rows are keyed by an ordinal the repository renumbers on every save. So
+  `DELETE /api/employees/{id}/unavailability` and `/preferences` name the declaration in the
+  query: its exact span, and for a preference its strength too. `Employee.noLongerUnavailableFor`
+  refuses a span that only overlaps one declared, and `noLongerPreferring` removes every identical
+  statement, since R26 lets them repeat and they cannot be told apart. The row is deleted outright;
+  only the audit line says a withdrawal happened. No roster is touched, because a withdrawal only
+  widens who may be assigned and scheduling reads unavailability live through
+  `WorkforceDirectoryAdapter`
+  ([ADR-040](../ADRs/ADR-040-withdraw-a-declaration-by-what-it-says.md)).
 - **Every use case is one transaction, and no use case says so.** `UseCaseConfiguration` wraps each
   service in a transactional proxy, because the architecture test forbids Spring inside the
   application layer and so `@Transactional` cannot go where a reader would look for it

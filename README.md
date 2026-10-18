@@ -56,7 +56,7 @@ owner has chosen to leave open for now ([Q15](docs/requirements/requirements.md#
 - **Provision accounts from the top down.** Each account is an Admin, a Scheduler or an Employee.
   A temporary password grants nothing until it is replaced, and nobody signs themselves up.
 - **Describe your people.** Record their qualifications, when they cannot work, their soft
-  preferences and their weekly contracted hours.
+  preferences and their weekly contracted hours. A mistaken absence or preference can be withdrawn.
 - **Configure the rules, and read back any version.** Set minimum rest, maximum daily and weekly
   working time, and maximum consecutive days. Each limit is optional, and none has a default.
 - **Define shifts in their own time zone.** A shift has a headcount, the qualifications it

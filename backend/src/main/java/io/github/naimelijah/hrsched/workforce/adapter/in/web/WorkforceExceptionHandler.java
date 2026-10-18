@@ -8,6 +8,7 @@ import io.github.naimelijah.hrsched.workforce.domain.model.InvalidContractTermsE
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidEmployeeNameException;
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidQualificationNameException;
 import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
+import io.github.naimelijah.hrsched.workforce.domain.model.UnknownDeclarationException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
 import io.micrometer.core.instrument.Counter;
@@ -96,7 +97,11 @@ public class WorkforceExceptionHandler {
     return problem;
   }
 
-  @ExceptionHandler({UnknownEmployeeException.class, UnknownQualificationException.class})
+  @ExceptionHandler({
+    UnknownEmployeeException.class,
+    UnknownQualificationException.class,
+    UnknownDeclarationException.class
+  })
   public ProblemDetail handleUnknown(RuntimeException exception) {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, exception.getMessage());
