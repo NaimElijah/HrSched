@@ -803,6 +803,72 @@ class EmployeeHttpTest {
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
 
+  @Test
+  void GivenAnEmployeeOfAnotherOrganisation_WhenWithdrawingTheirPreferenceThroughOurs_ThenNotFound()
+      throws Exception {
+    String theirOrganisation = anOrganisation(mockMvc);
+    String theirs = addEmployee(theirOrganisation, "Mole");
+    mockMvc
+        .perform(
+            as(
+                    mockMvc,
+                    post("/api/employees/" + theirs + "/preferences"),
+                    theirOrganisation,
+                    "ADMIN")
+                .content(
+                    "{\"start\":\"2026-11-30T08:00:00Z\",\"end\":\"2026-11-30T16:00:00Z\","
+                        + "\"strength\":\"PREFERS\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                delete("/api/employees/" + theirs + "/preferences")
+                    .param("start", "2026-11-30T08:00:00Z")
+                    .param("end", "2026-11-30T16:00:00Z")
+                    .param("strength", "PREFERS"),
+                anOrganisation(mockMvc),
+                "ADMIN"))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  @Test
+  void GivenAnEndBeforeItsStart_WhenWithdrawingUnavailability_ThenItIsRejected() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                delete("/api/employees/" + ada + "/unavailability")
+                    .param("start", "2026-12-02T16:00:00Z")
+                    .param("end", "2026-12-02T08:00:00Z"),
+                organisation,
+                "ADMIN"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void GivenAnUnknownStrength_WhenWithdrawingAPreference_ThenItIsRejected() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                delete("/api/employees/" + ada + "/preferences")
+                    .param("start", "2026-12-03T08:00:00Z")
+                    .param("end", "2026-12-03T16:00:00Z")
+                    .param("strength", "ADORES"),
+                organisation,
+                "ADMIN"))
+        .andExpect(status().isBadRequest());
+  }
+
   /** The detail names no span: a span says when somebody cannot work. */
   @Test
   void GivenASpanNeverDeclared_WhenWithdrawingIt_ThenItIsNotFoundWithoutRepeatingTheSpan()

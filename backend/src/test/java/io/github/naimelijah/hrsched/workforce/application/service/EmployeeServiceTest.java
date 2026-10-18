@@ -390,7 +390,7 @@ class EmployeeServiceTest {
   }
 
   @Test
-  void GivenAColleague_WhenWithdrawingSomebodyElsesPreference_ThenItIsRefused() {
+  void GivenAColleague_WhenWithdrawingSomebodyElsesPreference_ThenItIsRefusedAndKept() {
     EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
     EmployeeId grace = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Grace"));
     TenantActor gracesAccount =
@@ -404,6 +404,48 @@ class EmployeeServiceTest {
                     gracesAccount,
                     new WithdrawPreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS)))
         .isInstanceOf(NotPermittedException.class);
+    assertThat(service.findPreferences(admin(ACME), ACME, ada))
+        .containsExactly(new ShiftPreference(TUESDAY, PreferenceStrength.PREFERS));
+  }
+
+  @Test
+  void GivenAnAdmin_WhenWithdrawingSomebodysPreference_ThenItIsNoLongerStated() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.statePreference(
+        admin(ACME), new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS));
+
+    service.withdrawPreference(
+        admin(ACME), new WithdrawPreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS));
+
+    assertThat(service.findPreferences(admin(ACME), ACME, ada)).isEmpty();
+  }
+
+  @Test
+  void GivenAScheduler_WhenWithdrawingSomebodysUnavailability_ThenItIsNoLongerDeclared() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor scheduler = actor(ACME, Role.SCHEDULER);
+    service.declareUnavailability(scheduler, new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+
+    service.withdrawUnavailability(scheduler, new WithdrawUnavailabilityCommand(ACME, ada, MONDAY));
+
+    assertThat(service.findUnavailability(scheduler, ACME, ada)).isEmpty();
+  }
+
+  @Test
+  void GivenAnotherOrganisationsEmployee_WhenWithdrawingTheirPreferenceThroughOurs_ThenUnknown() {
+    EmployeeId mole = service.addEmployee(admin(RIVAL), new AddEmployeeCommand(RIVAL, "Mole"));
+    service.statePreference(
+        admin(RIVAL), new StatePreferenceCommand(RIVAL, mole, TUESDAY, PreferenceStrength.PREFERS));
+
+    assertThatThrownBy(
+            () ->
+                service.withdrawPreference(
+                    admin(ACME),
+                    new WithdrawPreferenceCommand(ACME, mole, TUESDAY, PreferenceStrength.PREFERS)))
+        .describedAs("knowing an identity from another tenant must not be enough to act on it")
+        .isInstanceOf(UnknownEmployeeException.class);
+    assertThat(service.findPreferences(admin(RIVAL), RIVAL, mole))
+        .containsExactly(new ShiftPreference(TUESDAY, PreferenceStrength.PREFERS));
   }
 
   @Test
@@ -461,9 +503,13 @@ class EmployeeServiceTest {
     assertThat(service.findUnavailability(admin(ACME), ACME, ada)).containsExactly(MONDAY);
   }
 
+  /** The same span with the other strength is a different statement, and is not this one. */
   @Test
   void GivenAPreferenceNeverStated_WhenWithdrawingIt_ThenItIsRefusedAndNothingIsRecorded() {
     EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.statePreference(
+        admin(ACME),
+        new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS_NOT));
 
     assertThatThrownBy(
             () ->
@@ -472,6 +518,8 @@ class EmployeeServiceTest {
                     new WithdrawPreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS)))
         .isInstanceOf(UnknownDeclarationException.class);
     assertThat(audit.of(WorkforceChange.PREFERENCE_WITHDRAWN)).isEmpty();
+    assertThat(service.findPreferences(admin(ACME), ACME, ada))
+        .containsExactly(new ShiftPreference(TUESDAY, PreferenceStrength.PREFERS_NOT));
   }
 
   /** As with declaring: only the actor tells somebody's own act from a manager's (ADR-012). */

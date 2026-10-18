@@ -200,6 +200,35 @@ class JdbcEmployeeRepositoryTest {
   }
 
   /**
+   * The other direction, which a withdrawal (F26, ADR-040) is the first path to take: a save with
+   * fewer owned rows than were stored removes exactly those, and leaves the other three tables as
+   * they were. Twenty contracted hours is invented.
+   */
+  @Test
+  void GivenAStoredEmployee_WhenSavedWithOneDeclarationWithdrawn_ThenOnlyThatOneIsGone() {
+    QualificationId forklift = aQualification(ACME, "Forklift");
+    ShiftPreference wants = new ShiftPreference(MONDAY_DAY, PreferenceStrength.PREFERS);
+    Employee ada =
+        employee(ACME, "Ada")
+            .holding(forklift)
+            .contractedTo(new ContractTerms(Duration.ofHours(20)))
+            .unavailableFor(A_FORTNIGHT_OFF)
+            .unavailableFor(A_WEEK_OFF)
+            .preferring(wants);
+    repository.save(ada);
+
+    repository.save(ada.noLongerUnavailableFor(A_FORTNIGHT_OFF));
+
+    Employee stored = repository.findById(ACME, ada.id()).orElseThrow();
+    assertThat(stored.unavailability()).containsExactly(A_WEEK_OFF);
+    assertThat(stored.preferences()).containsExactly(wants);
+    assertThat(stored.qualifications()).containsExactly(forklift);
+    assertThat(stored.contractTerms())
+        .map(ContractTerms::weeklyContractedHours)
+        .contains(Duration.ofHours(20));
+  }
+
+  /**
    * {@code save} is the one repository method carrying no {@code OrganisationId}, so the upsert is
    * the only thing standing between a re-used identity and another tenant's row. A UUID collision
    * is not a realistic accident; a restore, an import or a caller supplying its own identity is,
