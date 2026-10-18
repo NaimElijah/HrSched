@@ -65,6 +65,29 @@ export const workforce = {
   declareUnavailability: (employee: string, start: string, end: string): Promise<void> =>
     api.post<void>(path`/api/employees/${employee}/unavailability`, { start, end }),
 
+  /**
+   * A declaration has no identifier, so it is named by what it says, in the query because a DELETE
+   * carries no body (ADR-040). Send back exactly the instants the read-back returned.
+   */
+  withdrawUnavailability: (employee: string, start: string, end: string): Promise<void> =>
+    api.delete<void>(
+      `${path`/api/employees/${employee}/unavailability`}` +
+        `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+    ),
+
+  /** Named by its span and strength; every identical statement is withdrawn with it (ADR-040). */
+  withdrawPreference: (
+    employee: string,
+    start: string,
+    end: string,
+    strength: PreferenceStrength,
+  ): Promise<void> =>
+    api.delete<void>(
+      `${path`/api/employees/${employee}/preferences`}` +
+        `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}` +
+        `&strength=${encodeURIComponent(strength)}`,
+    ),
+
   statePreference: (
     employee: string,
     start: string,

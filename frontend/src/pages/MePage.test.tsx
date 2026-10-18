@@ -446,6 +446,101 @@ describe('what they declared', () => {
 
     await waitFor(() => expect(readsOf(stub, path)).toHaveLength(2));
   });
+
+  // --- F26: withdrawing one (ADR-040) ---------------------------------------------------------
+
+  function deletesOf(stub: ReturnType<typeof stubbed>) {
+    return stub.mock.calls.filter(([, init]) => init?.method === 'DELETE');
+  }
+
+  /** A declaration has no identifier, so it is named by sending back exactly what was read. */
+  it('GivenDeclaredUnavailability_WhenWithdrawingIt_ThenItsExactSpanIsSentInTheQuery', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const stub = stubbed({ unavailability: { status: 200, body: [ABSENCE] } });
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
+
+    await waitFor(() => expect(deletesOf(stub)).toHaveLength(1));
+    expect(deletesOf(stub)[0]?.[0]).toBe(
+      `/api/employees/${EMPLOYEE}/unavailability` +
+        `?start=${encodeURIComponent(ABSENCE.start)}&end=${encodeURIComponent(ABSENCE.end)}`,
+    );
+  });
+
+  it('GivenAStatedPreference_WhenWithdrawingIt_ThenItsSpanAndStrengthAreSentInTheQuery', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const stub = stubbed({ preferences: { status: 200, body: [PREFERENCE] } });
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw preference/ }));
+
+    await waitFor(() => expect(deletesOf(stub)).toHaveLength(1));
+    expect(deletesOf(stub)[0]?.[0]).toBe(
+      `/api/employees/${EMPLOYEE}/preferences` +
+        `?start=${encodeURIComponent(PREFERENCE.start)}&end=${encodeURIComponent(PREFERENCE.end)}` +
+        `&strength=PREFERS_NOT`,
+    );
+  });
+
+  it('GivenAWithdrawalAccepted_WhenAnnounced_ThenWhatTheyDeclaredIsReadAgain', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const stub = stubbed({ unavailability: { status: 200, body: [ABSENCE] } });
+    show();
+    const path = `/api/employees/${EMPLOYEE}/unavailability`;
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Withdrawn: that absence no longer keeps you off a roster.'),
+      ).toHaveAttribute('role', 'status'),
+    );
+    await waitFor(() => expect(readsOf(stub, path)).toHaveLength(2));
+  });
+
+  it('GivenTheBackendRefusesTheWithdrawal_WhenWithdrawing_ThenTheRefusalIsShownRatherThanASuccess', async () => {
+    actingAsEmployee(EMPLOYEE);
+    stubbed({
+      unavailability: { status: 200, body: [ABSENCE] },
+      write: { status: 403, body: { detail: 'You may not act on this record.' } },
+    });
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('You may not act on this record.'),
+    );
+    expect(screen.queryByText(/^Withdrawn:/)).not.toBeInTheDocument();
+  });
+
+  it('GivenAWithdrawalInFlight_WhenWithdrawingAgain_ThenOnlyOneRequestIsSent', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const routed = stubbed({ unavailability: { status: 200, body: [ABSENCE] } });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        (init?.method ?? 'GET') === 'GET'
+          ? routed(path, init)
+          : held.then(() => routed(path, init)),
+      ),
+    );
+    show();
+    const withdraw = await screen.findByRole('button', { name: /^Withdraw absence/ });
+
+    await userEvent.click(withdraw);
+    await userEvent.click(withdraw);
+
+    expect(withdraw).toBeDisabled();
+    release();
+    await screen.findByText(/^Withdrawn:/);
+    expect(deletesOf(routed)).toHaveLength(1);
+  });
 });
 
 describe('validating the span before anything is sent', () => {
