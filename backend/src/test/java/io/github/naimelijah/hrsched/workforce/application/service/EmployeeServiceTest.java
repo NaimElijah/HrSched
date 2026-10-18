@@ -295,6 +295,26 @@ class EmployeeServiceTest {
         .isInstanceOf(NotPermittedException.class);
   }
 
+  /**
+   * The organisation is checked against the actor, not only used to scope the lookup. Over HTTP it
+   * always comes from the token, so only the port can be handed a mismatched one.
+   */
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingSomebodysUnavailability_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+
+    assertThatThrownBy(() -> service.findUnavailability(admin(RIVAL), ACME, ada))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingSomebodysPreferences_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+
+    assertThatThrownBy(() -> service.findPreferences(admin(RIVAL), ACME, ada))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
   @Test
   void GivenAnotherOrganisationsEmployee_WhenReadingTheirUnavailabilityThroughOurs_ThenUnknown() {
     EmployeeId mole = service.addEmployee(admin(RIVAL), new AddEmployeeCommand(RIVAL, "Mole"));
