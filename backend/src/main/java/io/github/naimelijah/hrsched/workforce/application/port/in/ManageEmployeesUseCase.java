@@ -7,6 +7,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
+import io.github.naimelijah.hrsched.workforce.domain.model.UnknownDeclarationException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeException;
 import java.util.List;
 import java.util.Optional;
@@ -52,6 +53,32 @@ public interface ManageEmployeesUseCase {
    * @param command whose preference, and what it is
    */
   void statePreference(Actor actor, StatePreferenceCommand command);
+
+  /**
+   * Withdraws a span somebody declared they cannot work (F26), named exactly as it was declared
+   * (ADR-040). It only ever widens who may be assigned, so no roster is touched.
+   *
+   * @param actor the employee themselves, or an Admin or Scheduler of their organisation
+   * @param command who declared it, and the span exactly as declared
+   * @throws CrossTenantAccessException if the actor may not touch that organisation
+   * @throws NotPermittedException if the actor is somebody else without an Admin or Scheduler role
+   * @throws UnknownEmployeeException if that organisation holds nobody by that identity
+   * @throws UnknownDeclarationException if they declared no span exactly like it
+   */
+  void withdrawUnavailability(Actor actor, WithdrawUnavailabilityCommand command);
+
+  /**
+   * Withdraws a soft preference somebody stated (F26), named by its span and strength (ADR-040).
+   * Every identical statement goes with it, because identical statements cannot be told apart.
+   *
+   * @param actor the employee themselves, or an Admin or Scheduler of their organisation
+   * @param command who stated it, and the span and strength exactly as stated
+   * @throws CrossTenantAccessException if the actor may not touch that organisation
+   * @throws NotPermittedException if the actor is somebody else without an Admin or Scheduler role
+   * @throws UnknownEmployeeException if that organisation holds nobody by that identity
+   * @throws UnknownDeclarationException if they stated no preference exactly like it
+   */
+  void withdrawPreference(Actor actor, WithdrawPreferenceCommand command);
 
   /**
    * Reads one person, restricted exactly as {@link FindRosterableEmployeesUseCase#findRosterable}

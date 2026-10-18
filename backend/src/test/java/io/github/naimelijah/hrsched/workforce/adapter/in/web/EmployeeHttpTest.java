@@ -4,6 +4,8 @@ import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHtt
 import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHttpRequests.as;
 import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHttpRequests.asThemself;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -615,6 +617,195 @@ class EmployeeHttpTest {
                 "ADMIN"))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  // --- F26: withdrawing a declaration (ADR-040) ---------------------------------------------
+
+  private void declareUnavailability(String organisation, String employee, String start, String end)
+      throws Exception {
+    mockMvc
+        .perform(
+            as(
+                    mockMvc,
+                    post("/api/employees/" + employee + "/unavailability"),
+                    organisation,
+                    "ADMIN")
+                .content("{\"start\":\"%s\",\"end\":\"%s\"}".formatted(start, end)))
+        .andExpect(status().isNoContent());
+  }
+
+  @Test
+  void GivenTheEmployeeThemself_WhenWithdrawingTheirUnavailability_ThenItIsNoLongerListed()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    declareUnavailability(organisation, ada, "2026-11-18T00:00:00Z", "2026-11-19T00:00:00Z");
+
+    mockMvc
+        .perform(
+            asThemself(
+                mockMvc,
+                delete("/api/employees/" + ada + "/unavailability")
+                    .param("start", "2026-11-18T00:00:00Z")
+                    .param("end", "2026-11-19T00:00:00Z"),
+                organisation,
+                ada))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            asThemself(
+                mockMvc, get("/api/employees/" + ada + "/unavailability"), organisation, ada))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
+  }
+
+  @Test
+  void GivenTheEmployeeThemself_WhenWithdrawingAPreference_ThenItIsNoLongerListed()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    mockMvc
+        .perform(
+            asThemself(mockMvc, post("/api/employees/" + ada + "/preferences"), organisation, ada)
+                .content(
+                    "{\"start\":\"2026-11-20T08:00:00Z\",\"end\":\"2026-11-20T16:00:00Z\","
+                        + "\"strength\":\"PREFERS\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            asThemself(
+                mockMvc,
+                delete("/api/employees/" + ada + "/preferences")
+                    .param("start", "2026-11-20T08:00:00Z")
+                    .param("end", "2026-11-20T16:00:00Z")
+                    .param("strength", "PREFERS"),
+                organisation,
+                ada))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, get("/api/employees/" + ada + "/preferences"), organisation, ada))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
+  }
+
+  @Test
+  void GivenAColleague_WhenWithdrawingSomebodyElsesUnavailability_ThenItIsForbidden()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String grace = addEmployee(organisation, "Grace");
+    declareUnavailability(organisation, ada, "2026-11-21T00:00:00Z", "2026-11-22T00:00:00Z");
+
+    mockMvc
+        .perform(
+            asThemself(
+                mockMvc,
+                delete("/api/employees/" + ada + "/unavailability")
+                    .param("start", "2026-11-21T00:00:00Z")
+                    .param("end", "2026-11-22T00:00:00Z"),
+                organisation,
+                grace))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenAColleague_WhenWithdrawingSomebodyElsesPreference_ThenItIsForbidden() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String grace = addEmployee(organisation, "Grace");
+
+    mockMvc
+        .perform(
+            asThemself(
+                mockMvc,
+                delete("/api/employees/" + ada + "/preferences")
+                    .param("start", "2026-11-23T08:00:00Z")
+                    .param("end", "2026-11-23T16:00:00Z")
+                    .param("strength", "PREFERS"),
+                organisation,
+                grace))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void
+      GivenAnEmployeeOfAnotherOrganisation_WhenWithdrawingTheirUnavailabilityThroughOurs_ThenNotFound()
+          throws Exception {
+    String theirOrganisation = anOrganisation(mockMvc);
+    String theirs = addEmployee(theirOrganisation, "Mole");
+    declareUnavailability(
+        theirOrganisation, theirs, "2026-11-24T00:00:00Z", "2026-11-25T00:00:00Z");
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                delete("/api/employees/" + theirs + "/unavailability")
+                    .param("start", "2026-11-24T00:00:00Z")
+                    .param("end", "2026-11-25T00:00:00Z"),
+                anOrganisation(mockMvc),
+                "ADMIN"))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  /** The detail names no span: a span says when somebody cannot work. */
+  @Test
+  void GivenASpanNeverDeclared_WhenWithdrawingIt_ThenItIsNotFoundWithoutRepeatingTheSpan()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    declareUnavailability(organisation, ada, "2026-11-26T00:00:00Z", "2026-11-27T00:00:00Z");
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                delete("/api/employees/" + ada + "/unavailability")
+                    .param("start", "2026-11-26T00:00:00Z")
+                    .param("end", "2026-11-26T12:00:00Z"),
+                organisation,
+                "ADMIN"))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+        .andExpect(jsonPath("$.detail").value(not(containsString("2026-11-26"))));
+  }
+
+  @Test
+  void GivenNoEnd_WhenWithdrawingUnavailability_ThenItIsRejected() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                delete("/api/employees/" + ada + "/unavailability")
+                    .param("start", "2026-11-28T00:00:00Z"),
+                organisation,
+                "ADMIN"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void GivenNoStrength_WhenWithdrawingAPreference_ThenItIsRejected() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                delete("/api/employees/" + ada + "/preferences")
+                    .param("start", "2026-11-29T08:00:00Z")
+                    .param("end", "2026-11-29T16:00:00Z"),
+                organisation,
+                "ADMIN"))
+        .andExpect(status().isBadRequest());
   }
 
   /**

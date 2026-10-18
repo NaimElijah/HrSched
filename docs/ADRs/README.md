@@ -45,6 +45,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md) | Keep roster history as a record of when each roster governed, written once | Accepted | 2026-10-14 |
 | [ADR-038](ADR-038-read-a-constraint-version-back-by-its-number.md) | Read a constraint version back by its number, and answer version one from the domain | Accepted | 2026-10-15 |
 | [ADR-039](ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md) | Lapse pending swaps in the publication that supersedes their roster | Accepted | 2026-10-15 |
+| [ADR-040](ADR-040-withdraw-a-declaration-by-what-it-says.md) | Withdraw a declaration by what it says, and keep nothing of it | Accepted | 2026-10-18 |
 
 ## Decisions waiting to be recorded
 

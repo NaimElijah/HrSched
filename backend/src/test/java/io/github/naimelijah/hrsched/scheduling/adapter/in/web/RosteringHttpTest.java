@@ -560,6 +560,36 @@ class RosteringHttpTest {
         .andExpect(jsonPath("$.assignments.length()").value(0));
   }
 
+  /** The other half of R18: an absence withdrawn (F26) no longer keeps anybody off a roster. */
+  @Test
+  void GivenUnavailabilityWithdrawn_WhenGeneratingARoster_ThenTheShiftIsCovered() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+                .content("{\"start\":\"2026-10-10T00:00:00Z\",\"end\":\"2026-10-11T00:00:00Z\"}"))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                delete("/api/employees/" + ada + "/unavailability")
+                    .param("start", "2026-10-10T00:00:00Z")
+                    .param("end", "2026-10-11T00:00:00Z"),
+                organisation,
+                "ADMIN"))
+        .andExpect(status().isNoContent());
+    defineShift(organisation, "2026-10-10T08:00:00Z", "2026-10-10T16:00:00Z", 1);
+
+    String roster = generateRoster(organisation, "2026-10-10T00:00:00Z", "2026-10-11T00:00:00Z");
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.assignments.length()").value(1));
+  }
+
   @Test
   void GivenAnEmployeeOfAnotherOrganisation_WhenGeneratingARoster_ThenTheyAreNeverUsed()
       throws Exception {
