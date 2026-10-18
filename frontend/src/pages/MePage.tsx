@@ -109,7 +109,10 @@ export function MePage({
    * saves the whole list back, so two in flight at once could undo each other — the last save wins
    * (#33) — and a span the page had said was recorded would be gone.
    *
-   * @param declared the list the write changes, read again once the backend has stored it
+   * The list is read again whatever the answer: a refusal can mean the list on screen is stale, an
+   * entry withdrawn already by an Admin on the person's behalf or in another tab.
+   *
+   * @param declared the list the write changes, read again once the backend has answered
    */
   async function write(
     action: () => Promise<unknown>,
@@ -125,11 +128,11 @@ export function MePage({
     try {
       await action();
       setDone(message);
-      declared.reload();
     } catch (error) {
       setFailure(error);
     } finally {
       setWriting(false);
+      declared.reload();
     }
   }
 
@@ -285,7 +288,7 @@ export function MePage({
               <span>{label}</span>{' '}
               <button
                 type="button"
-                disabled={writing}
+                disabled={writing || unavailability.busy}
                 aria-label={`Withdraw absence: ${label}`}
                 onClick={() =>
                   void write(
@@ -315,7 +318,7 @@ export function MePage({
               <span>{label}</span>{' '}
               <button
                 type="button"
-                disabled={writing}
+                disabled={writing || preferences.busy}
                 aria-label={`Withdraw preference: ${label}`}
                 onClick={() =>
                   void write(

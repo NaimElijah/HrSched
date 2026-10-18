@@ -564,6 +564,52 @@ describe('what they declared', () => {
     await screen.findByText('Recorded: you cannot work then.');
   });
 
+  /**
+   * The list read before the withdrawal stays on screen until its replacement arrives, so its
+   * entries must not be offered for withdrawal meanwhile: one just withdrawn would answer 404.
+   */
+  it('GivenAWithdrawalAccepted_WhileTheListIsReadAgain_ThenItsEntriesCannotBeWithdrawn', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const routed = stubbed({ unavailability: { status: 200, body: [ABSENCE] } });
+    const path = `/api/employees/${EMPLOYEE}/unavailability`;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reads = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((called: string, init?: RequestInit) => {
+        const rereading = called === path && (init?.method ?? 'GET') === 'GET' && reads++ > 0;
+        return rereading ? held.then(() => routed(called, init)) : routed(called, init);
+      }),
+    );
+    show();
+    const withdraw = await screen.findByRole('button', { name: /^Withdraw absence/ });
+
+    await userEvent.click(withdraw);
+
+    await screen.findByText(/^Withdrawn:/);
+    expect(withdraw).toBeDisabled();
+    release();
+  });
+
+  /** A refusal may mean the list on screen is stale, withdrawn already by somebody else. */
+  it('GivenAWithdrawalRefused_WhenAnnounced_ThenWhatTheyDeclaredIsReadAgain', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const stub = stubbed({
+      unavailability: { status: 200, body: [ABSENCE] },
+      write: { status: 403, body: { detail: 'You may not act on this record.' } },
+    });
+    show();
+    const path = `/api/employees/${EMPLOYEE}/unavailability`;
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    await waitFor(() => expect(readsOf(stub, path)).toHaveLength(2));
+  });
+
   it('GivenAWithdrawalInFlight_WhenWithdrawingAgain_ThenOnlyOneRequestIsSent', async () => {
     actingAsEmployee(EMPLOYEE);
     const routed = stubbed({ unavailability: { status: 200, body: [ABSENCE] } });
