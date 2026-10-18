@@ -25,8 +25,9 @@ Forces:
 - **Unavailability spans are unique per employee.** R7 refuses an overlapping declaration, so two
   identical spans never coexist.
 - **Preferences may repeat.** R26 lets them overlap, and nothing refuses an exact duplicate.
-- **A DELETE request carries no body that can be relied on.** HTTP gives one no defined meaning,
-  and intermediaries may drop it. The frontend's `api.delete` sends none.
+- **A DELETE request carries no body that can be relied on.** Content in one has no generally
+  defined semantics, and some implementations reject it (RFC 9110 §9.3.5). The frontend's
+  `api.delete` sends none.
 - **No retention period is set (Q23, #41).** Keeping a withdrawn declaration somewhere would be
   choosing one.
 - **Unavailability is personal data.** It says when somebody is ill, caring for someone, or away.
@@ -60,7 +61,8 @@ Forces:
 ## Consequences
 
 - **Easy:**
-  - There is no migration, and the domain types are unchanged.
+  - There is no migration, and `TimeRange` and `ShiftPreference` keep their shape. `Employee` only
+    gains the two withdrawals, beside a new `UnknownDeclarationException`.
   - A client withdraws exactly what the read-back routes (F6) handed it, by sending the same
     instants back.
   - A withdrawn absence stops blocking assignments and generation at once, through the same live
@@ -82,7 +84,7 @@ Forces:
 | --- | --- |
 | Give every declaration its own identifier, and DELETE by it | It needs a migration that backfills an identifier for every stored row. It also turns two value objects into entities, and changes `RosterableEmployee` and `ShiftPreferenceTest`'s pinned shape. All of that buys nothing a value cannot already name, because R7 makes a span unique, and duplicate preferences are indistinguishable by definition. |
 | Keep a withdrawn declaration, marked withdrawn (a tombstone) | It chooses a retention policy that Q23 has not set. It keeps personal data nobody asked to keep. And every reader of unavailability would have to remember to filter it out. |
-| Send the span in the body of a DELETE | HTTP gives a DELETE body no defined meaning. Proxies and CDNs may drop it, including the CloudFront distribution planned for staging (#162). The client sends none. |
+| Send the span in the body of a DELETE | Content in a DELETE has no generally defined semantics, and some implementations reject the request (RFC 9110 §9.3.5). The client sends none. |
 | A `POST …/withdrawals` action route with a body | It works, but it names an action rather than the resource it removes. That leaves the collection with three verbs on two paths, when the read-back already put `GET` beside the `POST`. |
 | Withdraw only one of several identical preferences | The survivors are indistinguishable from the one withdrawn, so the read-back would still show "it", and the person would see their withdrawal apparently fail. |
 
