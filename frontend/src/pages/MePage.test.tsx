@@ -453,10 +453,22 @@ describe('what they declared', () => {
     return stub.mock.calls.filter(([, init]) => init?.method === 'DELETE');
   }
 
+  // Microseconds, as PostgreSQL stores them: no Date can produce these strings, so a client that
+  // re-formatted what it read before sending it back would fail the two tests below (ADR-040).
+  const STORED_ABSENCE = {
+    start: '2026-10-07T08:00:00.123456Z',
+    end: '2026-10-09T18:00:00.654321Z',
+  };
+  const STORED_PREFERENCE = {
+    start: '2026-10-12T08:00:00.000001Z',
+    end: '2026-10-12T16:00:00.999999Z',
+    strength: 'PREFERS_NOT',
+  };
+
   /** A declaration has no identifier, so it is named by sending back exactly what was read. */
   it('GivenDeclaredUnavailability_WhenWithdrawingIt_ThenItsExactSpanIsSentInTheQuery', async () => {
     actingAsEmployee(EMPLOYEE);
-    const stub = stubbed({ unavailability: { status: 200, body: [ABSENCE] } });
+    const stub = stubbed({ unavailability: { status: 200, body: [STORED_ABSENCE] } });
     show();
 
     await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
@@ -464,13 +476,14 @@ describe('what they declared', () => {
     await waitFor(() => expect(deletesOf(stub)).toHaveLength(1));
     expect(deletesOf(stub)[0]?.[0]).toBe(
       `/api/employees/${EMPLOYEE}/unavailability` +
-        `?start=${encodeURIComponent(ABSENCE.start)}&end=${encodeURIComponent(ABSENCE.end)}`,
+        `?start=${encodeURIComponent(STORED_ABSENCE.start)}` +
+        `&end=${encodeURIComponent(STORED_ABSENCE.end)}`,
     );
   });
 
   it('GivenAStatedPreference_WhenWithdrawingIt_ThenItsSpanAndStrengthAreSentInTheQuery', async () => {
     actingAsEmployee(EMPLOYEE);
-    const stub = stubbed({ preferences: { status: 200, body: [PREFERENCE] } });
+    const stub = stubbed({ preferences: { status: 200, body: [STORED_PREFERENCE] } });
     show();
 
     await userEvent.click(await screen.findByRole('button', { name: /^Withdraw preference/ }));
@@ -478,7 +491,8 @@ describe('what they declared', () => {
     await waitFor(() => expect(deletesOf(stub)).toHaveLength(1));
     expect(deletesOf(stub)[0]?.[0]).toBe(
       `/api/employees/${EMPLOYEE}/preferences` +
-        `?start=${encodeURIComponent(PREFERENCE.start)}&end=${encodeURIComponent(PREFERENCE.end)}` +
+        `?start=${encodeURIComponent(STORED_PREFERENCE.start)}` +
+        `&end=${encodeURIComponent(STORED_PREFERENCE.end)}` +
         `&strength=PREFERS_NOT`,
     );
   });

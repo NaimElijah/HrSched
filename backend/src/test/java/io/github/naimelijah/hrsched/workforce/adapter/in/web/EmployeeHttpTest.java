@@ -660,6 +660,56 @@ class EmployeeHttpTest {
         .andExpect(jsonPath("$.length()").value(0));
   }
 
+  /**
+   * PostgreSQL keeps microseconds, so a span sent with nanoseconds is stored a little different
+   * from what was sent. It is named by the instants the read-back returns, which is what ADR-040
+   * tells a client to send back, and not by the ones first sent.
+   */
+  @Test
+  void GivenASpanDeclaredBeyondMicroseconds_WhenWithdrawing_ThenTheReadBackInstantsNameIt()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String sentStart = "2026-12-01T08:00:00.123456789Z";
+    String sentEnd = "2026-12-01T16:00:00.987654321Z";
+    declareUnavailability(organisation, ada, sentStart, sentEnd);
+    String readBack =
+        mockMvc
+            .perform(
+                as(
+                    mockMvc,
+                    get("/api/employees/" + ada + "/unavailability"),
+                    organisation,
+                    "ADMIN"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String storedStart = JsonPath.read(readBack, "$[0].start");
+    String storedEnd = JsonPath.read(readBack, "$[0].end");
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                delete("/api/employees/" + ada + "/unavailability")
+                    .param("start", sentStart)
+                    .param("end", sentEnd),
+                organisation,
+                "ADMIN"))
+        .andExpect(status().isNotFound());
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                delete("/api/employees/" + ada + "/unavailability")
+                    .param("start", storedStart)
+                    .param("end", storedEnd),
+                organisation,
+                "ADMIN"))
+        .andExpect(status().isNoContent());
+  }
+
   @Test
   void GivenTheEmployeeThemself_WhenWithdrawingAPreference_ThenItIsNoLongerListed()
       throws Exception {
