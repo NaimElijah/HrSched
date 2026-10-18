@@ -391,7 +391,7 @@ describe('what they declared', () => {
   });
 
   /** A refusal read as an empty list would tell somebody their absence was never recorded. */
-  it('GivenTheReadBackIsRefused_WhenOpened_ThenTheRefusalIsShownRatherThanAnEmptyList', async () => {
+  it('GivenTheUnavailabilityReadBackIsRefused_WhenOpened_ThenTheRefusalIsShownRatherThanAnEmptyList', async () => {
     actingAsEmployee(EMPLOYEE);
     stubbed({
       unavailability: { status: 403, body: { detail: 'You may not act on this record.' } },
@@ -405,6 +405,20 @@ describe('what they declared', () => {
     expect(
       screen.queryByText('You have declared no time you cannot work.'),
     ).not.toBeInTheDocument();
+  });
+
+  it('GivenThePreferencesReadBackIsRefused_WhenOpened_ThenTheRefusalIsShownRatherThanAnEmptyList', async () => {
+    actingAsEmployee(EMPLOYEE);
+    stubbed({
+      preferences: { status: 403, body: { detail: 'You may not act on this record.' } },
+    });
+
+    show();
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('You may not act on this record.'),
+    );
+    expect(screen.queryByText('You have stated no preferences.')).not.toBeInTheDocument();
   });
 
   it('GivenADeclarationAccepted_WhenAnnounced_ThenWhatTheyDeclaredIsReadAgain', async () => {
