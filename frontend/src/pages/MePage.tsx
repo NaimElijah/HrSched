@@ -46,7 +46,7 @@ export function MePage({
   const [strength, setStrength] = useState<PreferenceStrength>('PREFERS');
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
-  const [withdrawing, setWithdrawing] = useState(false);
+  const [writing, setWriting] = useState(false);
 
   // The employee link comes from the session the backend established, never from anything typed:
   // a user is not an employee, and the two are linked by the account rather than by matching ids.
@@ -101,32 +101,25 @@ export function MePage({
     if (when === null) {
       return;
     }
-    setFailure(null);
-    setDone(null);
-    try {
-      await action(when);
-      setDone(message);
-      declared.reload();
-    } catch (error) {
-      setFailure(error);
-    }
+    await write(() => action(when), message, declared);
   }
 
   /**
-   * Withdrawals take turns: a second one sent while the first is on its way could name what the
-   * first has just removed, and be refused for it.
+   * Declaring, stating and withdrawing take turns. Each one loads this person's declarations and
+   * saves the whole list back, so two in flight at once could undo each other — the last save wins
+   * (#33) — and a span the page had said was recorded would be gone.
    *
-   * @param declared the list the withdrawal removes from, read again once the backend has removed it
+   * @param declared the list the write changes, read again once the backend has stored it
    */
-  async function withdraw(
+  async function write(
     action: () => Promise<unknown>,
     message: string,
     declared: { reload: () => void },
   ) {
-    if (withdrawing) {
+    if (writing) {
       return;
     }
-    setWithdrawing(true);
+    setWriting(true);
     setFailure(null);
     setDone(null);
     try {
@@ -136,7 +129,7 @@ export function MePage({
     } catch (error) {
       setFailure(error);
     } finally {
-      setWithdrawing(false);
+      setWriting(false);
     }
   }
 
@@ -250,6 +243,7 @@ export function MePage({
         </label>
         <button
           type="button"
+          disabled={writing}
           onClick={() =>
             void act(
               (when) => workforce.declareUnavailability(employee, when.start, when.end),
@@ -262,6 +256,7 @@ export function MePage({
         </button>
         <button
           type="button"
+          disabled={writing}
           onClick={() =>
             void act(
               (when) => workforce.statePreference(employee, when.start, when.end, strength),
@@ -290,10 +285,10 @@ export function MePage({
               <span>{label}</span>{' '}
               <button
                 type="button"
-                disabled={withdrawing}
+                disabled={writing}
                 aria-label={`Withdraw absence: ${label}`}
                 onClick={() =>
-                  void withdraw(
+                  void write(
                     () => workforce.withdrawUnavailability(employee, period.start, period.end),
                     'Withdrawn: that absence no longer keeps you off a roster.',
                     unavailability,
@@ -320,10 +315,10 @@ export function MePage({
               <span>{label}</span>{' '}
               <button
                 type="button"
-                disabled={withdrawing}
+                disabled={writing}
                 aria-label={`Withdraw preference: ${label}`}
                 onClick={() =>
-                  void withdraw(
+                  void write(
                     () =>
                       workforce.withdrawPreference(
                         employee,
