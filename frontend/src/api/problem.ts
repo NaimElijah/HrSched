@@ -5,7 +5,10 @@
  * inferred from the Java. The backend answers with RFC 9457 problem details.
  */
 
-/** One working-time rule a roster would break, and for whom. */
+/**
+ * One rule a roster would break, and for whom: a working-time rule, or one that holds whatever
+ * those say, such as one place at a time (ADR-042).
+ */
 export interface Violation {
   readonly employee: string;
   readonly constraint: string;
