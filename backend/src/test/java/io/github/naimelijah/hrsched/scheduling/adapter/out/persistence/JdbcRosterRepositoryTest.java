@@ -1,5 +1,9 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.STUCK_AFTER_SECONDS;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitWaitingOnALock;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.backendServingThisTransaction;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.refusalsOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -15,19 +19,11 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.Writer;
 import java.sql.SQLException;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.BrokenBarrierException;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -72,13 +68,6 @@ class JdbcRosterRepositoryTest {
 
   /** A Thursday afternoon, inside both {@link #THE_WEEK} and {@link #OVERLAPPING_WEEK}. */
   private static final Instant THURSDAY_AFTERNOON = Instant.parse("2026-09-10T15:00:00Z");
-
-  /**
-   * How long a racing writer may take before the test gives up on it. Far longer than a publication
-   * needs, including PostgreSQL's one-second wait before it resolves a deadlock, so reaching it
-   * means something is stuck rather than slow.
-   */
-  private static final long STUCK_AFTER_SECONDS = 30;
 
   /** PostgreSQL's {@code deadlock_detected}: the SQLState a deadlock victim is aborted with. */
   private static final String DEADLOCK_DETECTED = "40P01";
@@ -616,33 +605,6 @@ class JdbcRosterRepositoryTest {
             cause -> assertThat(cause.getSQLState()).isEqualTo(DEADLOCK_DETECTED));
   }
 
-  /** The PostgreSQL backend serving the calling thread's transaction, which joins it. */
-  private static int backendServingThisTransaction() {
-    return PostgresDatabase.jdbcClient()
-        .sql("SELECT pg_backend_pid()")
-        .query(Integer.class)
-        .single();
-  }
-
-  /**
-   * Returns once the backend {@code pid} is waiting for a lock some other transaction holds.
-   *
-   * <p>Asks PostgreSQL rather than sleeping, so it returns as soon as the wait begins and never
-   * guesses how long that takes; the bound is only there to fail a test that would otherwise hang.
-   */
-  private static void awaitWaitingOnALock(int pid) {
-    long giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(STUCK_AFTER_SECONDS);
-    while (!PostgresDatabase.jdbcClient()
-        .sql("SELECT cardinality(pg_blocking_pids(:pid)) > 0")
-        .param("pid", pid)
-        .query(Boolean.class)
-        .single()) {
-      if (System.nanoTime() > giveUpAt) {
-        throw new IllegalStateException("The other writer never waited for a lock");
-      }
-    }
-  }
-
   /** Saves one draft, waits until the other writer has saved one too, then saves another. */
   private Writer savingOneThenAnother(Roster first, Roster then) {
     return waitForTheOther -> {
@@ -650,12 +612,6 @@ class JdbcRosterRepositoryTest {
       waitForTheOther.run();
       repository.save(then);
     };
-  }
-
-  /** One writer's work, told when to wait for the other writer to reach the same point. */
-  @FunctionalInterface
-  private interface Writer {
-    void write(Runnable waitForTheOther);
   }
 
   /**
@@ -677,52 +633,6 @@ class JdbcRosterRepositoryTest {
       waitForTheOther.run();
       repository.save(then.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
     };
-  }
-
-  /**
-   * Runs two writers at once, each in its own transaction on its own connection, and returns what
-   * refused them.
-   *
-   * <p>Each writer calls the {@code Runnable} it is given where it has to wait for the other, so a
-   * test decides what both have done before either goes on. The executor is waited for as well as
-   * stopped: a writer still running would keep its connection, and the next test's truncation would
-   * wait on it.
-   */
-  private List<Throwable> refusalsOf(Writer first, Writer second)
-      throws InterruptedException, TimeoutException {
-    TransactionTemplate transaction = new TransactionTemplate(PostgresDatabase.transactions());
-    CyclicBarrier together = new CyclicBarrier(2);
-    Runnable waitForTheOther =
-        () -> {
-          try {
-            together.await(STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
-          } catch (InterruptedException | BrokenBarrierException | TimeoutException stuck) {
-            throw new IllegalStateException("The other writer never got there", stuck);
-          }
-        };
-    ExecutorService writers = Executors.newFixedThreadPool(2);
-    List<Throwable> refusals = new ArrayList<>();
-    try {
-      List<Future<?>> running =
-          List.of(
-              writers.submit(
-                  () -> transaction.executeWithoutResult(status -> first.write(waitForTheOther))),
-              writers.submit(
-                  () -> transaction.executeWithoutResult(status -> second.write(waitForTheOther))));
-      for (Future<?> writer : running) {
-        try {
-          writer.get(STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
-        } catch (ExecutionException refused) {
-          refusals.add(refused.getCause());
-        }
-      }
-    } finally {
-      writers.shutdownNow();
-      if (!writers.awaitTermination(STUCK_AFTER_SECONDS, TimeUnit.SECONDS)) {
-        throw new IllegalStateException("A writer is still running and holding its connection");
-      }
-    }
-    return refusals;
   }
 
   /**
