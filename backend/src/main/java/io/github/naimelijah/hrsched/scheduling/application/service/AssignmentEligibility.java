@@ -10,7 +10,6 @@ import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
-import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
@@ -63,14 +62,13 @@ final class AssignmentEligibility {
             .filter(person -> person.id().equals(employee))
             .findFirst()
             .orElseThrow(() -> new UnknownAssigneeException(employee));
-    Set<QualificationId> missing = new LinkedHashSet<>(shift.requiredQualifications());
-    missing.removeAll(candidate.qualifications());
+    // The same two questions RosterCandidate.couldCover answers for the generator, asked separately
+    // so each refusal can say which one failed rather than only that the person was not eligible.
+    Set<QualificationId> missing = candidate.lacking(shift.requiredQualifications());
     if (!missing.isEmpty()) {
       throw new AssigneeNotQualifiedException(employee, shift.id(), missing);
     }
-    // The same two questions RosterCandidate.couldCover answers for the generator, asked separately
-    // so each refusal can say which one failed rather than only that the person was not eligible.
-    if (candidate.unavailability().stream().anyMatch(shift.period()::overlaps)) {
+    if (candidate.isUnavailableDuring(shift.period())) {
       throw new AssigneeUnavailableException(employee, shift.id());
     }
   }
