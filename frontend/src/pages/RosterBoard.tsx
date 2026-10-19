@@ -74,18 +74,17 @@ export function RosterBoard({
   const [failure, setFailure] = useState<unknown>(null);
   // One change at a time: two racing each other could leave the board showing the older answer.
   const [changing, setChanging] = useState(false);
-  // Counts stored changes, so the draft is checked again after each one.
-  const [checks, setChecks] = useState(0);
   const checkHeading = useId();
 
   const loaded = useAsync(() => scheduling.findRoster(id), `${sessionKey}|${id}`);
   const roster = changed ?? loaded.value;
   const isDraft = roster?.status === 'DRAFT';
 
-  // Only a draft is checked: a published roster was judged when it was published (Q9).
+  // Only a draft is checked: a published roster was judged when it was published (Q9). After an
+  // edit the same question is asked again, by reload, so the last answer stays until the next.
   const assessment = useAsync(
     () => (isDraft ? scheduling.assessRoster(id) : Promise.resolve(null)),
-    `${sessionKey}|${id}|${roster?.status ?? ''}|${String(checks)}`,
+    `${sessionKey}|${id}|${roster?.status ?? ''}`,
   );
 
   // Over the roster's own period, not the planning span: a roster opened while the span points
@@ -119,7 +118,7 @@ export function RosterBoard({
     setFailure(null);
     try {
       setChanged(await action());
-      setChecks((count) => count + 1);
+      assessment.reload();
       onChanged();
       return true;
     } catch (error) {

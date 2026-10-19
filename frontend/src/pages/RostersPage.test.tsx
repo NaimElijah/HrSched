@@ -673,6 +673,51 @@ describe('the board of a draft', () => {
     );
   });
 
+  /**
+   * The check after an edit asks the same question again, so its last answer stays on screen until
+   * the new one arrives, as every other re-read here does. Dropping it would blank the section
+   * after every assignment, and take away what the Scheduler was fixing while they fixed it.
+   */
+  it('GivenARecheckInFlight_WhenTheDraftIsEdited_ThenTheLastAnswerStaysUntilTheNewOneArrives', async () => {
+    const routed = aDraft({
+      '/api/rosters/roster-1/assessment': {
+        status: 200,
+        body: {
+          ...NOTHING_WRONG,
+          violations: [
+            {
+              employee: 'emp-1',
+              constraint: 'declared unavailability',
+              detail: 'shift shift-1 runs through time they declared they cannot work',
+            },
+          ],
+        },
+      },
+      'POST /api/rosters/roster-1/assignments': { status: 200, body: WITH_GRACE },
+    });
+    renderPage();
+    const board = await openBoard();
+    const check = await theCheck(board);
+    await within(check).findByText('Ada');
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        path.endsWith('/assessment') ? held.then(() => routed(path, init)) : routed(path, init),
+      ),
+    );
+
+    await assignGrace(board);
+    await within(board).findByRole('button', { name: /^Remove Grace from/ });
+
+    expect(within(check).getByText('Ada')).toBeInTheDocument();
+    expect(check).toHaveTextContent('declared unavailability');
+    release();
+  });
+
   it('GivenShortShifts_WhenTheDraftIsChecked_ThenTheShortfallIsSummarised', async () => {
     aDraft({
       '/api/rosters/roster-1/assessment': {
