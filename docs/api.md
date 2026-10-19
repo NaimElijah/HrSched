@@ -121,7 +121,9 @@ merging into it, and every limit is optional: one left out is not enforced.
   `Roster cannot be checked against the rules`.
 - **A concurrent publication.** An overlapping roster published at the same moment answers `409`,
   titled `Published concurrently`.
-- **A roster that is no longer a draft.** It answers `400`.
+- **A roster whose status forbids the change.** Editing or publishing a roster that is no longer a
+  draft, or asking for a swap against one that is not the published roster, answers `409` titled
+  `Roster status forbids this`. Reload it: somebody most likely published it first.
 - **An Employee account linked to nobody.** Creating one, taking the link away from one, giving
   the Employee role to an account linked to nobody, or restoring one stored unlinked before R34
   answers `422` titled `Employee account not linked`.

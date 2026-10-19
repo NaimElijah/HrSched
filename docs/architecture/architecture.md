@@ -248,7 +248,7 @@ sequenceDiagram
     W->>S: publish(actor, organisation, roster)
     S->>S: roster.requireDraft()
     alt not a draft
-        S-->>C: 400, before anything is superseded or recorded
+        S-->>C: 409, before anything is superseded or recorded
     end
     S->>R: violationsFor(each employee schedule)
     alt any rule broken

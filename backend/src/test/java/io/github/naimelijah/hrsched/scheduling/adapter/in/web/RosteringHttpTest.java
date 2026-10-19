@@ -834,8 +834,12 @@ class RosteringHttpTest {
         .andExpect(status().isForbidden());
   }
 
+  /**
+   * Nothing about the request is wrong; the roster has moved past the state it asks about, which
+   * the caller resolves by reloading. A conflict, then, not a bad request (ADR-041).
+   */
   @Test
-  void GivenAPublishedRoster_WhenPublishedAgain_ThenItIsRejected() throws Exception {
+  void GivenAPublishedRoster_WhenPublishedAgain_ThenItIsAConflict() throws Exception {
     String organisation = anOrganisation(mockMvc);
     addEmployee(organisation, "Ada");
     defineShift(organisation, "2026-10-13T08:00:00Z", "2026-10-13T16:00:00Z", 1);
@@ -848,7 +852,31 @@ class RosteringHttpTest {
     mockMvc
         .perform(
             as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.title").value("Roster status forbids this"));
+  }
+
+  /**
+   * What an edit that waited on a publication of its own draft now finds (ADR-041): the roster is
+   * published, and a published roster is superseded rather than edited (R6).
+   */
+  @Test
+  void GivenAPublishedRoster_WhenAssigningToIt_ThenItIsAConflict() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String roster = generateRoster(organisation, "2026-10-20T00:00:00Z", "2026-10-21T00:00:00Z");
+    String shift = defineShift(organisation, "2026-10-20T08:00:00Z", "2026-10-20T16:00:00Z", 1);
+    String ada = addEmployee(organisation, "Ada");
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, ada)))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.title").value("Roster status forbids this"));
   }
 
   @Test
