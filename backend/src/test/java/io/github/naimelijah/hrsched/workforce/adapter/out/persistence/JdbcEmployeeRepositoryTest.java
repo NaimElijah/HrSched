@@ -1,5 +1,9 @@
 package io.github.naimelijah.hrsched.workforce.adapter.out.persistence;
 
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.STUCK_AFTER_SECONDS;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitWaitingOnALockOr;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.backendServingThisTransaction;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.refusalsOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -15,8 +19,14 @@ import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The tenant predicate, the ordering, and everything an employee owns.
@@ -268,5 +278,83 @@ class JdbcEmployeeRepositoryTest {
     assertThat(repository.findByOrganisation(ACME))
         .extracting(Employee::unavailability)
         .containsExactly(java.util.List.of(A_FORTNIGHT_OFF), java.util.List.of(A_WEEK_OFF));
+  }
+
+  /**
+   * #33's lost update, for an employee. Each change reads the employee, adds to them and stores
+   * them whole, so without a lock the later save deletes what the earlier one added - here, an
+   * absence declared by one request while another declares a different one. Read for update, the
+   * second change waits for the first to commit and then reads it, and both survive.
+   *
+   * <p>The first change stores only once the second is waiting on its row. If the second does not
+   * wait at all, the first goes on as soon as the second has read, and the lost absence is what
+   * fails the test.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenAChangeHoldingAnEmployee_WhenAnotherReadsThemForUpdate_ThenItWaitsAndBothAreKept()
+      throws Exception {
+    Employee ada = employee(ACME, "Ada");
+    repository.save(ada);
+
+    AtomicInteger second = new AtomicInteger();
+    AtomicBoolean secondHasRead = new AtomicBoolean();
+    List<Throwable> refusals =
+        refusalsOf(
+            waitForTheOther -> {
+              Employee held = repository.findForUpdate(ACME, ada.id()).orElseThrow();
+              waitForTheOther.run();
+              awaitWaitingOnALockOr(second.get(), secondHasRead::get);
+              repository.save(held.unavailableFor(A_FORTNIGHT_OFF));
+            },
+            waitForTheOther -> {
+              second.set(backendServingThisTransaction());
+              waitForTheOther.run();
+              Employee read = repository.findForUpdate(ACME, ada.id()).orElseThrow();
+              secondHasRead.set(true);
+              repository.save(read.unavailableFor(A_WEEK_OFF));
+            });
+
+    assertThat(refusals).isEmpty();
+    assertThat(repository.findById(ACME, ada.id()).orElseThrow().unavailability())
+        .containsExactlyInAnyOrder(A_FORTNIGHT_OFF, A_WEEK_OFF);
+  }
+
+  /**
+   * In autocommit the row would be released the moment the statement reading it ended, so the
+   * caller would believe it held an employee nobody was waiting on.
+   */
+  @Test
+  void GivenNoTransaction_WhenReadingAnEmployeeForUpdate_ThenItIsRefused() {
+    Employee ada = employee(ACME, "Ada");
+    repository.save(ada);
+
+    assertThatThrownBy(() -> repository.findForUpdate(ACME, ada.id()))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  /** A use case named {@code find…} runs read-only, where PostgreSQL refuses to hold a row. */
+  @Test
+  void GivenAReadOnlyTransaction_WhenReadingAnEmployeeForUpdate_ThenItIsRefused() {
+    Employee ada = employee(ACME, "Ada");
+    repository.save(ada);
+    TransactionTemplate reading = new TransactionTemplate(PostgresDatabase.transactions());
+    reading.setReadOnly(true);
+
+    assertThatThrownBy(
+            () -> reading.executeWithoutResult(status -> repository.findForUpdate(ACME, ada.id())))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void GivenAnEmployeeOfAnotherOrganisation_WhenReadForUpdateByUs_ThenTheyAreNotFound() {
+    Employee theirs = employee(RIVAL, "Their Employee");
+    repository.save(theirs);
+
+    Optional<Employee> found =
+        new TransactionTemplate(PostgresDatabase.transactions())
+            .execute(status -> repository.findForUpdate(ACME, theirs.id()));
+
+    assertThat(found).isEmpty();
   }
 }

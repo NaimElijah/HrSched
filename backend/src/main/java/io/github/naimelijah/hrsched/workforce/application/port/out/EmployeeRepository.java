@@ -29,6 +29,23 @@ public interface EmployeeRepository {
   Optional<Employee> findById(OrganisationId organisation, EmployeeId id);
 
   /**
+   * Reads an employee and holds them until the calling use case finishes, so another use case
+   * reading them the same way waits, and then reads what this one stored.
+   *
+   * <p>For a use case that changes the employee it reads. An employee is stored whole, with every
+   * qualification and declaration, so two changes reading them at once - an Admin's and their own,
+   * say - would each store over the other's (#33, ADR-041). A use case that only reads uses {@link
+   * #findById}: it runs read-only, where nothing can be held.
+   *
+   * @param organisation the organisation the employee must belong to
+   * @param id who to read and hold
+   * @return the employee, or empty if that organisation has no such employee
+   * @throws IllegalStateException if called outside a writable unit of work, where there is nothing
+   *     to hold them until
+   */
+  Optional<Employee> findForUpdate(OrganisationId organisation, EmployeeId id);
+
+  /**
    * @param organisation whose employees to list
    * @return every employee of that organisation
    */

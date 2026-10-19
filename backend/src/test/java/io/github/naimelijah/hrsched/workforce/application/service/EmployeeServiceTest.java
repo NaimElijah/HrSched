@@ -559,10 +559,100 @@ class EmployeeServiceTest {
                 ACME, manager.id(), WorkforceChange.PREFERENCE_WITHDRAWN, subject.value()));
   }
 
+  // --- #33: a change holds the employee from its read (ADR-041)
+  // -----------------------------------
+  //
+  // An employee is stored whole, so a change that read them plainly would store over a concurrent
+  // change to the same person - an Admin granting a qualification while they declare an absence,
+  // say. Each change below reads them for update instead, so the second waits and reads the first.
+  // That the read really waits is proven against PostgreSQL, in JdbcEmployeeRepositoryTest.
+
+  private EmployeeId anEmployeeOfAcme() {
+    return service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+  }
+
+  @Test
+  void GivenAnEmployee_WhenGrantedAQualification_ThenTheyAreReadForUpdate() {
+    EmployeeId ada = anEmployeeOfAcme();
+    QualificationId ticket = QualificationId.newId();
+    qualifications.save(new Qualification(ticket, ACME, "Ticket"));
+
+    service.grantQualification(admin(ACME), new GrantQualificationCommand(ACME, ada, ticket));
+
+    assertThat(employees.heldForUpdate()).containsExactly(ada);
+  }
+
+  @Test
+  void GivenAnEmployee_WhenTheirContractIsSet_ThenTheyAreReadForUpdate() {
+    EmployeeId ada = anEmployeeOfAcme();
+
+    service.setContractTerms(
+        admin(ACME), new SetContractTermsCommand(ACME, ada, Duration.ofHours(30)));
+
+    assertThat(employees.heldForUpdate()).containsExactly(ada);
+  }
+
+  @Test
+  void GivenAnEmployee_WhenDeclaringUnavailability_ThenTheyAreReadForUpdate() {
+    EmployeeId ada = anEmployeeOfAcme();
+
+    service.declareUnavailability(admin(ACME), new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+
+    assertThat(employees.heldForUpdate()).containsExactly(ada);
+  }
+
+  @Test
+  void GivenAnEmployee_WhenStatingAPreference_ThenTheyAreReadForUpdate() {
+    EmployeeId ada = anEmployeeOfAcme();
+
+    service.statePreference(
+        admin(ACME), new StatePreferenceCommand(ACME, ada, MONDAY, PreferenceStrength.PREFERS));
+
+    assertThat(employees.heldForUpdate()).containsExactly(ada);
+  }
+
+  @Test
+  void GivenADeclaredAbsence_WhenWithdrawingIt_ThenTheEmployeeIsReadForUpdate() {
+    EmployeeId ada = anEmployeeOfAcme();
+    service.declareUnavailability(admin(ACME), new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+
+    service.withdrawUnavailability(
+        admin(ACME), new WithdrawUnavailabilityCommand(ACME, ada, MONDAY));
+
+    assertThat(employees.heldForUpdate()).containsExactly(ada, ada);
+  }
+
+  @Test
+  void GivenAStatedPreference_WhenWithdrawingIt_ThenTheEmployeeIsReadForUpdate() {
+    EmployeeId ada = anEmployeeOfAcme();
+    service.statePreference(
+        admin(ACME), new StatePreferenceCommand(ACME, ada, MONDAY, PreferenceStrength.PREFERS));
+
+    service.withdrawPreference(
+        admin(ACME), new WithdrawPreferenceCommand(ACME, ada, MONDAY, PreferenceStrength.PREFERS));
+
+    assertThat(employees.heldForUpdate()).containsExactly(ada, ada);
+  }
+
+  /**
+   * Reading back what somebody declared changes nothing, so it holds nothing: it runs read-only,
+   * where a read for update would be refused.
+   */
+  @Test
+  void GivenAnEmployee_WhenTheirDeclarationsAreRead_ThenNothingIsHeld() {
+    EmployeeId ada = anEmployeeOfAcme();
+
+    service.findUnavailability(admin(ACME), ACME, ada);
+    service.findPreferences(admin(ACME), ACME, ada);
+
+    assertThat(employees.heldForUpdate()).isEmpty();
+  }
+
   /** In-memory stand-in for the driven port, scoped by organisation exactly as the real one is. */
   private static final class StubEmployeeRepository implements EmployeeRepository {
 
     private final Map<EmployeeId, Employee> saved = new HashMap<>();
+    private final List<EmployeeId> heldForUpdate = new ArrayList<>();
 
     @Override
     public void save(Employee employee) {
@@ -573,6 +663,24 @@ class EmployeeServiceTest {
     public Optional<Employee> findById(OrganisationId organisation, EmployeeId id) {
       return Optional.ofNullable(saved.get(id))
           .filter(employee -> employee.organisation().equals(organisation));
+    }
+
+    /**
+     * Holds nothing - one thread, one map - but records who was read for update, so a test can see
+     * a change hold the employee it is about to store. That the read really makes a second change
+     * wait is proven against PostgreSQL, in {@code JdbcEmployeeRepositoryTest}.
+     */
+    @Override
+    public Optional<Employee> findForUpdate(OrganisationId organisation, EmployeeId id) {
+      heldForUpdate.add(id);
+      return findById(organisation, id);
+    }
+
+    /**
+     * @return everybody read for update so far, in the order they were read
+     */
+    List<EmployeeId> heldForUpdate() {
+      return List.copyOf(heldForUpdate);
     }
 
     @Override
