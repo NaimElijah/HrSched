@@ -3,6 +3,8 @@ package io.github.naimelijah.hrsched.access.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.naimelijah.hrsched.access.application.port.in.AccountKind;
+import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordCommand;
+import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.RefreshOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.RefreshRefusal;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInCommand;
@@ -27,8 +29,10 @@ import io.github.naimelijah.hrsched.access.domain.model.SignInSession;
 import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
 import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
+import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -363,6 +367,41 @@ class SessionServiceTest {
             RefreshOutcome.Refused.class,
             refused -> assertThat(refused.reason()).isEqualTo(RefreshRefusal.UNKNOWN_TOKEN));
     assertThat(audit.changes()).isEmpty();
+  }
+
+  // --- #33: changing one's own password holds the account from its read (ADR-041) ---------------
+  //
+  // A password change stores the account whole, so a change made to a copy read before an Admin's
+  // disable committed would enable the account again. It reads the account for update instead,
+  // scoped to the caller's own organisation, or to none for the operator. That the read really
+  // waits is proven against PostgreSQL, in JdbcAccountRepositoryTest.
+
+  @Test
+  void GivenAPasswordChange_WhenMade_ThenTheAccountIsReadForUpdate() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
+    assertThat(accounts.heldForUpdate()).containsExactly(account.id());
+  }
+
+  /** The operator belongs to no organisation, so its account is held where it is: in none. */
+  @Test
+  void GivenTheOperatorChangingTheirPassword_WhenMade_ThenTheirAccountIsReadForUpdate() {
+    Account account = accounts.given(operator("operator@example.com"));
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            new Operator(account.id()),
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
+    assertThat(accounts.heldForUpdate()).containsExactly(account.id());
   }
 
   private Account tenant(String name, Role role, Optional<EmployeeId> employee) {

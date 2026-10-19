@@ -41,7 +41,9 @@ import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
 import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.security.SecureRandom;
 import java.time.Clock;
@@ -244,10 +246,12 @@ public class SessionService
     Objects.requireNonNull(command, "command must not be null");
     Instant now = clock.instant();
     // Authenticated moments ago, so an account that is not there is a fault rather than a refusal,
-    // and fails loudly instead of being reported as a wrong password.
+    // and fails loudly instead of being reported as a wrong password. Held, because the change
+    // stores the account whole: a disable or a reset committed meanwhile would otherwise be stored
+    // over (ADR-041).
     Account account =
         accounts
-            .findForAuthentication(actor.id())
+            .findForUpdate(organisationOf(actor), actor.id())
             .orElseThrow(
                 () ->
                     new IllegalStateException(
@@ -371,6 +375,14 @@ public class SessionService
     } catch (InvalidSignInNameException notAName) {
       return Optional.empty();
     }
+  }
+
+  /** Where the actor's own account is kept: in their organisation, or in none for the operator. */
+  private static Optional<OrganisationId> organisationOf(Actor actor) {
+    return switch (actor) {
+      case TenantActor tenant -> Optional.of(tenant.organisation());
+      case Operator operator -> Optional.empty();
+    };
   }
 
   private void record(Account account, AccessChange change, java.util.UUID subject) {

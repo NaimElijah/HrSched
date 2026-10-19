@@ -30,6 +30,7 @@ final class StubAccountRepository implements AccountRepository {
 
   private final List<Account> stored = new ArrayList<>();
   private final List<OrganisationId> locked = new ArrayList<>();
+  private final List<UserId> heldForUpdate = new ArrayList<>();
 
   /**
    * @param account an account that already exists before the test does anything
@@ -121,6 +122,27 @@ final class StubAccountRepository implements AccountRepository {
   @Override
   public Optional<Account> findForAuthentication(UserId account) {
     return stored.stream().filter(candidate -> candidate.id().equals(account)).findFirst();
+  }
+
+  /**
+   * Holds nothing, for the reason {@link #lockAdministrationOf} holds nothing, but records the read
+   * so a test can see a change hold the account it is about to store. That the read really makes a
+   * second change wait is proven against PostgreSQL, in {@code JdbcAccountRepositoryTest}.
+   */
+  @Override
+  public Optional<Account> findForUpdate(Optional<OrganisationId> organisation, UserId account) {
+    heldForUpdate.add(account);
+    return stored.stream()
+        .filter(candidate -> candidate.organisation().equals(organisation))
+        .filter(candidate -> candidate.id().equals(account))
+        .findFirst();
+  }
+
+  /**
+   * @return every account read for update so far, in the order they were read
+   */
+  List<UserId> heldForUpdate() {
+    return List.copyOf(heldForUpdate);
   }
 
   @Override

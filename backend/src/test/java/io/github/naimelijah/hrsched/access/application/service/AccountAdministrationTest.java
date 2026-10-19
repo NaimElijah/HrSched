@@ -557,6 +557,44 @@ class AccountAdministrationTest {
         .isInstanceOf(UnknownAccountException.class);
   }
 
+  // --- #33: a change holds the account from its read (ADR-041)
+  // ------------------------------------
+  //
+  // An account is stored whole, so a change made to a copy read before another committed would
+  // store over it - a disable undone by a failed sign-in counted on an older copy, say. Each change
+  // below reads the account for update instead. That the read really waits is proven against
+  // PostgreSQL, in JdbcAccountRepositoryTest.
+
+  @Test
+  void GivenARoleChange_WhenMade_ThenTheAccountIsReadForUpdate() {
+    existing(acme, Role.ADMIN, true);
+    Account account = existing(acme, Role.SCHEDULER, true);
+
+    service.changeMembership(
+        admin(acme), new ChangeMembershipCommand(acme, account.id(), Role.ADMIN, Optional.empty()));
+
+    assertThat(accounts.heldForUpdate()).containsExactly(account.id());
+  }
+
+  @Test
+  void GivenADisabling_WhenMade_ThenTheAccountIsReadForUpdate() {
+    existing(acme, Role.ADMIN, true);
+    Account account = existing(acme, Role.EMPLOYEE, true);
+
+    service.setAccountActive(admin(acme), new SetAccountActiveCommand(acme, account.id(), false));
+
+    assertThat(accounts.heldForUpdate()).containsExactly(account.id());
+  }
+
+  @Test
+  void GivenAPasswordReset_WhenMade_ThenTheAccountIsReadForUpdate() {
+    Account account = existing(acme, Role.EMPLOYEE, true);
+
+    service.resetPassword(admin(acme), new ResetPasswordCommand(acme, account.id(), A_PASSWORD));
+
+    assertThat(accounts.heldForUpdate()).containsExactly(account.id());
+  }
+
   // Resetting a password
 
   @Test
