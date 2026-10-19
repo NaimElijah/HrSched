@@ -15,6 +15,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /** Specification of the roster lifecycle. */
@@ -595,6 +596,61 @@ class RosterTest {
             roster.violationsUnder(
                 tenHoursAWeek, Map.of(day, utc(MONDAY)), List.of(heldBy(ADA, TUESDAY))))
         .isEmpty();
+  }
+
+  // --- Coverage: which shifts are short, and by how many (#205) ----------------------------------
+
+  private static Shift needing(int headcount, TimeRange when) {
+    return new Shift(ShiftId.newId(), ACME, when, ZoneOffset.UTC, headcount, Set.of());
+  }
+
+  @Test
+  void GivenAShiftNeedingThreeWithOneAssigned_WhenCoverageIsCounted_ThenItIsShortByTwo() {
+    Shift monday = needing(3, MONDAY);
+    Roster roster = draft().with(new Assignment(monday.id(), ADA));
+
+    assertThat(roster.shortfallsAmong(List.of(monday)))
+        .singleElement()
+        .satisfies(
+            shortfall -> {
+              assertThat(shortfall.shift()).isEqualTo(monday.id());
+              assertThat(shortfall.assigned()).isEqualTo(1);
+              assertThat(shortfall.shortBy()).isEqualTo(2);
+            });
+  }
+
+  /** R22: a headcount is the least a shift needs, so more people than it requires is not short. */
+  @Test
+  void GivenMorePeopleThanAShiftNeeds_WhenCoverageIsCounted_ThenItIsNotShort() {
+    Shift monday = needing(1, MONDAY);
+    Roster roster =
+        draft()
+            .with(new Assignment(monday.id(), ADA))
+            .with(new Assignment(monday.id(), EmployeeId.newId()));
+
+    assertThat(roster.shortfallsAmong(List.of(monday))).isEmpty();
+  }
+
+  @Test
+  void GivenAShiftNobodyIsOn_WhenCoverageIsCounted_ThenItIsShortByItsWholeHeadcount() {
+    Shift monday = needing(2, MONDAY);
+
+    assertThat(draft().shortfallsAmong(List.of(monday)))
+        .singleElement()
+        .extracting(Shortfall::shortBy)
+        .isEqualTo(2);
+  }
+
+  /** Coverage is the roster's own period's; a shift outside it is not this roster's to fill. */
+  @Test
+  void GivenAShiftOutsideTheRostersPeriod_WhenCoverageIsCounted_ThenItIsIgnored() {
+    Shift nextWeek =
+        needing(
+            1,
+            new TimeRange(
+                Instant.parse("2026-09-15T08:00:00Z"), Instant.parse("2026-09-15T16:00:00Z")));
+
+    assertThat(draft().shortfallsAmong(List.of(nextWeek))).isEmpty();
   }
 
   @Test

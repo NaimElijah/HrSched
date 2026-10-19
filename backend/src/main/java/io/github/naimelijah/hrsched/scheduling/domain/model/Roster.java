@@ -8,6 +8,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -278,6 +279,32 @@ public final class Roster {
       }
     }
     return List.copyOf(violations);
+  }
+
+  /**
+   * Coverage: each of these shifts in this roster's period that it puts fewer people on than the
+   * shift requires, and by how many.
+   *
+   * <p>A headcount is the least a shift needs (R22), so more people than it requires is never
+   * short. Only this roster's own assignments are counted: a shift straddling into an adjacent
+   * period may also be staffed there, and whether that counts here is still open (#130, #135).
+   *
+   * @param shifts the shifts to count, usually every one overlapping this roster's period; any
+   *     outside it are ignored
+   * @return every short shift, in the order given; empty if none is
+   */
+  public List<Shortfall> shortfallsAmong(Collection<Shift> shifts) {
+    Objects.requireNonNull(shifts, "shifts must not be null");
+    Map<ShiftId, Integer> staffed = new HashMap<>();
+    assignments.forEach(assignment -> staffed.merge(assignment.shift(), 1, Integer::sum));
+    return shifts.stream()
+        .filter(shift -> shift.period().overlaps(period))
+        .filter(shift -> staffed.getOrDefault(shift.id(), 0) < shift.requiredHeadcount())
+        .map(
+            shift ->
+                new Shortfall(
+                    shift.id(), shift.requiredHeadcount(), staffed.getOrDefault(shift.id(), 0)))
+        .toList();
   }
 
   /**

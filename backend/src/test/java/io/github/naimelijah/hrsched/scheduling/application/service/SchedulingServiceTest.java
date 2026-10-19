@@ -10,6 +10,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCo
 import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.RosterAssessment;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosteredShift;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
@@ -32,6 +33,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.Shortfall;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
@@ -1145,6 +1147,168 @@ class SchedulingServiceTest {
                         tuple(ada, ConstraintViolation.OVERLAPPING_WORK),
                         tuple(ada, ConstraintViolation.MISSING_QUALIFICATIONS),
                         tuple(grace, ConstraintViolation.DECLARED_UNAVAILABLE)));
+  }
+
+  // --- #205: checking a draft against every rule without publishing it (ADR-042) ---------------
+
+  /**
+   * The agreement #205 asks for: the check and publication are one implementation, so on the same
+   * roster they name the same breaches. Every kind of rule is broken here - an overlap, a missing
+   * qualification, a declared absence, somebody not of the organisation, and a working-time rule -
+   * so a check that had drifted from publication on any of them would fail. Values are invented.
+   */
+  @Test
+  void
+      GivenADraftBreakingEveryKindOfRule_WhenAssessedAndThenPublished_ThenPublicationRefusesWithExactlyTheAssessedViolations() {
+    QualificationId forklift = QualificationId.newId();
+    workforce.define(ACME, forklift);
+    EmployeeId ada = available(ACME, "Ada");
+    EmployeeId grace = EmployeeId.newId();
+    workforce.add(ACME, new RosterCandidate(grace, "Grace", Set.of(), List.of(MONDAY_DAY)));
+    EmployeeId linus = available(ACME, "Linus");
+    EmployeeId stranger = EmployeeId.newId();
+    ShiftId day = aShift(ACME, Set.of(forklift));
+    ShiftId sameDay = aShift(ACME, Set.of());
+    // Invented: one hour a day, which Linus's eight-hour shift cannot satisfy.
+    service.reviseConstraints(
+        admin(ACME),
+        new ReviseConstraintsCommand(
+            ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(1)))));
+    Roster draft =
+        carrying(
+            new Assignment(day, ada),
+            new Assignment(sameDay, ada),
+            new Assignment(sameDay, grace),
+            new Assignment(sameDay, linus),
+            new Assignment(sameDay, stranger));
+
+    RosterAssessment assessed = service.findAssessment(scheduler(ACME), ACME, draft.id());
+
+    assertThat(assessed.violations())
+        .extracting(ConstraintViolation::constraint)
+        .contains(
+            ConstraintViolation.OVERLAPPING_WORK,
+            ConstraintViolation.MISSING_QUALIFICATIONS,
+            ConstraintViolation.DECLARED_UNAVAILABLE,
+            ConstraintViolation.NOT_OF_THE_ORGANISATION,
+            "maximum daily working time");
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, draft.id()))
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations()).containsExactlyElementsOf(assessed.violations()));
+  }
+
+  /**
+   * Advisory: it decides nothing, so it holds nothing. Taking the publication lock would make every
+   * check wait behind publications for an answer that is stale once it returns anyway, and a read
+   * for update would be refused in the read-only transaction a {@code find} use case runs in.
+   */
+  @Test
+  void GivenADraft_WhenAssessed_ThenNoPublicationIsLockedAndNothingIsHeld() {
+    Roster draft = emptyDraft(ACME);
+    rosters.log().forget();
+
+    service.findAssessment(scheduler(ACME), ACME, draft.id());
+
+    assertThat(rosters.log().calls())
+        .doesNotContain(CallLog.Call.LOCK_PUBLICATIONS, CallLog.Call.FIND_ROSTER_FOR_UPDATE);
+  }
+
+  @Test
+  void GivenADraftBreakingARule_WhenAssessed_ThenNothingIsStoredOrRecorded() {
+    EmployeeId stranger = EmployeeId.newId();
+    Roster draft = carrying(new Assignment(aShift(ACME, Set.of()), stranger));
+    audit.forget();
+
+    service.findAssessment(scheduler(ACME), ACME, draft.id());
+
+    assertThat(rosters.byId(draft.id())).isEqualTo(draft);
+    assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  @Test
+  void GivenAShiftShortOfPeople_WhenAssessed_ThenItsShortfallIsListed() {
+    ShiftId needingTwo =
+        service.defineShift(
+            scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 2, Set.of()));
+    Roster draft = carrying(new Assignment(needingTwo, available(ACME, "Ada")));
+
+    RosterAssessment assessed = service.findAssessment(scheduler(ACME), ACME, draft.id());
+
+    assertThat(assessed.violations()).isEmpty();
+    assertThat(assessed.shortfalls()).containsExactly(new Shortfall(needingTwo, 2, 1));
+  }
+
+  /**
+   * A shift straddling into next week may be carried by either roster (R35). Whether staffing it on
+   * the adjacent roster counts towards it here is still open (#130, #135), so only this draft's own
+   * assignments are counted.
+   */
+  @Test
+  void GivenAShiftStraddlingIntoTheNextRoster_WhenAssessed_ThenOnlyThisDraftsAssignmentsCount() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId sundayNight = shiftAt(SUNDAY_NIGHT);
+    Roster thisWeek = storedDraft(THE_WEEK);
+    Roster nextWeek = storedDraft(NEXT_WEEK);
+    assign(nextWeek, sundayNight, ada);
+
+    RosterAssessment assessed = service.findAssessment(scheduler(ACME), ACME, thisWeek.id());
+
+    assertThat(assessed.shortfalls()).containsExactly(new Shortfall(sundayNight, 1, 0));
+  }
+
+  @Test
+  void GivenAnAdmin_WhenAssessingADraft_ThenItIsAnswered() {
+    Roster draft = emptyDraft(ACME);
+
+    assertThat(service.findAssessment(admin(ACME), ACME, draft.id()).roster())
+        .isEqualTo(draft.id());
+  }
+
+  /** A draft is personal data about every colleague on it (R12). */
+  @Test
+  void GivenAnEmployee_WhenAssessingADraft_ThenItIsRefused() {
+    Roster draft = emptyDraft(ACME);
+
+    assertThatThrownBy(
+            () ->
+                service.findAssessment(
+                    new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE), ACME, draft.id()))
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenASchedulerOfAnotherOrganisation_WhenAssessingOurDraft_ThenItIsRefused() {
+    Roster draft = emptyDraft(ACME);
+
+    assertThatThrownBy(() -> service.findAssessment(scheduler(RIVAL), ACME, draft.id()))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenAssessingADraft_ThenItIsRefused() {
+    Roster draft = emptyDraft(ACME);
+
+    assertThatThrownBy(() -> service.findAssessment(new Operator(UserId.newId()), ACME, draft.id()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  /** A published roster was judged under the rules version it records (Q9), not today's. */
+  @Test
+  void GivenAPublishedRoster_WhenAssessed_ThenItIsRefusedAsNotADraft() {
+    Roster draft = emptyDraft(ACME);
+    service.publish(scheduler(ACME), ACME, draft.id());
+
+    assertThatThrownBy(() -> service.findAssessment(scheduler(ACME), ACME, draft.id()))
+        .isInstanceOf(RosterNotEditableException.class);
+  }
+
+  @Test
+  void GivenNoSuchRoster_WhenAssessed_ThenItIsUnknown() {
+    assertThatThrownBy(() -> service.findAssessment(scheduler(ACME), ACME, RosterId.newId()))
+        .isInstanceOf(UnknownRosterException.class);
   }
 
   /** A draft stored as given, bypassing the checks assigning by hand would make. */

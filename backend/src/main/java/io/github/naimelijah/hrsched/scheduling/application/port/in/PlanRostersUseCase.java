@@ -145,6 +145,27 @@ public interface PlanRostersUseCase {
   Optional<Roster> findRoster(Actor actor, OrganisationId organisation, RosterId roster);
 
   /**
+   * Judges a draft as publishing it would, without publishing it: every rule it breaks, through the
+   * same judgement publication refuses by, and every shift short of people (#205, ADR-042).
+   *
+   * <p>Advisory and read-only. It takes no lock, so a publication made meanwhile can change what it
+   * would say; publication judges again and decides. Nothing is stored or recorded.
+   *
+   * @param actor whoever is asking; an Admin or a Scheduler of the organisation, who may read every
+   *     roster and everybody's availability (F4, R12)
+   * @param organisation whose roster
+   * @param roster which draft
+   * @return what publishing it would say now
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException if that
+   *     organisation has no such roster
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException if it
+   *     is not a draft: a published roster was judged under the rules version it records (Q9)
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException if a
+   *     shift it assigns, or one its people hold on a roster beside it, cannot be resolved
+   */
+  RosterAssessment findAssessment(Actor actor, OrganisationId organisation, RosterId roster);
+
+  /**
    * @param actor whoever is asking; an Admin or a Scheduler of the organisation, because a roster
    *     says who works when, which is personal data about every colleague (R12)
    * @param organisation whose rosters

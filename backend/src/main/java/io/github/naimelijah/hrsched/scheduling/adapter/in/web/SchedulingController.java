@@ -235,6 +235,16 @@ public class SchedulingController {
   }
 
   /**
+   * What publishing a draft would say now, without publishing it (#205): every rule it breaks, and
+   * every shift short of people. Advisory; publication decides.
+   */
+  @GetMapping("/rosters/{id}/assessment")
+  public AssessmentResponse assess(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
+    return AssessmentResponse.from(
+        planRosters.findAssessment(actor, actingIn(actor), new RosterId(id)));
+  }
+
+  /**
    * The organisation this request acts in, taken from the acting account and from nowhere else.
    *
    * <p>It replaced {@code X-Organisation}, and the difference is the whole point: there is no

@@ -25,7 +25,7 @@ exact role. A resource in another organisation answers `404`, the same as one th
 | Qualifications | `POST /api/qualifications`; `GET` list and one | Admin; reading any member |
 | Rules | `PUT /api/constraints`; `GET /api/constraints`, `/{version}` | Admin; reading any member |
 | Shifts | `POST /api/shifts`; `GET /api/shifts?from&to`, `/{id}` | Scheduler; reading any member |
-| Rosters | `POST /api/rosters`, `/{id}/assignments`, `/{id}/publication`; `DELETE /{id}/assignments/{shift}/{employee}`; `GET` list and one | Scheduler; reading also Admin |
+| Rosters | `POST /api/rosters`, `/{id}/assignments`, `/{id}/publication`; `DELETE /{id}/assignments/{shift}/{employee}`; `GET` list and one, and `/{id}/assessment` | Scheduler; reading and checking also Admin |
 | Swaps | `POST /api/swaps`, `/{id}/approval`, `/{id}/rejection`; `GET` list and one | Asking: the person, Admin or Scheduler; deciding: Scheduler; reading: the parties |
 | Me | `GET /api/me/schedule?from&to`; `GET /api/notifications`; `POST /api/notifications/{id}/read` | Any member, their own only |
 
@@ -113,6 +113,36 @@ api "$SCHEDULER" -X POST "localhost:8080/api/rosters/$ROSTER/publication"
 The last call answers with the published roster, shown in the README's
 [Usage](../README.md#usage) section. A `PUT /api/constraints` replaces the whole set rather than
 merging into it, and every limit is optional: one left out is not enforced.
+
+## Checking a draft
+
+`GET /api/rosters/{id}/assessment` answers what publishing a draft would say now, without
+publishing it: every rule it breaks, in the same shape a publication refusal uses, and every shift
+in its period with fewer people than it requires. It is advice, judged without the publication
+lock; publishing judges again and decides. A roster that is not a draft answers `409`. With
+invented identifiers:
+
+```json
+{
+  "roster": "3f1c2a9e-0000-4000-8000-000000000001",
+  "constraintVersion": 2,
+  "violations": [
+    {
+      "employee": "3f1c2a9e-0000-4000-8000-000000000002",
+      "constraint": "declared unavailability",
+      "detail": "shift 3f1c2a9e-0000-4000-8000-000000000003 runs through time they declared they cannot work"
+    }
+  ],
+  "shortfalls": [
+    {
+      "shift": "3f1c2a9e-0000-4000-8000-000000000004",
+      "required": 2,
+      "assigned": 1,
+      "shortBy": 1
+    }
+  ]
+}
+```
 
 ## Other refusals
 

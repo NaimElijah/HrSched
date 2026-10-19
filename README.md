@@ -62,8 +62,9 @@ owner has chosen to leave open for now ([Q15](docs/requirements/requirements.md#
 - **Define shifts in their own time zone.** A shift has a headcount, the qualifications it
   requires, and an IANA zone. Its days are counted in that zone, across daylight saving changes.
 - **Generate, adjust and publish a roster.** Generation leaves a shift short rather than fill it
-  illegally, and a Scheduler can change the draft by hand. Publishing is refused with every
-  violation listed; a roster that passes supersedes whatever it overlaps.
+  illegally, and a Scheduler can change the draft by hand, seeing every rule it breaks and every
+  shift it leaves short as they go. Publishing is refused with every violation listed; a roster
+  that passes supersedes whatever it overlaps.
 - **Swap a shift.** An employee asks a colleague to cover, and a Scheduler decides. Approving
   publishes a replacement roster, judged by the same rules. An assignment can have one pending
   request at most, and it lapses with its roster. Both people see every outcome in their inbox.

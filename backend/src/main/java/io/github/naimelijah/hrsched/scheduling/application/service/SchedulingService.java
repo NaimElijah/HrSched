@@ -8,6 +8,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.ManageShiftsU
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.RosterAssessment;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosteredShift;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ViewOwnScheduleUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
@@ -29,6 +30,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordExce
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
@@ -472,6 +474,36 @@ public class SchedulingService
                           () -> new RosterNotVerifiableException(roster.id(), assignment.shift()));
               return new RosteredShift(shift.id(), shift.period(), roster.id());
             });
+  }
+
+  /**
+   * The same judgement {@code publish} refuses by, run without the publication lock and without
+   * holding the draft: it decides nothing, so it holds nothing, and its answer is advice that
+   * publication checks again (ADR-042). Named {@code find…}, so it runs read-only.
+   */
+  @Override
+  public RosterAssessment findAssessment(
+      Actor actor, OrganisationId organisation, RosterId rosterId) {
+    authorise(actor, organisation, MAY_SEE_ROSTERS);
+    Roster draft =
+        rosters
+            .findById(organisation, rosterId)
+            .orElseThrow(() -> new UnknownRosterException(rosterId));
+    if (draft.status() != RosterStatus.DRAFT) {
+      throw new RosterNotEditableException(
+          rosterId,
+          draft.status(),
+          "only a draft is checked; a published roster was judged when it was published");
+    }
+    ConstraintSet constraints = currentOrInitial(organisation);
+    List<ConstraintViolation> violations =
+        violationsOf(
+            actor, organisation, draft, constraints, rosters.findByOrganisation(organisation));
+    return new RosterAssessment(
+        draft.id(),
+        constraints.version(),
+        violations,
+        draft.shortfallsAmong(shifts.findWithin(organisation, draft.period())));
   }
 
   @Override

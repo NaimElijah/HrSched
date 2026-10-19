@@ -542,6 +542,14 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   repository cannot return, publication fails with `RosterNotVerifiableException` rather than
   quietly omitting that work from the constraint check. Omission would publish hours nobody
   counted, which is the failure publication exists to prevent.
+- **A draft can be checked against every rule without publishing it (F34).**
+  `findAssessment` (`GET /api/rosters/{id}/assessment`) runs the same `violationsOf` that
+  `publish` refuses by, and adds coverage: `Roster.shortfallsAmong` lists each shift in the
+  draft's period that it puts fewer people on than required, counting only the draft's own
+  assignments ([#130](https://github.com/NaimElijah/HrSched/issues/130)). It is advisory: named
+  `find…`, it runs read-only, takes neither the publication lock nor a row lock, stores and records
+  nothing, and answers drafts only — a published roster was judged under the version it records
+  (Q9), so asking about one is a 409. Admins and Schedulers may ask ([ADR-042](../ADRs/ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md)).
 - **Nobody is published in two places at once, whatever the rules say.** Judging a roster lists
   every pair of overlapping shifts in each person's work (R3), whatever the constraint set says. It
   cannot be left to the rules: minimum rest is the only one that notices an overlap, it is optional,
