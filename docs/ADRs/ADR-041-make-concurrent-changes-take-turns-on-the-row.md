@@ -78,13 +78,23 @@ then reads what the first stored. Both changes apply.
   waiting, the change finds the roster published or superseded, which is a conflict with what
   somebody else did. The caller resolves it by reloading. ADR-037 deferred this to #33.
 
-**The lock order cannot form a cycle.**
+**The lock order cannot form a cycle,** because the code keeps two rules. A new use case must keep
+them too.
 
-- An advisory lock (publication, or administration) is always taken before a row, and never while a
-  row is held.
-- No use case holds two aggregates' rows.
-- Publication's supersession updates published rows. Only publications touch those, and they take
-  turns under the publication lock (ADR-027).
+- **A use case that locks more than one roster row takes the publication lock first.**
+  - `publish` holds its draft, then each roster it supersedes. Every other publication waits for it
+    at the publication lock, so two of them never hold rows in opposite orders (ADR-027).
+  - A swap approval holds the replacement roster it has just inserted when the publication it calls
+    takes the publication lock again. That lock is already its own, because advisory locks are
+    re-entrant within a session.
+- **Any other use case locks one root row, then waits on nothing another use case could hold while
+  waiting for that root.**
+  - An edit of a roster holds that row even when it turns out to be published. It then refuses
+    without waiting on anything else.
+  - Account administration takes the administration lock before the account's row, never after it.
+  - Disabling an account or resetting its password goes on to update that account's sessions.
+    Nothing that locks a session waits on the account: renewing a session reads the account without
+    holding it.
 
 **No version column.** Rejected below, with the event that would bring it back.
 
