@@ -31,6 +31,7 @@ final class StubAccountRepository implements AccountRepository {
   private final List<Account> stored = new ArrayList<>();
   private final List<OrganisationId> locked = new ArrayList<>();
   private final List<UserId> heldForUpdate = new ArrayList<>();
+  private Optional<Account> readBeforeAChange = Optional.empty();
 
   /**
    * @param account an account that already exists before the test does anything
@@ -147,7 +148,25 @@ final class StubAccountRepository implements AccountRepository {
 
   @Override
   public Optional<Account> findBySignInName(SignInName name) {
-    return stored.stream().filter(candidate -> candidate.signInName().equals(name)).findFirst();
+    return readBeforeAChange
+        .filter(earlier -> earlier.signInName().equals(name))
+        .or(
+            () ->
+                stored.stream()
+                    .filter(candidate -> candidate.signInName().equals(name))
+                    .findFirst());
+  }
+
+  /**
+   * Makes the lookup by sign-in name answer with an earlier copy of an account than the one stored,
+   * standing in for a read made before a concurrent change committed. One thread cannot interleave
+   * two transactions, so this is how a test reaches the race sign-in has to survive: its unlocked
+   * read is stale by the time it holds the account (ADR-041).
+   *
+   * @param earlier the account as it was before the change the test then stores
+   */
+  void signInReadsBeforeAChange(Account earlier) {
+    readBeforeAChange = Optional.of(earlier);
   }
 
   /**

@@ -128,12 +128,28 @@ public class SessionService
     // Always exactly one comparison, whatever was found, so that how long a refusal takes says
     // nothing about whether the name exists.
     PasswordHash against = found.map(Account::passwordHash).orElse(dummyHash);
-    boolean passwordMatches = passwords.matches(command.password(), against);
+    boolean matchedWhenRead = passwords.matches(command.password(), against);
 
     if (found.isEmpty()) {
       return new SignInOutcome.Refused(Optional.empty(), SignInRefusal.UNKNOWN_ACCOUNT);
     }
-    Account account = found.get();
+    // Decided on the account as it is once held, not as it was read before the comparison. A
+    // disable, a reset or another attempt's failure committed during that comparison would
+    // otherwise be stored over by the failure counted below, or ignored by a sign-in it should
+    // refuse (ADR-041). Held only now, after the comparison: holding it through the comparison
+    // would make a second attempt on a real name slower than one on an unknown name, and would let
+    // a stream of guesses keep the account from an Admin.
+    Optional<Account> held = accounts.findForUpdate(found.get().organisation(), found.get().id());
+    if (held.isEmpty()) {
+      return new SignInOutcome.Refused(Optional.empty(), SignInRefusal.UNKNOWN_ACCOUNT);
+    }
+    Account account = held.get();
+    // Compared again only if a reset replaced the hash meanwhile: the old password must not open a
+    // session the reset's revocation never saw.
+    boolean passwordMatches =
+        account.passwordHash().equals(against)
+            ? matchedWhenRead
+            : passwords.matches(command.password(), account.passwordHash());
     if (account.isLockedAt(now)) {
       // Nothing is counted while locked: a lock that extended itself on every attempt would let
       // anybody keep an account shut indefinitely just by trying.

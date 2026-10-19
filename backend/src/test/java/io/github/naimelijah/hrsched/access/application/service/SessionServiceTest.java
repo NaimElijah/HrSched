@@ -404,6 +404,93 @@ class SessionServiceTest {
     assertThat(accounts.heldForUpdate()).containsExactly(account.id());
   }
 
+  // --- #33: sign-in decides on the account as it is once held (ADR-041)
+  // ---------------------------
+  //
+  // Sign-in reads the account, then compares the password, which is slow on purpose. A change
+  // committed in between - an Admin's disable or reset, another attempt's failure - must not be
+  // stored over by this attempt, nor ignored by it. Each test below makes the unlocked read return
+  // the account as it was before such a change, and stores the account as it is after.
+
+  @Test
+  void
+      GivenTheAccountDisabledWhileAFailingAttemptWasChecked_WhenTheFailureIsCounted_ThenTheAccountStaysDisabled() {
+    Account before = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    accounts.signInReadsBeforeAChange(before);
+    accounts.save(before.disabled());
+
+    SignInOutcome outcome = service.signIn(new SignInCommand(ADA, WRONG_PASSWORD));
+
+    assertThat(accounts.find(ACME, before.id()).orElseThrow().active())
+        .describedAs("the Admin's disable is not stored over")
+        .isFalse();
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            SignInOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(SignInRefusal.DISABLED));
+  }
+
+  @Test
+  void GivenAFailureCountedWhileThisAttemptWasChecked_WhenItFailsToo_ThenBothFailuresAreCounted() {
+    Account before = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    accounts.signInReadsBeforeAChange(before);
+    accounts.save(before.recordFailedSignIn(NOW, LOCK_AFTER_THREE));
+
+    service.signIn(new SignInCommand(ADA, WRONG_PASSWORD));
+
+    assertThat(accounts.find(ACME, before.id()).orElseThrow().failedSignIns()).isEqualTo(2);
+  }
+
+  /**
+   * A reset is usually a response to somebody else knowing the old password. A session opened with
+   * it after the reset committed would outlive the revocation the reset made, which is the one
+   * thing the reset was for (R17).
+   */
+  @Test
+  void
+      GivenThePasswordResetWhileTheOldOneWasChecked_WhenSigningInWithTheOldOne_ThenNoSessionBegins() {
+    Account before = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    accounts.signInReadsBeforeAChange(before);
+    accounts.save(
+        before.unlocked().withPassword(passwords.hash("a reset invented password"), true));
+
+    SignInOutcome outcome = service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            SignInOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(SignInRefusal.WRONG_PASSWORD));
+    assertThat(sessions.started()).isEmpty();
+  }
+
+  @Test
+  void
+      GivenTheAccountDisabledWhileTheRightPasswordWasChecked_WhenSigningIn_ThenItIsRefusedAsDisabled() {
+    Account before = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    accounts.signInReadsBeforeAChange(before);
+    accounts.save(before.disabled());
+
+    SignInOutcome outcome = service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            SignInOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(SignInRefusal.DISABLED));
+    assertThat(sessions.started()).isEmpty();
+  }
+
+  /**
+   * There is no row to hold, and the attempt must take exactly as long as one on a real name: one
+   * comparison, nothing held.
+   */
+  @Test
+  void GivenAnUnknownSignInName_WhenSigningIn_ThenNoAccountIsReadForUpdate() {
+    service.signIn(new SignInCommand("nobody@example.com", RIGHT_PASSWORD));
+
+    assertThat(accounts.heldForUpdate()).isEmpty();
+    assertThat(passwords.comparisons()).isEqualTo(1);
+  }
+
   private Account tenant(String name, Role role, Optional<EmployeeId> employee) {
     return new Account(
         UserId.newId(),
