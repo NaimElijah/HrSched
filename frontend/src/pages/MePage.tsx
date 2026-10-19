@@ -105,9 +105,10 @@ export function MePage({
   }
 
   /**
-   * Declaring, stating and withdrawing take turns. Each one loads this person's declarations and
-   * saves the whole list back, so two in flight at once could undo each other — the last save wins
-   * (#33) — and a span the page had said was recorded would be gone.
+   * Declaring, stating and withdrawing take turns. The backend applies two changes to one person
+   * one after the other (ADR-041), but this page re-reads the list after each answer: with two in
+   * flight, the list read after the first could be one the second is still changing, shown under a
+   * confirmation that no longer describes it.
    *
    * The list is read again whatever the answer: a refusal can mean the list on screen is stale, an
    * entry withdrawn already by an Admin on the person's behalf or in another tab.

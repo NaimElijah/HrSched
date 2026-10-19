@@ -91,6 +91,42 @@ class RosterCandidateTest {
     assertThat(candidate(Set.of(), List.of(TUESDAY_DAY)).couldCover(MONDAY_DAY, Set.of())).isTrue();
   }
 
+  /** The question a refusal needs answered: not whether they lack something, but what. */
+  @Test
+  void GivenAQualificationTheyLack_WhenAskedWhatTheyLack_ThenOnlyThatOneIsNamed() {
+    QualificationId forklift = QualificationId.newId();
+    QualificationId welding = QualificationId.newId();
+
+    assertThat(candidate(Set.of(forklift), List.of()).lacking(Set.of(forklift, welding)))
+        .containsExactly(welding);
+  }
+
+  @Test
+  void GivenEveryQualification_WhenAskedWhatTheyLack_ThenNothingIs() {
+    QualificationId forklift = QualificationId.newId();
+
+    assertThat(candidate(Set.of(forklift), List.of()).lacking(Set.of(forklift))).isEmpty();
+  }
+
+  @Test
+  void GivenAbsenceOverlappingTheShift_WhenAskedIfUnavailable_ThenTheyAre() {
+    TimeRange mondayMorning =
+        new TimeRange(Instant.parse("2026-09-07T06:00:00Z"), Instant.parse("2026-09-07T10:00:00Z"));
+
+    assertThat(candidate(Set.of(), List.of(mondayMorning)).isUnavailableDuring(MONDAY_DAY))
+        .isTrue();
+  }
+
+  /** A span that ends as the shift begins leaves them free for all of it. */
+  @Test
+  void GivenAbsenceThatOnlyTouchesTheShift_WhenAskedIfUnavailable_ThenTheyAreNot() {
+    TimeRange untilTheShiftStarts =
+        new TimeRange(Instant.parse("2026-09-07T00:00:00Z"), Instant.parse("2026-09-07T08:00:00Z"));
+
+    assertThat(candidate(Set.of(), List.of(untilTheShiftStarts)).isUnavailableDuring(MONDAY_DAY))
+        .isFalse();
+  }
+
   @Test
   void GivenAMutableSetOfQualifications_WhenConstructing_ThenLaterChangesAreNotSeen() {
     Set<QualificationId> held = new HashSet<>(Set.of(QualificationId.newId()));

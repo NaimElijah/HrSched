@@ -1,4 +1,5 @@
 import { api, path } from './client';
+import type { Violation } from './problem';
 
 /** A span of work that needs covering. Mirrors ShiftResponse. */
 export interface Shift {
@@ -15,6 +16,27 @@ export interface Shift {
 export interface Assignment {
   readonly shift: string;
   readonly employee: string;
+}
+
+/** A shift a draft puts fewer people on than it requires. Mirrors ShortfallResponse. */
+export interface Shortfall {
+  readonly shift: string;
+  readonly required: number;
+  readonly assigned: number;
+  readonly shortBy: number;
+}
+
+/**
+ * What publishing a draft would say now, without publishing it. Mirrors AssessmentResponse.
+ *
+ * The violations are those a publication refusal would list, from the same judgement (ADR-042),
+ * so they are shown the same way.
+ */
+export interface Assessment {
+  readonly roster: string;
+  readonly constraintVersion: number;
+  readonly violations: readonly Violation[];
+  readonly shortfalls: readonly Shortfall[];
 }
 
 /** Mirrors RosterResponse. `validatedAgainstConstraintVersion` is null while a draft. */
@@ -106,6 +128,13 @@ export const scheduling = {
     api.post<Roster>(path`/api/rosters/${id}/publication`),
 
   findRoster: (id: string): Promise<Roster> => api.get<Roster>(path`/api/rosters/${id}`),
+
+  /**
+   * Checks a draft against every rule, as publishing it would, without publishing it (#205).
+   * Advice only: publication judges again, and decides. A roster that is not a draft is refused.
+   */
+  assessRoster: (id: string): Promise<Assessment> =>
+    api.get<Assessment>(path`/api/rosters/${id}/assessment`),
 
   /**
    * Puts somebody on a shift of a draft, and returns the roster as it now stands.

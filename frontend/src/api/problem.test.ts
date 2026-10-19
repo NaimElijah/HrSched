@@ -101,10 +101,10 @@ describe('what a status means', () => {
   });
 
   /**
-   * The scheduling context answers 422 for more than the working-time rules: an assignee without
-   * the shift's qualification, one who declared they cannot work, a shift outside the roster's
-   * period. Those list no violations, and calling them a rule breach would show a scheduler an
-   * empty list under a heading about working time.
+   * The scheduling context answers 422 for more than a roster breaking the rules: one assignment
+   * refused by hand, for an assignee without the shift's qualification, one who declared they
+   * cannot work, or a shift outside the roster's period. Those list no violations, and calling
+   * them a rule breach would show a scheduler an empty list under a heading about the rules.
    */
   it('GivenA422WithoutViolations_WhenAsked_ThenItIsARefusalNotARuleBreach', () => {
     const error = toApiError(422, { detail: 'Ada does not hold every qualification it requires' });

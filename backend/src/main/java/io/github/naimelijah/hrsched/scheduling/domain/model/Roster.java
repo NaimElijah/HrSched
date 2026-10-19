@@ -8,11 +8,13 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -240,28 +242,83 @@ public final class Roster {
   }
 
   /**
-   * Groups the assignments into one schedule per employee, which is what constraints are evaluated
-   * against.
+   * Every rule this roster breaks that can be judged from when its shifts run, listed rather than
+   * thrown at the first: one place at a time (R3), across every authoritative roster (R35), and the
+   * working-time rules of {@code constraints}, each employee's schedule judged on its own.
    *
-   * <p>Nobody's schedule is built with two shifts at once in it, on this roster or beside work they
-   * hold on another authoritative one. R3 holds whatever the constraint set says, and this is the
-   * step publication cannot skip, so it is where a roster carrying somebody in two places is
-   * refused however the draft was made.
+   * <p>R3 holds whatever the constraint set says, and publication cannot skip this, so a roster
+   * carrying somebody in two places is refused however the draft was made. Somebody in two places
+   * at once has those overlaps listed and their working time left unjudged: a schedule nobody can
+   * work has no meaningful rest or daily total, and a rule reporting on it would only restate the
+   * overlap. It is judged once the overlap is gone.
    *
-   * <p>Work held elsewhere is checked for R3 only. It is not in the schedules returned, because the
+   * <p>Work held elsewhere is checked for R3 only. It is not in the schedules judged, because the
    * working-time rules still judge one roster at a time (ADR-033).
    *
+   * @param constraints the working-time rules each schedule is judged against
    * @param shiftPeriods when each assigned shift runs, in the zone its days are counted in; must
    *     cover every assigned shift
    * @param heldElsewhere work on the other rosters that stay authoritative beside this one
+   * @return every breach, employee by employee in the order they were first assigned; empty if
+   *     there is none
+   * @throws RosterNotVerifiableException if any assigned shift is missing from {@code shiftPeriods}
+   */
+  public List<ConstraintViolation> violationsUnder(
+      ConstraintSet constraints,
+      Map<ShiftId, WorkingPeriod> shiftPeriods,
+      List<HeldWork> heldElsewhere) {
+    Objects.requireNonNull(constraints, "constraints must not be null");
+    Objects.requireNonNull(heldElsewhere, "heldElsewhere must not be null");
+    List<ConstraintViolation> violations = new ArrayList<>();
+    for (EmployeeSchedule schedule : schedulesFor(shiftPeriods)) {
+      List<Overlap> overlaps = overlapsOf(schedule.employee(), shiftPeriods, heldElsewhere);
+      if (overlaps.isEmpty()) {
+        violations.addAll(constraints.violationsFor(schedule));
+      } else {
+        overlaps.stream().map(Overlap::asViolation).forEach(violations::add);
+      }
+    }
+    return List.copyOf(violations);
+  }
+
+  /**
+   * Coverage: each of these shifts in this roster's period that it puts fewer people on than the
+   * shift requires, and by how many.
+   *
+   * <p>A headcount is the least a shift needs (R22), so more people than it requires is never
+   * short. Only this roster's own assignments are counted: a shift straddling into an adjacent
+   * period may also be staffed there, and whether that counts here is still open (#130, #135).
+   *
+   * @param shifts the shifts to count, usually every one overlapping this roster's period; any
+   *     outside it are ignored
+   * @return every short shift, in the order given; empty if none is
+   */
+  public List<Shortfall> shortfallsAmong(Collection<Shift> shifts) {
+    Objects.requireNonNull(shifts, "shifts must not be null");
+    Map<ShiftId, Integer> staffed = new HashMap<>();
+    assignments.forEach(assignment -> staffed.merge(assignment.shift(), 1, Integer::sum));
+    return shifts.stream()
+        .filter(shift -> shift.period().overlaps(period))
+        .filter(shift -> staffed.getOrDefault(shift.id(), 0) < shift.requiredHeadcount())
+        .map(
+            shift ->
+                new Shortfall(
+                    shift.id(), shift.requiredHeadcount(), staffed.getOrDefault(shift.id(), 0)))
+        .toList();
+  }
+
+  /**
+   * Groups the assignments into one schedule per employee, which is what working-time rules are
+   * evaluated against. Says nothing about whether those schedules can be worked: {@link
+   * #violationsUnder} does.
+   *
+   * @param shiftPeriods when each assigned shift runs, in the zone its days are counted in; must
+   *     cover every assigned shift
    * @return one schedule per employee appearing in this roster, holding only this roster's work
    * @throws RosterNotVerifiableException if any assigned shift is missing from {@code shiftPeriods}
-   * @throws OverlappingAssignmentException if anybody would work two shifts at once
    */
-  public List<EmployeeSchedule> schedulesFor(
-      Map<ShiftId, WorkingPeriod> shiftPeriods, List<HeldWork> heldElsewhere) {
+  public List<EmployeeSchedule> schedulesFor(Map<ShiftId, WorkingPeriod> shiftPeriods) {
     Objects.requireNonNull(shiftPeriods, "shiftPeriods must not be null");
-    Objects.requireNonNull(heldElsewhere, "heldElsewhere must not be null");
     Map<EmployeeId, List<WorkingPeriod>> byEmployee = new LinkedHashMap<>();
     for (Assignment assignment : assignments) {
       WorkingPeriod when = shiftPeriods.get(assignment.shift());
@@ -270,9 +327,6 @@ public final class Roster {
       }
       byEmployee.computeIfAbsent(assignment.employee(), key -> new ArrayList<>()).add(when);
     }
-    byEmployee
-        .keySet()
-        .forEach(employee -> requireNoOverlappingWorkFor(employee, shiftPeriods, heldElsewhere));
     return byEmployee.entrySet().stream()
         .map(entry -> new EmployeeSchedule(entry.getKey(), entry.getValue()))
         .toList();
@@ -283,12 +337,9 @@ public final class Roster {
    * its own beside work they already hold on another authoritative roster (R35).
    *
    * <p>Only that person's shifts need to be in {@code shiftPeriods}, so assigning somebody by hand
-   * can be checked without resolving everybody else's work.
-   *
-   * <p>The same shift held by the same person on another roster is no overlap. R35 lets either
-   * roster carry a shift straddling both periods, and that is one place to be, not two (ADR-033).
-   * Two pieces of work held elsewhere are never compared with each other: if they overlap, that is
-   * a breach of the rosters carrying them, not of this one.
+   * can be checked without resolving everybody else's work. It refuses with the first overlap,
+   * because one is enough to refuse an assignment; publication lists them all through {@link
+   * #violationsUnder}, from the same comparison.
    *
    * @param employee whose work to check
    * @param shiftPeriods when shifts run; must cover every shift this employee is assigned
@@ -303,6 +354,44 @@ public final class Roster {
     Objects.requireNonNull(employee, "employee must not be null");
     Objects.requireNonNull(shiftPeriods, "shiftPeriods must not be null");
     Objects.requireNonNull(heldElsewhere, "heldElsewhere must not be null");
+    List<Overlap> overlaps = overlapsOf(employee, shiftPeriods, heldElsewhere);
+    if (!overlaps.isEmpty()) {
+      throw overlaps.getFirst().asRefusal();
+    }
+  }
+
+  /**
+   * Two pieces of one person's work that run at once: both on this roster, or the second held on
+   * another one.
+   */
+  private record Overlap(
+      EmployeeId employee, ShiftId shift, ShiftId overlapping, Optional<RosterId> heldOn) {
+
+    ConstraintViolation asViolation() {
+      return ConstraintViolation.overlappingWork(employee, shift, overlapping, heldOn);
+    }
+
+    OverlappingAssignmentException asRefusal() {
+      return heldOn
+          .map(roster -> new OverlappingAssignmentException(employee, shift, overlapping, roster))
+          .orElseGet(() -> new OverlappingAssignmentException(employee, shift, overlapping));
+    }
+  }
+
+  /**
+   * Every overlap in one person's work, in the order their shifts start.
+   *
+   * <p>Every pair of their own shifts is compared, not only neighbours by start time: a refusal
+   * needs only one overlap, but a listing needs them all, and three shifts at once are three pairs.
+   *
+   * <p>A shift this roster carries for them is compared as theirs, and its copy held on another
+   * roster is not compared again. R35 lets either roster carry a shift straddling both periods,
+   * which is one place to be, not two (ADR-033): the copy is no overlap with itself, and a clash
+   * with it is one clash, listed once. Two pieces of work held elsewhere are never compared with
+   * each other: if they overlap, that is a breach of the rosters carrying them, not of this one.
+   */
+  private List<Overlap> overlapsOf(
+      EmployeeId employee, Map<ShiftId, WorkingPeriod> shiftPeriods, List<HeldWork> heldElsewhere) {
     List<ShiftId> theirs =
         assignments.stream()
             .filter(assignment -> assignment.employee().equals(employee))
@@ -317,28 +406,27 @@ public final class Roster {
         theirs.stream()
             .sorted(Comparator.comparing(shift -> shiftPeriods.get(shift).period().start()))
             .toList();
-    // Sorted by start, an overlap anywhere implies one between neighbours: if a shift overlaps a
-    // later one, it also overlaps every shift starting between them. So neighbours are enough.
-    for (int i = 1; i < chronological.size(); i++) {
-      ShiftId earlier = chronological.get(i - 1);
-      ShiftId later = chronological.get(i);
-      if (shiftPeriods.get(earlier).period().overlaps(shiftPeriods.get(later).period())) {
-        throw new OverlappingAssignmentException(employee, earlier, later);
-      }
-    }
-    // Every own shift against every held one. The neighbour shortcut above is unsound here: it
-    // assumes every adjacent pair is compared, and pairs held elsewhere are deliberately not.
-    for (HeldWork held : heldElsewhere) {
-      if (!held.employee().equals(employee)) {
-        continue;
-      }
-      for (ShiftId shift : theirs) {
-        if (!shift.equals(held.shift())
-            && shiftPeriods.get(shift).period().overlaps(held.period())) {
-          throw new OverlappingAssignmentException(employee, shift, held.shift(), held.roster());
+    List<Overlap> overlaps = new ArrayList<>();
+    for (int i = 0; i < chronological.size(); i++) {
+      for (int j = i + 1; j < chronological.size(); j++) {
+        ShiftId earlier = chronological.get(i);
+        ShiftId later = chronological.get(j);
+        if (shiftPeriods.get(earlier).period().overlaps(shiftPeriods.get(later).period())) {
+          overlaps.add(new Overlap(employee, earlier, later, Optional.empty()));
         }
       }
     }
+    for (HeldWork held : heldElsewhere) {
+      if (!held.employee().equals(employee) || theirs.contains(held.shift())) {
+        continue;
+      }
+      for (ShiftId shift : chronological) {
+        if (shiftPeriods.get(shift).period().overlaps(held.period())) {
+          overlaps.add(new Overlap(employee, shift, held.shift(), Optional.of(held.roster())));
+        }
+      }
+    }
+    return overlaps;
   }
 
   /**

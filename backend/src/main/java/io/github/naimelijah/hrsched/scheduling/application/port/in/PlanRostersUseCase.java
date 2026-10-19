@@ -89,13 +89,14 @@ public interface PlanRostersUseCase {
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException if the
    *     roster is not a draft. Checked as soon as the roster is found, before anything else is
    *     read, superseded or recorded
-   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException if
-   *     it puts anybody on two shifts at once, whatever the rules say: two of its own, or one
-   *     beside work they hold on a published roster that stays authoritative once it lands (R35).
-   *     Checked before the rules
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException if a
-   *     shift it assigns, or one its people hold on such a roster, cannot be resolved
-   * @throws RosterNotCompliantException if it breaks any rule. There is no override
+   *     shift it assigns, or one its people hold on a published roster that stays authoritative
+   *     once it lands, cannot be resolved
+   * @throws RosterNotCompliantException if it breaks any rule, listing every breach: anybody on two
+   *     shifts at once, whatever the rules say - two of its own, or one beside work they hold on
+   *     such a roster (R35) - anybody lacking a shift's qualifications (R4), on it through time
+   *     they declared they cannot work (R18) or not of the organisation (R5), and every
+   *     working-time rule broken. There is no override
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException
    *     if a roster overlapping it was published at the same time by a writer that did not take
    *     turns. Publishing through this port always does (ADR-027), so this means some other writer
@@ -142,6 +143,27 @@ public interface PlanRostersUseCase {
    * @return the roster, or empty if that organisation has no such roster
    */
   Optional<Roster> findRoster(Actor actor, OrganisationId organisation, RosterId roster);
+
+  /**
+   * Judges a draft as publishing it would, without publishing it: every rule it breaks, through the
+   * same judgement publication refuses by, and every shift short of people (#205, ADR-042).
+   *
+   * <p>Advisory and read-only. It takes no lock, so a publication made meanwhile can change what it
+   * would say; publication judges again and decides. Nothing is stored or recorded.
+   *
+   * @param actor whoever is asking; an Admin or a Scheduler of the organisation, who may read every
+   *     roster and everybody's availability (F4, R12)
+   * @param organisation whose roster
+   * @param roster which draft
+   * @return what publishing it would say now
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException if that
+   *     organisation has no such roster
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException if it
+   *     is not a draft: a published roster was judged under the rules version it records (Q9)
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException if a
+   *     shift it assigns, or one its people hold on a roster beside it, cannot be resolved
+   */
+  RosterAssessment findAssessment(Actor actor, OrganisationId organisation, RosterId roster);
 
   /**
    * @param actor whoever is asking; an Admin or a Scheduler of the organisation, because a roster

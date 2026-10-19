@@ -72,7 +72,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
     qualifications
         .findById(command.organisation(), command.qualification())
         .orElseThrow(() -> new UnknownQualificationException(command.qualification()));
-    Employee employee = load(command.organisation(), command.employee());
+    Employee employee = loadForUpdate(command.organisation(), command.employee());
     employees.save(employee.holding(command.qualification()));
     recorded(
         actor, command.organisation(), WorkforceChange.QUALIFICATION_GRANTED, command.employee());
@@ -81,7 +81,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
   @Override
   public void setContractTerms(Actor actor, SetContractTermsCommand command) {
     authorise(actor, command.organisation(), MAY_ADMINISTER);
-    Employee employee = load(command.organisation(), command.employee());
+    Employee employee = loadForUpdate(command.organisation(), command.employee());
     employees.save(employee.contractedTo(new ContractTerms(command.weeklyContractedHours())));
     recorded(actor, command.organisation(), WorkforceChange.CONTRACT_SET, command.employee());
   }
@@ -89,7 +89,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
   @Override
   public void declareUnavailability(Actor actor, DeclareUnavailabilityCommand command) {
     authoriseSelfOrManager(actor, command.organisation(), command.employee());
-    Employee employee = load(command.organisation(), command.employee());
+    Employee employee = loadForUpdate(command.organisation(), command.employee());
     employees.save(employee.unavailableFor(command.period()));
     recorded(
         actor, command.organisation(), WorkforceChange.UNAVAILABILITY_DECLARED, command.employee());
@@ -98,7 +98,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
   @Override
   public void statePreference(Actor actor, StatePreferenceCommand command) {
     authoriseSelfOrManager(actor, command.organisation(), command.employee());
-    Employee employee = load(command.organisation(), command.employee());
+    Employee employee = loadForUpdate(command.organisation(), command.employee());
     employees.save(employee.preferring(new ShiftPreference(command.period(), command.strength())));
     recorded(actor, command.organisation(), WorkforceChange.PREFERENCE_STATED, command.employee());
   }
@@ -106,7 +106,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
   @Override
   public void withdrawUnavailability(Actor actor, WithdrawUnavailabilityCommand command) {
     authoriseSelfOrManager(actor, command.organisation(), command.employee());
-    Employee employee = load(command.organisation(), command.employee());
+    Employee employee = loadForUpdate(command.organisation(), command.employee());
     employees.save(employee.noLongerUnavailableFor(command.period()));
     recorded(
         actor,
@@ -118,7 +118,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
   @Override
   public void withdrawPreference(Actor actor, WithdrawPreferenceCommand command) {
     authoriseSelfOrManager(actor, command.organisation(), command.employee());
-    Employee employee = load(command.organisation(), command.employee());
+    Employee employee = loadForUpdate(command.organisation(), command.employee());
     employees.save(
         employee.noLongerPreferring(new ShiftPreference(command.period(), command.strength())));
     recorded(
@@ -169,6 +169,17 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
         employee.qualifications(),
         employee.unavailability(),
         employee.contractTerms().map(ContractTerms::weeklyContractedHours));
+  }
+
+  /**
+   * Held from this read until the change commits, because the change stores the employee whole: a
+   * second change to the same person waits, then reads this one's rather than storing over it (#33,
+   * ADR-041). Reads use {@link #load}, which holds nothing.
+   */
+  private Employee loadForUpdate(OrganisationId organisation, EmployeeId id) {
+    return employees
+        .findForUpdate(organisation, id)
+        .orElseThrow(() -> new UnknownEmployeeException(id));
   }
 
   private Employee load(OrganisationId organisation, EmployeeId id) {

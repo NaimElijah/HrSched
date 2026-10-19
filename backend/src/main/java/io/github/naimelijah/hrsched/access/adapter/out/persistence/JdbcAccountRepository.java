@@ -157,6 +157,38 @@ public class JdbcAccountRepository implements AccountRepository {
         .optional();
   }
 
+  /**
+   * Holds the account's own row, and only within the organisation it was looked for in. Two
+   * statements rather than one with {@code IS NOT DISTINCT FROM}, because an absent organisation
+   * would then be bound as a null of no declared type, and because each says plainly whose row it
+   * may reach: a tenant's, or the operator's (ADR-041).
+   */
+  @Override
+  public Optional<Account> findForUpdate(Optional<OrganisationId> organisation, UserId account) {
+    // In autocommit the row would be released as soon as this statement ended, and a read-only
+    // transaction cannot hold it at all. Either way the caller is not the writer it believes it is.
+    if (!TransactionSynchronizationManager.isActualTransactionActive()
+        || TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
+      throw new IllegalStateException(
+          "An account can only be read for update inside a writable transaction; anywhere else"
+              + " nothing would hold it");
+    }
+    return organisation
+        .map(
+            tenant ->
+                jdbc.sql(
+                        selectAccount()
+                            + " WHERE organisation_id = :organisation AND id = :id FOR UPDATE")
+                    .param("organisation", tenant.value()))
+        .orElseGet(
+            () ->
+                jdbc.sql(
+                    selectAccount() + " WHERE organisation_id IS NULL AND id = :id FOR UPDATE"))
+        .param("id", account.value())
+        .query(JdbcAccountRepository::toAccount)
+        .optional();
+  }
+
   @Override
   public Optional<Account> findBySignInName(SignInName name) {
     return jdbc.sql(selectAccount() + " WHERE sign_in_name = :name")

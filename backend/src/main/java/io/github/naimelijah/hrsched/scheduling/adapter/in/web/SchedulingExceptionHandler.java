@@ -88,11 +88,11 @@ public class SchedulingExceptionHandler {
   public ProblemDetail handleNotCompliant(RosterNotCompliantException exception) {
     log.atInfo()
         .addKeyValue("violations", exception.violations().size())
-        .log("Publication refused by the working-time rules");
+        .log("Publication refused by the rules");
     count(REFUSED, "reason", "not_compliant", "Publications refused, by what refused them");
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
-    problem.setTitle("Roster breaks the working-time rules");
+    problem.setTitle("Roster breaks the rules");
     problem.setProperty("violations", describe(exception.violations()));
     return problem;
   }
@@ -106,7 +106,6 @@ public class SchedulingExceptionHandler {
     InvalidHeadcountException.class,
     InvalidConstraintException.class,
     DuplicateAssignmentException.class,
-    RosterNotEditableException.class,
     UnknownRequiredQualificationException.class,
     SwapWithThemselfException.class,
     MalformedRequestException.class
@@ -203,9 +202,8 @@ public class SchedulingExceptionHandler {
    * reason a non-compliant roster does: the caller named real things and asked for something the
    * domain forbids, which is neither a malformed request nor a missing one.
    *
-   * <p>The overlap can also be found at publication — approving a swap, or publishing a draft that
-   * arrived carrying one — and is answered the same way there. It is not counted as a refused
-   * publication, because this handler cannot tell those apart from a refused assignment.
+   * <p>Publication finds the same breaches in a draft that arrived carrying them, and answers
+   * differently: with every breach listed, as a roster that breaks the rules (ADR-042).
    */
   @ExceptionHandler({
     AssigneeNotQualifiedException.class,
@@ -232,6 +230,21 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("No longer pending");
+    return problem;
+  }
+
+  /**
+   * A change the roster's status forbids: editing or publishing a roster that is no longer a draft,
+   * or asking for a swap against one that is not the published roster. Nothing about the request
+   * was wrong; the roster is not, or is no longer, in the state it asks about. Most often somebody
+   * published it first, and an edit that waited for that publication finds it so (ADR-041). The
+   * caller resolves it by reloading, which makes it a conflict rather than a bad request.
+   */
+  @ExceptionHandler(RosterNotEditableException.class)
+  public ProblemDetail handleStatusForbids(RosterNotEditableException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    problem.setTitle("Roster status forbids this");
     return problem;
   }
 

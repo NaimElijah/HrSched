@@ -1,5 +1,10 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.STUCK_AFTER_SECONDS;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitWaitingOnALock;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitWaitingOnALockOr;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.backendServingThisTransaction;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.refusalsOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -15,20 +20,14 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.Writer;
 import java.sql.SQLException;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.BrokenBarrierException;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -72,13 +71,6 @@ class JdbcRosterRepositoryTest {
 
   /** A Thursday afternoon, inside both {@link #THE_WEEK} and {@link #OVERLAPPING_WEEK}. */
   private static final Instant THURSDAY_AFTERNOON = Instant.parse("2026-09-10T15:00:00Z");
-
-  /**
-   * How long a racing writer may take before the test gives up on it. Far longer than a publication
-   * needs, including PostgreSQL's one-second wait before it resolves a deadlock, so reaching it
-   * means something is stuck rather than slow.
-   */
-  private static final long STUCK_AFTER_SECONDS = 30;
 
   /** PostgreSQL's {@code deadlock_detected}: the SQLState a deadlock victim is aborted with. */
   private static final String DEADLOCK_DETECTED = "40P01";
@@ -503,6 +495,160 @@ class JdbcRosterRepositoryTest {
     assertThat(stored.assignments()).containsExactly(ada);
   }
 
+  /**
+   * #33's lost update. Each edit reads the draft, adds to it and stores it whole, so without a lock
+   * the later save deletes the assignment the earlier one added. Read for update, the second edit
+   * waits for the first to commit and then reads what it stored, and both assignments survive.
+   *
+   * <p>The first edit stores only once the second is waiting on its row, so the test cannot pass by
+   * the second simply arriving late. If the second does not wait at all, the first goes on as soon
+   * as the second has read, and the lost assignment is what fails the test.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenAnEditHoldingADraft_WhenAnotherEditReadsItForUpdate_ThenItWaitsAndBothEditsAreKept()
+      throws Exception {
+    Roster draft = draft(ACME);
+    repository.save(draft);
+    Assignment ada = new Assignment(ShiftId.newId(), EmployeeId.newId());
+    Assignment grace = new Assignment(ShiftId.newId(), EmployeeId.newId());
+
+    AtomicInteger second = new AtomicInteger();
+    AtomicBoolean secondHasRead = new AtomicBoolean();
+    List<Throwable> refusals =
+        refusalsOf(
+            waitForTheOther -> {
+              Roster held = repository.findForUpdate(ACME, draft.id()).orElseThrow();
+              waitForTheOther.run();
+              awaitWaitingOnALockOr(second.get(), secondHasRead::get);
+              repository.save(held.with(ada));
+            },
+            waitForTheOther -> {
+              second.set(backendServingThisTransaction());
+              waitForTheOther.run();
+              Roster read = repository.findForUpdate(ACME, draft.id()).orElseThrow();
+              secondHasRead.set(true);
+              repository.save(read.with(grace));
+            });
+
+    assertThat(refusals).isEmpty();
+    assertThat(repository.findById(ACME, draft.id()).orElseThrow().assignments())
+        .containsExactlyInAnyOrder(ada, grace);
+  }
+
+  /**
+   * The other half of #33: an edit committing between a publication's read and its save. Read for
+   * update, the publication waits for the edit, and publishes the roster carrying it rather than
+   * storing the copy it read over it.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void
+      GivenAnEditHoldingADraft_WhenItsPublicationReadsItForUpdate_ThenThePublishedRosterCarriesTheEdit()
+          throws Exception {
+    Roster draft = draft(ACME);
+    repository.save(draft);
+    Assignment ada = new Assignment(ShiftId.newId(), EmployeeId.newId());
+
+    AtomicInteger publication = new AtomicInteger();
+    AtomicBoolean publicationHasRead = new AtomicBoolean();
+    List<Throwable> refusals =
+        refusalsOf(
+            waitForTheOther -> {
+              Roster held = repository.findForUpdate(ACME, draft.id()).orElseThrow();
+              waitForTheOther.run();
+              awaitWaitingOnALockOr(publication.get(), publicationHasRead::get);
+              repository.save(held.with(ada));
+            },
+            waitForTheOther -> {
+              publication.set(backendServingThisTransaction());
+              waitForTheOther.run();
+              Roster read = repository.findForUpdate(ACME, draft.id()).orElseThrow();
+              publicationHasRead.set(true);
+              repository.save(read.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
+            });
+
+    assertThat(refusals).isEmpty();
+    Roster stored = repository.findById(ACME, draft.id()).orElseThrow();
+    assertThat(stored.status()).isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(stored.assignments()).containsExactly(ada);
+  }
+
+  /**
+   * The same wait the other way round: an edit reaching a draft a publication holds waits for it,
+   * then reads the roster as published, so the use case refuses it as no longer a draft before it
+   * changes anything.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenAPublicationHoldingADraft_WhenAnEditReadsItForUpdate_ThenItFindsItPublished()
+      throws Exception {
+    Roster draft = draft(ACME);
+    repository.save(draft);
+
+    AtomicInteger edit = new AtomicInteger();
+    AtomicReference<RosterStatus> seenByTheEdit = new AtomicReference<>();
+    List<Throwable> refusals =
+        refusalsOf(
+            waitForTheOther -> {
+              Roster held = repository.findForUpdate(ACME, draft.id()).orElseThrow();
+              waitForTheOther.run();
+              awaitWaitingOnALockOr(edit.get(), () -> seenByTheEdit.get() != null);
+              repository.save(held.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
+            },
+            waitForTheOther -> {
+              edit.set(backendServingThisTransaction());
+              waitForTheOther.run();
+              seenByTheEdit.set(repository.findForUpdate(ACME, draft.id()).orElseThrow().status());
+            });
+
+    assertThat(refusals).isEmpty();
+    assertThat(seenByTheEdit).hasValue(RosterStatus.PUBLISHED);
+  }
+
+  /**
+   * In autocommit the row would be released the moment the statement reading it ended, so the
+   * caller would believe it held a roster nobody was waiting on. Refused instead, as the
+   * publication lock is.
+   */
+  @Test
+  void GivenNoTransaction_WhenReadingARosterForUpdate_ThenItIsRefused() {
+    Roster draft = draft(ACME);
+    repository.save(draft);
+
+    assertThatThrownBy(() -> repository.findForUpdate(ACME, draft.id()))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  /**
+   * A use case named {@code find…} runs read-only, where PostgreSQL refuses to hold a row. Refused
+   * here first, in words that name the mistake: a reader asking for what only a writer needs.
+   */
+  @Test
+  void GivenAReadOnlyTransaction_WhenReadingARosterForUpdate_ThenItIsRefused() {
+    Roster draft = draft(ACME);
+    repository.save(draft);
+    TransactionTemplate reading = new TransactionTemplate(PostgresDatabase.transactions());
+    reading.setReadOnly(true);
+
+    assertThatThrownBy(
+            () ->
+                reading.executeWithoutResult(status -> repository.findForUpdate(ACME, draft.id())))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void GivenARosterOfAnotherOrganisation_WhenReadForUpdateByUs_ThenItIsNotFound() {
+    Roster theirs = draft(RIVAL);
+    repository.save(theirs);
+
+    Optional<Roster> found =
+        new TransactionTemplate(PostgresDatabase.transactions())
+            .execute(status -> repository.findForUpdate(ACME, theirs.id()));
+
+    assertThat(found).isEmpty();
+  }
+
   /** Generating a draft over a published week is how every replacement starts. */
   @Test
   void GivenAPublishedRoster_WhenAnOverlappingDraftIsStored_ThenItIsAccepted() {
@@ -616,33 +762,6 @@ class JdbcRosterRepositoryTest {
             cause -> assertThat(cause.getSQLState()).isEqualTo(DEADLOCK_DETECTED));
   }
 
-  /** The PostgreSQL backend serving the calling thread's transaction, which joins it. */
-  private static int backendServingThisTransaction() {
-    return PostgresDatabase.jdbcClient()
-        .sql("SELECT pg_backend_pid()")
-        .query(Integer.class)
-        .single();
-  }
-
-  /**
-   * Returns once the backend {@code pid} is waiting for a lock some other transaction holds.
-   *
-   * <p>Asks PostgreSQL rather than sleeping, so it returns as soon as the wait begins and never
-   * guesses how long that takes; the bound is only there to fail a test that would otherwise hang.
-   */
-  private static void awaitWaitingOnALock(int pid) {
-    long giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(STUCK_AFTER_SECONDS);
-    while (!PostgresDatabase.jdbcClient()
-        .sql("SELECT cardinality(pg_blocking_pids(:pid)) > 0")
-        .param("pid", pid)
-        .query(Boolean.class)
-        .single()) {
-      if (System.nanoTime() > giveUpAt) {
-        throw new IllegalStateException("The other writer never waited for a lock");
-      }
-    }
-  }
-
   /** Saves one draft, waits until the other writer has saved one too, then saves another. */
   private Writer savingOneThenAnother(Roster first, Roster then) {
     return waitForTheOther -> {
@@ -650,12 +769,6 @@ class JdbcRosterRepositoryTest {
       waitForTheOther.run();
       repository.save(then);
     };
-  }
-
-  /** One writer's work, told when to wait for the other writer to reach the same point. */
-  @FunctionalInterface
-  private interface Writer {
-    void write(Runnable waitForTheOther);
   }
 
   /**
@@ -677,52 +790,6 @@ class JdbcRosterRepositoryTest {
       waitForTheOther.run();
       repository.save(then.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
     };
-  }
-
-  /**
-   * Runs two writers at once, each in its own transaction on its own connection, and returns what
-   * refused them.
-   *
-   * <p>Each writer calls the {@code Runnable} it is given where it has to wait for the other, so a
-   * test decides what both have done before either goes on. The executor is waited for as well as
-   * stopped: a writer still running would keep its connection, and the next test's truncation would
-   * wait on it.
-   */
-  private List<Throwable> refusalsOf(Writer first, Writer second)
-      throws InterruptedException, TimeoutException {
-    TransactionTemplate transaction = new TransactionTemplate(PostgresDatabase.transactions());
-    CyclicBarrier together = new CyclicBarrier(2);
-    Runnable waitForTheOther =
-        () -> {
-          try {
-            together.await(STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
-          } catch (InterruptedException | BrokenBarrierException | TimeoutException stuck) {
-            throw new IllegalStateException("The other writer never got there", stuck);
-          }
-        };
-    ExecutorService writers = Executors.newFixedThreadPool(2);
-    List<Throwable> refusals = new ArrayList<>();
-    try {
-      List<Future<?>> running =
-          List.of(
-              writers.submit(
-                  () -> transaction.executeWithoutResult(status -> first.write(waitForTheOther))),
-              writers.submit(
-                  () -> transaction.executeWithoutResult(status -> second.write(waitForTheOther))));
-      for (Future<?> writer : running) {
-        try {
-          writer.get(STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
-        } catch (ExecutionException refused) {
-          refusals.add(refused.getCause());
-        }
-      }
-    } finally {
-      writers.shutdownNow();
-      if (!writers.awaitTermination(STUCK_AFTER_SECONDS, TimeUnit.SECONDS)) {
-        throw new IllegalStateException("A writer is still running and holding its connection");
-      }
-    }
-    return refusals;
   }
 
   /**

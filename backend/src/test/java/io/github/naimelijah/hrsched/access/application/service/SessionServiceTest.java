@@ -3,6 +3,8 @@ package io.github.naimelijah.hrsched.access.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.naimelijah.hrsched.access.application.port.in.AccountKind;
+import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordCommand;
+import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.RefreshOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.RefreshRefusal;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInCommand;
@@ -27,8 +29,10 @@ import io.github.naimelijah.hrsched.access.domain.model.SignInSession;
 import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
 import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
+import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -363,6 +367,156 @@ class SessionServiceTest {
             RefreshOutcome.Refused.class,
             refused -> assertThat(refused.reason()).isEqualTo(RefreshRefusal.UNKNOWN_TOKEN));
     assertThat(audit.changes()).isEmpty();
+  }
+
+  // --- #33: changing one's own password holds the account from its read (ADR-041) ---------------
+  //
+  // A password change stores the account whole, so a change made to a copy read before an Admin's
+  // disable committed would enable the account again. It reads the account for update instead,
+  // scoped to the caller's own organisation, or to none for the operator. That the read really
+  // waits is proven against PostgreSQL, in JdbcAccountRepositoryTest.
+
+  @Test
+  void GivenAPasswordChange_WhenMade_ThenTheAccountIsReadForUpdate() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
+    assertThat(accounts.heldForUpdate()).containsExactly(account.id());
+  }
+
+  /** The operator belongs to no organisation, so its account is held where it is: in none. */
+  @Test
+  void GivenTheOperatorChangingTheirPassword_WhenMade_ThenTheirAccountIsReadForUpdate() {
+    Account account = accounts.given(operator("operator@example.com"));
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            new Operator(account.id()),
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
+    assertThat(accounts.heldForUpdate()).containsExactly(account.id());
+  }
+
+  // --- #33: sign-in decides on the account as it is once held (ADR-041)
+  // ---------------------------
+  //
+  // Sign-in reads the account, then compares the password, which is slow on purpose. A change
+  // committed in between - an Admin's disable or reset, another attempt's failure - must not be
+  // stored over by this attempt, nor ignored by it. Each test below makes the unlocked read return
+  // the account as it was before such a change, and stores the account as it is after.
+
+  @Test
+  void
+      GivenTheAccountDisabledWhileAFailingAttemptWasChecked_WhenTheFailureIsCounted_ThenTheAccountStaysDisabled() {
+    Account before = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    accounts.signInReadsBeforeAChange(before);
+    accounts.save(before.disabled());
+
+    SignInOutcome outcome = service.signIn(new SignInCommand(ADA, WRONG_PASSWORD));
+
+    assertThat(accounts.find(ACME, before.id()).orElseThrow().active())
+        .describedAs("the Admin's disable is not stored over")
+        .isFalse();
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            SignInOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(SignInRefusal.DISABLED));
+  }
+
+  @Test
+  void GivenAFailureCountedWhileThisAttemptWasChecked_WhenItFailsToo_ThenBothFailuresAreCounted() {
+    Account before = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    accounts.signInReadsBeforeAChange(before);
+    accounts.save(before.recordFailedSignIn(NOW, LOCK_AFTER_THREE));
+
+    service.signIn(new SignInCommand(ADA, WRONG_PASSWORD));
+
+    assertThat(accounts.find(ACME, before.id()).orElseThrow().failedSignIns()).isEqualTo(2);
+  }
+
+  /**
+   * A reset is usually a response to somebody else knowing the old password. A session opened with
+   * it after the reset committed would outlive the revocation the reset made, which is the one
+   * thing the reset was for (R17).
+   */
+  @Test
+  void
+      GivenThePasswordResetWhileTheOldOneWasChecked_WhenSigningInWithTheOldOne_ThenNoSessionBegins() {
+    Account before = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    accounts.signInReadsBeforeAChange(before);
+    accounts.save(
+        before.unlocked().withPassword(passwords.hash("a reset invented password"), true));
+
+    SignInOutcome outcome = service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            SignInOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(SignInRefusal.WRONG_PASSWORD));
+    assertThat(sessions.started()).isEmpty();
+  }
+
+  @Test
+  void
+      GivenTheAccountDisabledWhileTheRightPasswordWasChecked_WhenSigningIn_ThenItIsRefusedAsDisabled() {
+    Account before = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    accounts.signInReadsBeforeAChange(before);
+    accounts.save(before.disabled());
+
+    SignInOutcome outcome = service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            SignInOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(SignInRefusal.DISABLED));
+    assertThat(sessions.started()).isEmpty();
+  }
+
+  /**
+   * A locked account is refused from the unlocked read, before anything is held. Holding it would
+   * write - a transaction id, and its commit - where an attempt on an unknown name writes nothing,
+   * and that difference would tell somebody guessing that the name is real (ADR-041).
+   */
+  @Test
+  void GivenALockedAccount_WhenSigningIn_ThenNothingIsHeld() {
+    accounts.given(
+        tenant(ADA, Role.SCHEDULER, Optional.empty())
+            .recordFailedSignIn(NOW, LOCK_AFTER_THREE)
+            .recordFailedSignIn(NOW, LOCK_AFTER_THREE)
+            .recordFailedSignIn(NOW, LOCK_AFTER_THREE));
+
+    service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
+
+    assertThat(accounts.heldForUpdate()).isEmpty();
+  }
+
+  /** As a locked one: a departed colleague's name must not be told apart from nobody's. */
+  @Test
+  void GivenADisabledAccount_WhenSigningIn_ThenNothingIsHeld() {
+    accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()).disabled());
+
+    service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
+
+    assertThat(accounts.heldForUpdate()).isEmpty();
+  }
+
+  /**
+   * There is no row to hold, so an attempt on an unknown name holds nothing and makes the one
+   * comparison every attempt makes.
+   */
+  @Test
+  void GivenAnUnknownSignInName_WhenSigningIn_ThenNoAccountIsReadForUpdate() {
+    service.signIn(new SignInCommand("nobody@example.com", RIGHT_PASSWORD));
+
+    assertThat(accounts.heldForUpdate()).isEmpty();
+    assertThat(passwords.comparisons()).isEqualTo(1);
   }
 
   private Account tenant(String name, Role role, Optional<EmployeeId> employee) {

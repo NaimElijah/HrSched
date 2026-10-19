@@ -550,7 +550,7 @@ describe('what they declared', () => {
     return release;
   }
 
-  /** Each write replaces the person's whole list, so two in flight can undo each other (#33). */
+  /** One write at a time, so each confirmation is shown against the list its own write left. */
   it('GivenAWithdrawalInFlight_WhenDeclaring_ThenDeclaringWaitsForIt', async () => {
     actingAsEmployee(EMPLOYEE);
     const release = holdWrites(stubbed({ unavailability: { status: 200, body: [ABSENCE] } }));

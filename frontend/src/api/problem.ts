@@ -5,7 +5,10 @@
  * inferred from the Java. The backend answers with RFC 9457 problem details.
  */
 
-/** One working-time rule a roster would break, and for whom. */
+/**
+ * One rule a roster would break, and for whom: a working-time rule, or one that holds whatever
+ * those say, such as one place at a time (ADR-042).
+ */
 export interface Violation {
   readonly employee: string;
   readonly constraint: string;
@@ -24,8 +27,8 @@ export interface ProblemDetail {
  * A request the backend refused.
  *
  * Carries the status so callers can distinguish the cases that mean different things: a 422 listing
- * violations is a roster that breaks the working-time rules, a 422 listing none is some other thing
- * the domain would not do, 403 is a role that may not do this, 404 is a resource that does not
+ * violations is a roster that breaks the rules, a 422 listing none is some other thing the domain
+ * would not do, 403 is a role that may not do this, 404 is a resource that does not
  * exist for this tenant — and, because tenancy answers 404 rather than 403, possibly one that
  * exists for somebody else.
  */
@@ -54,11 +57,13 @@ export class ApiError extends Error {
   }
 
   /**
-   * True when the working-time rules refused it.
+   * True when a roster was refused for the rules it breaks, every one listed: working-time rules,
+   * and those that hold whatever they say, such as one place at a time (ADR-042).
    *
-   * Decided by the violations rather than the status alone: the backend also answers 422 for an
-   * assignee without the shift's qualification, a shift outside the roster's period, or somebody
-   * who would be in two places at once, and those list no rules because they broke none.
+   * Decided by the violations rather than the status alone: the backend also answers 422 when one
+   * assignment made by hand is refused - an assignee without the shift's qualification, a shift
+   * outside the roster's period, somebody who would be in two places at once - and those list
+   * nothing, naming their one reason in the detail instead.
    */
   get isRuleBreach(): boolean {
     return this.status === 422 && this.violations.length > 0;
@@ -89,7 +94,8 @@ export class ApiError extends Error {
 
   /**
    * True when the request clashes with something already settled: a swap somebody else decided, one
-   * that lapsed with its roster, or a shift that already has a swap waiting.
+   * that lapsed with its roster, a shift that already has a swap waiting, or a roster whose status
+   * forbids the change — most often a draft somebody published first.
    */
   get isConflict(): boolean {
     return this.status === 409;

@@ -101,17 +101,17 @@ Three rules hold this together, and each fails the build when broken:
 | --- | --- |
 | `shared.domain.model` | The kernel: `OrganisationId`, `UserId`, `EmployeeId`, `QualificationId`, `Role`, `TimeRange`, and the sealed `Actor` (`TenantActor`, `Operator`). Identities and pure values that cross contexts, with no behaviour of their own. A `TenantActor` also carries the `EmployeeId` it is, when it is one ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). |
 | `access.domain.model` | `Organisation` — the tenant itself — and `Account`, what signs in. An account's `Membership` is sealed into one organisation in one role, or the platform operator, so an operator carrying a role or an employee link is unrepresentable. So is an Employee account that may be used while linked to nobody (R34): the only one linked to nobody at all was stored before the rule, and migration `V9` disabled it until it is linked. `SignInName` and `PasswordHash` both print as redacted. Otherwise deliberately small: the tenancy *types* live in the kernel because every context needs them. |
-| `access.application` | Signing in, renewing and ending a session, reading one's own session and changing one's own password (F14); bootstrapping the platform operator; administering an organisation's own accounts (F15); and onboarding, listing and reading organisations (F13), with the register they live in. Onboarding creates the organisation and its first Admin account in one transaction, so a refused account leaves no organisation behind; that account is created needing a password change, because the one it was given was typed by somebody else. Account administration takes the organisation's advisory lock before it reads, because R14 — an organisation keeps at least one active Admin — is decided by reading and then writing. Onboarding and listing are the platform `Operator`'s alone — the guard is the inverse of every other one here, asking whether the actor belongs to a tenant rather than which role they hold in it. See [ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md). |
+| `access.application` | Signing in, renewing and ending a session, reading one's own session and changing one's own password (F14); bootstrapping the platform operator; administering an organisation's own accounts (F15); and onboarding, listing and reading organisations (F13), with the register they live in. Onboarding creates the organisation and its first Admin account in one transaction, so a refused account leaves no organisation behind; that account is created needing a password change, because the one it was given was typed by somebody else. Account administration takes the organisation's advisory lock before it reads, because R14 — an organisation keeps at least one active Admin — is decided by reading and then writing. It then reads the account it changes with `AccountRepository.findForUpdate`, as a password reset and a change of one's own password do, so two changes to one account take turns rather than one storing over the other ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)); the operator's account, which belongs to no organisation, is held under none. Sign-in makes its one password comparison on an unlocked read and refuses a locked or disabled account from it, before anything is held; otherwise it reads the account again for update and decides on that copy, so a disable, a reset or another attempt's failure committed during the comparison is neither stored over nor ignored; holding the row through the comparison would have told a second attempt which names exist. Onboarding and listing are the platform `Operator`'s alone — the guard is the inverse of every other one here, asking whether the actor belongs to a tenant rather than which role they hold in it. See [ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md). |
 | `notifications.domain.model` | `Notification` — something one person has been told, and whether they have seen it. It carries identifiers, a kind, a time and a flag, and **there is nowhere in it to put a sentence or a name** ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `notifications.application` | Raising and reading notifications. `NotifyUseCase` is this context's **published API** and is deliberately not on a controller; `ReadNotificationsUseCase` is strictly self-service, and whose inbox is read comes from the acting identity rather than from any parameter. Takes a `Clock`, so when something happened is an input rather than an ambient fact. |
 | `workforce.domain.model` | `Employee` (aggregate root: qualifications, unavailability, preferences, contract terms), `Qualification`, `ShiftPreference`, `ContractTerms`. |
-| `workforce.application` | Employee and qualification use cases. `FindRosterableEmployeesUseCase` is this context's **published API**, returning `RosterableEmployee` rather than the aggregate. |
+| `workforce.application` | Employee and qualification use cases. `FindRosterableEmployeesUseCase` is this context's **published API**, returning `RosterableEmployee` rather than the aggregate. A use case that changes an employee reads them with `EmployeeRepository.findForUpdate`, so two changes to one person at once — an Admin's and their own — take turns and both apply ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)). |
 | `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule` and the `WorkingPeriod`s it holds, `HeldWork`. |
 | `scheduling.application` | Shift definition, constraint configuration, roster generation and publication. Assembles the evidence constraints are judged against. |
 | `scheduling.adapter.out.workforce` | An anti-corruption layer: one of **two** classes in scheduling permitted to name another context, and only its published port. |
 | `scheduling.adapter.out.notification` | The other one. Translates "a swap was approved" into the word the `notifications` context uses for it, so nothing inward of the `Notifier` port knows that context exists ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. |
-| `*.adapter.out.persistence` | `Jdbc*Repository` — hand-written SQL through `JdbcClient`, one per driven port, every read carrying its organisation in the `WHERE` clause. The one exception is named as such in its port: `JdbcAccountRepository.findBySignInName`, which sign-in needs because a submitted name is all it has to go on. No ORM: the domain may not be annotated, so mapping is explicit ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). |
+| `*.adapter.out.persistence` | `Jdbc*Repository` — hand-written SQL through `JdbcClient`, one per driven port, every read carrying its organisation in the `WHERE` clause. A `findForUpdate` holds the root's row until the use case's transaction ends, and refuses outside a writable one ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)). The one exception is named as such in its port: `JdbcAccountRepository.findBySignInName`, which sign-in needs because a submitted name is all it has to go on. No ORM: the domain may not be annotated, so mapping is explicit ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). |
 | `*.adapter.out.audit` | `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog` and `NotificationAuditLog` — one per context, each implementing its own context's `AuditTrail` port and turning one recorded change into a structured log event and a counter. All four are named for their contexts because Spring derives a bean name from the simple class name alone, so four classes called `AuditLog` would collide at startup rather than at compile time. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
 | `access.adapter.out.workforce` | `WorkforceEmployeeDirectory` — an anti-corruption layer, and the **only** class in access permitted to name another context. It asks workforce's published port whether an organisation employs somebody and reduces the answer to a boolean on the spot, so a colleague's name never enters the context that writes the access audit trail. |
@@ -190,7 +190,8 @@ sequenceDiagram
 
     B->>A: POST /api/auth/sign-in
     A->>S: signIn(name, password)
-    S->>DB: account by sign-in name, then open a session
+    S->>DB: account by sign-in name, then one password comparison
+    S->>DB: the same account read for update, decided on as held, then open a session
     S-->>A: access token + refresh token
     A-->>B: 200 {accessToken} + Set-Cookie __Secure-hrsched-refresh
 
@@ -248,7 +249,7 @@ sequenceDiagram
     W->>S: publish(actor, organisation, roster)
     S->>S: roster.requireDraft()
     alt not a draft
-        S-->>C: 400, before anything is superseded or recorded
+        S-->>C: 409, before anything is superseded or recorded
     end
     S->>R: violationsFor(each employee schedule)
     alt any rule broken
@@ -479,7 +480,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   because they are already unavailable — and the Scheduler answering it is where that is found out,
   through the same `AssignmentEligibility` the manual path uses. A colleague who already works a
   shift overlapping the one handed over is found out a step later, when the replacement is
-  published.
+  published, and so is anybody else on that roster who has since become unavailable or unqualified.
 - **Publishing supersedes, so exactly one roster is authoritative.** `publish` marks every
   published roster of that organisation whose period overlaps as `SUPERSEDED`. Overlap rather than
   equality decides it, because a partly-overlapping published roster would otherwise still govern
@@ -523,20 +524,40 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   The availability half of that was missing at first, and the asymmetry was the point: generation
   filters candidates through `RosterCandidate.couldCover`, which tests availability, so it refused to
   roster somebody through their declared absence while assigning by hand accepted it — and
-  publication could not catch it afterwards, because unavailability is not a `WorkingTimeConstraint`.
-  `AssignmentEligibility` is one helper for exactly this reason: a rule enforced on one of two paths
-  is not enforced.
+  publication did not catch it afterwards either, because unavailability is not a
+  `WorkingTimeConstraint`. `AssignmentEligibility` is one helper for exactly this reason: a rule
+  enforced on one of two paths is not enforced. Publication now asks its questions too, of every
+  assignment a draft carries.
+- **Publication judges every rule through one judgement, and lists every breach.**
+  `SchedulingService.violationsOf` combines `Roster.violationsUnder` — every overlap (R3, R35) and
+  the working-time rules, judged one employee's schedule at a time — with
+  `AssignmentEligibility.breachesOn` — R5, R4 and R18 for every assignment, against one read of the
+  workforce directory. `publish` refuses with `RosterNotCompliantException` carrying all of them, a
+  422 titled "Roster breaks the rules", so a draft carrying somebody who declared they cannot work
+  after being assigned is refused, and a Scheduler is told everything wrong at once. Somebody whose
+  own work overlaps has their working time left unjudged: a schedule nobody can work has no
+  meaningful rest or daily total. A violation names things by identifier only, and an
+  unavailability breach names the shift, never the span ([ADR-042](../ADRs/ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md)).
 - **Work that cannot be checked refuses publication.** If an assignment names a shift the
   repository cannot return, publication fails with `RosterNotVerifiableException` rather than
   quietly omitting that work from the constraint check. Omission would publish hours nobody
   counted, which is the failure publication exists to prevent.
-- **Nobody is published in two places at once, whatever the rules say.** Building each person's
-  schedule for the constraint check refuses one holding two overlapping shifts with
-  `OverlappingAssignmentException` (R3), before any constraint is evaluated. It cannot be left to
-  the rules: minimum rest is the only one that notices an overlap, it is optional, and an empty
-  constraint set checks nothing — the asymmetry unavailability once had. `assign` asks the same
-  question of the one person being assigned, so the board is told as it happens; publication asks
-  it of everybody, so a swap approval and a generated draft are held to it too. Both answer 422.
+- **A draft can be checked against every rule without publishing it (F34).**
+  `findAssessment` (`GET /api/rosters/{id}/assessment`) runs the same `violationsOf` that
+  `publish` refuses by, and adds coverage: `Roster.shortfallsAmong` lists each shift in the
+  draft's period that it puts fewer people on than required, counting only the draft's own
+  assignments ([#130](https://github.com/NaimElijah/HrSched/issues/130)). It is advisory: named
+  `find…`, it runs read-only, takes neither the publication lock nor a row lock, stores and records
+  nothing, and answers drafts only — a published roster was judged under the version it records
+  (Q9), so asking about one is a 409. Admins and Schedulers may ask ([ADR-042](../ADRs/ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md)).
+- **Nobody is published in two places at once, whatever the rules say.** Judging a roster lists
+  every pair of overlapping shifts in each person's work (R3), whatever the constraint set says. It
+  cannot be left to the rules: minimum rest is the only one that notices an overlap, it is optional,
+  and an empty constraint set checks nothing — the asymmetry unavailability once had. `assign` asks
+  the same question of the one person being assigned and refuses at the first overlap with
+  `OverlappingAssignmentException`, so the board is told as it happens; publication asks it of
+  everybody and lists them all, so a swap approval and a generated draft are held to it too. Both
+  answer 422.
 - **R3 looks across rosters, not within one (R35).** A roster carries every shift overlapping its
   period, so a shift straddling two periods can sit on both, and two rosters that only touch are
   both authoritative. Each person's work on the roster being published is compared with the
@@ -575,13 +596,14 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   application layer and so `@Transactional` cannot go where a reader would look for it
   ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)). A nested use case joins
   its caller's transaction, which is what makes approving a swap atomic.
-- **Two edits of one draft are atomic, but the later still wins.** Two concurrent saves of one
-  roster serialise on its row rather than interleaving, so neither is left half-done; but there is
-  no version column, so the later one overwrites the earlier outright rather than being rejected.
-  Adding one would change port signatures, which is a decision of its own (#33). An edit that waits
-  on a publication of the same draft is the exception: it finds the roster published when it gets
-  the row, and is refused rather than turning it back into a draft. An edit that commits first is
-  still overwritten, by the assignments the publication validated.
+- **Changes to one roster take turns on its row.** `assign` and `unassign` read the draft with
+  `RosterRepository.findForUpdate`, which holds its row until the use case's transaction ends, so a
+  second edit of the same draft waits, then reads the first one's change: both apply. `publish`
+  reads its draft the same way, under the publication lock, so an edit landing between its read and
+  its save waits for it rather than being stored over; an edit that waited on a publication finds
+  the roster published, and is refused. There is no version column to reject the later of two
+  changes, because every command is a change the server makes to what it reads
+  ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)).
 - **Publications within one organisation take turns.** `publish`, `approveSwap`, `rejectSwap` and
   `requestSwap` first call `RosterRepository.lockPublicationsOf`, a transaction-scoped PostgreSQL
   advisory lock per organisation, before reading anything they decide from. A second publication

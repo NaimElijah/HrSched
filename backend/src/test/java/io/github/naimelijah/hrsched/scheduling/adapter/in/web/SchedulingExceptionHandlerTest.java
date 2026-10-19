@@ -99,8 +99,6 @@ class SchedulingExceptionHandlerTest {
         new InvalidHeadcountException(0),
         new InvalidConstraintException("Minimum rest must be positive"),
         new DuplicateAssignmentException(new Assignment(ShiftId.newId(), EmployeeId.newId())),
-        new RosterNotEditableException(
-            RosterId.newId(), RosterStatus.PUBLISHED, "a roster can only be changed while a draft"),
         new UnknownRequiredQualificationException(Set.of(QualificationId.newId())),
         new MalformedRequestException("shift is required"));
   }
@@ -118,7 +116,7 @@ class SchedulingExceptionHandlerTest {
     ProblemDetail problem = handler.handleNotCompliant(breach);
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY.value());
-    assertThat(problem.getTitle()).isEqualTo("Roster breaks the working-time rules");
+    assertThat(problem.getTitle()).isEqualTo("Roster breaks the rules");
   }
 
   @Test
@@ -159,6 +157,20 @@ class SchedulingExceptionHandlerTest {
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Invalid request");
     assertThat(problem.getDetail()).isEqualTo(failure.getMessage());
+  }
+
+  @Test
+  void
+      GivenARosterWhoseStatusForbidsTheChange_WhenTranslated_ThenItIsAConflictCarryingTheMessage() {
+    RosterNotEditableException moved =
+        new RosterNotEditableException(
+            RosterId.newId(), RosterStatus.PUBLISHED, "a roster can only be changed while a draft");
+
+    ProblemDetail problem = handler.handleStatusForbids(moved);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getTitle()).isEqualTo("Roster status forbids this");
+    assertThat(problem.getDetail()).isEqualTo(moved.getMessage());
   }
 
   @Test

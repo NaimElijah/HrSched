@@ -76,9 +76,11 @@ public interface RequestSwapsUseCase {
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException if
    *     the colleague does not hold what the shift demands
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException if the
-   *     resulting roster would break any working-time rule. There is no override
-   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException if
-   *     the colleague already works a shift on that roster overlapping the one handed over
+   *     replacement would break any rule, listing every breach: the colleague already working a
+   *     shift overlapping the one handed over, on that roster or beside it (R3, R35), or anybody on
+   *     the replacement - not only the two people in the swap - who has since become unqualified
+   *     (R4), declared they cannot work (R18) or left the organisation's rosterable people (R5),
+   *     and every working-time rule broken. There is no override (ADR-042)
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException
    *     if a roster overlapping the replacement was published at the same time by a writer that did
    *     not take turns. Approving always does (ADR-027), so this means some other writer skipped

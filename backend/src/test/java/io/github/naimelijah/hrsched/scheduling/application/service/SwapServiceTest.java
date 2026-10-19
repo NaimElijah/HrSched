@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.in.AssignToShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCommand;
@@ -19,8 +20,8 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualified
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
-import io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
@@ -563,7 +564,12 @@ class SwapServiceTest {
             themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), day, ada, grace));
 
     assertThatThrownBy(() -> service.approveSwap(scheduler(ACME), ACME, request))
-        .isInstanceOf(OverlappingAssignmentException.class);
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations())
+                    .extracting(ConstraintViolation::employee, ConstraintViolation::constraint)
+                    .containsExactly(tuple(grace, ConstraintViolation.OVERLAPPING_WORK)));
 
     assertThat(rosters.byId(original.id()).status())
         .describedAs("the roster people are already working to is untouched")
@@ -608,7 +614,58 @@ class SwapServiceTest {
             new RequestSwapCommand(ACME, original.id(), adasNight, ada, grace));
 
     assertThatThrownBy(() -> service.approveSwap(scheduler(ACME), ACME, request))
-        .isInstanceOf(OverlappingAssignmentException.class);
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations())
+                    .singleElement()
+                    .satisfies(
+                        overlap -> {
+                          assertThat(overlap.employee()).isEqualTo(grace);
+                          assertThat(overlap.constraint())
+                              .isEqualTo(ConstraintViolation.OVERLAPPING_WORK);
+                        }));
+
+    assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.SWAP_APPROVED);
+  }
+
+  /**
+   * The consequence the owner accepted with #205. A swap is approved by publishing a replacement
+   * carrying everybody else's work unchanged (ADR-022), and publication judges every rule. Grace
+   * has since declared she cannot work the shift she holds on this roster, so the replacement would
+   * carry her through it, and the swap between two other people is refused until a Scheduler
+   * reassigns her shift - as it already is when the rules have been tightened.
+   */
+  @Test
+  void
+      GivenSomebodyElseOnTheRosterWhoHasSinceDeclaredAbsence_WhenApprovingASwap_ThenItIsRefusedAndNothingChanges() {
+    EmployeeId linus = available(ACME, "Linus", Set.of());
+    ShiftId adasDay = aShift(Set.of());
+    TimeRange tuesday =
+        new TimeRange(Instant.parse("2026-10-06T08:00:00Z"), Instant.parse("2026-10-06T16:00:00Z"));
+    ShiftId gracesTuesday =
+        scheduling.defineShift(
+            scheduler(ACME), new DefineShiftCommand(ACME, tuesday, ZoneOffset.UTC, 1, Set.of()));
+    Roster draft =
+        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+    scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), adasDay, ada));
+    scheduling.assign(
+        scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), gracesTuesday, grace));
+    Roster original = scheduling.publish(scheduler(ACME), ACME, draft.id());
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), adasDay, ada, linus));
+    workforce.declareUnavailable(ACME, grace, tuesday);
+
+    assertThatThrownBy(() -> service.approveSwap(scheduler(ACME), ACME, request))
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations())
+                    .containsExactly(
+                        ConstraintViolation.declaredUnavailable(grace, gracesTuesday)));
 
     assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
     assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);

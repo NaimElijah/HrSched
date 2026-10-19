@@ -3,8 +3,10 @@ package io.github.naimelijah.hrsched.scheduling.application.service;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
+import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
+import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -25,6 +27,30 @@ final class FakeWorkforce implements WorkforceDirectory {
 
   void add(OrganisationId organisation, RosterCandidate candidate) {
     people.computeIfAbsent(organisation, key -> new ArrayList<>()).add(candidate);
+  }
+
+  /**
+   * Somebody declaring, after whatever was decided about them so far, that they cannot work a span.
+   *
+   * @throws IllegalArgumentException if this organisation has nobody by that identity
+   */
+  void declareUnavailable(OrganisationId organisation, EmployeeId employee, TimeRange period) {
+    List<RosterCandidate> theirs = people.getOrDefault(organisation, new ArrayList<>());
+    int at = -1;
+    for (int i = 0; i < theirs.size(); i++) {
+      if (theirs.get(i).id().equals(employee)) {
+        at = i;
+      }
+    }
+    if (at < 0) {
+      throw new IllegalArgumentException("Nobody by that identity to declare anything");
+    }
+    RosterCandidate before = theirs.get(at);
+    List<TimeRange> unavailability = new ArrayList<>(before.unavailability());
+    unavailability.add(period);
+    theirs.set(
+        at,
+        new RosterCandidate(before.id(), before.name(), before.qualifications(), unavailability));
   }
 
   void define(OrganisationId organisation, QualificationId qualification) {
