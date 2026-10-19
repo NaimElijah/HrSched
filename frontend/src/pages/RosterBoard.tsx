@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { ApiError } from '../api/problem';
 import { scheduling } from '../api/scheduling';
 import type { Roster, Shift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
@@ -98,6 +99,14 @@ export function RosterBoard({
       return true;
     } catch (error) {
       setFailure(error);
+      // A conflict means the roster moved on under this board, most often because somebody
+      // published it first (ADR-041). Shown as it now is, so a draft's controls are not left on a
+      // roster that is no longer one, and the list around it catches up too.
+      if (error instanceof ApiError && error.isConflict) {
+        setChanged(null);
+        loaded.reload();
+        onChanged();
+      }
       return false;
     } finally {
       setChanging(false);

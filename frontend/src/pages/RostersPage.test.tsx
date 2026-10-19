@@ -565,6 +565,39 @@ describe('the board of a draft', () => {
     expect(board).not.toHaveTextContent(/No shift falls/);
   });
 
+  /**
+   * Somebody published the draft while this board was open. The assignment is refused as a
+   * conflict, and the board then shows the roster as it now is — published, with nothing left to
+   * edit — rather than leaving a draft's controls on a roster that is no longer one (ADR-041).
+   */
+  it('GivenADraftPublishedMeanwhile_WhenAssigning_ThenTheBoardShowsItPublished', async () => {
+    aDraft();
+    renderPage();
+    const board = await openBoard();
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
+    aDraft({
+      '/api/rosters': { status: 200, body: [published] },
+      '/api/rosters/roster-1': { status: 200, body: published },
+      'POST /api/rosters/roster-1/assignments': {
+        status: 409,
+        body: {
+          title: 'Roster status forbids this',
+          detail: 'Roster roster-1 is PUBLISHED: a roster can only be changed while a draft',
+        },
+      },
+    });
+
+    await assignGrace(board);
+
+    expect(
+      await within(board).findByRole('heading', { name: /^Roster published/ }),
+    ).toBeInTheDocument();
+    expect(within(board).queryByLabelText(/^Who to assign/)).not.toBeInTheDocument();
+    expect(within(board).getByRole('alert')).toHaveTextContent(
+      'a roster can only be changed while a draft',
+    );
+  });
+
   it('GivenAPublishedRoster_WhenOpened_ThenThereAreNoEditingControls', async () => {
     const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
     aDraft({
