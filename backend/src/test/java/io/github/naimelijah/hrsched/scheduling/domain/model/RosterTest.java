@@ -568,6 +568,27 @@ class RosterTest {
         .isInstanceOf(OverlappingAssignmentException.class);
   }
 
+  /**
+   * R35 lets one shift sit on this roster and on the one beside it, carried by the same person
+   * (ADR-033). A clash with that shift is one clash, so it is listed once, not once for each roster
+   * carrying it.
+   */
+  @Test
+  void GivenAShiftHeldHereAndElsewhere_WhenAnotherOfTheirsOverlapsIt_ThenTheClashIsListedOnce() {
+    ShiftId day = ShiftId.newId();
+    ShiftId afternoon = ShiftId.newId();
+    HeldWork theSameDayElsewhere = new HeldWork(RosterId.newId(), day, ADA, MONDAY);
+    Roster roster = draft().with(new Assignment(day, ADA)).with(new Assignment(afternoon, ADA));
+
+    assertThat(
+            roster.violationsUnder(
+                NO_RULES,
+                Map.of(day, utc(MONDAY), afternoon, utc(MONDAY_AFTERNOON)),
+                List.of(theSameDayElsewhere)))
+        .containsExactly(
+            ConstraintViolation.overlappingWork(ADA, day, afternoon, Optional.empty()));
+  }
+
   @Test
   void GivenOverlappingWorkHeldElsewhere_WhenJudged_ThenItIsListedNamingThatRoster() {
     ShiftId day = ShiftId.newId();

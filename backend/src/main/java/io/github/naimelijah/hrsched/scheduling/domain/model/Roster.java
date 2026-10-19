@@ -384,10 +384,11 @@ public final class Roster {
    * <p>Every pair of their own shifts is compared, not only neighbours by start time: a refusal
    * needs only one overlap, but a listing needs them all, and three shifts at once are three pairs.
    *
-   * <p>The same shift held by the same person on another roster is no overlap. R35 lets either
-   * roster carry a shift straddling both periods, and that is one place to be, not two (ADR-033).
-   * Two pieces of work held elsewhere are never compared with each other: if they overlap, that is
-   * a breach of the rosters carrying them, not of this one.
+   * <p>A shift this roster carries for them is compared as theirs, and its copy held on another
+   * roster is not compared again. R35 lets either roster carry a shift straddling both periods,
+   * which is one place to be, not two (ADR-033): the copy is no overlap with itself, and a clash
+   * with it is one clash, listed once. Two pieces of work held elsewhere are never compared with
+   * each other: if they overlap, that is a breach of the rosters carrying them, not of this one.
    */
   private List<Overlap> overlapsOf(
       EmployeeId employee, Map<ShiftId, WorkingPeriod> shiftPeriods, List<HeldWork> heldElsewhere) {
@@ -416,12 +417,11 @@ public final class Roster {
       }
     }
     for (HeldWork held : heldElsewhere) {
-      if (!held.employee().equals(employee)) {
+      if (!held.employee().equals(employee) || theirs.contains(held.shift())) {
         continue;
       }
       for (ShiftId shift : chronological) {
-        if (!shift.equals(held.shift())
-            && shiftPeriods.get(shift).period().overlaps(held.period())) {
+        if (shiftPeriods.get(shift).period().overlaps(held.period())) {
           overlaps.add(new Overlap(employee, shift, held.shift(), Optional.of(held.roster())));
         }
       }
