@@ -134,6 +134,37 @@ public final class RacingTransactions {
     }
   }
 
+  /**
+   * Returns once some backend is waiting on a lock the backend {@code holder} holds, or once {@code
+   * other} has finished without waiting - which is the failure a caller is usually testing for, and
+   * should fail on its own assertion rather than hang.
+   *
+   * <p>For a race whose waiting side is not known in advance, such as a request served by whatever
+   * connection its pool lends. Asks the live {@code pg_locks} view, from a connection of its own
+   * and outside any transaction: {@code pg_stat_activity} is snapshotted once per transaction, so a
+   * backend that connected after the first look would never be seen.
+   *
+   * @throws IllegalStateException if neither has happened within {@link #STUCK_AFTER_SECONDS}
+   */
+  public static void awaitSomebodyWaitingOn(int holder, Future<?> other) {
+    long giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(STUCK_AFTER_SECONDS);
+    while (!other.isDone() && !isAnybodyWaitingOn(holder)) {
+      if (System.nanoTime() > giveUpAt) {
+        throw new IllegalStateException("Nothing ever waited on the holder");
+      }
+    }
+  }
+
+  private static boolean isAnybodyWaitingOn(int holder) {
+    return PostgresDatabase.jdbcClient()
+        .sql(
+            "SELECT EXISTS (SELECT 1 FROM pg_locks"
+                + " WHERE NOT granted AND :holder = ANY (pg_blocking_pids(pid)))")
+        .param("holder", holder)
+        .query(Boolean.class)
+        .single();
+  }
+
   private static boolean isWaitingOnALock(int pid) {
     return PostgresDatabase.jdbcClient()
         .sql("SELECT cardinality(pg_blocking_pids(:pid)) > 0")

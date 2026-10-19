@@ -4,6 +4,7 @@ import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingH
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.as;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.asThemself;
 import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.STUCK_AFTER_SECONDS;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitSomebodyWaitingOn;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -273,26 +274,6 @@ class RosteringHttpTest {
         .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.assignments.length()").value(2));
-  }
-
-  /**
-   * Returns once some other backend is waiting on a lock {@code holder} holds, or once {@code
-   * other} has finished without ever waiting - which is the failure the caller is testing for, and
-   * should fail on its assertion rather than hang.
-   */
-  private void awaitSomebodyWaitingOn(int holder, Future<?> other) {
-    long giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(STUCK_AFTER_SECONDS);
-    while (!other.isDone()
-        && !jdbc.sql(
-                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity"
-                    + " WHERE :holder = ANY (pg_blocking_pids(pid)))")
-            .param("holder", holder)
-            .query(Boolean.class)
-            .single()) {
-      if (System.nanoTime() > giveUpAt) {
-        throw new IllegalStateException("The second Scheduler never reached the database");
-      }
-    }
   }
 
   @Test
