@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Driven adapter storing employees in PostgreSQL.
@@ -41,6 +42,13 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public class JdbcEmployeeRepository implements EmployeeRepository {
+
+  /** One employee's own row, by identity and only within their organisation. */
+  private static final String ONE_EMPLOYEE =
+      """
+      SELECT id, organisation_id, name, weekly_contracted_seconds FROM employee
+      WHERE organisation_id = :organisation AND id = :id
+      """;
 
   private final JdbcClient jdbc;
 
@@ -135,11 +143,29 @@ public class JdbcEmployeeRepository implements EmployeeRepository {
 
   @Override
   public Optional<Employee> findById(OrganisationId organisation, EmployeeId id) {
-    return jdbc.sql(
-            """
-            SELECT id, organisation_id, name, weekly_contracted_seconds FROM employee
-            WHERE organisation_id = :organisation AND id = :id
-            """)
+    return one(organisation, id, ONE_EMPLOYEE);
+  }
+
+  /**
+   * Holds the employee's own row and nothing else: the statement reads no other table, and what
+   * they own is read by later ones, so a reader that waited reads it as the previous holder
+   * committed it (ADR-041).
+   */
+  @Override
+  public Optional<Employee> findForUpdate(OrganisationId organisation, EmployeeId id) {
+    // In autocommit the row would be released as soon as this statement ended, and a read-only
+    // transaction cannot hold it at all. Either way the caller is not the writer it believes it is.
+    if (!TransactionSynchronizationManager.isActualTransactionActive()
+        || TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
+      throw new IllegalStateException(
+          "An employee can only be read for update inside a writable transaction; anywhere else"
+              + " nothing would hold them");
+    }
+    return one(organisation, id, ONE_EMPLOYEE + "FOR UPDATE");
+  }
+
+  private Optional<Employee> one(OrganisationId organisation, EmployeeId id, String sql) {
+    return jdbc.sql(sql)
         .param("organisation", organisation.value())
         .param("id", id.value())
         .query(JdbcEmployeeRepository::toBareEmployee)

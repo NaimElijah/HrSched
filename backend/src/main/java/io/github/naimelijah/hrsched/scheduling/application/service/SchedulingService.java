@@ -268,9 +268,14 @@ public class SchedulingService
     return amended;
   }
 
+  /**
+   * Held from this read until the edit commits, because the edit stores the roster whole: a second
+   * edit of the same draft waits, then reads this one's change rather than storing over it (#33,
+   * ADR-041).
+   */
   private Roster draftOrUnknown(OrganisationId organisation, RosterId rosterId) {
     return rosters
-        .findById(organisation, rosterId)
+        .findForUpdate(organisation, rosterId)
         .orElseThrow(() -> new UnknownRosterException(rosterId));
   }
 
@@ -299,9 +304,11 @@ public class SchedulingService
     // Before anything is read. What this supersedes is decided from what it reads, and a
     // publication still in flight would otherwise be invisible to it (ADR-027).
     rosters.lockPublicationsOf(organisation);
+    // Held, as an edit holds it: what is published is what was judged, so an edit landing between
+    // this read and the save below would be stored over (ADR-041).
     Roster draft =
         rosters
-            .findById(organisation, rosterId)
+            .findForUpdate(organisation, rosterId)
             .orElseThrow(() -> new UnknownRosterException(rosterId));
     // Before anything else is read or written. Supersession saves and records, and an audit line
     // outlives the rollback of a refusal that came after it (#133).

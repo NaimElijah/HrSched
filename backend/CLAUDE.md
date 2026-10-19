@@ -94,11 +94,11 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
   stays inside one context. A migration rewriting stored rows gets a test that migrates to the
   version before, inserts rows as it stored them, then migrates on (see
   `AppendOnlyRosterHistoryMigrationTest`).
-- **Conflicts come from the database, not from version columns.** An exclusion violation or
-  deadlock on a published save (SQLState 23P01, 40P01) becomes `RosterPublicationConflictException`,
-  a 409. A revision that loses a race lets its unique violation surface — never
-  `ON CONFLICT DO NOTHING`. An upsert's `WHERE` keeps `organisation_id` equal to `EXCLUDED`'s
-  (`IS NOT DISTINCT FROM` on `account`), and a write that touched no row is refused.
+- **Conflicts come from the database, not from version columns.** A use case changing an aggregate
+  reads it with `findForUpdate`, so a concurrent change waits and both apply (ADR-041). A published
+  save's exclusion violation or deadlock (23P01, 40P01) is a 409; a revision losing a race lets its
+  unique violation surface, never `ON CONFLICT DO NOTHING`. Upserts keep `organisation_id` equal to
+  `EXCLUDED`'s, and a write touching no row is refused.
 
 ## Transactions, concurrency and time
 

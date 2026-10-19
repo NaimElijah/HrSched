@@ -74,6 +74,18 @@ final class FakeRosters implements RosterRepository {
         .filter(roster -> roster.organisation().equals(organisation));
   }
 
+  /**
+   * Holds nothing, for the reason {@link #lockPublicationsOf} holds nothing. Recorded instead, so a
+   * test can see a use case read for update the roster it is about to change. That the read really
+   * makes a second edit wait is proven against PostgreSQL, in {@code JdbcRosterRepositoryTest}.
+   */
+  @Override
+  public Optional<Roster> findForUpdate(OrganisationId organisation, RosterId id) {
+    log.add(CallLog.Call.FIND_ROSTER_FOR_UPDATE);
+    return Optional.ofNullable(stored.get(id))
+        .filter(roster -> roster.organisation().equals(organisation));
+  }
+
   @Override
   public List<Roster> findByOrganisation(OrganisationId organisation) {
     log.add(CallLog.Call.FIND_ROSTERS);

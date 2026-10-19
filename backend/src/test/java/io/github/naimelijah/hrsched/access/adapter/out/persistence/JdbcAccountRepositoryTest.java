@@ -1,5 +1,8 @@
 package io.github.naimelijah.hrsched.access.adapter.out.persistence;
 
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitWaitingOnALockOr;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.backendServingThisTransaction;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.refusalsOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,7 +24,10 @@ import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -403,6 +409,125 @@ class JdbcAccountRepositoryTest {
         new OperatorMembership(),
         false,
         CREATED_AT);
+  }
+
+  /**
+   * #33's lost update, at its most dangerous. An Admin disables an account while a failed sign-in
+   * on it is being counted. Each reads the account, changes it and stores it whole, so without a
+   * lock one undoes the other: either the disabled account is enabled again, or the failure is not
+   * counted towards lockout (R17, R29). Read for update, the second waits for the first, and both
+   * hold.
+   *
+   * <p>The disable stores only once the count is waiting on its row. If the count does not wait at
+   * all, the disable goes on as soon as the count has read, and whichever is lost fails the test.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenAnAdminDisablingAnAccount_WhenAFailedSignInOnItReadsItForUpdate_ThenItWaitsAndBothHold()
+      throws Exception {
+    Account account = tenant(ACME, "ada@example.com", Role.SCHEDULER);
+    repository.save(account);
+    LockoutPolicy lockAfterThree = new LockoutPolicy(3, Duration.ofMinutes(15));
+
+    AtomicInteger signIn = new AtomicInteger();
+    AtomicBoolean signInHasRead = new AtomicBoolean();
+    List<Throwable> refusals =
+        refusalsOf(
+            waitForTheOther -> {
+              Account held =
+                  repository.findForUpdate(Optional.of(ACME), account.id()).orElseThrow();
+              waitForTheOther.run();
+              awaitWaitingOnALockOr(signIn.get(), signInHasRead::get);
+              repository.save(held.disabled());
+            },
+            waitForTheOther -> {
+              signIn.set(backendServingThisTransaction());
+              waitForTheOther.run();
+              Account read =
+                  repository.findForUpdate(Optional.of(ACME), account.id()).orElseThrow();
+              signInHasRead.set(true);
+              repository.save(read.recordFailedSignIn(CREATED_AT, lockAfterThree));
+            });
+
+    assertThat(refusals).isEmpty();
+    Account stored = repository.find(ACME, account.id()).orElseThrow();
+    assertThat(stored.active()).describedAs("the disable survived").isFalse();
+    assertThat(stored.failedSignIns()).describedAs("the failure was counted").isEqualTo(1);
+  }
+
+  /**
+   * In autocommit the row would be released the moment the statement reading it ended, so the
+   * caller would believe it held an account nobody was waiting on.
+   */
+  @Test
+  void GivenNoTransaction_WhenReadingAnAccountForUpdate_ThenItIsRefused() {
+    Account account = tenant(ACME, "ada@example.com", Role.SCHEDULER);
+    repository.save(account);
+
+    assertThatThrownBy(() -> repository.findForUpdate(Optional.of(ACME), account.id()))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  /** A use case named {@code find…} runs read-only, where PostgreSQL refuses to hold a row. */
+  @Test
+  void GivenAReadOnlyTransaction_WhenReadingAnAccountForUpdate_ThenItIsRefused() {
+    Account account = tenant(ACME, "ada@example.com", Role.SCHEDULER);
+    repository.save(account);
+    TransactionTemplate reading = new TransactionTemplate(PostgresDatabase.transactions());
+    reading.setReadOnly(true);
+
+    assertThatThrownBy(
+            () ->
+                reading.executeWithoutResult(
+                    status -> repository.findForUpdate(Optional.of(ACME), account.id())))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void GivenAnAccountOfAnotherOrganisation_WhenReadForUpdateInOurs_ThenNothingIsReturned() {
+    Account theirs = tenant(RIVAL, "theirs@example.com", Role.ADMIN);
+    repository.save(theirs);
+
+    assertThat(heldInATransaction(Optional.of(ACME), theirs.id())).isEmpty();
+  }
+
+  /** The operator's row carries no organisation, so it is held under none. */
+  @Test
+  void GivenTheOperator_WhenReadForUpdateUnderNoOrganisation_ThenItIsFound() {
+    Account operator = operator("operator@example.com");
+    repository.save(operator);
+
+    assertThat(heldInATransaction(Optional.empty(), operator.id()))
+        .get()
+        .extracting(Account::id)
+        .isEqualTo(operator.id());
+  }
+
+  /**
+   * An empty organisation means the operator and nobody else, so it cannot be used to reach a
+   * tenant's account without naming its organisation.
+   */
+  @Test
+  void GivenATenantAccount_WhenReadForUpdateUnderNoOrganisation_ThenNothingIsReturned() {
+    Account ours = tenant(ACME, "ours@example.com", Role.ADMIN);
+    repository.save(ours);
+
+    assertThat(heldInATransaction(Optional.empty(), ours.id())).isEmpty();
+  }
+
+  /** And the operator is not reached by naming an organisation, whichever one. */
+  @Test
+  void GivenTheOperator_WhenReadForUpdateInAnOrganisation_ThenNothingIsReturned() {
+    Account operator = operator("operator@example.com");
+    repository.save(operator);
+
+    assertThat(heldInATransaction(Optional.of(ACME), operator.id())).isEmpty();
+  }
+
+  private Optional<Account> heldInATransaction(
+      Optional<OrganisationId> organisation, UserId account) {
+    return new TransactionTemplate(PostgresDatabase.transactions())
+        .execute(status -> repository.findForUpdate(organisation, account));
   }
 
   /**

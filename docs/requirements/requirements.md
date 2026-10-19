@@ -271,9 +271,16 @@ now owed ([#27](https://github.com/NaimElijah/HrSched/issues/27)).
   versioned migration. Roster history is **append-only**, so that what was authoritative at any
   past moment can be reconstructed (R37, Q24): a roster records when it was published and when it
   was superseded, each once, and nothing recorded is rewritten. Nothing is purged and no retention
-  period is set — Q23.
+  period is set — Q23. **Concurrent changes to one roster, employee or account take turns, and
+  none is lost** ([#33](https://github.com/NaimElijah/HrSched/issues/33)): a failed sign-in cannot
+  undo an Admin's disable or reset, nor open a session with the password a reset replaced.
   *Enforced by `Jdbc*Repository` (×10) and their adapter tests, `TransactionalUseCases`,
-  `SwapHttpTest`; [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md),
+  `SwapHttpTest`; for concurrent changes, `findForUpdate` in `JdbcRosterRepository`,
+  `JdbcEmployeeRepository` and `JdbcAccountRepository`, raced on real threads in their adapter
+  tests and in `RosteringHttpTest.GivenTwoSchedulersAssigningToOneDraftAtOnce_WhenBothCommit_ThenBothAssignmentsAreKept`,
+  and sign-in in `SessionServiceTest`;
+  [ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md),
+  [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md),
   [ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md),
   [ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md).*
 - **Performance and scale** — one deployment holds up to **100 organisations**; one organisation

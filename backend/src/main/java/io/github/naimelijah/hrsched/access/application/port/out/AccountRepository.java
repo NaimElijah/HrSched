@@ -101,6 +101,26 @@ public interface AccountRepository {
   Optional<Account> findForAuthentication(UserId account);
 
   /**
+   * Reads an account and holds it until the calling use case finishes, so another use case reading
+   * it the same way waits, and then reads what this one stored.
+   *
+   * <p>For a use case that changes the account it reads. An account is stored whole, so a change
+   * made to a copy read before another committed would store over it: a failed sign-in counted on a
+   * copy read before an Admin disabled the account would enable it again (#33, ADR-041).
+   *
+   * <p>Scoped as {@link #find(OrganisationId, UserId)} is, except that an empty organisation names
+   * the platform operator, whose account belongs to none. A tenant's account is never found under
+   * the operator's empty organisation, nor the operator's under any organisation.
+   *
+   * @param organisation the organisation the account must belong to, or empty for the operator's
+   * @param account which account to read and hold
+   * @return the account, or empty if there is no such account where it was looked for
+   * @throws IllegalStateException if called outside a writable unit of work, where there is nothing
+   *     to hold the account until
+   */
+  Optional<Account> findForUpdate(Optional<OrganisationId> organisation, UserId account);
+
+  /**
    * Takes an organisation's account administration, so that two administrators changing accounts at
    * once take turns rather than both deciding against the same stored state.
    *

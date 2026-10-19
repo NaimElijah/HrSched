@@ -41,7 +41,9 @@ import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
 import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.security.SecureRandom;
 import java.time.Clock;
@@ -126,19 +128,39 @@ public class SessionService
     // Always exactly one comparison, whatever was found, so that how long a refusal takes says
     // nothing about whether the name exists.
     PasswordHash against = found.map(Account::passwordHash).orElse(dummyHash);
-    boolean passwordMatches = passwords.matches(command.password(), against);
+    boolean matchedWhenRead = passwords.matches(command.password(), against);
 
     if (found.isEmpty()) {
       return new SignInOutcome.Refused(Optional.empty(), SignInRefusal.UNKNOWN_ACCOUNT);
     }
-    Account account = found.get();
-    if (account.isLockedAt(now)) {
-      // Nothing is counted while locked: a lock that extended itself on every attempt would let
-      // anybody keep an account shut indefinitely just by trying.
-      return new SignInOutcome.Refused(Optional.of(account.id()), SignInRefusal.LOCKED);
+    // A locked or disabled account is refused from the unlocked read, before anything is held, so
+    // it costs what an unknown name costs: one read, one comparison, and no write. That read can be
+    // stale only towards refusing - an account unlocked or restored a moment ago is refused once
+    // more - never towards letting somebody in.
+    Optional<SignInOutcome> barredWhenRead = barred(found.get(), now);
+    if (barredWhenRead.isPresent()) {
+      return barredWhenRead.get();
     }
-    if (!account.active()) {
-      return new SignInOutcome.Refused(Optional.of(account.id()), SignInRefusal.DISABLED);
+    // Decided on the account as it is once held, not as it was read before the comparison. A
+    // disable, a reset or another attempt's failure committed during that comparison would
+    // otherwise be stored over by the failure counted below, or ignored by a sign-in it should
+    // refuse (ADR-041). Held only now, after the comparison: holding it through the comparison
+    // would make a second attempt on a real name slower than one on an unknown name, and would let
+    // a stream of guesses keep the account from an Admin.
+    Optional<Account> held = accounts.findForUpdate(found.get().organisation(), found.get().id());
+    if (held.isEmpty()) {
+      return new SignInOutcome.Refused(Optional.empty(), SignInRefusal.UNKNOWN_ACCOUNT);
+    }
+    Account account = held.get();
+    // Compared again only if a reset replaced the hash meanwhile: the old password must not open a
+    // session the reset's revocation never saw.
+    boolean passwordMatches =
+        account.passwordHash().equals(against)
+            ? matchedWhenRead
+            : passwords.matches(command.password(), account.passwordHash());
+    Optional<SignInOutcome> barredWhenHeld = barred(account, now);
+    if (barredWhenHeld.isPresent()) {
+      return barredWhenHeld.get();
     }
     if (!passwordMatches) {
       return refuseAndCount(account, now);
@@ -244,10 +266,12 @@ public class SessionService
     Objects.requireNonNull(command, "command must not be null");
     Instant now = clock.instant();
     // Authenticated moments ago, so an account that is not there is a fault rather than a refusal,
-    // and fails loudly instead of being reported as a wrong password.
+    // and fails loudly instead of being reported as a wrong password. Held, because the change
+    // stores the account whole: a disable or a reset committed meanwhile would otherwise be stored
+    // over (ADR-041).
     Account account =
         accounts
-            .findForAuthentication(actor.id())
+            .findForUpdate(organisationOf(actor), actor.id())
             .orElseThrow(
                 () ->
                     new IllegalStateException(
@@ -318,6 +342,25 @@ public class SessionService
             owner.flatMap(Account::organisation), session.account(), change, session.id().value()));
   }
 
+  /**
+   * A refusal that no password could change: the account is locked, or disabled. Checked on the
+   * account as first read and again once it is held, so a lock or a disable committed during the
+   * comparison still refuses.
+   */
+  private static Optional<SignInOutcome> barred(Account account, Instant now) {
+    if (account.isLockedAt(now)) {
+      // Nothing is counted while locked: a lock that extended itself on every attempt would let
+      // anybody keep an account shut indefinitely just by trying.
+      return Optional.of(
+          new SignInOutcome.Refused(Optional.of(account.id()), SignInRefusal.LOCKED));
+    }
+    if (!account.active()) {
+      return Optional.of(
+          new SignInOutcome.Refused(Optional.of(account.id()), SignInRefusal.DISABLED));
+    }
+    return Optional.empty();
+  }
+
   private SignInOutcome refuseAndCount(Account account, Instant now) {
     Account counted = account.recordFailedSignIn(now, lockout);
     accounts.save(counted);
@@ -371,6 +414,14 @@ public class SessionService
     } catch (InvalidSignInNameException notAName) {
       return Optional.empty();
     }
+  }
+
+  /** Where the actor's own account is kept: in their organisation, or in none for the operator. */
+  private static Optional<OrganisationId> organisationOf(Actor actor) {
+    return switch (actor) {
+      case TenantActor tenant -> Optional.of(tenant.organisation());
+      case Operator operator -> Optional.empty();
+    };
   }
 
   private void record(Account account, AccessChange change, java.util.UUID subject) {

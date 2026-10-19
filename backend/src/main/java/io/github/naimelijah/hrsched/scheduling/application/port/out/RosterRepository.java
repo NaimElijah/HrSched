@@ -50,5 +50,22 @@ public interface RosterRepository {
 
   Optional<Roster> findById(OrganisationId organisation, RosterId id);
 
+  /**
+   * Reads a roster and holds it until the calling use case finishes, so another use case reading it
+   * the same way waits, and then reads what this one stored.
+   *
+   * <p>For a use case that changes the roster it reads. A roster is stored whole, so two edits
+   * reading it at once would each store over the other's, and a publication reading it beside an
+   * edit would store the copy it judged over that edit (#33, ADR-041). A use case that only reads
+   * uses {@link #findById}: it runs read-only, where nothing can be held.
+   *
+   * @param organisation whose roster it must be
+   * @param id the roster to read and hold
+   * @return the roster, if this organisation holds one with that identity
+   * @throws IllegalStateException if called outside a writable unit of work, where there is nothing
+   *     to hold the roster until
+   */
+  Optional<Roster> findForUpdate(OrganisationId organisation, RosterId id);
+
   List<Roster> findByOrganisation(OrganisationId organisation);
 }

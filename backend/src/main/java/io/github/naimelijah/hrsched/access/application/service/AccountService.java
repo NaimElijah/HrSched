@@ -251,9 +251,14 @@ public class AccountService implements BootstrapOperatorUseCase, ManageAccountsU
         });
   }
 
+  /**
+   * Held from this read until the change commits, because the change stores the account whole: a
+   * failed sign-in counted on a copy read before this change committed would otherwise undo it
+   * (#33, ADR-041). Every caller is a change; reads use {@code find} directly.
+   */
   private Account load(OrganisationId organisation, UserId account) {
     return accounts
-        .find(organisation, account)
+        .findForUpdate(Optional.of(organisation), account)
         .orElseThrow(() -> new UnknownAccountException(account));
   }
 

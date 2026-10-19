@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { ApiError } from '../api/problem';
 import { scheduling } from '../api/scheduling';
 import type { Roster, Shift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
@@ -50,7 +51,11 @@ export function RosterBoard({
   roster: string;
   /** Everybody who might be assigned, and how to name them. */
   people: readonly Employee[];
-  /** Called once a change is stored, so whatever lists rosters can catch up. */
+  /**
+   * Called whenever the stored roster may have moved on from what the list shows: a change stored
+   * here, or one refused because somebody else changed the roster first. Either way, whatever lists
+   * rosters should read them again.
+   */
   onChanged: () => void;
 }) {
   const sessionKey = useSessionKey();
@@ -98,6 +103,14 @@ export function RosterBoard({
       return true;
     } catch (error) {
       setFailure(error);
+      // A conflict means the roster moved on under this board, most often because somebody
+      // published it first (ADR-041). Shown as it now is, so a draft's controls are not left on a
+      // roster that is no longer one, and the list around it catches up too.
+      if (error instanceof ApiError && error.isConflict) {
+        setChanged(null);
+        loaded.reload();
+        onChanged();
+      }
       return false;
     } finally {
       setChanging(false);

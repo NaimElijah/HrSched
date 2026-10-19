@@ -496,4 +496,37 @@ class SwapHttpTest {
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.title").value("Already requested"));
   }
+
+  /**
+   * A draft binds nobody, so there is nothing yet to swap. The roster's state is what refuses the
+   * ask, not anything in it, so it is a conflict, as asking against a replaced roster is.
+   */
+  @Test
+  void GivenADraftRoster_WhenAskingForASwapAgainstIt_ThenItIsAConflict() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada Lovelace");
+    String grace = addEmployee(organisation, "Grace Hopper");
+    String roster =
+        JsonPath.read(
+            created(
+                as(mockMvc, post("/api/rosters"), organisation, "SCHEDULER")
+                    .content(
+                        "{\"start\":\"2026-12-14T00:00:00Z\",\"end\":\"2026-12-15T00:00:00Z\"}")),
+            "$.id");
+    String shift = defineShift(organisation, "2026-12-14T08:00:00Z", "2026-12-14T16:00:00Z");
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, ada)))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, post("/api/swaps"), organisation, ada)
+                .content(
+                    "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
+                        .formatted(roster, shift, ada, grace)))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.title").value("Roster status forbids this"));
+  }
 }

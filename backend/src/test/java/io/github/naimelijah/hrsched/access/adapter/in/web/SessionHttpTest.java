@@ -1,10 +1,14 @@
 package io.github.naimelijah.hrsched.access.adapter.in.web;
 
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.STUCK_AFTER_SECONDS;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitSomebodyWaitingOn;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.access.application.port.in.ManageAccountsUseCase;
+import io.github.naimelijah.hrsched.access.application.port.in.ResetPasswordCommand;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
@@ -14,6 +18,7 @@ import io.github.naimelijah.hrsched.access.domain.model.SignInName;
 import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
+import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
@@ -24,13 +29,20 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
@@ -39,6 +51,8 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Drives reading one's own session and changing one's own password, and every way a token stops
@@ -78,6 +92,53 @@ class SessionHttpTest {
   @Autowired private PasswordHasher passwords;
   @Autowired private JwtEncoder encoder;
   @Autowired private JwtDecoder decoder;
+  @Autowired private ManageAccountsUseCase manageAccounts;
+  @Autowired private PlatformTransactionManager transactions;
+  @Autowired private JdbcClient jdbc;
+
+  /**
+   * #33's sign-in race, end to end, through the real use cases, their transactions and the real
+   * database. An Admin resets a password because somebody else may know it. The reset is held open,
+   * its new hash stored but not committed, until a sign-in with the old password is waiting on the
+   * account; only then does it commit. That sign-in must be refused, and no session may begin.
+   * Deciding on the account it read before the reset, the sign-in let the old password in, and
+   * opened a session the reset's revocation never saw (R17, ADR-041).
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenAPasswordResetInFlight_WhenSigningInWithTheOldPassword_ThenNoSessionBegins()
+      throws Exception {
+    OrganisationId acme = anOrganisation();
+    Account ada = aTenant(acme, Role.SCHEDULER, PASSWORD, false);
+    TenantActor admin = new TenantActor(UserId.newId(), acme, Role.ADMIN);
+
+    ExecutorService signingIn = Executors.newSingleThreadExecutor();
+    AtomicReference<Future<MockHttpServletResponse>> attempt = new AtomicReference<>();
+    MockHttpServletResponse answered;
+    try {
+      new TransactionTemplate(transactions)
+          .executeWithoutResult(
+              held -> {
+                manageAccounts.resetPassword(
+                    admin, new ResetPasswordCommand(acme, ada.id(), ANOTHER_PASSWORD));
+                int reset = jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single();
+                attempt.set(signingIn.submit(() -> signIn(ada, PASSWORD)));
+                awaitSomebodyWaitingOn(reset, attempt.get());
+              });
+      answered = attempt.get().get(STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
+    } finally {
+      signingIn.shutdownNow();
+    }
+
+    assertThat(answered.getStatus()).describedAs("the old password is refused").isEqualTo(401);
+    assertThat(
+            jdbc.sql("SELECT count(*) FROM sign_in_session WHERE account_id = :account")
+                .param("account", ada.id().value())
+                .query(Integer.class)
+                .single())
+        .describedAs("no session outlives the reset")
+        .isZero();
+  }
 
   @Test
   void

@@ -106,7 +106,6 @@ public class SchedulingExceptionHandler {
     InvalidHeadcountException.class,
     InvalidConstraintException.class,
     DuplicateAssignmentException.class,
-    RosterNotEditableException.class,
     UnknownRequiredQualificationException.class,
     SwapWithThemselfException.class,
     MalformedRequestException.class
@@ -232,6 +231,21 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("No longer pending");
+    return problem;
+  }
+
+  /**
+   * A change the roster's status forbids: editing or publishing a roster that is no longer a draft,
+   * or asking for a swap against one that is not the published roster. Nothing about the request
+   * was wrong; the roster is not, or is no longer, in the state it asks about. Most often somebody
+   * published it first, and an edit that waited for that publication finds it so (ADR-041). The
+   * caller resolves it by reloading, which makes it a conflict rather than a bad request.
+   */
+  @ExceptionHandler(RosterNotEditableException.class)
+  public ProblemDetail handleStatusForbids(RosterNotEditableException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    problem.setTitle("Roster status forbids this");
     return problem;
   }
 
