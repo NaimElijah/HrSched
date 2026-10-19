@@ -89,13 +89,14 @@ public interface PlanRostersUseCase {
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException if the
    *     roster is not a draft. Checked as soon as the roster is found, before anything else is
    *     read, superseded or recorded
-   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException if
-   *     it puts anybody on two shifts at once, whatever the rules say: two of its own, or one
-   *     beside work they hold on a published roster that stays authoritative once it lands (R35).
-   *     Checked before the rules
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException if a
-   *     shift it assigns, or one its people hold on such a roster, cannot be resolved
-   * @throws RosterNotCompliantException if it breaks any rule. There is no override
+   *     shift it assigns, or one its people hold on a published roster that stays authoritative
+   *     once it lands, cannot be resolved
+   * @throws RosterNotCompliantException if it breaks any rule, listing every breach: anybody on two
+   *     shifts at once, whatever the rules say - two of its own, or one beside work they hold on
+   *     such a roster (R35) - anybody lacking a shift's qualifications (R4), on it through time
+   *     they declared they cannot work (R18) or not of the organisation (R5), and every
+   *     working-time rule broken. There is no override
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException
    *     if a roster overlapping it was published at the same time by a writer that did not take
    *     turns. Publishing through this port always does (ADR-027), so this means some other writer

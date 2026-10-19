@@ -480,7 +480,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   because they are already unavailable — and the Scheduler answering it is where that is found out,
   through the same `AssignmentEligibility` the manual path uses. A colleague who already works a
   shift overlapping the one handed over is found out a step later, when the replacement is
-  published.
+  published, and so is anybody else on that roster who has since become unavailable or unqualified.
 - **Publishing supersedes, so exactly one roster is authoritative.** `publish` marks every
   published roster of that organisation whose period overlaps as `SUPERSEDED`. Overlap rather than
   equality decides it, because a partly-overlapping published roster would otherwise still govern
@@ -524,20 +524,32 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   The availability half of that was missing at first, and the asymmetry was the point: generation
   filters candidates through `RosterCandidate.couldCover`, which tests availability, so it refused to
   roster somebody through their declared absence while assigning by hand accepted it — and
-  publication could not catch it afterwards, because unavailability is not a `WorkingTimeConstraint`.
-  `AssignmentEligibility` is one helper for exactly this reason: a rule enforced on one of two paths
-  is not enforced.
+  publication did not catch it afterwards either, because unavailability is not a
+  `WorkingTimeConstraint`. `AssignmentEligibility` is one helper for exactly this reason: a rule
+  enforced on one of two paths is not enforced. Publication now asks its questions too, of every
+  assignment a draft carries.
+- **Publication judges every rule through one judgement, and lists every breach.**
+  `SchedulingService.violationsOf` combines `Roster.violationsUnder` — every overlap (R3, R35) and
+  the working-time rules, judged one employee's schedule at a time — with
+  `AssignmentEligibility.breachesOn` — R5, R4 and R18 for every assignment, against one read of the
+  workforce directory. `publish` refuses with `RosterNotCompliantException` carrying all of them, a
+  422 titled "Roster breaks the rules", so a draft carrying somebody who declared they cannot work
+  after being assigned is refused, and a Scheduler is told everything wrong at once. Somebody whose
+  own work overlaps has their working time left unjudged: a schedule nobody can work has no
+  meaningful rest or daily total. A violation names things by identifier only, and an
+  unavailability breach names the shift, never the span ([ADR-042](../ADRs/ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md)).
 - **Work that cannot be checked refuses publication.** If an assignment names a shift the
   repository cannot return, publication fails with `RosterNotVerifiableException` rather than
   quietly omitting that work from the constraint check. Omission would publish hours nobody
   counted, which is the failure publication exists to prevent.
-- **Nobody is published in two places at once, whatever the rules say.** Building each person's
-  schedule for the constraint check refuses one holding two overlapping shifts with
-  `OverlappingAssignmentException` (R3), before any constraint is evaluated. It cannot be left to
-  the rules: minimum rest is the only one that notices an overlap, it is optional, and an empty
-  constraint set checks nothing — the asymmetry unavailability once had. `assign` asks the same
-  question of the one person being assigned, so the board is told as it happens; publication asks
-  it of everybody, so a swap approval and a generated draft are held to it too. Both answer 422.
+- **Nobody is published in two places at once, whatever the rules say.** Judging a roster lists
+  every pair of overlapping shifts in each person's work (R3), whatever the constraint set says. It
+  cannot be left to the rules: minimum rest is the only one that notices an overlap, it is optional,
+  and an empty constraint set checks nothing — the asymmetry unavailability once had. `assign` asks
+  the same question of the one person being assigned and refuses at the first overlap with
+  `OverlappingAssignmentException`, so the board is told as it happens; publication asks it of
+  everybody and lists them all, so a swap approval and a generated draft are held to it too. Both
+  answer 422.
 - **R3 looks across rosters, not within one (R35).** A roster carries every shift overlapping its
   period, so a shift straddling two periods can sit on both, and two rosters that only touch are
   both authoritative. Each person's work on the roster being published is compared with the

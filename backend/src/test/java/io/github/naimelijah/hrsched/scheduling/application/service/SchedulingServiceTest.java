@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.in.AssignToShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCommand;
@@ -17,6 +18,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualified
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
@@ -1041,10 +1043,116 @@ class SchedulingServiceTest {
     rosters.save(draft);
 
     assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, draft.id()))
-        .isInstanceOf(OverlappingAssignmentException.class);
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations())
+                    .extracting(ConstraintViolation::employee, ConstraintViolation::constraint)
+                    .containsExactly(tuple(ada, ConstraintViolation.OVERLAPPING_WORK)));
 
     assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
     assertThat(audit.changes()).doesNotContain(SchedulingChange.ROSTER_PUBLISHED);
+  }
+
+  // --- #205: publication refuses every rule a draft breaks, and lists each (ADR-042) ------------
+
+  /**
+   * R18 at publication. Assigning by hand refuses somebody through their declared absence, but a
+   * draft can carry them anyway: they declared it after being assigned, or a generator put them
+   * there. Publication, which nothing bypasses, refuses it for itself, naming the shift and never
+   * the span they declared.
+   */
+  @Test
+  void
+      GivenADraftCarryingSomebodyDeclaredUnavailableThen_WhenPublishing_ThenItIsRefusedNamingThem() {
+    EmployeeId ada = EmployeeId.newId();
+    workforce.add(ACME, new RosterCandidate(ada, "Ada", Set.of(), List.of(MONDAY_DAY)));
+    ShiftId day = aShift(ACME, Set.of());
+    Roster draft = carrying(new Assignment(day, ada));
+
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, draft.id()))
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations())
+                    .containsExactly(ConstraintViolation.declaredUnavailable(ada, day)));
+    assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
+  }
+
+  /** R4 at publication, for the same reason R18 is. */
+  @Test
+  void
+      GivenADraftCarryingSomebodyWithoutTheShiftsQualification_WhenPublishing_ThenItIsRefusedNamingThem() {
+    QualificationId forklift = QualificationId.newId();
+    workforce.define(ACME, forklift);
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId day = aShift(ACME, Set.of(forklift));
+    Roster draft = carrying(new Assignment(day, ada));
+
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, draft.id()))
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations())
+                    .containsExactly(
+                        ConstraintViolation.missingQualifications(ada, day, Set.of(forklift))));
+  }
+
+  /**
+   * R5 at publication. Somebody the organisation's directory does not return cannot be shown
+   * eligible for anything, so they are refused rather than skipped: a skipped check is work on a
+   * roster whose eligibility nobody established.
+   */
+  @Test
+  void
+      GivenADraftCarryingSomebodyTheOrganisationDoesNotHave_WhenPublishing_ThenItIsRefusedNamingThem() {
+    EmployeeId stranger = EmployeeId.newId();
+    ShiftId day = aShift(ACME, Set.of());
+    Roster draft = carrying(new Assignment(day, stranger));
+
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, draft.id()))
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations())
+                    .containsExactly(ConstraintViolation.notOfTheOrganisation(stranger, day)));
+  }
+
+  /**
+   * Every breach at once, not the first one found. A Scheduler fixing a draft is told everything
+   * wrong with it in one answer, rather than one thing per attempt.
+   */
+  @Test
+  void GivenADraftBreakingSeveralRulesAtOnce_WhenPublishing_ThenEveryViolationIsListed() {
+    QualificationId forklift = QualificationId.newId();
+    workforce.define(ACME, forklift);
+    EmployeeId ada = available(ACME, "Ada");
+    EmployeeId grace = EmployeeId.newId();
+    workforce.add(ACME, new RosterCandidate(grace, "Grace", Set.of(), List.of(MONDAY_DAY)));
+    ShiftId day = aShift(ACME, Set.of(forklift));
+    ShiftId sameDay = aShift(ACME, Set.of());
+    Roster draft =
+        carrying(
+            new Assignment(day, ada), new Assignment(sameDay, ada), new Assignment(sameDay, grace));
+
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, draft.id()))
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations())
+                    .extracting(ConstraintViolation::employee, ConstraintViolation::constraint)
+                    .containsExactlyInAnyOrder(
+                        tuple(ada, ConstraintViolation.OVERLAPPING_WORK),
+                        tuple(ada, ConstraintViolation.MISSING_QUALIFICATIONS),
+                        tuple(grace, ConstraintViolation.DECLARED_UNAVAILABLE)));
+  }
+
+  /** A draft stored as given, bypassing the checks assigning by hand would make. */
+  private Roster carrying(Assignment... assignments) {
+    Roster draft =
+        new Roster(RosterId.newId(), ACME, THE_WEEK).withAssignments(List.of(assignments));
+    rosters.save(draft);
+    return draft;
   }
 
   /**
@@ -1181,7 +1289,17 @@ class SchedulingServiceTest {
     audit.forget();
 
     assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, thisWeek.id()))
-        .isInstanceOf(OverlappingAssignmentException.class);
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations())
+                    .singleElement()
+                    .satisfies(
+                        overlap -> {
+                          assertThat(overlap.constraint())
+                              .isEqualTo(ConstraintViolation.OVERLAPPING_WORK);
+                          assertThat(overlap.detail()).contains(nextWeek.id().value().toString());
+                        }));
 
     assertThat(rosters.byId(thisWeek.id()).status()).isEqualTo(RosterStatus.DRAFT);
     assertThat(rosters.byId(nextWeek.id()).status()).isEqualTo(RosterStatus.PUBLISHED);

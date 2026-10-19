@@ -434,8 +434,41 @@ class RosteringHttpTest {
                 organisation,
                 "SCHEDULER"))
         .andExpect(status().isUnprocessableEntity())
-        .andExpect(jsonPath("$.title").value("Assignment refused"))
-        .andExpect(jsonPath("$.detail").value(containsString(nextWeek)));
+        .andExpect(jsonPath("$.title").value("Roster breaks the rules"))
+        .andExpect(jsonPath("$.violations.length()").value(1))
+        .andExpect(jsonPath("$.violations[0].employee").value(ada))
+        .andExpect(jsonPath("$.violations[0].constraint").value("overlapping work"))
+        .andExpect(jsonPath("$.violations[0].detail").value(containsString(nextWeek)));
+  }
+
+  /**
+   * R18 at publication, over a real database. Ada was free when she was assigned, and declared
+   * afterwards that she cannot work that day. Nothing about the draft changed, so only publication
+   * can catch it, and it refuses with that violation listed like any other (#205).
+   */
+  @Test
+  void GivenUnavailabilityDeclaredAfterAssignment_WhenPublishing_ThenItIsRefusedWithThatViolation()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String roster = generateRoster(organisation, "2026-11-30T00:00:00Z", "2026-12-01T00:00:00Z");
+    String shift = defineShift(organisation, "2026-11-30T08:00:00Z", "2026-11-30T16:00:00Z", 1);
+    assign(organisation, roster, shift, ada);
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+                .content("{\"start\":\"2026-11-30T00:00:00Z\",\"end\":\"2026-12-01T00:00:00Z\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.title").value("Roster breaks the rules"))
+        .andExpect(jsonPath("$.violations.length()").value(1))
+        .andExpect(jsonPath("$.violations[0].employee").value(ada))
+        .andExpect(jsonPath("$.violations[0].constraint").value("declared unavailability"))
+        .andExpect(jsonPath("$.violations[0].detail").value(containsString(shift)));
   }
 
   /**

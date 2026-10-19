@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import java.lang.reflect.RecordComponent;
+import java.util.Set;
 import java.util.stream.Stream;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
@@ -70,5 +71,36 @@ class SchedulingValueObjectsTest {
     assertThat(ConstraintViolation.class.getRecordComponents())
         .extracting(RecordComponent::getName)
         .containsExactlyInAnyOrder("employee", "constraint", "detail");
+  }
+
+  /** A date as ISO-8601 writes one; never found inside an identifier, whose groups are wider. */
+  private static final String AN_ISO_DATE = "\\d{4}-\\d{2}-\\d{2}";
+
+  /**
+   * The span somebody declared they cannot work says something about their health or household, and
+   * a refusal travels to whoever was refused. It names the shift, and nothing of the span.
+   */
+  @Test
+  void GivenAnUnavailabilityBreach_WhenDescribed_ThenItNamesTheShiftAndNoSpan() {
+    EmployeeId ada = EmployeeId.newId();
+    ShiftId shift = ShiftId.newId();
+
+    ConstraintViolation breach = ConstraintViolation.declaredUnavailable(ada, shift);
+
+    assertThat(breach.employee()).isEqualTo(ada);
+    assertThat(breach.constraint()).isEqualTo(ConstraintViolation.DECLARED_UNAVAILABLE);
+    assertThat(breach.detail())
+        .contains(shift.value().toString())
+        .describedAs("no date, so no span")
+        .doesNotContainPattern(AN_ISO_DATE);
+  }
+
+  @Test
+  void GivenNoQualificationMissing_WhenDescribingWhatIsMissing_ThenItIsRejected() {
+    assertThatThrownBy(
+            () ->
+                ConstraintViolation.missingQualifications(
+                    EmployeeId.newId(), ShiftId.newId(), Set.of()))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 }

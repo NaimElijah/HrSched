@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -13,6 +14,7 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /** Specification of the roster lifecycle. */
@@ -33,6 +35,7 @@ class RosterTest {
   private static final TimeRange OVERLAPPING_WEEK =
       new TimeRange(Instant.parse("2026-09-10T00:00:00Z"), Instant.parse("2026-09-17T00:00:00Z"));
   private static final List<HeldWork> NOTHING_ELSEWHERE = List.of();
+  private static final ConstraintSet NO_RULES = ConstraintSet.initial(ACME);
 
   /** When a roster in these tests was published. Any instant would do. */
   private static final Instant PUBLISHED_AT = Instant.parse("2026-09-01T09:00:00Z");
@@ -287,7 +290,7 @@ class RosterTest {
             .with(new Assignment(monday, grace));
 
     List<EmployeeSchedule> schedules =
-        roster.schedulesFor(Map.of(monday, utc(MONDAY), tuesday, utc(TUESDAY)), NOTHING_ELSEWHERE);
+        roster.schedulesFor(Map.of(monday, utc(MONDAY), tuesday, utc(TUESDAY)));
 
     assertThat(schedules).hasSize(2);
     assertThat(schedules)
@@ -297,36 +300,103 @@ class RosterTest {
   }
 
   /**
-   * R3, whatever the constraint set says. Building schedules is the step publication cannot skip,
-   * so a roster carrying somebody in two places is refused there however the draft was made.
+   * R3, whatever the constraint set says. Judging a roster is the step publication cannot skip, so
+   * a roster carrying somebody in two places is refused there however the draft was made.
    */
   @Test
-  void GivenOnePersonOnTwoOverlappingShifts_WhenBuildingSchedules_ThenItIsRefused() {
+  void GivenOnePersonOnTwoOverlappingShifts_WhenJudged_ThenTheOverlapIsListed() {
     ShiftId day = ShiftId.newId();
     ShiftId afternoon = ShiftId.newId();
     Roster roster = draft().with(new Assignment(day, ADA)).with(new Assignment(afternoon, ADA));
 
-    assertThatThrownBy(
-            () ->
-                roster.schedulesFor(
-                    Map.of(day, utc(MONDAY), afternoon, utc(MONDAY_AFTERNOON)), NOTHING_ELSEWHERE))
-        .isInstanceOf(OverlappingAssignmentException.class);
+    assertThat(
+            roster.violationsUnder(
+                NO_RULES,
+                Map.of(day, utc(MONDAY), afternoon, utc(MONDAY_AFTERNOON)),
+                NOTHING_ELSEWHERE))
+        .containsExactly(
+            ConstraintViolation.overlappingWork(ADA, day, afternoon, Optional.empty()));
   }
 
   @Test
-  void GivenOnePersonOnShiftsThatOnlyTouch_WhenBuildingSchedules_ThenNothingIsRefused() {
+  void GivenOnePersonOnShiftsThatOnlyTouch_WhenJudged_ThenNothingIsListed() {
     ShiftId day = ShiftId.newId();
     ShiftId evening = ShiftId.newId();
     TimeRange mondayEvening =
         new TimeRange(Instant.parse("2026-09-07T16:00:00Z"), Instant.parse("2026-09-07T20:00:00Z"));
     Roster roster = draft().with(new Assignment(day, ADA)).with(new Assignment(evening, ADA));
 
-    assertThatCode(
-            () ->
-                roster.schedulesFor(
-                    Map.of(day, utc(MONDAY), evening, utc(mondayEvening)), NOTHING_ELSEWHERE))
+    assertThat(
+            roster.violationsUnder(
+                NO_RULES, Map.of(day, utc(MONDAY), evening, utc(mondayEvening)), NOTHING_ELSEWHERE))
         .describedAs("a period's end is exclusive, so ending as the next begins is no overlap")
-        .doesNotThrowAnyException();
+        .isEmpty();
+  }
+
+  /** A listing names every clash, not the first: three shifts at once are three pairs. */
+  @Test
+  void GivenThreeMutuallyOverlappingShifts_WhenJudged_ThenEveryPairIsListed() {
+    ShiftId day = ShiftId.newId();
+    ShiftId afternoon = ShiftId.newId();
+    ShiftId midday = ShiftId.newId();
+    TimeRange mondayMidday =
+        new TimeRange(Instant.parse("2026-09-07T11:00:00Z"), Instant.parse("2026-09-07T14:00:00Z"));
+    Roster roster =
+        draft()
+            .with(new Assignment(day, ADA))
+            .with(new Assignment(afternoon, ADA))
+            .with(new Assignment(midday, ADA));
+
+    assertThat(
+            roster.violationsUnder(
+                NO_RULES,
+                Map.of(
+                    day, utc(MONDAY), afternoon, utc(MONDAY_AFTERNOON), midday, utc(mondayMidday)),
+                NOTHING_ELSEWHERE))
+        .containsExactly(
+            ConstraintViolation.overlappingWork(ADA, day, midday, Optional.empty()),
+            ConstraintViolation.overlappingWork(ADA, day, afternoon, Optional.empty()),
+            ConstraintViolation.overlappingWork(ADA, midday, afternoon, Optional.empty()));
+  }
+
+  /**
+   * Somebody in two places at once has a schedule nobody can work, so its rest and its daily total
+   * mean nothing until the overlap is resolved. Their overlap is listed and their working time is
+   * not; a colleague's working time is judged as usual. The values are invented.
+   */
+  @Test
+  void GivenAnOverlapForOneAndADailyBreachForAnother_WhenJudged_ThenEachIsListedOnce() {
+    ShiftId day = ShiftId.newId();
+    ShiftId afternoon = ShiftId.newId();
+    EmployeeId grace = EmployeeId.newId();
+    Roster roster =
+        draft()
+            .with(new Assignment(day, ADA))
+            .with(new Assignment(afternoon, ADA))
+            .with(new Assignment(day, grace));
+    // Invented: a cap below one eight-hour shift, so Grace's day breaks it on its own.
+    ConstraintSet sixHoursADay =
+        NO_RULES.revisedTo(List.of(new MaximumDailyWorkingTime(Duration.ofHours(6))));
+
+    List<ConstraintViolation> violations =
+        roster.violationsUnder(
+            sixHoursADay,
+            Map.of(day, utc(MONDAY), afternoon, utc(MONDAY_AFTERNOON)),
+            NOTHING_ELSEWHERE);
+
+    assertThat(violations)
+        .extracting(ConstraintViolation::employee, ConstraintViolation::constraint)
+        .containsExactly(
+            tuple(ADA, ConstraintViolation.OVERLAPPING_WORK),
+            tuple(grace, "maximum daily working time"));
+  }
+
+  @Test
+  void GivenAnAssignedShiftThatCannotBePlaced_WhenJudged_ThenItIsNotVerifiable() {
+    Roster roster = draft().with(new Assignment(ShiftId.newId(), ADA));
+
+    assertThatThrownBy(() -> roster.violationsUnder(NO_RULES, Map.of(), NOTHING_ELSEWHERE))
+        .isInstanceOf(RosterNotVerifiableException.class);
   }
 
   /**
@@ -374,7 +444,7 @@ class RosterTest {
    * were made, rather than by when they start, would miss it.
    */
   @Test
-  void GivenOverlappingShiftsAssignedApart_WhenBuildingSchedules_ThenItIsStillRefused() {
+  void GivenOverlappingShiftsAssignedApart_WhenJudged_ThenTheOverlapIsStillListed() {
     ShiftId day = ShiftId.newId();
     ShiftId tuesday = ShiftId.newId();
     ShiftId afternoon = ShiftId.newId();
@@ -384,13 +454,13 @@ class RosterTest {
             .with(new Assignment(tuesday, ADA))
             .with(new Assignment(afternoon, ADA));
 
-    assertThatThrownBy(
-            () ->
-                roster.schedulesFor(
-                    Map.of(
-                        day, utc(MONDAY), tuesday, utc(TUESDAY), afternoon, utc(MONDAY_AFTERNOON)),
-                    NOTHING_ELSEWHERE))
-        .isInstanceOf(OverlappingAssignmentException.class);
+    assertThat(
+            roster.violationsUnder(
+                NO_RULES,
+                Map.of(day, utc(MONDAY), tuesday, utc(TUESDAY), afternoon, utc(MONDAY_AFTERNOON)),
+                NOTHING_ELSEWHERE))
+        .containsExactly(
+            ConstraintViolation.overlappingWork(ADA, day, afternoon, Optional.empty()));
   }
 
   /**
@@ -498,32 +568,33 @@ class RosterTest {
   }
 
   @Test
-  void GivenOverlappingWorkHeldElsewhere_WhenBuildingSchedules_ThenItIsRefused() {
+  void GivenOverlappingWorkHeldElsewhere_WhenJudged_ThenItIsListedNamingThatRoster() {
     ShiftId day = ShiftId.newId();
+    HeldWork elsewhere = heldBy(ADA, MONDAY_AFTERNOON);
     Roster roster = draft().with(new Assignment(day, ADA));
 
-    assertThatThrownBy(
-            () ->
-                roster.schedulesFor(
-                    Map.of(day, utc(MONDAY)), List.of(heldBy(ADA, MONDAY_AFTERNOON))))
-        .isInstanceOf(OverlappingAssignmentException.class);
+    assertThat(roster.violationsUnder(NO_RULES, Map.of(day, utc(MONDAY)), List.of(elsewhere)))
+        .containsExactly(
+            ConstraintViolation.overlappingWork(
+                ADA, day, elsewhere.shift(), Optional.of(elsewhere.roster())));
   }
 
   /**
    * Work held elsewhere is checked for R3 and nothing more. The working-time rules still judge one
-   * roster at a time, so it must not leak into the schedules they are evaluated against.
+   * roster at a time, so it must not leak into the schedules they are evaluated against. The cap is
+   * invented: above one eight-hour shift, below two.
    */
   @Test
-  void GivenWorkHeldElsewhere_WhenBuildingSchedules_ThenOnlyThisRostersWorkIsScheduled() {
+  void GivenWorkHeldElsewhere_WhenJudgedUnderAWeeklyCap_ThenOnlyThisRostersWorkCounts() {
     ShiftId day = ShiftId.newId();
     Roster roster = draft().with(new Assignment(day, ADA));
+    ConstraintSet tenHoursAWeek =
+        NO_RULES.revisedTo(List.of(new MaximumWeeklyWorkingTime(Duration.ofHours(10))));
 
-    List<EmployeeSchedule> schedules =
-        roster.schedulesFor(Map.of(day, utc(MONDAY)), List.of(heldBy(ADA, TUESDAY)));
-
-    assertThat(schedules)
-        .singleElement()
-        .satisfies(schedule -> assertThat(schedule.workingPeriods()).containsExactly(utc(MONDAY)));
+    assertThat(
+            roster.violationsUnder(
+                tenHoursAWeek, Map.of(day, utc(MONDAY)), List.of(heldBy(ADA, TUESDAY))))
+        .isEmpty();
   }
 
   @Test

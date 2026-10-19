@@ -116,7 +116,10 @@ merging into it, and every limit is optional: one left out is not enforced.
 
 ## Other refusals
 
-- **One person on overlapping work.** Publication answers `422` titled `Assignment refused`.
+- **Any rule a draft breaks.** Publication answers `422` titled `Roster breaks the rules`, with a
+  `violations` list naming every breach: `overlapping work`, `required qualifications`,
+  `declared unavailability`, `not of this organisation`, or the working-time rule broken. Each
+  names the employee, and its `detail` names shifts and rosters by identifier only.
 - **A shift the rules cannot check.** Publication answers `422` titled
   `Roster cannot be checked against the rules`.
 - **A concurrent publication.** An overlapping roster published at the same moment answers `409`,

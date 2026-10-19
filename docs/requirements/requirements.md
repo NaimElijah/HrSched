@@ -52,7 +52,7 @@ implemented; `not yet` means the requirement is decided and the linked issue tra
 | F1 | Scheduler | Define the shifts that need covering, with headcount and qualifications | `SchedulingService`, `RosteringHttpTest` |
 | F1a | Any member | See the shifts needing covering over a span | `SchedulingService`, `SchedulingServiceTest` |
 | F2 | Scheduler | Assign an employee to a shift, and remove that assignment | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *Drafts only: a published roster is superseded, never edited (R6).* |
-| F3 | Scheduler | Publish a draft roster, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest`. *Absorbed F12, which restated it.* |
+| F3 | Scheduler | Publish a draft roster, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest`. Every breach at once, of every kind — R3, R35, R4, R5, R18 and the working-time rules: `SchedulingServiceTest.GivenADraftBreakingSeveralRulesAtOnce_WhenPublishing_ThenEveryViolationIsListed`, [ADR-042](../ADRs/ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md). *Absorbed F12, which restated it.* |
 | F4 | Admin, Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest`. *Availability, qualifications and contracted hours are on the listing; the roster half is served by F11a rather than repeated here.* |
 | F5 | Any member linked to an employee | See their own published roster | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *The assignments naming them, from published rosters only — the whole roster stays Admin and Scheduler (R12). Tested for the Employee role only ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
 | F6 | Employee, or an Admin or Scheduler on their behalf | Declare when they cannot work, and state soft preferences, and see what they declared | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). *Seeing what they declared is authorised as declaring is, and refused for a colleague: `EmployeeServiceTest.GivenAnEmployee_WhenReadingTheirOwnDeclarations_ThenBothAreReturned`, `EmployeeHttpTest.GivenAColleague_WhenReadingSomebodyElsesUnavailability_ThenItIsForbidden`. Preferences shaping generation: not yet — an objective, weighted under Q13 ([#27](https://github.com/NaimElijah/HrSched/issues/27)). Declaring on somebody's behalf is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)); reading it back is tested for an Admin and a Scheduler.* |
@@ -88,8 +88,9 @@ implemented; `not yet` means the requirement is decided and the linked issue tra
 **Swaps (F7, F17)** are approved by a **Scheduler**; the other employee is informed rather than asked,
 and being informed means a notification they can go and read. Approving does not edit the published
 roster — R6 forbids that — it publishes a replacement that supersedes it, through the same
-publication every other roster goes through, so a swap breaking a working-time rule is refused with
-no override. Whether the colleague may actually cover the shift is decided when a Scheduler answers
+publication every other roster goes through, so a swap leaving the roster breaking any rule is
+refused with no override — a working-time rule, or somebody else on it who has since become
+unavailable or unqualified, who must be reassigned first. Whether the colleague may actually cover the shift is decided when a Scheduler answers
 rather than when an Employee asks, because deciding it means reading colleagues' unavailability.
 
 **Roster generation is automatic** — that is the point of the product. A Scheduler states what
@@ -136,8 +137,8 @@ a published roster is superseded rather than edited (R6).
 | R1 | A time range must end strictly after it starts. *`TimeRange`, `TimeRangeTest`* |
 | R2 | An employee, an organisation and a qualification must each have a name that is not blank. *`Employee`, `EmployeeTest`; `Organisation`, `OrganisationTest`; `Qualification`, `QualificationTest`* |
 | R3 | An employee may not hold two overlapping assignments. *`Roster`, `RosterTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`; at swap approval `SwapServiceTest`; in generation `GreedyRosterGeneratorTest`* |
-| R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `RosterCandidateTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`; at swap approval `SwapServiceTest`* |
-| R5 | An employee may only be assigned within their own organisation. *`SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`* |
+| R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `RosterCandidateTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`; at swap approval `SwapServiceTest`; at publication `AssignmentEligibility`, `SchedulingServiceTest`* |
+| R5 | An employee may only be assigned within their own organisation. *`SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`; at publication `AssignmentEligibility`, `SchedulingServiceTest`* |
 | R6 | A published roster may not be edited; it is superseded by a new version. *`Roster`, `RosterTest`, `SchedulingService`, `SchedulingServiceTest`* |
 | R7 | An employee may not declare overlapping unavailability. *`Employee`, `EmployeeTest`* |
 | R8 | A shift must require at least one person. *`Shift`, `ShiftTest`* |
@@ -150,7 +151,7 @@ a published roster is superseded rather than edited (R6).
 | R15 | An account may be linked only to an employee of its own organisation, and an employee has at most one account. *`AccountService`, `AccountAdministrationTest`, `AccountHttpTest`; the second half also `JdbcAccountRepositoryTest`* |
 | R16 | A password chosen by anybody other than the account's owner must be replaced before that account holds a role. *`Account`, `SessionService`, `ActorAuthentication`, `ActorAuthenticationConverterTest`, `SessionHttpTest`, `AccountHttpTest`* |
 | R17 | Disabling an account, and resetting its password, end every session it holds. A reset also clears any lockout. An Admin resets other people's passwords, never their own: changing your own takes the current one, and a way around that would undo what it protects. *`AccountService`, `AccountAdministrationTest`, `AccountHttpTest`* |
-| R18 | An employee may not be assigned across a span they declared unavailable, whether by hand, by generation or through a swap. *`RosterCandidate`, `AssignmentEligibility`, `RosterCandidateTest`; on the manual path `SchedulingServiceTest`; at swap approval `SwapServiceTest`; in generation `RosteringHttpTest`* |
+| R18 | An employee may not be assigned across a span they declared unavailable, whether by hand, by generation or through a swap. *`RosterCandidate`, `AssignmentEligibility`, `RosterCandidateTest`; on the manual path `SchedulingServiceTest`; at swap approval `SwapServiceTest`; in generation `RosteringHttpTest`; at publication, for somebody who declared it after being assigned, `RosteringHttpTest.GivenUnavailabilityDeclaredAfterAssignment_WhenPublishing_ThenItIsRefusedWithThatViolation`* |
 | R19 | A member reaching for another organisation's data is answered *not found*, never *forbidden*, because a refusal would confirm that the thing exists. *The exception handler of each web adapter: `AccessExceptionHandler`, `WorkforceExceptionHandler`, `SchedulingExceptionHandler`, `NotificationExceptionHandler`; `RosteringHttpTest`, `OrganisationHttpTest`, `AccountHttpTest`* |
 | R20 | A swap may be requested only for an assignment the requester holds on the roster currently published. *`SwapService`, `SwapServiceTest`* |
 | R21 | A swap is always with somebody else. *`SwapRequest`, `SwapServiceTest`* |
