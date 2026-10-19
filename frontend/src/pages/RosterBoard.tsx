@@ -4,7 +4,7 @@ import { scheduling } from '../api/scheduling';
 import type { Roster, Shift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import type { Employee } from '../api/workforce';
-import { Busy, Failure } from '../components/Feedback';
+import { Busy, Failure, Violations } from '../components/Feedback';
 import { dayLabel, localDate, shiftLabel, timeLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
@@ -29,6 +29,16 @@ function byLocalDay(shifts: readonly Shift[]): Day[] {
     });
   }
   return [...days.values()];
+}
+
+/** How many shifts a draft leaves short, in words. */
+function shortfallSummary(short: number): string {
+  if (short === 0) {
+    return 'Every shift has the people it needs.';
+  }
+  return short === 1
+    ? '1 shift is short of people.'
+    : `${String(short)} shifts are short of people.`;
 }
 
 /**
@@ -64,9 +74,19 @@ export function RosterBoard({
   const [failure, setFailure] = useState<unknown>(null);
   // One change at a time: two racing each other could leave the board showing the older answer.
   const [changing, setChanging] = useState(false);
+  // Counts stored changes, so the draft is checked again after each one.
+  const [checks, setChecks] = useState(0);
+  const checkHeading = useId();
 
   const loaded = useAsync(() => scheduling.findRoster(id), `${sessionKey}|${id}`);
   const roster = changed ?? loaded.value;
+  const isDraft = roster?.status === 'DRAFT';
+
+  // Only a draft is checked: a published roster was judged when it was published (Q9).
+  const assessment = useAsync(
+    () => (isDraft ? scheduling.assessRoster(id) : Promise.resolve(null)),
+    `${sessionKey}|${id}|${roster?.status ?? ''}|${String(checks)}`,
+  );
 
   // Over the roster's own period, not the planning span: a roster opened while the span points
   // elsewhere would otherwise resolve none of its shifts.
@@ -99,6 +119,7 @@ export function RosterBoard({
     setFailure(null);
     try {
       setChanged(await action());
+      setChecks((count) => count + 1);
       onChanged();
       return true;
     } catch (error) {
@@ -143,6 +164,26 @@ export function RosterBoard({
             <p>No shift falls in this roster&apos;s period, so there is nothing to assign.</p>
           ) : null}
           <Failure error={failure} nameOf={nameOf} />
+
+          {isDraft ? (
+            <section className="check" aria-labelledby={checkHeading}>
+              <h4 id={checkHeading}>Checked against the rules</h4>
+              <Failure error={assessment.error} nameOf={nameOf} />
+              {assessment.value === null ? null : (
+                <>
+                  {assessment.value.violations.length === 0 ? (
+                    <p>No rule is broken.</p>
+                  ) : (
+                    <Violations violations={assessment.value.violations} nameOf={nameOf} />
+                  )}
+                  <p>{shortfallSummary(assessment.value.shortfalls.length)}</p>
+                </>
+              )}
+              <p className="hint">
+                Publication still decides: this is what it would have said a moment ago.
+              </p>
+            </section>
+          ) : null}
 
           {byLocalDay(shifts.value ?? []).map((day) => (
             <div key={day.day} className="day">
