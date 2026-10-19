@@ -51,7 +51,11 @@ export function RosterBoard({
   roster: string;
   /** Everybody who might be assigned, and how to name them. */
   people: readonly Employee[];
-  /** Called once a change is stored, so whatever lists rosters can catch up. */
+  /**
+   * Called whenever the stored roster may have moved on from what the list shows: a change stored
+   * here, or one refused because somebody else changed the roster first. Either way, whatever lists
+   * rosters should read them again.
+   */
   onChanged: () => void;
 }) {
   const sessionKey = useSessionKey();
