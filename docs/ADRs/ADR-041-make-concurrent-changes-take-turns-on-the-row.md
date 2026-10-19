@@ -62,11 +62,18 @@ then reads what the first stored. Both changes apply.
 - **Sign-in decides on the account as it is once held.**
   - It keeps its single unlocked read and its single password comparison, made whether or not the
     name exists.
-  - Only then does it read the account again for update, and it decides on that copy. It compares
-    again only if the stored hash changed in between.
+  - A locked or disabled account is refused from that first read, before anything is held, so it
+    costs what an unknown name costs: one read, one comparison, and no write. That read can be stale
+    only towards refusing.
+  - Otherwise it reads the account again for update, and it decides on that copy, checking the lock
+    and the disable once more. It compares again only if the stored hash changed in between.
   - Holding the row through the comparison would have made a second simultaneous attempt on a real
     name slower than one on an unknown name, which tells an attacker which names exist. It would also
     have let a stream of guesses stall an Admin's disable.
+  - **What still differs from an unknown name.** An attempt on an active account holds its row,
+    which takes a transaction id and makes the commit write. A wrong password always wrote, to count
+    the failure, before this decision; only a right password, which already proves the name, writes
+    where it did not.
 - **A change that reaches a roster which is no longer a draft is answered 409, not 400.** After
   waiting, the change finds the roster published or superseded, which is a conflict with what
   somebody else did. The caller resolves it by reloading. ADR-037 deferred this to #33.

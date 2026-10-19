@@ -133,6 +133,14 @@ public class SessionService
     if (found.isEmpty()) {
       return new SignInOutcome.Refused(Optional.empty(), SignInRefusal.UNKNOWN_ACCOUNT);
     }
+    // A locked or disabled account is refused from the unlocked read, before anything is held, so
+    // it costs what an unknown name costs: one read, one comparison, and no write. That read can be
+    // stale only towards refusing - an account unlocked or restored a moment ago is refused once
+    // more - never towards letting somebody in.
+    Optional<SignInOutcome> barredWhenRead = barred(found.get(), now);
+    if (barredWhenRead.isPresent()) {
+      return barredWhenRead.get();
+    }
     // Decided on the account as it is once held, not as it was read before the comparison. A
     // disable, a reset or another attempt's failure committed during that comparison would
     // otherwise be stored over by the failure counted below, or ignored by a sign-in it should
@@ -150,13 +158,9 @@ public class SessionService
         account.passwordHash().equals(against)
             ? matchedWhenRead
             : passwords.matches(command.password(), account.passwordHash());
-    if (account.isLockedAt(now)) {
-      // Nothing is counted while locked: a lock that extended itself on every attempt would let
-      // anybody keep an account shut indefinitely just by trying.
-      return new SignInOutcome.Refused(Optional.of(account.id()), SignInRefusal.LOCKED);
-    }
-    if (!account.active()) {
-      return new SignInOutcome.Refused(Optional.of(account.id()), SignInRefusal.DISABLED);
+    Optional<SignInOutcome> barredWhenHeld = barred(account, now);
+    if (barredWhenHeld.isPresent()) {
+      return barredWhenHeld.get();
     }
     if (!passwordMatches) {
       return refuseAndCount(account, now);
@@ -336,6 +340,25 @@ public class SessionService
     audit.record(
         new AuditedChange(
             owner.flatMap(Account::organisation), session.account(), change, session.id().value()));
+  }
+
+  /**
+   * A refusal that no password could change: the account is locked, or disabled. Checked on the
+   * account as first read and again once it is held, so a lock or a disable committed during the
+   * comparison still refuses.
+   */
+  private static Optional<SignInOutcome> barred(Account account, Instant now) {
+    if (account.isLockedAt(now)) {
+      // Nothing is counted while locked: a lock that extended itself on every attempt would let
+      // anybody keep an account shut indefinitely just by trying.
+      return Optional.of(
+          new SignInOutcome.Refused(Optional.of(account.id()), SignInRefusal.LOCKED));
+    }
+    if (!account.active()) {
+      return Optional.of(
+          new SignInOutcome.Refused(Optional.of(account.id()), SignInRefusal.DISABLED));
+    }
+    return Optional.empty();
   }
 
   private SignInOutcome refuseAndCount(Account account, Instant now) {

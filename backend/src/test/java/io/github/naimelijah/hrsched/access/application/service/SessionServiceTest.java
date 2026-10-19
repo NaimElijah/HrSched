@@ -480,8 +480,36 @@ class SessionServiceTest {
   }
 
   /**
-   * There is no row to hold, and the attempt must take exactly as long as one on a real name: one
-   * comparison, nothing held.
+   * A locked account is refused from the unlocked read, before anything is held. Holding it would
+   * write - a transaction id, and its commit - where an attempt on an unknown name writes nothing,
+   * and that difference would tell somebody guessing that the name is real (ADR-041).
+   */
+  @Test
+  void GivenALockedAccount_WhenSigningIn_ThenNothingIsHeld() {
+    accounts.given(
+        tenant(ADA, Role.SCHEDULER, Optional.empty())
+            .recordFailedSignIn(NOW, LOCK_AFTER_THREE)
+            .recordFailedSignIn(NOW, LOCK_AFTER_THREE)
+            .recordFailedSignIn(NOW, LOCK_AFTER_THREE));
+
+    service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
+
+    assertThat(accounts.heldForUpdate()).isEmpty();
+  }
+
+  /** As a locked one: a departed colleague's name must not be told apart from nobody's. */
+  @Test
+  void GivenADisabledAccount_WhenSigningIn_ThenNothingIsHeld() {
+    accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()).disabled());
+
+    service.signIn(new SignInCommand(ADA, RIGHT_PASSWORD));
+
+    assertThat(accounts.heldForUpdate()).isEmpty();
+  }
+
+  /**
+   * There is no row to hold, so an attempt on an unknown name holds nothing and makes the one
+   * comparison every attempt makes.
    */
   @Test
   void GivenAnUnknownSignInName_WhenSigningIn_ThenNoAccountIsReadForUpdate() {
