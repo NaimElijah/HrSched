@@ -44,23 +44,6 @@ final class AssignmentEligibility {
   private AssignmentEligibility() {}
 
   /**
-   * Refuses anybody who may not cover this shift.
-   *
-   * <p>Eligibility is decided from what the workforce directory returns, carrying the actor,
-   * because that is the only sense in which scheduling knows a person exists at all. Somebody who
-   * does not come back through the published port is refused rather than skipped: a skipped check
-   * is work on a roster whose eligibility nobody established.
-   *
-   * @param workforce the published view of who can be rostered
-   * @param actor whoever is acting, carried through so the answer is scoped to their access
-   * @param organisation whose roster
-   * @param employee who is being put on the shift
-   * @param shift the shift in question
-   * @throws UnknownAssigneeException if they are not one of this organisation's rosterable people
-   * @throws AssigneeNotQualifiedException if they lack a qualification the shift requires
-   * @throws AssigneeUnavailableException if the shift runs through time they said they cannot work
-   */
-  /**
    * Every breach of R5, R4 and R18 on a roster, listed rather than refused at the first: what
    * publication refuses, and what checking a draft reports, for each assignment the roster carries.
    *
@@ -99,6 +82,23 @@ final class AssignmentEligibility {
     return List.copyOf(breaches);
   }
 
+  /**
+   * Refuses anybody who may not cover this shift.
+   *
+   * <p>Eligibility is decided from what the workforce directory returns, carrying the actor,
+   * because that is the only sense in which scheduling knows a person exists at all. Somebody who
+   * does not come back through the published port is refused rather than skipped: a skipped check
+   * is work on a roster whose eligibility nobody established.
+   *
+   * @param workforce the published view of who can be rostered
+   * @param actor whoever is acting, carried through so the answer is scoped to their access
+   * @param organisation whose roster
+   * @param employee who is being put on the shift
+   * @param shift the shift in question
+   * @throws UnknownAssigneeException if they are not one of this organisation's rosterable people
+   * @throws AssigneeNotQualifiedException if they lack a qualification the shift requires
+   * @throws AssigneeUnavailableException if the shift runs through time they said they cannot work
+   */
   static void require(
       WorkforceDirectory workforce,
       Actor actor,
