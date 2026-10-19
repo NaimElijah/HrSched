@@ -88,11 +88,11 @@ public class SchedulingExceptionHandler {
   public ProblemDetail handleNotCompliant(RosterNotCompliantException exception) {
     log.atInfo()
         .addKeyValue("violations", exception.violations().size())
-        .log("Publication refused by the working-time rules");
+        .log("Publication refused by the rules");
     count(REFUSED, "reason", "not_compliant", "Publications refused, by what refused them");
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
-    problem.setTitle("Roster breaks the working-time rules");
+    problem.setTitle("Roster breaks the rules");
     problem.setProperty("violations", describe(exception.violations()));
     return problem;
   }
@@ -202,9 +202,8 @@ public class SchedulingExceptionHandler {
    * reason a non-compliant roster does: the caller named real things and asked for something the
    * domain forbids, which is neither a malformed request nor a missing one.
    *
-   * <p>The overlap can also be found at publication — approving a swap, or publishing a draft that
-   * arrived carrying one — and is answered the same way there. It is not counted as a refused
-   * publication, because this handler cannot tell those apart from a refused assignment.
+   * <p>Publication finds the same breaches in a draft that arrived carrying them, and answers
+   * differently: with every breach listed, as a roster that breaks the rules (ADR-042).
    */
   @ExceptionHandler({
     AssigneeNotQualifiedException.class,

@@ -116,7 +116,7 @@ class SchedulingExceptionHandlerTest {
     ProblemDetail problem = handler.handleNotCompliant(breach);
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY.value());
-    assertThat(problem.getTitle()).isEqualTo("Roster breaks the working-time rules");
+    assertThat(problem.getTitle()).isEqualTo("Roster breaks the rules");
   }
 
   @Test

@@ -3,6 +3,8 @@ package io.github.naimelijah.hrsched.scheduling.application.port.out;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -39,7 +41,28 @@ public record RosterCandidate(
    * @return whether this person could cover it at all
    */
   public boolean couldCover(TimeRange period, Set<QualificationId> required) {
-    return qualifications.containsAll(required)
-        && unavailability.stream().noneMatch(period::overlaps);
+    return lacking(required).isEmpty() && !isUnavailableDuring(period);
+  }
+
+  /**
+   * R4, asked so that a refusal can say which qualifications were missing.
+   *
+   * @param required the qualifications a shift demands
+   * @return those of them this person does not hold, in the order given; empty if they hold all
+   */
+  public Set<QualificationId> lacking(Set<QualificationId> required) {
+    Set<QualificationId> missing = new LinkedHashSet<>(required);
+    missing.removeAll(qualifications);
+    return Collections.unmodifiableSet(missing);
+  }
+
+  /**
+   * R18: whether the span runs through any time this person declared they cannot work.
+   *
+   * @param period a span of work
+   * @return whether any declared unavailability overlaps it; touching at an end is not overlapping
+   */
+  public boolean isUnavailableDuring(TimeRange period) {
+    return unavailability.stream().anyMatch(period::overlaps);
   }
 }

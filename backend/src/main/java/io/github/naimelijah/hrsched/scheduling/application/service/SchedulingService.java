@@ -8,6 +8,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.ManageShiftsU
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.RosterAssessment;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosteredShift;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ViewOwnScheduleUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
@@ -29,6 +30,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordExce
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
@@ -317,14 +319,9 @@ public class SchedulingService
     // One read decides both what this publication replaces and what it is judged beside, so the two
     // can never disagree about a roster (R11, R35).
     List<Roster> existing = rosters.findByOrganisation(organisation);
-    List<HeldWork> heldElsewhere =
-        heldElsewhere(
-            organisation,
-            existing.stream().filter(roster -> roster.staysAuthoritativeBeside(draft)).toList(),
-            draft.assignments().stream().map(Assignment::employee).collect(Collectors.toSet()));
 
     List<ConstraintViolation> violations =
-        violations(organisation, draft, constraints, heldElsewhere);
+        violationsOf(actor, organisation, draft, constraints, existing);
     if (!violations.isEmpty()) {
       throw new RosterNotCompliantException(violations);
     }
@@ -479,6 +476,36 @@ public class SchedulingService
             });
   }
 
+  /**
+   * The same judgement {@code publish} refuses by, run without the publication lock and without
+   * holding the draft: it decides nothing, so it holds nothing, and its answer is advice that
+   * publication checks again (ADR-042). Named {@code find…}, so it runs read-only.
+   */
+  @Override
+  public RosterAssessment findAssessment(
+      Actor actor, OrganisationId organisation, RosterId rosterId) {
+    authorise(actor, organisation, MAY_SEE_ROSTERS);
+    Roster draft =
+        rosters
+            .findById(organisation, rosterId)
+            .orElseThrow(() -> new UnknownRosterException(rosterId));
+    if (draft.status() != RosterStatus.DRAFT) {
+      throw new RosterNotEditableException(
+          rosterId,
+          draft.status(),
+          "only a draft is checked; a published roster was judged when it was published");
+    }
+    ConstraintSet constraints = currentOrInitial(organisation);
+    List<ConstraintViolation> violations =
+        violationsOf(
+            actor, organisation, draft, constraints, rosters.findByOrganisation(organisation));
+    return new RosterAssessment(
+        draft.id(),
+        constraints.version(),
+        violations,
+        draft.shortfallsAmong(shifts.findWithin(organisation, draft.period())));
+  }
+
   @Override
   public Optional<Roster> findRoster(Actor actor, OrganisationId organisation, RosterId rosterId) {
     authorise(actor, organisation, MAY_SEE_ROSTERS);
@@ -492,22 +519,64 @@ public class SchedulingService
   }
 
   /**
-   * Evaluates every employee schedule in the roster against the organisation rules.
+   * Every rule a roster breaks: the one judgement publication refuses by (ADR-042).
    *
-   * @param heldElsewhere work on the rosters that stay authoritative beside this one, for R3
+   * <p>One place at a time (R3, R35) and the working-time rules, judged by the roster from when its
+   * shifts run; qualifications (R4), declared unavailability (R18) and belonging to the
+   * organisation (R5), judged by {@link AssignmentEligibility} against one read of the directory.
+   * Listed together, so a refusal names everything wrong at once.
+   *
+   * @param actor whoever is acting, carried to the directory so the answer is scoped to them
+   * @param existing every roster the organisation holds, from which the work held beside this one
+   *     is found
    * @return every rule broken, empty if the roster may be published
+   * @throws RosterNotVerifiableException if a shift this roster assigns, or one its people hold
+   *     beside it, cannot be resolved: whatever cannot be placed in time cannot be judged
    */
-  private List<ConstraintViolation> violations(
+  private List<ConstraintViolation> violationsOf(
+      Actor actor,
       OrganisationId organisation,
       Roster roster,
       ConstraintSet constraints,
-      List<HeldWork> heldElsewhere) {
-    return roster
-        .schedulesFor(periodsOf(organisation, roster, roster.assignments()), heldElsewhere)
-        .stream()
-        .map(constraints::violationsFor)
-        .flatMap(List::stream)
-        .toList();
+      List<Roster> existing) {
+    Map<ShiftId, Shift> assigned = assignedShifts(organisation, roster);
+    List<HeldWork> heldElsewhere =
+        heldElsewhere(
+            organisation,
+            existing.stream().filter(other -> other.staysAuthoritativeBeside(roster)).toList(),
+            roster.assignments().stream().map(Assignment::employee).collect(Collectors.toSet()));
+    Map<ShiftId, WorkingPeriod> periods = new LinkedHashMap<>();
+    assigned.forEach((id, shift) -> periods.put(id, shift.workingPeriod()));
+
+    List<ConstraintViolation> violations = new ArrayList<>();
+    violations.addAll(roster.violationsUnder(constraints, periods, heldElsewhere));
+    violations.addAll(
+        AssignmentEligibility.breachesOn(
+            roster, assigned, workforce.candidatesFor(actor, organisation)));
+    return List.copyOf(violations);
+  }
+
+  /**
+   * Every shift a roster assigns, each resolved once however many people are on it.
+   *
+   * <p>A shift the repository cannot return refuses rather than being left out: whatever is judged
+   * against these shifts would otherwise be judged against less work than the roster carries.
+   *
+   * @throws RosterNotVerifiableException if any of those shifts cannot be resolved
+   */
+  private Map<ShiftId, Shift> assignedShifts(OrganisationId organisation, Roster roster) {
+    Map<ShiftId, Shift> assigned = new LinkedHashMap<>();
+    for (Assignment assignment : roster.assignments()) {
+      if (!assigned.containsKey(assignment.shift())) {
+        assigned.put(
+            assignment.shift(),
+            shifts
+                .findById(organisation, assignment.shift())
+                .orElseThrow(
+                    () -> new RosterNotVerifiableException(roster.id(), assignment.shift())));
+      }
+    }
+    return assigned;
   }
 
   /**

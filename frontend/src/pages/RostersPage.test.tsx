@@ -57,11 +57,20 @@ const WITH_GRACE = {
   assignments: [...ROSTER.assignments, { shift: 'shift-1', employee: 'emp-2' }],
 };
 
-/** A draft with Ada on its one shift, and Grace free to be assigned. */
+/** What checking a draft answers when it breaks no rule and leaves no shift short. */
+const NOTHING_WRONG = { roster: 'roster-1', constraintVersion: 1, violations: [], shortfalls: [] };
+
+/**
+ * A draft with Ada on its one shift, and Grace free to be assigned.
+ *
+ * The check has an answer of its own: the router answers by longest prefix, so without one it
+ * would answer the check with the roster itself.
+ */
 function aDraft(overrides: Record<string, Answer> = {}) {
   return routeTo({
     '/api/rosters': { status: 200, body: [ROSTER] },
     '/api/rosters/roster-1': { status: 200, body: ROSTER },
+    '/api/rosters/roster-1/assessment': { status: 200, body: NOTHING_WRONG },
     '/api/shifts': { status: 200, body: [SHIFT] },
     '/api/qualifications': { status: 200, body: [FORKLIFT] },
     ...overrides,
@@ -328,11 +337,15 @@ describe('the board of a draft', () => {
     renderPage();
 
     const board = await openBoard();
+    // A draft's board also carries its check, under a heading of the same level; the days are the
+    // rest of them.
+    const check = await theCheck(board);
 
     await waitFor(() =>
       expect(
         within(board)
           .getAllByRole('heading', { level: 4 })
+          .filter((heading) => !check.contains(heading))
           .map((day) => day.textContent),
       ).toEqual([dayLabel(SHIFT.start), dayLabel(nextDay.start)]),
     );
@@ -596,6 +609,162 @@ describe('the board of a draft', () => {
     expect(within(board).getByRole('alert')).toHaveTextContent(
       'a roster can only be changed while a draft',
     );
+  });
+
+  // --- #205: a draft is checked against every rule as it is edited, without publishing it -------
+
+  function theCheck(board: HTMLElement): Promise<HTMLElement> {
+    return within(board).findByRole('region', { name: 'Checked against the rules' });
+  }
+
+  it('GivenADraftBreakingARule_WhenItsBoardOpens_ThenTheViolationIsShownWithoutPublishing', async () => {
+    const stub = aDraft({
+      '/api/rosters/roster-1/assessment': {
+        status: 200,
+        body: {
+          ...NOTHING_WRONG,
+          violations: [
+            {
+              employee: 'emp-1',
+              constraint: 'declared unavailability',
+              detail: 'shift shift-1 runs through time they declared they cannot work',
+            },
+          ],
+        },
+      },
+    });
+    renderPage();
+
+    const check = await theCheck(await openBoard());
+
+    // Resolved to a name, as a publication refusal is: the two are shown alike on purpose.
+    expect(await within(check).findByText('Ada')).toBeInTheDocument();
+    expect(check).toHaveTextContent('declared unavailability');
+    expect(callsTo(stub, 'POST', '/api/rosters/roster-1/publication')).toHaveLength(0);
+  });
+
+  it('GivenACompliantDraft_WhenItsBoardOpens_ThenItSaysNoRuleIsBroken', async () => {
+    aDraft();
+    renderPage();
+
+    const check = await theCheck(await openBoard());
+
+    expect(await within(check).findByText('No rule is broken.')).toBeInTheDocument();
+    expect(check).toHaveTextContent('Every shift has the people it needs.');
+    // It is advice: what publication would say a moment ago, not a promise about what it will say.
+    expect(check).toHaveTextContent(/Publication still decides/);
+  });
+
+  it('GivenAChangeStored_WhenTheServerAnswers_ThenTheDraftIsCheckedAgain', async () => {
+    const stub = aDraft({
+      'POST /api/rosters/roster-1/assignments': { status: 200, body: WITH_GRACE },
+    });
+    renderPage();
+    const board = await openBoard();
+    await within(await theCheck(board)).findByText('No rule is broken.');
+    const checkedBefore = callsTo(stub, 'GET', '/api/rosters/roster-1/assessment').length;
+
+    await assignGrace(board);
+
+    await waitFor(() =>
+      expect(callsTo(stub, 'GET', '/api/rosters/roster-1/assessment').length).toBeGreaterThan(
+        checkedBefore,
+      ),
+    );
+  });
+
+  /**
+   * The check after an edit asks the same question again, so its last answer stays on screen until
+   * the new one arrives, as every other re-read here does. Dropping it would blank the section
+   * after every assignment, and take away what the Scheduler was fixing while they fixed it.
+   */
+  it('GivenARecheckInFlight_WhenTheDraftIsEdited_ThenTheLastAnswerStaysUntilTheNewOneArrives', async () => {
+    const routed = aDraft({
+      '/api/rosters/roster-1/assessment': {
+        status: 200,
+        body: {
+          ...NOTHING_WRONG,
+          violations: [
+            {
+              employee: 'emp-1',
+              constraint: 'declared unavailability',
+              detail: 'shift shift-1 runs through time they declared they cannot work',
+            },
+          ],
+        },
+      },
+      'POST /api/rosters/roster-1/assignments': { status: 200, body: WITH_GRACE },
+    });
+    renderPage();
+    const board = await openBoard();
+    const check = await theCheck(board);
+    await within(check).findByText('Ada');
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        path.endsWith('/assessment') ? held.then(() => routed(path, init)) : routed(path, init),
+      ),
+    );
+
+    await assignGrace(board);
+    await within(board).findByRole('button', { name: /^Remove Grace from/ });
+
+    expect(within(check).getByText('Ada')).toBeInTheDocument();
+    expect(check).toHaveTextContent('declared unavailability');
+    release();
+  });
+
+  it('GivenShortShifts_WhenTheDraftIsChecked_ThenTheShortfallIsSummarised', async () => {
+    aDraft({
+      '/api/rosters/roster-1/assessment': {
+        status: 200,
+        body: {
+          ...NOTHING_WRONG,
+          shortfalls: [{ shift: 'shift-1', required: 2, assigned: 1, shortBy: 1 }],
+        },
+      },
+    });
+    renderPage();
+
+    const check = await theCheck(await openBoard());
+
+    expect(await within(check).findByText('1 shift is short of people.')).toBeInTheDocument();
+  });
+
+  /** A published roster was judged when it was published (Q9), so there is nothing to check. */
+  it('GivenAPublishedRoster_WhenOpened_ThenItIsNotChecked', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
+    const stub = aDraft({
+      '/api/rosters': { status: 200, body: [published] },
+      '/api/rosters/roster-1': { status: 200, body: published },
+    });
+    renderPage();
+
+    const board = await openBoard();
+
+    expect(await within(board).findByText('Ada')).toBeInTheDocument();
+    expect(
+      within(board).queryByRole('region', { name: 'Checked against the rules' }),
+    ).not.toBeInTheDocument();
+    expect(callsTo(stub, 'GET', '/api/rosters/roster-1/assessment')).toHaveLength(0);
+  });
+
+  it('GivenTheCheckIsRefused_WhenTheBoardOpens_ThenTheRefusalIsShown', async () => {
+    aDraft({
+      '/api/rosters/roster-1/assessment': {
+        status: 422,
+        body: { detail: 'Roster roster-1 assigns shift shift-9, which cannot be resolved' },
+      },
+    });
+    renderPage();
+
+    const check = await theCheck(await openBoard());
+
+    expect(await within(check).findByRole('alert')).toHaveTextContent('cannot be resolved');
   });
 
   it('GivenAPublishedRoster_WhenOpened_ThenThereAreNoEditingControls', async () => {

@@ -276,6 +276,112 @@ class RosteringHttpTest {
         .andExpect(jsonPath("$.assignments.length()").value(2));
   }
 
+  // --- #205: checking a draft against every rule without publishing it --------------------------
+
+  private static final String ASSESSED_DAY_START = "2026-11-24T00:00:00Z";
+  private static final String ASSESSED_DAY_END = "2026-11-25T00:00:00Z";
+
+  private String assessment(String roster) {
+    return "/api/rosters/" + roster + "/assessment";
+  }
+
+  /**
+   * Over the real stack: a draft breaking a daily cap is checked, its violation comes back in the
+   * shape a publication refusal uses, and the draft is still a draft afterwards. Passing also shows
+   * the check runs in its read-only transaction without asking for anything it cannot have there.
+   * The cap is invented: one hour a day, below the eight-hour shift the generator gives Ada.
+   */
+  @Test
+  void GivenADraftBreakingADailyCap_WhenAssessed_ThenEachViolationIsStructuredAndItStaysADraft()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-11-24T08:00:00Z", "2026-11-24T16:00:00Z", 1);
+    String roster = generateRoster(organisation, ASSESSED_DAY_START, ASSESSED_DAY_END);
+    mockMvc
+        .perform(
+            as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
+                .content("{\"maximumDailyMinutes\":60}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(as(mockMvc, get(assessment(roster)), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.roster").value(roster))
+        .andExpect(jsonPath("$.violations.length()").value(1))
+        .andExpect(jsonPath("$.violations[0].employee").value(ada))
+        .andExpect(jsonPath("$.violations[0].constraint").value("maximum daily working time"))
+        .andExpect(jsonPath("$.shortfalls.length()").value(0));
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .andExpect(jsonPath("$.status").value("DRAFT"));
+  }
+
+  @Test
+  void GivenAShortShift_WhenAssessed_ThenTheShortfallIsListed() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String roster = generateRoster(organisation, ASSESSED_DAY_START, ASSESSED_DAY_END);
+    String shift = defineShift(organisation, "2026-11-24T08:00:00Z", "2026-11-24T16:00:00Z", 2);
+
+    mockMvc
+        .perform(as(mockMvc, get(assessment(roster)), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.violations.length()").value(0))
+        .andExpect(jsonPath("$.shortfalls.length()").value(1))
+        .andExpect(jsonPath("$.shortfalls[0].shift").value(shift))
+        .andExpect(jsonPath("$.shortfalls[0].required").value(2))
+        .andExpect(jsonPath("$.shortfalls[0].assigned").value(0))
+        .andExpect(jsonPath("$.shortfalls[0].shortBy").value(2));
+  }
+
+  @Test
+  void GivenAnAdmin_WhenAssessingADraft_ThenItIsAnswered() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String roster = generateRoster(organisation, ASSESSED_DAY_START, ASSESSED_DAY_END);
+
+    mockMvc
+        .perform(as(mockMvc, get(assessment(roster)), organisation, "ADMIN"))
+        .andExpect(status().isOk());
+  }
+
+  /** A draft is personal data about every colleague on it (R12). */
+  @Test
+  void GivenAnEmployee_WhenAssessingADraft_ThenItIsForbidden() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String roster = generateRoster(organisation, ASSESSED_DAY_START, ASSESSED_DAY_END);
+
+    mockMvc
+        .perform(asThemself(mockMvc, get(assessment(roster)), organisation, ada))
+        .andExpect(status().isForbidden());
+  }
+
+  /** A 404, never a 403: a refusal must not confirm another organisation's roster exists. */
+  @Test
+  void GivenARosterOfAnotherOrganisation_WhenAssessed_ThenItIsNotFound() throws Exception {
+    String ours = anOrganisation(mockMvc);
+    String theirs = anOrganisation(mockMvc);
+    String theirRoster = generateRoster(theirs, ASSESSED_DAY_START, ASSESSED_DAY_END);
+
+    mockMvc
+        .perform(as(mockMvc, get(assessment(theirRoster)), ours, "SCHEDULER"))
+        .andExpect(status().isNotFound());
+  }
+
+  /** A published roster was judged under the rules version it records (Q9), not today's. */
+  @Test
+  void GivenAPublishedRoster_WhenAssessed_ThenItIsAConflict() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String roster = generateRoster(organisation, ASSESSED_DAY_START, ASSESSED_DAY_END);
+    publish(organisation, roster);
+
+    mockMvc
+        .perform(as(mockMvc, get(assessment(roster)), organisation, "SCHEDULER"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.title").value("Roster status forbids this"));
+  }
+
   @Test
   void GivenAnAdminRole_WhenAssigningByHand_ThenItIsForbidden() throws Exception {
     String organisation = anOrganisation(mockMvc);
@@ -434,8 +540,41 @@ class RosteringHttpTest {
                 organisation,
                 "SCHEDULER"))
         .andExpect(status().isUnprocessableEntity())
-        .andExpect(jsonPath("$.title").value("Assignment refused"))
-        .andExpect(jsonPath("$.detail").value(containsString(nextWeek)));
+        .andExpect(jsonPath("$.title").value("Roster breaks the rules"))
+        .andExpect(jsonPath("$.violations.length()").value(1))
+        .andExpect(jsonPath("$.violations[0].employee").value(ada))
+        .andExpect(jsonPath("$.violations[0].constraint").value("overlapping work"))
+        .andExpect(jsonPath("$.violations[0].detail").value(containsString(nextWeek)));
+  }
+
+  /**
+   * R18 at publication, over a real database. Ada was free when she was assigned, and declared
+   * afterwards that she cannot work that day. Nothing about the draft changed, so only publication
+   * can catch it, and it refuses with that violation listed like any other (#205).
+   */
+  @Test
+  void GivenUnavailabilityDeclaredAfterAssignment_WhenPublishing_ThenItIsRefusedWithThatViolation()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String roster = generateRoster(organisation, "2026-11-30T00:00:00Z", "2026-12-01T00:00:00Z");
+    String shift = defineShift(organisation, "2026-11-30T08:00:00Z", "2026-11-30T16:00:00Z", 1);
+    assign(organisation, roster, shift, ada);
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+                .content("{\"start\":\"2026-11-30T00:00:00Z\",\"end\":\"2026-12-01T00:00:00Z\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.title").value("Roster breaks the rules"))
+        .andExpect(jsonPath("$.violations.length()").value(1))
+        .andExpect(jsonPath("$.violations[0].employee").value(ada))
+        .andExpect(jsonPath("$.violations[0].constraint").value("declared unavailability"))
+        .andExpect(jsonPath("$.violations[0].detail").value(containsString(shift)));
   }
 
   /**

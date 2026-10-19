@@ -47,6 +47,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-039](ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md) | Lapse pending swaps in the publication that supersedes their roster | Accepted | 2026-10-15 |
 | [ADR-040](ADR-040-withdraw-a-declaration-by-what-it-says.md) | Withdraw a declaration by what it says, and keep nothing of it | Accepted | 2026-10-18 |
 | [ADR-041](ADR-041-make-concurrent-changes-take-turns-on-the-row.md) | Make concurrent changes to one aggregate take turns on its row, rather than reject the later | Accepted | 2026-10-19 |
+| [ADR-042](ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md) | Judge a roster by one check that publication and an advisory read share | Accepted | 2026-10-19 |
 
 ## Decisions waiting to be recorded
 
