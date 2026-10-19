@@ -25,6 +25,14 @@ serve the Rosters screen, which today learns a draft is illegal only when publis
 proposals that must not offer anything illegal (#196, #199, #200, #201, #207). A copy of the checks
 would drift from publication.
 
+This amends two things ADR-033 states:
+
+- a person's own shifts are now compared in every pair, not only as neighbours by start time;
+- an overlap found at publication now arrives in the list of violations, rather than as a 422
+  titled "Assignment refused".
+
+ADR-033's rule — R3 judged across every authoritative roster, under the publication lock — stands.
+
 The owner decided on 2026-10-19:
 
 - one shared check collects every violation;

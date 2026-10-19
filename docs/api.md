@@ -119,8 +119,9 @@ merging into it, and every limit is optional: one left out is not enforced.
 `GET /api/rosters/{id}/assessment` answers what publishing a draft would say now, without
 publishing it: every rule it breaks, in the same shape a publication refusal uses, and every shift
 in its period with fewer people than it requires. It is advice, judged without the publication
-lock; publishing judges again and decides. A roster that is not a draft answers `409`. With
-invented identifiers:
+lock; publishing judges again and decides. A roster that is not a draft answers `409`, and one
+naming a shift that cannot be resolved answers `422` titled `Roster cannot be checked against the
+rules`, as publishing it would. With invented identifiers:
 
 ```json
 {
