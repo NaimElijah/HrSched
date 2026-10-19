@@ -6,10 +6,11 @@ import java.util.List;
 /**
  * The order in which a use case called the fakes that share this log.
  *
- * <p>Kept for one question: whether the publication lock was taken before the reads a use case
- * decides from - publishing, and raising, approving or rejecting a swap. Those reads go through
- * different ports, so one log has to see all of them. Saves are not recorded, because nothing
- * depends on their order.
+ * <p>Kept for two questions: whether the publication lock was taken before the reads a use case
+ * decides from - publishing, and raising, approving or rejecting a swap - and whether a use case
+ * that changes a roster read it for update, so a concurrent change waits rather than being stored
+ * over (ADR-041). Those reads go through different ports, so one log has to see all of them. Saves
+ * are not recorded, because nothing depends on their order.
  */
 final class CallLog {
 
@@ -17,6 +18,7 @@ final class CallLog {
   enum Call {
     LOCK_PUBLICATIONS,
     FIND_ROSTER,
+    FIND_ROSTER_FOR_UPDATE,
     FIND_ROSTERS,
     FIND_SWAP_REQUEST,
     FIND_SWAP_REQUESTS,

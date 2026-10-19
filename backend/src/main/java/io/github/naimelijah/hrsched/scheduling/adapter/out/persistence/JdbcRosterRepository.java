@@ -84,6 +84,14 @@ public class JdbcRosterRepository implements RosterRepository {
    */
   private static final String PUBLICATION_LOCK_SCOPE = "hrsched.roster-publication";
 
+  /** One roster's own row, by identity and only within its organisation. */
+  private static final String ONE_ROSTER =
+      """
+      SELECT id, organisation_id, starts_at, ends_at, published_at, superseded_at,
+             validated_against_constraint_version
+      FROM roster WHERE organisation_id = :organisation AND id = :id
+      """;
+
   private final JdbcClient jdbc;
 
   public JdbcRosterRepository(JdbcClient jdbc) {
@@ -214,12 +222,29 @@ public class JdbcRosterRepository implements RosterRepository {
 
   @Override
   public Optional<Roster> findById(OrganisationId organisation, RosterId id) {
-    return jdbc.sql(
-            """
-            SELECT id, organisation_id, starts_at, ends_at, published_at, superseded_at,
-                   validated_against_constraint_version
-            FROM roster WHERE organisation_id = :organisation AND id = :id
-            """)
+    return one(organisation, id, ONE_ROSTER);
+  }
+
+  /**
+   * Holds the roster's own row and nothing else: the statement reads no other table, and the
+   * assignments are read by a later one, so a reader that waited reads them as the previous holder
+   * committed them (ADR-041).
+   */
+  @Override
+  public Optional<Roster> findForUpdate(OrganisationId organisation, RosterId id) {
+    // In autocommit the row would be released as soon as this statement ended, and a read-only
+    // transaction cannot hold it at all. Either way the caller is not the writer it believes it is.
+    if (!TransactionSynchronizationManager.isActualTransactionActive()
+        || TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
+      throw new IllegalStateException(
+          "A roster can only be read for update inside a writable transaction; anywhere else"
+              + " nothing would hold it");
+    }
+    return one(organisation, id, ONE_ROSTER + "FOR UPDATE");
+  }
+
+  private Optional<Roster> one(OrganisationId organisation, RosterId id, String sql) {
+    return jdbc.sql(sql)
         .param("organisation", organisation.value())
         .param("id", id.value())
         .query(JdbcRosterRepository::toBareRoster)

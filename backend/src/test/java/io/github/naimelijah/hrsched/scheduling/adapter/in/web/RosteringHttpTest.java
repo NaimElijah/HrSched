@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.anOrganisation;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.as;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.asThemself;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.STUCK_AFTER_SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -14,11 +15,26 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.AssignToShiftCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.Role;
+import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
+import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +42,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Drives the whole system over HTTP: define qualifications and people, state their unavailability,
@@ -44,6 +64,9 @@ import org.springframework.test.web.servlet.MockMvc;
 class RosteringHttpTest {
 
   @Autowired private MockMvc mockMvc;
+  @Autowired private PlanRostersUseCase planRosters;
+  @Autowired private PlatformTransactionManager transactions;
+  @Autowired private JdbcClient jdbc;
 
   private String addEmployee(String organisation, String name) throws Exception {
     String body =
@@ -197,6 +220,79 @@ class RosteringHttpTest {
                 "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.assignments.length()").value(0));
+  }
+
+  /**
+   * #33 end to end, through the real use case, its transaction and the real database. Two
+   * Schedulers assign different people to one draft at once. The first is held open inside its
+   * transaction, its assignment made but not committed, until the second request is waiting on the
+   * database; only then does it commit. Both assignments must survive. Without the read for update,
+   * the second request stored the empty draft it had read plus its own assignment, and the first
+   * one's was lost with nothing said.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenTwoSchedulersAssigningToOneDraftAtOnce_WhenBothCommit_ThenBothAssignmentsAreKept()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String roster = generateRoster(organisation, "2026-11-23T00:00:00Z", "2026-11-24T00:00:00Z");
+    String morning = defineShift(organisation, "2026-11-23T06:00:00Z", "2026-11-23T14:00:00Z", 1);
+    String evening = defineShift(organisation, "2026-11-23T14:00:00Z", "2026-11-23T22:00:00Z", 1);
+    String ada = addEmployee(organisation, "Ada");
+    String grace = addEmployee(organisation, "Grace");
+    OrganisationId acting = new OrganisationId(UUID.fromString(organisation));
+    MockHttpServletRequestBuilder assigningGrace =
+        as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+            .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(evening, grace));
+
+    ExecutorService secondScheduler = Executors.newSingleThreadExecutor();
+    AtomicReference<Future<?>> second = new AtomicReference<>();
+    try {
+      new TransactionTemplate(transactions)
+          .executeWithoutResult(
+              held -> {
+                planRosters.assign(
+                    new TenantActor(UserId.newId(), acting, Role.SCHEDULER),
+                    new AssignToShiftCommand(
+                        acting,
+                        new RosterId(UUID.fromString(roster)),
+                        new ShiftId(UUID.fromString(morning)),
+                        new EmployeeId(UUID.fromString(ada))));
+                int first = jdbc.sql("SELECT pg_backend_pid()").query(Integer.class).single();
+                second.set(
+                    secondScheduler.submit(
+                        () -> mockMvc.perform(assigningGrace).andExpect(status().isOk())));
+                awaitSomebodyWaitingOn(first, second.get());
+              });
+      second.get().get(STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
+    } finally {
+      secondScheduler.shutdownNow();
+    }
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.assignments.length()").value(2));
+  }
+
+  /**
+   * Returns once some other backend is waiting on a lock {@code holder} holds, or once {@code
+   * other} has finished without ever waiting - which is the failure the caller is testing for, and
+   * should fail on its assertion rather than hang.
+   */
+  private void awaitSomebodyWaitingOn(int holder, Future<?> other) {
+    long giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(STUCK_AFTER_SECONDS);
+    while (!other.isDone()
+        && !jdbc.sql(
+                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity"
+                    + " WHERE :holder = ANY (pg_blocking_pids(pid)))")
+            .param("holder", holder)
+            .query(Boolean.class)
+            .single()) {
+      if (System.nanoTime() > giveUpAt) {
+        throw new IllegalStateException("The second Scheduler never reached the database");
+      }
+    }
   }
 
   @Test

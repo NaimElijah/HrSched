@@ -1062,6 +1062,68 @@ class SchedulingServiceTest {
     assertThat(rosters.log().calls()).first().isEqualTo(CallLog.Call.LOCK_PUBLICATIONS);
   }
 
+  /**
+   * Publication stores the roster it judged, so it holds that roster from the moment it reads it:
+   * an edit landing in between would otherwise be stored over (#33, ADR-041). The draft is read
+   * under the publication lock, never before it, so a publication waiting on an edit holds nothing
+   * another publication needs.
+   */
+  @Test
+  void GivenAScheduler_WhenPublishing_ThenTheDraftIsReadForUpdateUnderThePublicationLock() {
+    Roster draft = emptyDraft(ACME);
+    rosters.log().forget();
+
+    service.publish(scheduler(ACME), ACME, draft.id());
+
+    assertThat(rosters.log().calls())
+        .startsWith(CallLog.Call.LOCK_PUBLICATIONS, CallLog.Call.FIND_ROSTER_FOR_UPDATE);
+  }
+
+  /**
+   * #33: a draft is stored whole, so an edit holds it from its read, and a second edit of the same
+   * draft waits and then reads the first one's change rather than storing over it. That the read
+   * really waits is proven against PostgreSQL, in {@code JdbcRosterRepositoryTest}.
+   */
+  @Test
+  void GivenADraft_WhenASchedulerAssigns_ThenTheDraftIsReadForUpdate() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    rosters.log().forget();
+
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+
+    assertThat(rosters.log().calls()).first().isEqualTo(CallLog.Call.FIND_ROSTER_FOR_UPDATE);
+  }
+
+  /** As {@link #GivenADraft_WhenASchedulerAssigns_ThenTheDraftIsReadForUpdate}, for removing. */
+  @Test
+  void GivenADraft_WhenASchedulerRemovesAnAssignment_ThenTheDraftIsReadForUpdate() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+    rosters.log().forget();
+
+    service.unassign(scheduler(ACME), new RemoveAssignmentCommand(ACME, draft.id(), shift, ada));
+
+    assertThat(rosters.log().calls()).containsExactly(CallLog.Call.FIND_ROSTER_FOR_UPDATE);
+  }
+
+  /**
+   * Reading a roster changes nothing, so it holds nothing: it runs read-only, where a read for
+   * update would be refused, and holding there would only make edits wait on a reader.
+   */
+  @Test
+  void GivenARoster_WhenRead_ThenItIsNotHeld() {
+    Roster draft = emptyDraft(ACME);
+    rosters.log().forget();
+
+    service.findRoster(scheduler(ACME), ACME, draft.id());
+
+    assertThat(rosters.log().calls()).containsExactly(CallLog.Call.FIND_ROSTER);
+  }
+
   // --- R35: R3 is judged across every authoritative roster, not within one --------------------
 
   private Roster storedDraft(TimeRange period) {

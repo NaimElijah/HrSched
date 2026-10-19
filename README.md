@@ -292,7 +292,7 @@ tests coordinate real threads with barriers and latches.
 | :--- | :--- | :--- |
 | Domain | Invariants, rule thresholds at their boundaries, and day arithmetic in each shift's zone, daylight saving included | `WorkingTimeConstraintTest`, `RosterTest` |
 | Application | Use cases against hand-written fakes of their own ports: no Spring, no mocking framework | `SchedulingServiceTest`, `SwapServiceTest` |
-| Persistence | Every query scoped to its organisation, on a real PostgreSQL 18; migrations pinned; concurrent publications raced on real threads | `JdbcRosterRepositoryTest`, `AppendOnlyRosterHistoryMigrationTest` |
+| Persistence | Every query scoped to its organisation, on a real PostgreSQL 18; migrations pinned; concurrent publications and edits raced on real threads | `JdbcRosterRepositoryTest`, `AppendOnlyRosterHistoryMigrationTest` |
 | HTTP | Every endpoint through the real security chain: who reaches what, every problem body, and a trace id on every response | `RosteringHttpTest`, `SwapHttpTest`, `AccountHttpTest` |
 | Architecture | The ten dependency rules above | `HexagonalArchitectureTest` |
 | Frontend | The one module that calls `fetch`, error-body validation, session renewal, and one test file per screen | `api/client.test.ts`, `pages/*.test.tsx` |
@@ -358,7 +358,7 @@ HrSched/
 | Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
 | Generation behind a port, greedy for now ([ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)) | The Timefold solver at once, before ADR-010 says what to optimise | The product does not yet do what it is named for |
 
-All 36 decisions, and the three still waiting to be recorded, are in the
+All 38 decisions, and the three still waiting to be recorded, are in the
 [ADR index](docs/ADRs/README.md).
 
 ## Status and limitations
@@ -376,8 +376,6 @@ built.
 - **A shift's zone is the Scheduler's browser zone.** The Shifts page sends the zone its times were
   typed in, and no page shows a shift's zone yet
   ([#136](https://github.com/NaimElijah/HrSched/issues/136)).
-- **The later of two concurrent edits to one draft wins.** Each edit is atomic, but there is no
-  version column to reject the second one. Publications are different: they take turns.
 - **Some reads load a tenant's whole history.** Publishing, assigning and reading your own schedule
   each load every roster the organisation has ever had, and child rows are inserted one at a time.
   The targets are set (p95 under 300 ms), but nothing measures them yet.

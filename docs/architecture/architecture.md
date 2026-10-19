@@ -111,7 +111,7 @@ Three rules hold this together, and each fails the build when broken:
 | `scheduling.adapter.out.workforce` | An anti-corruption layer: one of **two** classes in scheduling permitted to name another context, and only its published port. |
 | `scheduling.adapter.out.notification` | The other one. Translates "a swap was approved" into the word the `notifications` context uses for it, so nothing inward of the `Notifier` port knows that context exists ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. |
-| `*.adapter.out.persistence` | `Jdbc*Repository` — hand-written SQL through `JdbcClient`, one per driven port, every read carrying its organisation in the `WHERE` clause. The one exception is named as such in its port: `JdbcAccountRepository.findBySignInName`, which sign-in needs because a submitted name is all it has to go on. No ORM: the domain may not be annotated, so mapping is explicit ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). |
+| `*.adapter.out.persistence` | `Jdbc*Repository` — hand-written SQL through `JdbcClient`, one per driven port, every read carrying its organisation in the `WHERE` clause. A `findForUpdate` holds the root's row until the use case's transaction ends, and refuses outside a writable one ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)). The one exception is named as such in its port: `JdbcAccountRepository.findBySignInName`, which sign-in needs because a submitted name is all it has to go on. No ORM: the domain may not be annotated, so mapping is explicit ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). |
 | `*.adapter.out.audit` | `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog` and `NotificationAuditLog` — one per context, each implementing its own context's `AuditTrail` port and turning one recorded change into a structured log event and a counter. All four are named for their contexts because Spring derives a bean name from the simple class name alone, so four classes called `AuditLog` would collide at startup rather than at compile time. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
 | `access.adapter.out.workforce` | `WorkforceEmployeeDirectory` — an anti-corruption layer, and the **only** class in access permitted to name another context. It asks workforce's published port whether an organisation employs somebody and reduces the answer to a boolean on the spot, so a colleague's name never enters the context that writes the access audit trail. |
@@ -575,13 +575,14 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   application layer and so `@Transactional` cannot go where a reader would look for it
   ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)). A nested use case joins
   its caller's transaction, which is what makes approving a swap atomic.
-- **Two edits of one draft are atomic, but the later still wins.** Two concurrent saves of one
-  roster serialise on its row rather than interleaving, so neither is left half-done; but there is
-  no version column, so the later one overwrites the earlier outright rather than being rejected.
-  Adding one would change port signatures, which is a decision of its own (#33). An edit that waits
-  on a publication of the same draft is the exception: it finds the roster published when it gets
-  the row, and is refused rather than turning it back into a draft. An edit that commits first is
-  still overwritten, by the assignments the publication validated.
+- **Changes to one roster take turns on its row.** `assign` and `unassign` read the draft with
+  `RosterRepository.findForUpdate`, which holds its row until the use case's transaction ends, so a
+  second edit of the same draft waits, then reads the first one's change: both apply. `publish`
+  reads its draft the same way, under the publication lock, so an edit landing between its read and
+  its save waits for it rather than being stored over; an edit that waited on a publication finds
+  the roster published, and is refused. There is no version column to reject the later of two
+  changes, because every command is a change the server makes to what it reads
+  ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)).
 - **Publications within one organisation take turns.** `publish`, `approveSwap`, `rejectSwap` and
   `requestSwap` first call `RosterRepository.lockPublicationsOf`, a transaction-scoped PostgreSQL
   advisory lock per organisation, before reading anything they decide from. A second publication

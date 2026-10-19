@@ -10,6 +10,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.BooleanSupplier;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -111,8 +112,22 @@ public final class RacingTransactions {
    * @throws IllegalStateException if the backend has not waited within {@link #STUCK_AFTER_SECONDS}
    */
   public static void awaitWaitingOnALock(int pid) {
+    awaitWaitingOnALockOr(pid, () -> false);
+  }
+
+  /**
+   * As {@link #awaitWaitingOnALock}, but also returns once {@code wentOnWithoutWaiting} says the
+   * other writer got past the point where it should have waited.
+   *
+   * <p>For a test whose failure is that very thing: a read that should wait for a lock and does
+   * not. Without the second way out, the test would hang until its timeout rather than fail on what
+   * it asserts.
+   *
+   * @throws IllegalStateException if neither has happened within {@link #STUCK_AFTER_SECONDS}
+   */
+  public static void awaitWaitingOnALockOr(int pid, BooleanSupplier wentOnWithoutWaiting) {
     long giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(STUCK_AFTER_SECONDS);
-    while (!isWaitingOnALock(pid)) {
+    while (!wentOnWithoutWaiting.getAsBoolean() && !isWaitingOnALock(pid)) {
       if (System.nanoTime() > giveUpAt) {
         throw new IllegalStateException("The other writer never waited for a lock");
       }

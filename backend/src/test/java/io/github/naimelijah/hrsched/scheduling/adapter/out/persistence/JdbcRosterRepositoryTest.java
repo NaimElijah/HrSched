@@ -2,6 +2,7 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
 import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.STUCK_AFTER_SECONDS;
 import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitWaitingOnALock;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitWaitingOnALockOr;
 import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.backendServingThisTransaction;
 import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.refusalsOf;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,7 +25,9 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -490,6 +493,160 @@ class JdbcRosterRepositoryTest {
     Roster stored = repository.findById(ACME, draft.id()).orElseThrow();
     assertThat(stored.status()).isEqualTo(RosterStatus.PUBLISHED);
     assertThat(stored.assignments()).containsExactly(ada);
+  }
+
+  /**
+   * #33's lost update. Each edit reads the draft, adds to it and stores it whole, so without a lock
+   * the later save deletes the assignment the earlier one added. Read for update, the second edit
+   * waits for the first to commit and then reads what it stored, and both assignments survive.
+   *
+   * <p>The first edit stores only once the second is waiting on its row, so the test cannot pass by
+   * the second simply arriving late. If the second does not wait at all, the first goes on as soon
+   * as the second has read, and the lost assignment is what fails the test.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenAnEditHoldingADraft_WhenAnotherEditReadsItForUpdate_ThenItWaitsAndBothEditsAreKept()
+      throws Exception {
+    Roster draft = draft(ACME);
+    repository.save(draft);
+    Assignment ada = new Assignment(ShiftId.newId(), EmployeeId.newId());
+    Assignment grace = new Assignment(ShiftId.newId(), EmployeeId.newId());
+
+    AtomicInteger second = new AtomicInteger();
+    AtomicBoolean secondHasRead = new AtomicBoolean();
+    List<Throwable> refusals =
+        refusalsOf(
+            waitForTheOther -> {
+              Roster held = repository.findForUpdate(ACME, draft.id()).orElseThrow();
+              waitForTheOther.run();
+              awaitWaitingOnALockOr(second.get(), secondHasRead::get);
+              repository.save(held.with(ada));
+            },
+            waitForTheOther -> {
+              second.set(backendServingThisTransaction());
+              waitForTheOther.run();
+              Roster read = repository.findForUpdate(ACME, draft.id()).orElseThrow();
+              secondHasRead.set(true);
+              repository.save(read.with(grace));
+            });
+
+    assertThat(refusals).isEmpty();
+    assertThat(repository.findById(ACME, draft.id()).orElseThrow().assignments())
+        .containsExactlyInAnyOrder(ada, grace);
+  }
+
+  /**
+   * The other half of #33: an edit committing between a publication's read and its save. Read for
+   * update, the publication waits for the edit, and publishes the roster carrying it rather than
+   * storing the copy it read over it.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void
+      GivenAnEditHoldingADraft_WhenItsPublicationReadsItForUpdate_ThenThePublishedRosterCarriesTheEdit()
+          throws Exception {
+    Roster draft = draft(ACME);
+    repository.save(draft);
+    Assignment ada = new Assignment(ShiftId.newId(), EmployeeId.newId());
+
+    AtomicInteger publication = new AtomicInteger();
+    AtomicBoolean publicationHasRead = new AtomicBoolean();
+    List<Throwable> refusals =
+        refusalsOf(
+            waitForTheOther -> {
+              Roster held = repository.findForUpdate(ACME, draft.id()).orElseThrow();
+              waitForTheOther.run();
+              awaitWaitingOnALockOr(publication.get(), publicationHasRead::get);
+              repository.save(held.with(ada));
+            },
+            waitForTheOther -> {
+              publication.set(backendServingThisTransaction());
+              waitForTheOther.run();
+              Roster read = repository.findForUpdate(ACME, draft.id()).orElseThrow();
+              publicationHasRead.set(true);
+              repository.save(read.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
+            });
+
+    assertThat(refusals).isEmpty();
+    Roster stored = repository.findById(ACME, draft.id()).orElseThrow();
+    assertThat(stored.status()).isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(stored.assignments()).containsExactly(ada);
+  }
+
+  /**
+   * The same wait the other way round: an edit reaching a draft a publication holds waits for it,
+   * then reads the roster as published, so the use case refuses it as no longer a draft before it
+   * changes anything.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenAPublicationHoldingADraft_WhenAnEditReadsItForUpdate_ThenItFindsItPublished()
+      throws Exception {
+    Roster draft = draft(ACME);
+    repository.save(draft);
+
+    AtomicInteger edit = new AtomicInteger();
+    AtomicReference<RosterStatus> seenByTheEdit = new AtomicReference<>();
+    List<Throwable> refusals =
+        refusalsOf(
+            waitForTheOther -> {
+              Roster held = repository.findForUpdate(ACME, draft.id()).orElseThrow();
+              waitForTheOther.run();
+              awaitWaitingOnALockOr(edit.get(), () -> seenByTheEdit.get() != null);
+              repository.save(held.publishedUnder(A_CONSTRAINT_VERSION, PUBLISHED_AT));
+            },
+            waitForTheOther -> {
+              edit.set(backendServingThisTransaction());
+              waitForTheOther.run();
+              seenByTheEdit.set(repository.findForUpdate(ACME, draft.id()).orElseThrow().status());
+            });
+
+    assertThat(refusals).isEmpty();
+    assertThat(seenByTheEdit).hasValue(RosterStatus.PUBLISHED);
+  }
+
+  /**
+   * In autocommit the row would be released the moment the statement reading it ended, so the
+   * caller would believe it held a roster nobody was waiting on. Refused instead, as the
+   * publication lock is.
+   */
+  @Test
+  void GivenNoTransaction_WhenReadingARosterForUpdate_ThenItIsRefused() {
+    Roster draft = draft(ACME);
+    repository.save(draft);
+
+    assertThatThrownBy(() -> repository.findForUpdate(ACME, draft.id()))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  /**
+   * A use case named {@code find…} runs read-only, where PostgreSQL refuses to hold a row. Refused
+   * here first, in words that name the mistake: a reader asking for what only a writer needs.
+   */
+  @Test
+  void GivenAReadOnlyTransaction_WhenReadingARosterForUpdate_ThenItIsRefused() {
+    Roster draft = draft(ACME);
+    repository.save(draft);
+    TransactionTemplate reading = new TransactionTemplate(PostgresDatabase.transactions());
+    reading.setReadOnly(true);
+
+    assertThatThrownBy(
+            () ->
+                reading.executeWithoutResult(status -> repository.findForUpdate(ACME, draft.id())))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void GivenARosterOfAnotherOrganisation_WhenReadForUpdateByUs_ThenItIsNotFound() {
+    Roster theirs = draft(RIVAL);
+    repository.save(theirs);
+
+    Optional<Roster> found =
+        new TransactionTemplate(PostgresDatabase.transactions())
+            .execute(status -> repository.findForUpdate(ACME, theirs.id()));
+
+    assertThat(found).isEmpty();
   }
 
   /** Generating a draft over a published week is how every replacement starts. */
