@@ -41,6 +41,25 @@ describe('a rule breach', () => {
     expect(screen.getByText(/minimum rest between assignments/)).toBeInTheDocument();
   });
 
+  /**
+   * Publication refuses for more than the working-time rules: somebody on two shifts at once, or on
+   * a shift they declared they cannot work. A heading naming only working time would mislabel those
+   * (ADR-042).
+   */
+  it('GivenABreachOfARuleThatIsNotAboutWorkingTime_WhenRendering_ThenItIsHeadedAsBreakingTheRules', () => {
+    render(
+      <Failure
+        error={ruleBreach([
+          { employee: 'ada', constraint: 'declared unavailability', detail: 'shift s-1' },
+        ])}
+      />,
+    );
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Refused: the roster breaks the rules.');
+    expect(alert).not.toHaveTextContent(/working-time/);
+  });
+
   it('GivenARuleBreach_WhenRendering_ThenItSaysThereIsNoOverride', () => {
     render(
       <Failure error={ruleBreach([{ employee: 'ada', constraint: 'a rule', detail: 'x' }])} />,
@@ -81,7 +100,7 @@ describe('a rule breach', () => {
 });
 
 describe('a refusal that lists no rules', () => {
-  it('GivenAnAssignmentRefusedWithoutViolations_WhenRendering_ThenTheServersReasonIsShownNotTheWorkingTimeRules', () => {
+  it('GivenAnAssignmentRefusedWithoutViolations_WhenRendering_ThenTheServersReasonIsShownNotARuleBreach', () => {
     render(
       <Failure
         error={new ApiError(422, 'Ada does not hold every qualification the shift requires')}
@@ -91,7 +110,7 @@ describe('a refusal that lists no rules', () => {
     const alert = screen.getByRole('alert');
     expect(alert).toHaveTextContent('Refused.');
     expect(alert).toHaveTextContent('does not hold every qualification the shift requires');
-    expect(alert).not.toHaveTextContent(/working-time rules/);
+    expect(alert).not.toHaveTextContent(/breaks the rules/);
     expect(screen.queryByRole('listitem')).not.toBeInTheDocument();
   });
 

@@ -1,4 +1,5 @@
 import { ApiError } from '../api/problem';
+import type { Violation } from '../api/problem';
 
 /**
  * Shows the trace id of the request that was refused, when the backend sent one.
@@ -9,6 +10,33 @@ import { ApiError } from '../api/problem';
  */
 function Reference({ of }: { of: ApiError }) {
   return of.reference === null ? null : <p className="reference">Reference: {of.reference}</p>;
+}
+
+/**
+ * Every rule a roster breaks, one per line, each naming who and how.
+ *
+ * Shared by a publication refusal and a draft's check, because the backend lists both from one
+ * judgement (ADR-042): showing them alike is what lets a scheduler trust that the check means what
+ * publishing will say.
+ */
+export function Violations({
+  violations,
+  nameOf,
+}: {
+  violations: readonly Violation[];
+  /** Resolves an employee id to a name. Without it a scheduler is shown a UUID to act on. */
+  nameOf?: ((employee: string) => string | undefined) | undefined;
+}) {
+  return (
+    <ul>
+      {violations.map((violation, index) => (
+        <li key={index}>
+          <strong>{nameOf?.(violation.employee) ?? violation.employee}</strong> —{' '}
+          {violation.constraint}: {violation.detail}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /**
@@ -31,16 +59,9 @@ export function Failure({
   if (error instanceof ApiError && error.isRuleBreach) {
     return (
       <div className="failure failure--rules" role="alert">
-        <strong>Refused: the roster breaks the working-time rules.</strong>
+        <strong>Refused: the roster breaks the rules.</strong>
         <p>There is no override. Cover means publishing a roster that is itself legal.</p>
-        <ul>
-          {error.violations.map((violation, index) => (
-            <li key={index}>
-              <strong>{nameOf?.(violation.employee) ?? violation.employee}</strong> —{' '}
-              {violation.constraint}: {violation.detail}
-            </li>
-          ))}
-        </ul>
+        <Violations violations={error.violations} nameOf={nameOf} />
         <Reference of={error} />
       </div>
     );
