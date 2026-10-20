@@ -33,13 +33,16 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordExce
 import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterMeasures;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterScore;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
@@ -356,7 +359,12 @@ public class SchedulingService
     List<Roster> existing = rosters.findByOrganisation(organisation);
 
     List<ConstraintViolation> violations =
-        violationsOf(actor, organisation, draft, constraints, existing);
+        violationsOf(
+            organisation,
+            draft,
+            constraints,
+            existing,
+            workforce.candidatesFor(actor, organisation));
     if (!violations.isEmpty()) {
       throw new RosterNotCompliantException(violations);
     }
@@ -515,6 +523,9 @@ public class SchedulingService
    * The same judgement {@code publish} refuses by, run without the publication lock and without
    * holding the draft: it decides nothing, so it holds nothing, and its answer is advice that
    * publication checks again (ADR-042). Named {@code find…}, so it runs read-only.
+   *
+   * <p>It also scores the draft on the organisation's objectives (ADR-010), from the same reads, so
+   * the score and the violations describe one draft as it stood at one moment.
    */
   @Override
   public RosterAssessment findAssessment(
@@ -531,14 +542,41 @@ public class SchedulingService
           "only a draft is checked; a published roster was judged when it was published");
     }
     ConstraintSet constraints = currentOrInitial(organisation);
+    List<Roster> existing = rosters.findByOrganisation(organisation);
+    List<RosterCandidate> candidates = workforce.candidatesFor(actor, organisation);
     List<ConstraintViolation> violations =
-        violationsOf(
-            actor, organisation, draft, constraints, rosters.findByOrganisation(organisation));
+        violationsOf(organisation, draft, constraints, existing, candidates);
+    List<Shift> inPeriod = shifts.findWithin(organisation, draft.period());
     return new RosterAssessment(
         draft.id(),
         constraints.version(),
         violations,
-        draft.shortfallsAmong(shifts.findWithin(organisation, draft.period())));
+        draft.shortfallsAmong(inPeriod),
+        scoreOf(organisation, draft, inPeriod, candidates, existing));
+  }
+
+  /**
+   * How a draft measures on the objectives, and what that comes to under its organisation's weights
+   * (ADR-010).
+   *
+   * @param inPeriod every shift overlapping the draft's period, which holds every shift it assigns
+   * @param candidates the directory's answer the draft was judged against, carrying what each
+   *     person said about when they would like to work
+   * @param existing every roster the organisation holds, from which the ones this would supersede
+   *     are found
+   */
+  private RosterScore scoreOf(
+      OrganisationId organisation,
+      Roster draft,
+      List<Shift> inPeriod,
+      List<RosterCandidate> candidates,
+      List<Roster> existing) {
+    Map<ShiftId, Shift> byId = new LinkedHashMap<>();
+    inPeriod.forEach(shift -> byId.put(shift.id(), shift));
+    Map<EmployeeId, StatedPreferences> preferences = new LinkedHashMap<>();
+    candidates.forEach(candidate -> preferences.put(candidate.id(), candidate.preferences()));
+    return new RosterScore(
+        RosterMeasures.of(draft, byId, preferences, existing), weightsOf(organisation));
   }
 
   @Override
@@ -561,19 +599,20 @@ public class SchedulingService
    * organisation (R5), judged by {@link AssignmentEligibility} against one read of the directory.
    * Listed together, so a refusal names everything wrong at once.
    *
-   * @param actor whoever is acting, carried to the directory so the answer is scoped to them
    * @param existing every roster the organisation holds, from which the work held beside this one
    *     is found
+   * @param candidates the directory's answer for the organisation, read by the caller with the
+   *     acting identity so it is scoped to them
    * @return every rule broken, empty if the roster may be published
    * @throws RosterNotVerifiableException if a shift this roster assigns, or one its people hold
    *     beside it, cannot be resolved: whatever cannot be placed in time cannot be judged
    */
   private List<ConstraintViolation> violationsOf(
-      Actor actor,
       OrganisationId organisation,
       Roster roster,
       ConstraintSet constraints,
-      List<Roster> existing) {
+      List<Roster> existing,
+      List<RosterCandidate> candidates) {
     Map<ShiftId, Shift> assigned = assignedShifts(organisation, roster);
     List<HeldWork> heldElsewhere =
         heldElsewhere(
@@ -585,9 +624,7 @@ public class SchedulingService
 
     List<ConstraintViolation> violations = new ArrayList<>();
     violations.addAll(roster.violationsUnder(constraints, periods, heldElsewhere));
-    violations.addAll(
-        AssignmentEligibility.breachesOn(
-            roster, assigned, workforce.candidatesFor(actor, organisation)));
+    violations.addAll(AssignmentEligibility.breachesOn(roster, assigned, candidates));
     return List.copyOf(violations);
   }
 

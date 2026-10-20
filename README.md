@@ -372,9 +372,9 @@ built.
 
 **Known limitations:**
 - **Generation optimises nothing.** `GreedyRosterGenerator` takes the first eligible person for each
-  shift, and ignores fairness, preferences and disruption. ADR-010 defines what makes one legal
-  roster better than another; the solver that would optimise it is
-  [#28](https://github.com/NaimElijah/HrSched/issues/28).
+  shift, and ignores fairness, preferences and disruption. ADR-010 defines those objectives and the
+  draft check scores a draft on them under the organisation's weights, but the solver that would
+  optimise them is [#28](https://github.com/NaimElijah/HrSched/issues/28).
 - **A shift's zone is the Scheduler's browser zone.** The Shifts page sends the zone its times were
   typed in, and no page shows a shift's zone yet
   ([#136](https://github.com/NaimElijah/HrSched/issues/136)).

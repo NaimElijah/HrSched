@@ -30,9 +30,11 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
 import io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterMeasures;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterScore;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
@@ -1414,6 +1416,82 @@ class SchedulingServiceTest {
     RosterAssessment assessed = service.findAssessment(scheduler(ACME), ACME, thisWeek.id());
 
     assertThat(assessed.shortfalls()).containsExactly(new Shortfall(sundayNight, 1, 0));
+  }
+
+  // --- F34, ADR-010: the draft check scores the draft. Every weight here is invented. -----------
+
+  /**
+   * Ada would rather not work Monday, and the draft puts her on Monday's shift, which is marked
+   * unpopular: one unpopular shift for her, and one preference gone against. Disruption is not
+   * weighed, so it adds nothing to the total.
+   */
+  @Test
+  void GivenWeightedObjectives_WhenAssessed_ThenEachMeasureAndTheWeightedTotalAreReported() {
+    EmployeeId ada = EmployeeId.newId();
+    workforce.add(
+        ACME,
+        new RosterCandidate(
+            ada,
+            "Ada",
+            Set.of(),
+            List.of(),
+            new StatedPreferences(List.of(), List.of(MONDAY_DAY))));
+    ShiftId unpopular =
+        service.defineShift(
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), true));
+    service.reviseObjectives(
+        admin(ACME),
+        new ReviseObjectivesCommand(ACME, Map.of(Objective.FAIRNESS, 3, Objective.PREFERENCES, 2)));
+    Roster draft = carrying(new Assignment(unpopular, ada));
+
+    RosterScore score = service.findAssessment(scheduler(ACME), ACME, draft.id()).score();
+
+    assertThat(score.measures()).isEqualTo(new RosterMeasures(1, 1, 0));
+    assertThat(score.weightedTotal()).isEqualTo(3 * 1 + 2 * 1);
+  }
+
+  /** Weighing nothing prefers nothing: still measured, and every draft totals zero. */
+  @Test
+  void GivenNothingWeighted_WhenAssessed_ThenTheDraftIsMeasuredButTotalsZero() {
+    ShiftId unpopular =
+        service.defineShift(
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), true));
+    Roster draft = carrying(new Assignment(unpopular, available(ACME, "Ada")));
+
+    RosterScore score = service.findAssessment(scheduler(ACME), ACME, draft.id()).score();
+
+    assertThat(score.measures().heaviestUnpopularLoad()).isEqualTo(1);
+    assertThat(score.weightedTotal()).isZero();
+  }
+
+  /** The baseline is what publishing the draft would supersede, as publication decides it (R11). */
+  @Test
+  void GivenADraftReplacingAPublishedRoster_WhenAssessed_ThenTheAssignmentsItChangesAreCounted() {
+    available(ACME, "Ada");
+    EmployeeId bea = available(ACME, "Bea");
+    ShiftId monday = aShift(ACME, Set.of());
+    Roster published = publishTheWeek();
+    Roster replacement = carrying(new Assignment(monday, bea));
+
+    RosterScore score = service.findAssessment(scheduler(ACME), ACME, replacement.id()).score();
+
+    assertThat(published.assignments()).doesNotContain(new Assignment(monday, bea));
+    assertThat(score.measures().assignmentsChanged())
+        .describedAs("whoever had Monday loses it, and Bea gains it")
+        .isEqualTo(2);
+  }
+
+  /** The score never decides: a draft breaking a rule is still scored, and still refused. */
+  @Test
+  void GivenADraftBreakingARule_WhenAssessed_ThenItIsStillScored() {
+    Roster draft = carrying(new Assignment(aShift(ACME, Set.of()), EmployeeId.newId()));
+
+    RosterAssessment assessed = service.findAssessment(scheduler(ACME), ACME, draft.id());
+
+    assertThat(assessed.violations()).isNotEmpty();
+    assertThat(assessed.score().measures()).isEqualTo(new RosterMeasures(0, 0, 0));
   }
 
   @Test

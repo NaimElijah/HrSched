@@ -28,17 +28,28 @@ export interface Shortfall {
   readonly shortBy: number;
 }
 
+/** How a draft measures on one objective. Mirrors ObjectiveResponse (ADR-010). */
+export interface ObjectiveScore {
+  readonly objective: 'FAIRNESS' | 'PREFERENCES' | 'DISRUPTION';
+  /** A count; lower is better. */
+  readonly measure: number;
+  /** The organisation's weight on it, or null when it is not weighed. */
+  readonly weight: number | null;
+}
+
 /**
  * What publishing a draft would say now, without publishing it. Mirrors AssessmentResponse.
  *
  * The violations are those a publication refusal would list, from the same judgement (ADR-042),
- * so they are shown the same way.
+ * so they are shown the same way. The objectives and their total rank the draft and decide nothing.
  */
 export interface Assessment {
   readonly roster: string;
   readonly constraintVersion: number;
   readonly violations: readonly Violation[];
   readonly shortfalls: readonly Shortfall[];
+  readonly objectives: readonly ObjectiveScore[];
+  readonly weightedTotal: number;
 }
 
 /** Mirrors RosterResponse. `validatedAgainstConstraintVersion` is null while a draft. */

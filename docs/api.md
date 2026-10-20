@@ -121,10 +121,13 @@ merging into it, and every limit is optional: one left out is not enforced.
 
 `GET /api/rosters/{id}/assessment` answers what publishing a draft would say now, without
 publishing it: every rule it breaks, in the same shape a publication refusal uses, and every shift
-in its period with fewer people than it requires. It is advice, judged without the publication
-lock; publishing judges again and decides. A roster that is not a draft answers `409`, and one
+in its period with fewer people than it requires. Beside those, how the draft scores on each
+objective, with the organisation's weight on it, and the weighted total; lower is better, an
+unweighted objective adds nothing, and the score never decides whether the draft may be published
+([ADR-010](ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). It is
+advice, judged without the publication lock; publishing judges again and decides. A roster that is not a draft answers `409`, and one
 naming a shift that cannot be resolved answers `422` titled `Roster cannot be checked against the
-rules`, as publishing it would. With invented identifiers:
+rules`, as publishing it would. With invented identifiers and weights:
 
 ```json
 {
@@ -144,7 +147,13 @@ rules`, as publishing it would. With invented identifiers:
       "assigned": 1,
       "shortBy": 1
     }
-  ]
+  ],
+  "objectives": [
+    { "objective": "FAIRNESS", "measure": 2, "weight": 3 },
+    { "objective": "PREFERENCES", "measure": 1, "weight": null },
+    { "objective": "DISRUPTION", "measure": 0, "weight": 1 }
+  ],
+  "weightedTotal": 6
 }
 ```
 

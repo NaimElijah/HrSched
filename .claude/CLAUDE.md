@@ -43,7 +43,8 @@ How the backend enforces each of these is in `backend/CLAUDE.md`.
 
 - **Generation is greedy, not optimised.** Automatic generation is the point of the product and
   a real implementation is a solver; `GreedyRosterGenerator` exists to prove the port (ADR-005).
-  It ignores fairness, preferences and disruption entirely.
+  It ignores fairness, preferences and disruption entirely: ADR-010 defines them and the draft
+  check scores them, but nothing generates against them.
 - **The audit trail is a log stream, not a trail.** Every change and refusal is recorded through
   an `AuditTrail` driven port, but nothing is stored and nothing is queryable: the record lives
   only wherever stdout is collected (ADR-018). The requirement is now a durable trail an Admin

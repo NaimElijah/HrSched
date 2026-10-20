@@ -303,7 +303,8 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   — are `Objective`s, and `ObjectiveWeights` says how much one organisation cares about each: a
   whole number of at least one, or not weighed at all, with no default anywhere (R40). Weights are
   one row per organisation, replaced whole and never versioned, because nothing is judged against
-  a weight ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)).
+  a weight. The draft check scores a draft under them; generation does not use them yet
+  ([#28](https://github.com/NaimElijah/HrSched/issues/28), [ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)).
 - **Tenancy is in every signature, on purpose.** Repository lookups take an `OrganisationId`, so
   a cross-tenant read cannot be written by forgetting a filter. See
   [ADR-009](../ADRs/ADR-009-tenant-isolation-in-the-domain.md). A `save` takes no organisation of
@@ -557,6 +558,11 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   `find…`, it runs read-only, takes neither the publication lock nor a row lock, stores and records
   nothing, and answers drafts only — a published roster was judged under the version it records
   (Q9), so asking about one is a 409. Admins and Schedulers may ask ([ADR-042](../ADRs/ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md)).
+  From the same reads it also scores the draft: `RosterMeasures.of` counts the heaviest
+  unpopular load, the preferences gone against and the assignments changed from the published
+  rosters the draft would supersede, found by `Roster.isSupersededBy` as publication finds them,
+  and `RosterScore` totals them under the organisation's `ObjectiveWeights`. The directory is read
+  once for both the judgement and the preferences ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)).
 - **Nobody is published in two places at once, whatever the rules say.** Judging a roster lists
   every pair of overlapping shifts in each person's work (R3), whatever the constraint set says. It
   cannot be left to the rules: minimum rest is the only one that notices an overlap, it is optional,
