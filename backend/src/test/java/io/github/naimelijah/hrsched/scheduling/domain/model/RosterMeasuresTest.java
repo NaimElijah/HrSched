@@ -127,6 +127,19 @@ class RosterMeasuresTest {
         .isEqualTo(1);
   }
 
+  /**
+   * Per assignment, as ADR-010 says: two nights inside one span they would rather not work is two.
+   */
+  @Test
+  void GivenTwoAssignmentsInsideOneSpanTheyWouldRatherNotWork_WhenMeasured_ThenEachCounts() {
+    Roster roster = draft(THE_WEEK, on(MONDAY_NIGHT, ADA), on(TUESDAY_NIGHT, ADA));
+    StatedPreferences theseNights =
+        new StatedPreferences(
+            List.of(), List.of(span("2026-09-07T20:00:00Z", "2026-09-09T08:00:00Z")));
+
+    assertThat(measure(roster, Map.of(ADA, theseNights)).preferencesGoneAgainst()).isEqualTo(2);
+  }
+
   @Test
   void GivenSomebodyOnAShiftOutsideWhatTheyWouldRatherNotWork_WhenMeasured_ThenNothingCounts() {
     Roster roster = draft(THE_WEEK, on(MONDAY, ADA));
@@ -150,6 +163,17 @@ class RosterMeasuresTest {
     StatedPreferences mondays = new StatedPreferences(List.of(MONDAY.period()), List.of());
 
     assertThat(measure(roster, Map.of(ADA, mondays)).preferencesGoneAgainst()).isEqualTo(1);
+  }
+
+  /** Per wish, as ADR-010 says: two separate wishes the roster meets neither of is two. */
+  @Test
+  void GivenTwoUnmetWishesFromOnePerson_WhenMeasured_ThenEachCounts() {
+    Roster roster = draft(THE_WEEK, on(MONDAY, BEA), on(MONDAY_NIGHT, BEA));
+    StatedPreferences mondayAndItsNight =
+        new StatedPreferences(List.of(MONDAY.period(), MONDAY_NIGHT.period()), List.of());
+
+    assertThat(measure(roster, Map.of(ADA, mondayAndItsNight)).preferencesGoneAgainst())
+        .isEqualTo(2);
   }
 
   /** A wish for next week is next week's roster's to meet, not this one's. */
