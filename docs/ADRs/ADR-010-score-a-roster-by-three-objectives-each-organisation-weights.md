@@ -63,8 +63,9 @@ weights them, and the score is the weighted sum.**
 - a `PREFERS` statement that overlaps the roster's period, where its author holds no assignment
   overlapping it.
 
-A statement counts once however many shifts it touches. So filling a shift beyond its headcount can
-never lower this measure more than once per statement.
+A span somebody would rather not work counts once for each assignment of theirs inside it. A
+`PREFERS` statement counts once however many shifts it touches. So filling a shift beyond its
+headcount can lower this measure by at most one for each `PREFERS` statement it meets.
 
 **Disruption: the assignments changed.** This compares the draft with the published rosters it
 would supersede. Each of these counts once:
