@@ -8,6 +8,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
@@ -54,7 +55,8 @@ class GreedyRosterGeneratorTest {
   }
 
   private static RosterCandidate anyone(String name) {
-    return new RosterCandidate(EmployeeId.newId(), name, Set.of(), List.of());
+    return new RosterCandidate(
+        EmployeeId.newId(), name, Set.of(), List.of(), StatedPreferences.none());
   }
 
   @Test

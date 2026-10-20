@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.scheduling.application.port.out;
 
+import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
@@ -21,18 +22,22 @@ import java.util.Set;
  * @param name their name, for display
  * @param qualifications what they hold
  * @param unavailability spans they cannot work
+ * @param preferences what they said about when they would like to work, which never decides whether
+ *     they may (ADR-010)
  */
 public record RosterCandidate(
     EmployeeId id,
     String name,
     Set<QualificationId> qualifications,
-    List<TimeRange> unavailability) {
+    List<TimeRange> unavailability,
+    StatedPreferences preferences) {
 
   public RosterCandidate {
     Objects.requireNonNull(id, "id must not be null");
     Objects.requireNonNull(name, "name must not be null");
     qualifications = Set.copyOf(qualifications);
     unavailability = List.copyOf(unavailability);
+    Objects.requireNonNull(preferences, "preferences must not be null");
   }
 
   /**

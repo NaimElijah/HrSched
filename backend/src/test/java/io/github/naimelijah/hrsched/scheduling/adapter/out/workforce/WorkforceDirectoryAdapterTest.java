@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
+import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
@@ -56,10 +57,13 @@ class WorkforceDirectoryAdapterTest {
   @Test
   void GivenARosterableEmployee_WhenTranslated_ThenSchedulingReceivesItsOwnType() {
     EmployeeId ada = EmployeeId.newId();
-    workforce.publish(new RosterableEmployee(ada, "Ada", Set.of(), List.of(), Optional.empty()));
+    workforce.publish(
+        new RosterableEmployee(
+            ada, "Ada", Set.of(), List.of(), Optional.empty(), List.of(), List.of()));
 
     assertThat(adapter.candidatesFor(scheduler(), ACME))
-        .containsExactly(new RosterCandidate(ada, "Ada", Set.of(), List.of()));
+        .containsExactly(
+            new RosterCandidate(ada, "Ada", Set.of(), List.of(), StatedPreferences.none()));
   }
 
   @Test
@@ -67,7 +71,8 @@ class WorkforceDirectoryAdapterTest {
     EmployeeId ada = EmployeeId.newId();
     QualificationId forklift = QualificationId.newId();
     workforce.publish(
-        new RosterableEmployee(ada, "Ada", Set.of(forklift), List.of(MONDAY), Optional.empty()));
+        new RosterableEmployee(
+            ada, "Ada", Set.of(forklift), List.of(MONDAY), Optional.empty(), List.of(), List.of()));
 
     RosterCandidate candidate = adapter.candidatesFor(scheduler(), ACME).getFirst();
 
@@ -87,18 +92,44 @@ class WorkforceDirectoryAdapterTest {
     EmployeeId ada = EmployeeId.newId();
     workforce.publish(
         new RosterableEmployee(
-            ada, "Ada", Set.of(), List.of(), Optional.of(Duration.ofMinutes(2400))));
+            ada,
+            "Ada",
+            Set.of(),
+            List.of(),
+            Optional.of(Duration.ofMinutes(2400)),
+            List.of(),
+            List.of()));
     RosterCandidate withContract = adapter.candidatesFor(scheduler(), ACME).getFirst();
 
     FakeWorkforce withoutContract = new FakeWorkforce();
     withoutContract.publish(
-        new RosterableEmployee(ada, "Ada", Set.of(), List.of(), Optional.empty()));
+        new RosterableEmployee(
+            ada, "Ada", Set.of(), List.of(), Optional.empty(), List.of(), List.of()));
     RosterCandidate uncontracted =
         new WorkforceDirectoryAdapter(withoutContract, qualifications)
             .candidatesFor(scheduler(), ACME)
             .getFirst();
 
     assertThat(withContract).isEqualTo(uncontracted);
+  }
+
+  /**
+   * Preferences do cross, unlike hours: they are what the preference objective weighs (ADR-010).
+   * Each strength arrives as its own list, so scheduling never names workforce's enum for it.
+   */
+  @Test
+  void GivenStatedPreferences_WhenTranslated_ThenEachStrengthArrivesAsItsOwnSpans() {
+    EmployeeId ada = EmployeeId.newId();
+    TimeRange tuesday =
+        new TimeRange(Instant.parse("2026-09-08T08:00:00Z"), Instant.parse("2026-09-08T16:00:00Z"));
+    workforce.publish(
+        new RosterableEmployee(
+            ada, "Ada", Set.of(), List.of(), Optional.empty(), List.of(MONDAY), List.of(tuesday)));
+
+    RosterCandidate candidate = adapter.candidatesFor(scheduler(), ACME).getFirst();
+
+    assertThat(candidate.preferences())
+        .isEqualTo(new StatedPreferences(List.of(MONDAY), List.of(tuesday)));
   }
 
   /** The caller's own identity is what workforce must authorise against, never a substitute. */

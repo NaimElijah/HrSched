@@ -29,6 +29,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableExc
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
@@ -156,7 +157,8 @@ class SwapServiceTest {
   private EmployeeId available(
       OrganisationId organisation, String name, Set<QualificationId> holds) {
     EmployeeId id = EmployeeId.newId();
-    workforce.add(organisation, new RosterCandidate(id, name, holds, List.of()));
+    workforce.add(
+        organisation, new RosterCandidate(id, name, holds, List.of(), StatedPreferences.none()));
     return id;
   }
 
@@ -530,7 +532,9 @@ class SwapServiceTest {
   @Test
   void GivenAColleagueWhoCannotWorkThen_WhenApprovingTheSwap_ThenItIsRefused() {
     EmployeeId busy = EmployeeId.newId();
-    workforce.add(ACME, new RosterCandidate(busy, "Busy", Set.of(), List.of(MONDAY_DAY)));
+    workforce.add(
+        ACME,
+        new RosterCandidate(busy, "Busy", Set.of(), List.of(MONDAY_DAY), StatedPreferences.none()));
     ShiftId shift = aShift(Set.of());
     Roster published = publishedWith(ada, shift);
     SwapRequestId request =

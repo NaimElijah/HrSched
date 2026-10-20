@@ -582,8 +582,12 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   own declarations are read the way they are declared instead: `findUnavailability` and
   `findPreferences` admit the person themself, decided by `TenantActor.isThemself`, or an Admin or
   Scheduler on their behalf (F6). That answers for one person at a time, so it widens nothing.
-  Preferences reach the API only through that read: `RosterableEmployee` still carries none,
-  because nothing in scheduling weighs them yet.
+  Preferences reach the API only through that read. They also cross into scheduling, on the
+  restricted listing: `RosterableEmployee` carries each person's stated spans, one list per
+  strength, and `RosterCandidate` holds them as `StatedPreferences`, which never decide whether
+  anybody may work, only how a roster scores
+  ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)).
+  Contracted hours still do not cross.
 - **A declaration is withdrawn by what it says, because it has no identity** (F26). Unavailability
   is a `TimeRange` and a preference a `ShiftPreference` value inside the `Employee` aggregate, and
   their rows are keyed by an ordinal the repository renumbers on every save. So

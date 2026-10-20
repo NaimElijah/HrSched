@@ -34,6 +34,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shortfall;
+import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
@@ -169,7 +170,8 @@ class SchedulingServiceTest {
 
   private EmployeeId available(OrganisationId organisation, String name) {
     EmployeeId id = EmployeeId.newId();
-    workforce.add(organisation, new RosterCandidate(id, name, Set.of(), List.of()));
+    workforce.add(
+        organisation, new RosterCandidate(id, name, Set.of(), List.of(), StatedPreferences.none()));
     return id;
   }
 
@@ -691,7 +693,8 @@ class SchedulingServiceTest {
   private EmployeeId qualified(
       OrganisationId organisation, String name, Set<QualificationId> holds) {
     EmployeeId id = EmployeeId.newId();
-    workforce.add(organisation, new RosterCandidate(id, name, holds, List.of()));
+    workforce.add(
+        organisation, new RosterCandidate(id, name, holds, List.of(), StatedPreferences.none()));
     return id;
   }
 
@@ -949,7 +952,9 @@ class SchedulingServiceTest {
   @Test
   void GivenSomebodyWhoDeclaredTheyCannotWorkThen_WhenAssigningThem_ThenItIsRefused() {
     EmployeeId busy = EmployeeId.newId();
-    workforce.add(ACME, new RosterCandidate(busy, "Ada", Set.of(), List.of(MONDAY_DAY)));
+    workforce.add(
+        ACME,
+        new RosterCandidate(busy, "Ada", Set.of(), List.of(MONDAY_DAY), StatedPreferences.none()));
     Roster draft = emptyDraft(ACME);
     ShiftId shift = aShift(ACME, Set.of());
 
@@ -965,7 +970,9 @@ class SchedulingServiceTest {
     TimeRange elsewhere =
         new TimeRange(Instant.parse("2026-10-09T08:00:00Z"), Instant.parse("2026-10-09T16:00:00Z"));
     EmployeeId ada = EmployeeId.newId();
-    workforce.add(ACME, new RosterCandidate(ada, "Ada", Set.of(), List.of(elsewhere)));
+    workforce.add(
+        ACME,
+        new RosterCandidate(ada, "Ada", Set.of(), List.of(elsewhere), StatedPreferences.none()));
     Roster draft = emptyDraft(ACME);
     ShiftId shift = aShift(ACME, Set.of());
 
@@ -1091,7 +1098,9 @@ class SchedulingServiceTest {
   void
       GivenADraftCarryingSomebodyDeclaredUnavailableThen_WhenPublishing_ThenItIsRefusedNamingThem() {
     EmployeeId ada = EmployeeId.newId();
-    workforce.add(ACME, new RosterCandidate(ada, "Ada", Set.of(), List.of(MONDAY_DAY)));
+    workforce.add(
+        ACME,
+        new RosterCandidate(ada, "Ada", Set.of(), List.of(MONDAY_DAY), StatedPreferences.none()));
     ShiftId day = aShift(ACME, Set.of());
     Roster draft = carrying(new Assignment(day, ada));
 
@@ -1153,7 +1162,10 @@ class SchedulingServiceTest {
     workforce.define(ACME, forklift);
     EmployeeId ada = available(ACME, "Ada");
     EmployeeId grace = EmployeeId.newId();
-    workforce.add(ACME, new RosterCandidate(grace, "Grace", Set.of(), List.of(MONDAY_DAY)));
+    workforce.add(
+        ACME,
+        new RosterCandidate(
+            grace, "Grace", Set.of(), List.of(MONDAY_DAY), StatedPreferences.none()));
     ShiftId day = aShift(ACME, Set.of(forklift));
     ShiftId sameDay = aShift(ACME, Set.of());
     Roster draft =
@@ -1187,7 +1199,10 @@ class SchedulingServiceTest {
     workforce.define(ACME, forklift);
     EmployeeId ada = available(ACME, "Ada");
     EmployeeId grace = EmployeeId.newId();
-    workforce.add(ACME, new RosterCandidate(grace, "Grace", Set.of(), List.of(MONDAY_DAY)));
+    workforce.add(
+        ACME,
+        new RosterCandidate(
+            grace, "Grace", Set.of(), List.of(MONDAY_DAY), StatedPreferences.none()));
     EmployeeId linus = available(ACME, "Linus");
     EmployeeId stranger = EmployeeId.newId();
     ShiftId day = aShift(ACME, Set.of(forklift));
