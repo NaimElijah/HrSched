@@ -129,7 +129,7 @@ Components, the authentication sequence and the data flow are in
 | Observability | OpenTelemetry starter, Micrometer Prometheus | Boot BOM | A trace id on every response and log line; metrics pulled, not pushed |
 | Frontend | React, TypeScript, Vite | 19.2.8 / 6.0.3 / 8.2.2 | Strict types turn API drift into a compile error ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)) |
 | Frontend tests | Vitest, Testing Library | 4.1.11 / 16.3.3 | `fetch` is stubbed at the one module that calls it |
-| Format and lint | Spotless (google-java-format), Prettier, ESLint | 3.10.0 / 3.9.6 / 10.9.1 | Formatting is checked by the same command that builds |
+| Format and lint | Spotless (google-java-format), Prettier, ESLint | 3.10.4 / 3.9.6 / 10.9.1 | Formatting is checked by the same command that builds |
 | Build | Maven Wrapper | 3.9.16 | Pinned in the repo, so no global Maven install is needed |
 
 ## Quick start
