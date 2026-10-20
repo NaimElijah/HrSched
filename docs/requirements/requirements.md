@@ -221,8 +221,9 @@ unpopular shifts, respect for stated preferences, and minimal disruption when re
 published roster. These are explicitly *not* constraints — see ADR-005.
 
 **Each organisation weights the objectives itself** (Q13), as it configures its own constraint set:
-a weight is configuration, never a constant. How they are modelled is ADR-010, which is reserved and
-now owed ([#27](https://github.com/NaimElijah/HrSched/issues/27)).
+a weight is configuration, never a constant. How they are modelled is
+[ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md), built in
+[#27](https://github.com/NaimElijah/HrSched/issues/27).
 
 ---
 
@@ -372,7 +373,7 @@ applicant tracking, and being the HR system of record.
 | Q26 | Which roster governs a shift that straddles two roster periods, and is R3 judged across rosters or within one? | Either roster may carry it, and R3 is judged across every authoritative roster — R35, [#98](https://github.com/NaimElijah/HrSched/issues/98) | 2026-09-22 |
 | Q32 | Must an account holding the EMPLOYEE role always be linked to an employee? | Yes, and existing unlinked ones are disabled until linked — R34, [#97](https://github.com/NaimElijah/HrSched/issues/97) | 2026-09-22 |
 | Q33 | May an assignment have more than one pending swap request, and what becomes of a pending request once its roster is superseded? | One only (R32), and it lapses (R33) — [#94](https://github.com/NaimElijah/HrSched/issues/94) | 2026-09-22 |
-| Q13 | How are the generator objectives weighted against one another? | Each organisation weights them itself, as configuration. ADR-010 is now owed — [#27](https://github.com/NaimElijah/HrSched/issues/27) | 2026-09-22 |
+| Q13 | How are the generator objectives weighted against one another? | Each organisation weights them itself, as configuration — [ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md), [#27](https://github.com/NaimElijah/HrSched/issues/27) | 2026-09-22 |
 | Q14 | Over what reference period is a weekly maximum averaged? | A reference period configured in the constraint set — [#104](https://github.com/NaimElijah/HrSched/issues/104) | 2026-09-22 |
 | Q17 | Which time zone are working-time rules evaluated in? | Each shift's own — R36, [#29](https://github.com/NaimElijah/HrSched/issues/29) | 2026-09-22 |
 | Q20 | Should an Admin be able to read their organisation's audit trail? | Yes: the trail is durable, stored with the change it records, and an Admin reads their own organisation's only — [#31](https://github.com/NaimElijah/HrSched/issues/31). Its retention is Q23 | 2026-09-22 |

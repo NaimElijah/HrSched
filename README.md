@@ -357,9 +357,9 @@ HrSched/
 | PostgreSQL, hand-written SQL, and a real database in every test ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) | JPA, Spring Data JDBC, jOOQ, an embedded database | Docker to build; every adapter maps rows by hand |
 | Its own tokens, with the organisation taken from the account ([ADR-011](docs/ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md)) | An external OIDC provider, while there is one API and one SPA; roles as token claims, unrevocable until expiry | A database read per request; HrSched stores password hashes |
 | Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
-| Generation behind a port, greedy for now ([ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)) | The Timefold solver at once, before ADR-010 says what to optimise | The product does not yet do what it is named for |
+| Generation behind a port, greedy for now ([ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)) | The Timefold solver at once, before ADR-010 said what to optimise | The product does not yet do what it is named for |
 
-All 39 decisions, and the three still waiting to be recorded, are in the
+All 41 decisions, and the two still waiting to be recorded, are in the
 [ADR index](docs/ADRs/README.md).
 
 ## Status and limitations
@@ -372,8 +372,9 @@ built.
 
 **Known limitations:**
 - **Generation optimises nothing.** `GreedyRosterGenerator` takes the first eligible person for each
-  shift, and ignores fairness, preferences and disruption. A solver waits on ADR-010, which defines
-  what makes one legal roster better than another.
+  shift, and ignores fairness, preferences and disruption. ADR-010 defines what makes one legal
+  roster better than another; the solver that would optimise it is
+  [#28](https://github.com/NaimElijah/HrSched/issues/28).
 - **A shift's zone is the Scheduler's browser zone.** The Shifts page sends the zone its times were
   typed in, and no page shows a shift's zone yet
   ([#136](https://github.com/NaimElijah/HrSched/issues/136)).

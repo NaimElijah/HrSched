@@ -58,7 +58,7 @@ in. Do not invent a requirement, a domain rule, or a persistence choice to make 
 complete.
 
 A new ADR takes the highest number in **either** table of `docs/ADRs/README.md`, plus one — never
-a gap. The gaps (today 010, 035, 036) are reserved under "Decisions waiting to be recorded". The
+a gap. The gaps (today 035, 036) are reserved under "Decisions waiting to be recorded". The
 index row lands in the same commit as the ADR.
 
 ## Git

@@ -18,6 +18,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-007](ADR-007-monorepo-backend-and-frontend.md) | Keep backend and frontend in one repository, as sibling directories | Accepted | 2026-08-29 |
 | [ADR-008](ADR-008-context-integration.md) | Contexts integrate through published ports and a minimal shared kernel | Accepted | 2026-08-30 |
 | [ADR-009](ADR-009-tenant-isolation-in-the-domain.md) | Carry tenancy in the domain and enforce it at the application boundary | Accepted | 2026-08-30 |
+| [ADR-010](ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md) | Score a roster by three objectives, weighted by each organisation | Accepted | 2026-10-20 |
 | [ADR-011](ADR-011-issue-our-own-access-tokens.md) | Issue our own signed access tokens, and resolve the actor from the stored account and session on every request | Accepted | 2026-09-16 |
 | [ADR-012](ADR-012-acting-identity-carries-its-employee-record.md) | The acting identity carries the employee record it is | Accepted | 2026-08-30 |
 | [ADR-013](ADR-013-react-typescript-vite-frontend.md) | Build the frontend on React, TypeScript and Vite, talking to the backend over a dev proxy | Accepted | 2026-08-30 |
@@ -56,7 +57,6 @@ Known-open and blocking work elsewhere. An entry here is a placeholder, **not** 
 
 | Will be | Decision | Blocks |
 | --- | --- | --- |
-| ADR-010 | Objectives: what makes one legal roster better than another | Introducing a real solver (ADR-005) |
 | ADR-035 | The AWS topology: ECS Fargate, RDS, and one CloudFront origin ([#153](https://github.com/NaimElijah/HrSched/issues/153)) | Running on AWS (staging) |
 | ADR-036 | A CDK app as the third buildable project ([#154](https://github.com/NaimElijah/HrSched/issues/154)) | Running on AWS (staging) |
 
