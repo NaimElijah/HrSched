@@ -111,7 +111,9 @@ api "$SCHEDULER" -X POST "localhost:8080/api/rosters/$ROSTER/publication"
 ```
 
 The last call answers with the published roster, shown in the README's
-[Usage](../README.md#usage) section. A `PUT /api/constraints` replaces the whole set rather than
+[Usage](../README.md#usage) section. A shift may also be sent with `"unpopular":true`, which marks
+it as work people would rather not do; left out, it is not marked
+([ADR-010](ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). A `PUT /api/constraints` replaces the whole set rather than
 merging into it, and every limit is optional: one left out is not enforced.
 
 ## Checking a draft

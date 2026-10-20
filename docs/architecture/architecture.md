@@ -407,6 +407,10 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   yet be planned for
   ([#136](https://github.com/NaimElijah/HrSched/issues/136),
   [ADR-034](../ADRs/ADR-034-count-working-days-in-each-shifts-own-time-zone.md)).
+- **A shift may be marked unpopular,** by the Scheduler defining it, and by nobody else: nothing
+  infers it from the clock, the weekday or anybody's preferences. It changes no rule; it is what
+  the fairness objective counts ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). V10 stored every earlier shift as not
+  marked and then dropped the column's default, so the mark is always somebody's answer.
 - **`MaximumWeeklyWorkingTime` treats the roster period as the reference period.** Jurisdictions
   that average over a longer window cannot be expressed; that needs history beyond the roster.
 - **The user interface enforces nothing.** Every rule is the backend's. The UI renders refusals —

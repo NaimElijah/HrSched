@@ -148,7 +148,8 @@ public class SchedulingService
             command.period(),
             command.zone(),
             command.requiredHeadcount(),
-            command.requiredQualifications());
+            command.requiredQualifications(),
+            command.unpopular());
     shifts.save(shift);
     recorded(actor, command.organisation(), SchedulingChange.SHIFT_DEFINED, shift.id().value());
     return shift.id();

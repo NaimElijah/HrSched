@@ -49,7 +49,8 @@ class GreedyRosterGeneratorTest {
         new TimeRange(Instant.parse(start), Instant.parse(end)),
         ZoneOffset.UTC,
         headcount,
-        needed);
+        needed,
+        false);
   }
 
   private static RosterCandidate anyone(String name) {
@@ -112,7 +113,8 @@ class GreedyRosterGeneratorTest {
                 Instant.parse("2026-09-06T15:00:00Z"), Instant.parse("2026-09-06T21:00:00Z")),
             tokyo,
             1,
-            Set.of());
+            Set.of(),
+            false);
     Shift morning =
         new Shift(
             ShiftId.newId(),
@@ -121,7 +123,8 @@ class GreedyRosterGeneratorTest {
                 Instant.parse("2026-09-06T23:00:00Z"), Instant.parse("2026-09-07T05:00:00Z")),
             tokyo,
             1,
-            Set.of());
+            Set.of(),
+            false);
     ConstraintSet tenHourDays =
         ConstraintSet.initial(ACME)
             .revisedTo(List.of(new MaximumDailyWorkingTime(Duration.ofHours(10))));

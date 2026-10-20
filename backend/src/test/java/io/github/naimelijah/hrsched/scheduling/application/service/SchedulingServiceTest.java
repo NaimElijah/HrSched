@@ -177,7 +177,8 @@ class SchedulingServiceTest {
   void GivenAScheduler_WhenGeneratingAndPublishing_ThenTheConstraintVersionIsRecorded() {
     available(ACME, "Ada");
     service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME),
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
 
     Roster draft =
         service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
@@ -192,7 +193,8 @@ class SchedulingServiceTest {
   void GivenRulesTightenedAfterGeneration_WhenPublishing_ThenItIsRefusedWithEveryViolation() {
     available(ACME, "Ada");
     service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME),
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster draft =
         service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
@@ -218,7 +220,8 @@ class SchedulingServiceTest {
       GivenRulesRevisedAfterPublication_WhenTheRosterVersionIsReadBack_ThenItHasTheRulesItPassed() {
     available(ACME, "Ada");
     service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME),
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     // Invented: ten hours a day, which the eight-hour shift satisfies.
     ConstraintSet approving =
         service.reviseConstraints(
@@ -248,7 +251,8 @@ class SchedulingServiceTest {
   void GivenRulesRevisedSince_WhenTheFirstVersionIsReadBack_ThenItIsTheEmptySetThatApprovedIt() {
     available(ACME, "Ada");
     service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME),
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster published = publishTheWeek();
     // Invented: one hour a day.
     service.reviseConstraints(
@@ -305,7 +309,8 @@ class SchedulingServiceTest {
       GivenAnEarlierPublishedRosterForTheSameWeek_WhenPublishingAgain_ThenTheEarlierIsSuperseded() {
     available(ACME, "Ada");
     service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME),
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster first =
         service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     service.publish(scheduler(ACME), ACME, first.id());
@@ -330,7 +335,8 @@ class SchedulingServiceTest {
     service = withClock(new AdvancingClock(NOW));
     available(ACME, "Ada");
     service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME),
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster first = publishTheWeek();
 
     Roster second = publishTheWeek();
@@ -349,7 +355,8 @@ class SchedulingServiceTest {
   void GivenAClockThatHasNotMoved_WhenPublishingAgain_ThenItIsRecordedAMicrosecondLater() {
     available(ACME, "Ada");
     service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME),
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster first = publishTheWeek();
 
     Roster second = publishTheWeek();
@@ -383,7 +390,12 @@ class SchedulingServiceTest {
                 service.defineShift(
                     scheduler(ACME),
                     new DefineShiftCommand(
-                        ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(QualificationId.newId()))))
+                        ACME,
+                        MONDAY_DAY,
+                        ZoneOffset.UTC,
+                        1,
+                        Set.of(QualificationId.newId()),
+                        false)))
         .describedAs("a shift nobody could ever cover is an error, not a permanent silent gap")
         .isInstanceOf(UnknownRequiredQualificationException.class);
   }
@@ -397,7 +409,8 @@ class SchedulingServiceTest {
             () ->
                 service.defineShift(
                     scheduler(ACME),
-                    new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(forklift))))
+                    new DefineShiftCommand(
+                        ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(forklift), false)))
         .doesNotThrowAnyException();
   }
 
@@ -417,7 +430,8 @@ class SchedulingServiceTest {
   void GivenTheOperator_WhenReadingARoster_ThenItIsRefused() {
     available(ACME, "Ada");
     service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME),
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster draft =
         service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
@@ -437,11 +451,13 @@ class SchedulingServiceTest {
   @Test
   void GivenShiftsInsideAndOutsideASpan_WhenListingThem_ThenOnlyTheOverlappingOnesComeBack() {
     service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME),
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     TimeRange nextMonth =
         new TimeRange(Instant.parse("2026-11-09T08:00:00Z"), Instant.parse("2026-11-09T16:00:00Z"));
     service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, nextMonth, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME),
+        new DefineShiftCommand(ACME, nextMonth, ZoneOffset.UTC, 1, Set.of(), false));
 
     assertThat(service.findShifts(scheduler(ACME), ACME, THE_WEEK))
         .extracting(Shift::period)
@@ -451,7 +467,8 @@ class SchedulingServiceTest {
   @Test
   void GivenAnotherOrganisationsShifts_WhenListingThem_ThenNothingLeaks() {
     service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME),
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
 
     assertThatThrownBy(() -> service.findShifts(scheduler(RIVAL), ACME, THE_WEEK))
         .isInstanceOf(CrossTenantAccessException.class);
@@ -462,7 +479,8 @@ class SchedulingServiceTest {
   void GivenADefinedShift_WhenAnEmployeeReadsItByIdentity_ThenItIsReturned() {
     ShiftId id =
         service.defineShift(
-            scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
 
     assertThat(service.findShift(new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE), ACME, id))
         .map(Shift::period)
@@ -474,7 +492,7 @@ class SchedulingServiceTest {
     ShiftId theirs =
         service.defineShift(
             scheduler(RIVAL),
-            new DefineShiftCommand(RIVAL, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+            new DefineShiftCommand(RIVAL, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
 
     assertThatThrownBy(() -> service.findShift(scheduler(RIVAL), ACME, theirs))
         .isInstanceOf(CrossTenantAccessException.class);
@@ -485,7 +503,8 @@ class SchedulingServiceTest {
   void GivenRostersOfTwoOrganisations_WhenListingThem_ThenOnlyTheCallersComeBack() {
     available(ACME, "Ada");
     service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME),
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster ours = service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     service.generateDraft(scheduler(RIVAL), new GenerateRosterCommand(RIVAL, THE_WEEK));
 
@@ -500,7 +519,8 @@ class SchedulingServiceTest {
 
     ShiftId shift =
         service.defineShift(
-            scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+            scheduler,
+            new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
 
     assertThat(audit.of(SchedulingChange.SHIFT_DEFINED))
         .containsExactly(
@@ -524,7 +544,7 @@ class SchedulingServiceTest {
     available(ACME, "Ada");
     TenantActor scheduler = scheduler(ACME);
     service.defineShift(
-        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster draft = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
 
     service.publish(scheduler, ACME, draft.id());
@@ -548,7 +568,7 @@ class SchedulingServiceTest {
     available(ACME, "Ada");
     TenantActor scheduler = scheduler(ACME);
     service.defineShift(
-        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster first = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
     service.publish(scheduler, ACME, first.id());
     Roster second = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
@@ -566,7 +586,7 @@ class SchedulingServiceTest {
     available(ACME, "Ada");
     TenantActor scheduler = scheduler(ACME);
     service.defineShift(
-        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster draft = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
     // Invented: four hours a day, which the eight-hour shift already assigned cannot satisfy.
     service.reviseConstraints(
@@ -591,7 +611,7 @@ class SchedulingServiceTest {
     available(ACME, "Ada");
     TenantActor scheduler = scheduler(ACME);
     service.defineShift(
-        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster first = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
     service.publish(scheduler, ACME, first.id());
     Roster second = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
@@ -615,7 +635,7 @@ class SchedulingServiceTest {
     available(ACME, "Ada");
     TenantActor scheduler = scheduler(ACME);
     service.defineShift(
-        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+        scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster published =
         service.publish(
             scheduler,
@@ -641,7 +661,7 @@ class SchedulingServiceTest {
             () ->
                 service.defineShift(
                     scheduler(RIVAL),
-                    new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of())))
+                    new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false)))
         .isInstanceOf(CrossTenantAccessException.class);
 
     assertThat(audit.changes()).isEmpty();
@@ -653,7 +673,7 @@ class SchedulingServiceTest {
             () ->
                 service.defineShift(
                     admin(ACME),
-                    new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of())))
+                    new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false)))
         .isInstanceOf(NotPermittedException.class);
 
     assertThat(audit.changes()).isEmpty();
@@ -678,7 +698,7 @@ class SchedulingServiceTest {
   private ShiftId aShift(OrganisationId organisation, Set<QualificationId> required) {
     return service.defineShift(
         scheduler(organisation),
-        new DefineShiftCommand(organisation, MONDAY_DAY, ZoneOffset.UTC, 1, required));
+        new DefineShiftCommand(organisation, MONDAY_DAY, ZoneOffset.UTC, 1, required, false));
   }
 
   @Test
@@ -905,7 +925,7 @@ class SchedulingServiceTest {
                 Instant.parse("2026-10-05T23:00:00Z"), Instant.parse("2026-10-06T05:00:00Z")))) {
       ShiftId shift =
           service.defineShift(
-              scheduler(ACME), new DefineShiftCommand(ACME, when, tokyo, 1, Set.of()));
+              scheduler(ACME), new DefineShiftCommand(ACME, when, tokyo, 1, Set.of(), false));
       service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
     }
     // Invented: ten hours a day.
@@ -970,7 +990,8 @@ class SchedulingServiceTest {
         new TimeRange(Instant.parse("2026-12-07T08:00:00Z"), Instant.parse("2026-12-07T16:00:00Z"));
     ShiftId elsewhere =
         service.defineShift(
-            scheduler(ACME), new DefineShiftCommand(ACME, december, ZoneOffset.UTC, 1, Set.of()));
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, december, ZoneOffset.UTC, 1, Set.of(), false));
 
     assertThatThrownBy(
             () ->
@@ -993,7 +1014,8 @@ class SchedulingServiceTest {
         new TimeRange(Instant.parse("2026-10-05T12:00:00Z"), Instant.parse("2026-10-05T20:00:00Z"));
     ShiftId overlapping =
         service.defineShift(
-            scheduler(ACME), new DefineShiftCommand(ACME, afternoon, ZoneOffset.UTC, 1, Set.of()));
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, afternoon, ZoneOffset.UTC, 1, Set.of(), false));
     service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), day, ada));
     audit.forget();
 
@@ -1018,7 +1040,8 @@ class SchedulingServiceTest {
         new TimeRange(Instant.parse("2026-10-05T16:00:00Z"), Instant.parse("2026-10-05T20:00:00Z"));
     ShiftId next =
         service.defineShift(
-            scheduler(ACME), new DefineShiftCommand(ACME, evening, ZoneOffset.UTC, 1, Set.of()));
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, evening, ZoneOffset.UTC, 1, Set.of(), false));
     service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), day, ada));
 
     assertThatCode(
@@ -1232,7 +1255,8 @@ class SchedulingServiceTest {
   void GivenAShiftShortOfPeople_WhenAssessed_ThenItsShortfallIsListed() {
     ShiftId needingTwo =
         service.defineShift(
-            scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 2, Set.of()));
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 2, Set.of(), false));
     Roster draft = carrying(new Assignment(needingTwo, available(ACME, "Ada")));
 
     RosterAssessment assessed = service.findAssessment(scheduler(ACME), ACME, draft.id());
@@ -1406,7 +1430,7 @@ class SchedulingServiceTest {
 
   private ShiftId shiftAt(TimeRange when) {
     return service.defineShift(
-        scheduler(ACME), new DefineShiftCommand(ACME, when, ZoneOffset.UTC, 1, Set.of()));
+        scheduler(ACME), new DefineShiftCommand(ACME, when, ZoneOffset.UTC, 1, Set.of(), false));
   }
 
   private void assign(Roster draft, ShiftId shift, EmployeeId who) {
@@ -1614,7 +1638,7 @@ class SchedulingServiceTest {
     ShiftId shift =
         service.defineShift(
             scheduler(organisation),
-            new DefineShiftCommand(organisation, when, ZoneOffset.UTC, 1, Set.of()));
+            new DefineShiftCommand(organisation, when, ZoneOffset.UTC, 1, Set.of(), false));
     service.assign(
         scheduler(organisation),
         new AssignToShiftCommand(organisation, draft.id(), shift, employee));
@@ -1646,7 +1670,8 @@ class SchedulingServiceTest {
     ShiftId shift = aShift(ACME, Set.of());
     ShiftId other =
         service.defineShift(
-            scheduler(ACME), new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()));
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
     service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), other, grace));
     service.publish(scheduler(ACME), ACME, draft.id());
@@ -1779,7 +1804,7 @@ class SchedulingServiceTest {
             () ->
                 service.defineShift(
                     anOperator(),
-                    new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of())))
+                    new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false)))
         .isInstanceOf(NotATenantMemberException.class);
   }
 

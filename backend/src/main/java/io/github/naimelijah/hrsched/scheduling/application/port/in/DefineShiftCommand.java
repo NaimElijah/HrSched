@@ -13,13 +13,15 @@ import java.util.Set;
  * @param zone where its working-time days are counted (R36)
  * @param requiredHeadcount how many people it needs
  * @param requiredQualifications what each of them must hold
+ * @param unpopular whether it is work people would rather not do, which fairness spreads (ADR-010)
  */
 public record DefineShiftCommand(
     OrganisationId organisation,
     TimeRange period,
     ZoneId zone,
     int requiredHeadcount,
-    Set<QualificationId> requiredQualifications) {
+    Set<QualificationId> requiredQualifications,
+    boolean unpopular) {
 
   public DefineShiftCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");

@@ -12,6 +12,7 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
   const [end, setEnd] = useState('');
   const [headcount, setHeadcount] = useState('1');
   const [required, setRequired] = useState<string[]>([]);
+  const [unpopular, setUnpopular] = useState(false);
   const [failure, setFailure] = useState<unknown>(null);
 
   const shifts = useAsync(
@@ -41,6 +42,7 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
         zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         requiredHeadcount: Number(headcount),
         requiredQualifications: required,
+        unpopular,
       });
       shifts.reload();
     } catch (error) {
@@ -55,6 +57,11 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
         A shift may only require qualifications this organisation has defined. Requiring one it has
         not is refused, because nobody could ever hold it and the shift would be silently
         uncoverable forever.
+      </p>
+      <p className="hint">
+        Mark a shift unpopular when it is work people would rather not do. The draft check counts
+        how many of them the most burdened person carries; the mark changes no rule a roster must
+        obey.
       </p>
 
       <form onSubmit={define} className="grid">
@@ -102,6 +109,14 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
             ))}
           </select>
         </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={unpopular}
+            onChange={(event) => setUnpopular(event.target.checked)}
+          />
+          Unpopular
+        </label>
         <button type="submit">Define shift</button>
       </form>
 
@@ -116,6 +131,7 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
             <th>Ends</th>
             <th>Needs</th>
             <th>Requires</th>
+            <th>Unpopular</th>
           </tr>
         </thead>
         <tbody>
@@ -131,6 +147,7 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
                       .map((id) => qualificationNames.get(id) ?? id)
                       .join(', ')}
               </td>
+              <td>{shift.unpopular ? 'Unpopular' : '—'}</td>
             </tr>
           ))}
         </tbody>

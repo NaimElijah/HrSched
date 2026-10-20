@@ -1271,6 +1271,42 @@ class RosteringHttpTest {
         .andExpect(jsonPath("$.zone").value("Asia/Tokyo"));
   }
 
+  /** ADR-010: the Scheduler says which shifts are unpopular, and the mark is kept as said. */
+  @Test
+  void GivenAShiftMarkedUnpopular_WhenDefined_ThenTheMarkIsEchoedAndReadBack() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String body =
+        mockMvc
+            .perform(
+                as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
+                    .content(
+                        "{\"start\":\"2026-12-05T22:00:00Z\",\"end\":\"2026-12-06T06:00:00Z\","
+                            + "\"zone\":\"UTC\",\"requiredHeadcount\":1,\"unpopular\":true}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.unpopular").value(true))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String shift = body.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/shifts/" + shift), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.unpopular").value(true));
+  }
+
+  /** Absent is not marked: nobody said the shift is unpopular, so fairness does not count it. */
+  @Test
+  void GivenNoMark_WhenDefiningAShift_ThenItIsNotUnpopular() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String shift = defineShift(organisation, "2026-12-07T08:00:00Z", "2026-12-07T16:00:00Z", 1);
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/shifts/" + shift), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.unpopular").value(false));
+  }
+
   /**
    * No default. A zone the caller did not send is a zone a developer chose, and it would count
    * somebody's days in the wrong place without anybody noticing.

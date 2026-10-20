@@ -40,10 +40,10 @@ class SchedulingCommandsTest {
 
   private static Stream<ThrowingCallable> nullFields() {
     return Stream.of(
-        () -> new DefineShiftCommand(null, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()),
-        () -> new DefineShiftCommand(ACME, null, ZoneOffset.UTC, 1, Set.of()),
-        () -> new DefineShiftCommand(ACME, MONDAY_DAY, null, 1, Set.of()),
-        () -> new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, null),
+        () -> new DefineShiftCommand(null, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false),
+        () -> new DefineShiftCommand(ACME, null, ZoneOffset.UTC, 1, Set.of(), false),
+        () -> new DefineShiftCommand(ACME, MONDAY_DAY, null, 1, Set.of(), false),
+        () -> new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, null, false),
         () -> new GenerateRosterCommand(null, MONDAY_DAY),
         () -> new GenerateRosterCommand(ACME, null),
         () -> new ReviseConstraintsCommand(null, List.of()),
@@ -60,7 +60,7 @@ class SchedulingCommandsTest {
   void GivenAMutableSetOfQualifications_WhenDefiningAShift_ThenLaterChangesAreNotSeen() {
     Set<QualificationId> required = new HashSet<>(Set.of(QualificationId.newId()));
     DefineShiftCommand command =
-        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, required);
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, required, false);
 
     required.add(QualificationId.newId());
 
@@ -91,7 +91,7 @@ class SchedulingCommandsTest {
   @Test
   void GivenAHeadcountBelowOne_WhenDefiningAShift_ThenTheCommandAcceptsItAndTheDomainRefusesIt() {
     DefineShiftCommand command =
-        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 0, Set.of());
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 0, Set.of(), false);
 
     assertThatThrownBy(
             () ->
@@ -101,7 +101,8 @@ class SchedulingCommandsTest {
                     command.period(),
                     ZoneOffset.UTC,
                     command.requiredHeadcount(),
-                    command.requiredQualifications()))
+                    command.requiredQualifications(),
+                    false))
         .isInstanceOf(InvalidHeadcountException.class);
   }
 }

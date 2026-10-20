@@ -69,11 +69,17 @@ public class SchedulingController {
       @AuthenticationPrincipal Actor actor, @RequestBody DefineShiftRequest request) {
     Set<QualificationId> required = request.toRequiredQualifications();
     ZoneId zone = request.toZone();
+    boolean unpopular = request.toUnpopular();
     ShiftId id =
         manageShifts.defineShift(
             actor,
             new DefineShiftCommand(
-                actingIn(actor), request.toPeriod(), zone, request.requiredHeadcount(), required));
+                actingIn(actor),
+                request.toPeriod(),
+                zone,
+                request.requiredHeadcount(),
+                required,
+                unpopular));
     return ResponseEntity.created(URI.create("/api/shifts/" + id.value()))
         .body(
             new ShiftResponse(
@@ -82,7 +88,8 @@ public class SchedulingController {
                 request.end(),
                 zone.getId(),
                 request.requiredHeadcount(),
-                required.stream().map(QualificationId::value).toList()));
+                required.stream().map(QualificationId::value).toList(),
+                unpopular));
   }
 
   /**

@@ -10,6 +10,8 @@ export interface Shift {
   readonly zone: string;
   readonly requiredHeadcount: number;
   readonly requiredQualifications: readonly string[];
+  /** Whether the Scheduler marked it as work people would rather not do (ADR-010). */
+  readonly unpopular: boolean;
 }
 
 /** Who works which shift. Mirrors AssignmentResponse. */
@@ -110,6 +112,8 @@ export interface DefineShiftRequest {
   readonly zone: string;
   readonly requiredHeadcount: number;
   readonly requiredQualifications: readonly string[];
+  /** Whether it is work people would rather not do, which fairness spreads (ADR-010). */
+  readonly unpopular: boolean;
 }
 
 export const scheduling = {

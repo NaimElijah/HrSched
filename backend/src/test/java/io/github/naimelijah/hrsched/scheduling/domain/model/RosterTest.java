@@ -622,7 +622,7 @@ class RosterTest {
   // --- Coverage: which shifts are short, and by how many (#205) ----------------------------------
 
   private static Shift needing(int headcount, TimeRange when) {
-    return new Shift(ShiftId.newId(), ACME, when, ZoneOffset.UTC, headcount, Set.of());
+    return new Shift(ShiftId.newId(), ACME, when, ZoneOffset.UTC, headcount, Set.of(), false);
   }
 
   @Test
