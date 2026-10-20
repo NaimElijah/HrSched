@@ -239,6 +239,25 @@ class RosterMeasuresTest {
     assertThat(measure(after, before).assignmentsChanged()).isEqualTo(1);
   }
 
+  /**
+   * A draft overlapping two published weeks supersedes both (R11), so what either carried and the
+   * draft drops counts, and so does what it adds within either week.
+   */
+  @Test
+  void GivenADraftSupersedingTwoPublishedRosters_WhenMeasured_ThenChangesAgainstBothCount() {
+    Roster thisWeek = published(THE_WEEK, on(MONDAY, ADA));
+    Roster nextWeek = published(NEXT_WEEK, on(NEXT_MONDAY, ADA));
+    Roster after =
+        draft(
+            span("2026-09-07T00:00:00Z", "2026-09-21T00:00:00Z"),
+            on(MONDAY, BEA),
+            on(NEXT_MONDAY, BEA));
+
+    assertThat(measure(after, thisWeek, nextWeek).assignmentsChanged())
+        .describedAs("Ada loses both Mondays, and Bea gains both")
+        .isEqualTo(4);
+  }
+
   /** A shift nobody was rostered around told nobody anything, so filling it changes nothing. */
   @Test
   void GivenAnAdditionOutsideEverySupersededPeriod_WhenMeasured_ThenItDoesNotCount() {
