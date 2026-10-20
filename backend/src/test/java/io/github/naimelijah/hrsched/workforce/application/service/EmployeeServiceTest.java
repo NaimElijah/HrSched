@@ -210,6 +210,24 @@ class EmployeeServiceTest {
     assertThat(published.isAvailableFor(MONDAY)).isFalse();
   }
 
+  /**
+   * What somebody said about when they would like to work travels with them too, split by how they
+   * feel, because the preference objective counts the two differently (ADR-010).
+   */
+  @Test
+  void GivenAnEmployeeWithPreferences_WhenPublished_ThenEachStrengthTravelsAsItsOwnSpans() {
+    EmployeeId id = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.statePreference(
+        admin(ACME), new StatePreferenceCommand(ACME, id, MONDAY, PreferenceStrength.PREFERS));
+    service.statePreference(
+        admin(ACME), new StatePreferenceCommand(ACME, id, TUESDAY, PreferenceStrength.PREFERS_NOT));
+
+    RosterableEmployee published = service.findRosterable(admin(ACME), ACME).getFirst();
+
+    assertThat(published.wouldLikeToWork()).containsExactly(MONDAY);
+    assertThat(published.wouldRatherNotWork()).containsExactly(TUESDAY);
+  }
+
   @Test
   void GivenAScheduler_WhenReadingSomebodyByIdentity_ThenTheyArePublished() {
     EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));

@@ -24,6 +24,7 @@ exact role. A resource in another organisation answers `404`, the same as one th
 | Availability | `POST`, `GET /api/employees/{id}/unavailability`, `/{id}/preferences`; `DELETE /{id}/unavailability?start&end`, `/{id}/preferences?start&end&strength` | The person, Admin or Scheduler |
 | Qualifications | `POST /api/qualifications`; `GET` list and one | Admin; reading any member |
 | Rules | `PUT /api/constraints`; `GET /api/constraints`, `/{version}` | Admin; reading any member |
+| Objectives | `PUT /api/objectives`; `GET /api/objectives` | Admin; reading any member |
 | Shifts | `POST /api/shifts`; `GET /api/shifts?from&to`, `/{id}` | Scheduler; reading any member |
 | Rosters | `POST /api/rosters`, `/{id}/assignments`, `/{id}/publication`; `DELETE /{id}/assignments/{shift}/{employee}`; `GET` list and one, and `/{id}/assessment` | Scheduler; reading and checking also Admin |
 | Swaps | `POST /api/swaps`, `/{id}/approval`, `/{id}/rejection`; `GET` list and one | Asking: the person, Admin or Scheduler; deciding: Scheduler; reading: the parties |
@@ -111,17 +112,22 @@ api "$SCHEDULER" -X POST "localhost:8080/api/rosters/$ROSTER/publication"
 ```
 
 The last call answers with the published roster, shown in the README's
-[Usage](../README.md#usage) section. A `PUT /api/constraints` replaces the whole set rather than
+[Usage](../README.md#usage) section. A shift may also be sent with `"unpopular":true`, which marks
+it as work people would rather not do; left out, it is not marked
+([ADR-010](ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). A `PUT /api/constraints` replaces the whole set rather than
 merging into it, and every limit is optional: one left out is not enforced.
 
 ## Checking a draft
 
 `GET /api/rosters/{id}/assessment` answers what publishing a draft would say now, without
 publishing it: every rule it breaks, in the same shape a publication refusal uses, and every shift
-in its period with fewer people than it requires. It is advice, judged without the publication
-lock; publishing judges again and decides. A roster that is not a draft answers `409`, and one
+in its period with fewer people than it requires. Beside those, how the draft scores on each
+objective, with the organisation's weight on it, and the weighted total; lower is better, an
+unweighted objective adds nothing, and the score never decides whether the draft may be published
+([ADR-010](ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). It is
+advice, judged without the publication lock; publishing judges again and decides. A roster that is not a draft answers `409`, and one
 naming a shift that cannot be resolved answers `422` titled `Roster cannot be checked against the
-rules`, as publishing it would. With invented identifiers:
+rules`, as publishing it would. With invented identifiers and weights:
 
 ```json
 {
@@ -141,7 +147,13 @@ rules`, as publishing it would. With invented identifiers:
       "assigned": 1,
       "shortBy": 1
     }
-  ]
+  ],
+  "objectives": [
+    { "objective": "FAIRNESS", "measure": 2, "weight": 3 },
+    { "objective": "PREFERENCES", "measure": 1, "weight": null },
+    { "objective": "DISRUPTION", "measure": 0, "weight": 1 }
+  ],
+  "weightedTotal": 6
 }
 ```
 

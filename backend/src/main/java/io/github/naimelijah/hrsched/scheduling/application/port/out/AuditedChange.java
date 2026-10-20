@@ -17,8 +17,9 @@ import java.util.UUID;
  * @param actor who made the change
  * @param change what kind of change it was
  * @param subject the identifier of what changed. For {@link SchedulingChange#CONSTRAINTS_REVISED}
- *     this is the organisation's own identifier, because a constraint set is one per organisation
- *     and has no identity of its own
+ *     and {@link SchedulingChange#OBJECTIVES_REVISED} this is the organisation's own identifier,
+ *     because a constraint set and a set of objective weights are each one per organisation and
+ *     have no identity of their own
  */
 public record AuditedChange(
     OrganisationId organisation, UserId actor, SchedulingChange change, UUID subject) {

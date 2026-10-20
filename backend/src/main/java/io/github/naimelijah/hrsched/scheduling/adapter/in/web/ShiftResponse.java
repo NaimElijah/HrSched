@@ -13,6 +13,7 @@ import java.util.UUID;
  * @param zone where its working-time days are counted
  * @param requiredHeadcount how many people it needs
  * @param requiredQualifications what each of them must hold
+ * @param unpopular whether the Scheduler marked it as work people would rather not do (ADR-010)
  */
 public record ShiftResponse(
     UUID id,
@@ -20,7 +21,8 @@ public record ShiftResponse(
     Instant end,
     String zone,
     int requiredHeadcount,
-    List<UUID> requiredQualifications) {
+    List<UUID> requiredQualifications,
+    boolean unpopular) {
 
   static ShiftResponse from(Shift shift) {
     return new ShiftResponse(
@@ -29,6 +31,7 @@ public record ShiftResponse(
         shift.period().end(),
         shift.zone().getId(),
         shift.requiredHeadcount(),
-        shift.requiredQualifications().stream().map(QualificationId::value).toList());
+        shift.requiredQualifications().stream().map(QualificationId::value).toList(),
+        shift.unpopular());
   }
 }

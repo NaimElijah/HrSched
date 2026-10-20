@@ -10,6 +10,8 @@ export interface Shift {
   readonly zone: string;
   readonly requiredHeadcount: number;
   readonly requiredQualifications: readonly string[];
+  /** Whether the Scheduler marked it as work people would rather not do (ADR-010). */
+  readonly unpopular: boolean;
 }
 
 /** Who works which shift. Mirrors AssignmentResponse. */
@@ -26,17 +28,28 @@ export interface Shortfall {
   readonly shortBy: number;
 }
 
+/** How a draft measures on one objective. Mirrors ObjectiveResponse (ADR-010). */
+export interface ObjectiveScore {
+  readonly objective: 'FAIRNESS' | 'PREFERENCES' | 'DISRUPTION';
+  /** A count; lower is better. */
+  readonly measure: number;
+  /** The organisation's weight on it, or null when it is not weighed. */
+  readonly weight: number | null;
+}
+
 /**
  * What publishing a draft would say now, without publishing it. Mirrors AssessmentResponse.
  *
  * The violations are those a publication refusal would list, from the same judgement (ADR-042),
- * so they are shown the same way.
+ * so they are shown the same way. The objectives and their total rank the draft and decide nothing.
  */
 export interface Assessment {
   readonly roster: string;
   readonly constraintVersion: number;
   readonly violations: readonly Violation[];
   readonly shortfalls: readonly Shortfall[];
+  readonly objectives: readonly ObjectiveScore[];
+  readonly weightedTotal: number;
 }
 
 /** Mirrors RosterResponse. `validatedAgainstConstraintVersion` is null while a draft. */
@@ -110,6 +123,28 @@ export interface DefineShiftRequest {
   readonly zone: string;
   readonly requiredHeadcount: number;
   readonly requiredQualifications: readonly string[];
+  /** Whether it is work people would rather not do, which fairness spreads (ADR-010). */
+  readonly unpopular: boolean;
+}
+
+/**
+ * Mirrors ObjectiveWeightsResponse: each objective's weight, or null when it is not weighed
+ * (ADR-010). Echoed whole because revising replaces the weights whole.
+ */
+export interface ObjectiveWeights {
+  readonly fairness: number | null;
+  readonly preferences: number | null;
+  readonly disruption: number | null;
+}
+
+/**
+ * How an organisation weighs the objectives. Every field is optional and none has a default: an
+ * objective left out is not weighed.
+ */
+export interface ObjectiveWeightsRequest {
+  readonly fairness?: number | undefined;
+  readonly preferences?: number | undefined;
+  readonly disruption?: number | undefined;
 }
 
 export const scheduling = {
@@ -191,4 +226,10 @@ export const scheduling = {
 
   reviseConstraints: (constraints: ConstraintSetRequest): Promise<ConstraintSet> =>
     api.put<ConstraintSet>('/api/constraints', constraints),
+
+  findObjectives: (): Promise<ObjectiveWeights> => api.get<ObjectiveWeights>('/api/objectives'),
+
+  /** Replaces the weights whole; an objective left out stops being weighed. Admin only. */
+  reviseObjectives: (weights: ObjectiveWeightsRequest): Promise<ObjectiveWeights> =>
+    api.put<ObjectiveWeights>('/api/objectives', weights),
 };

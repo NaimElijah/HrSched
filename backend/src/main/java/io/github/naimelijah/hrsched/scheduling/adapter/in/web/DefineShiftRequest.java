@@ -15,13 +15,16 @@ import java.util.stream.Collectors;
  * @param zone an IANA time zone name, such as {@code Europe/London}: where its days are counted
  * @param requiredHeadcount how many people it needs
  * @param requiredQualifications what each of them must hold, may be null for none
+ * @param unpopular whether the Scheduler marks it as work people would rather not do (ADR-010);
+ *     absent means it is not marked, which is what every shift defined before the mark existed is
  */
 public record DefineShiftRequest(
     Instant start,
     Instant end,
     String zone,
     int requiredHeadcount,
-    List<UUID> requiredQualifications) {
+    List<UUID> requiredQualifications,
+    Boolean unpopular) {
 
   /**
    * The only refusal a bad zone gets. Fixed, because a detail never repeats what was sent
@@ -57,6 +60,13 @@ public record DefineShiftRequest(
       throw new MalformedRequestException("Both start and end are required");
     }
     return new TimeRange(start, end);
+  }
+
+  /**
+   * @return whether the shift is marked unpopular; false unless the caller said it is
+   */
+  boolean toUnpopular() {
+    return Boolean.TRUE.equals(unpopular);
   }
 
   /**

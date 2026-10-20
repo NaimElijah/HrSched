@@ -125,12 +125,12 @@ Components, the authentication sequence and the data flow are in
 | Database | PostgreSQL | 18 | Its constraints refuse what the domain must never store |
 | Persistence | Spring JDBC + Flyway | 12.4.0 | Hand-written SQL behind the ports, no ORM ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) |
 | Tests | JUnit Jupiter, Testcontainers | 6.0.3 / 2.0.5 | Every test that touches storage runs on a real PostgreSQL |
-| Architecture | ArchUnit | 1.5.0 | Turns the dependency rules into build failures |
+| Architecture | ArchUnit | 1.5.1 | Turns the dependency rules into build failures |
 | Observability | OpenTelemetry starter, Micrometer Prometheus | Boot BOM | A trace id on every response and log line; metrics pulled, not pushed |
 | Frontend | React, TypeScript, Vite | 19.2.8 / 6.0.3 / 8.2.2 | Strict types turn API drift into a compile error ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)) |
-| Frontend tests | Vitest, Testing Library | 4.1.11 / 16.3.3 | `fetch` is stubbed at the one module that calls it |
-| Format and lint | Spotless (google-java-format), Prettier, ESLint | 3.10.0 / 3.9.6 / 10.9.1 | Formatting is checked by the same command that builds |
-| Build | Maven Wrapper | 3.9.16 | Pinned in the repo, so no global Maven install is needed |
+| Frontend tests | Vitest, Testing Library | 5.0.5 / 16.3.3 | `fetch` is stubbed at the one module that calls it |
+| Format and lint | Spotless (google-java-format), Prettier, ESLint | 3.10.4 / 3.9.6 / 10.13.0 | Formatting is checked by the same command that builds |
+| Build | Maven Wrapper | 3.10.0 | Pinned in the repo, so no global Maven install is needed |
 
 ## Quick start
 
@@ -357,9 +357,9 @@ HrSched/
 | PostgreSQL, hand-written SQL, and a real database in every test ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) | JPA, Spring Data JDBC, jOOQ, an embedded database | Docker to build; every adapter maps rows by hand |
 | Its own tokens, with the organisation taken from the account ([ADR-011](docs/ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md)) | An external OIDC provider, while there is one API and one SPA; roles as token claims, unrevocable until expiry | A database read per request; HrSched stores password hashes |
 | Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
-| Generation behind a port, greedy for now ([ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)) | The Timefold solver at once, before ADR-010 says what to optimise | The product does not yet do what it is named for |
+| Generation behind a port, greedy for now ([ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)) | The Timefold solver at once, before ADR-010 said what to optimise | The product does not yet do what it is named for |
 
-All 39 decisions, and the three still waiting to be recorded, are in the
+All 41 decisions, and the two still waiting to be recorded, are in the
 [ADR index](docs/ADRs/README.md).
 
 ## Status and limitations
@@ -372,8 +372,9 @@ built.
 
 **Known limitations:**
 - **Generation optimises nothing.** `GreedyRosterGenerator` takes the first eligible person for each
-  shift, and ignores fairness, preferences and disruption. A solver waits on ADR-010, which defines
-  what makes one legal roster better than another.
+  shift, and ignores fairness, preferences and disruption. ADR-010 defines those objectives and the
+  draft check scores a draft on them under the organisation's weights, but the solver that would
+  optimise them is [#28](https://github.com/NaimElijah/HrSched/issues/28).
 - **A shift's zone is the Scheduler's browser zone.** The Shifts page sends the zone its times were
   typed in, and no page shows a shift's zone yet
   ([#136](https://github.com/NaimElijah/HrSched/issues/136)).

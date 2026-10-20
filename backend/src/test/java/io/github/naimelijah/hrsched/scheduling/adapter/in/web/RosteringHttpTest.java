@@ -335,6 +335,55 @@ class RosteringHttpTest {
         .andExpect(jsonPath("$.shortfalls[0].shortBy").value(2));
   }
 
+  /**
+   * The whole chain of ADR-010 over HTTP: Ada says she would rather not work the day, through
+   * workforce; the Scheduler marks the day's shift unpopular; the Admin weighs fairness and
+   * preferences (invented weights); generation puts Ada on it, because she is the only person. The
+   * check counts one unpopular shift for her and one preference gone against, and leaves the
+   * unweighed disruption out of the total.
+   */
+  @Test
+  void GivenWeightedObjectives_WhenADraftIsAssessed_ThenEachMeasureAndTheTotalAreListed()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/employees/" + ada + "/preferences"), organisation, "ADMIN")
+                .content(
+                    "{\"start\":\"%s\",\"end\":\"%s\",\"strength\":\"PREFERS_NOT\"}"
+                        .formatted(ASSESSED_DAY_START, ASSESSED_DAY_END)))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
+                .content(
+                    "{\"start\":\"2026-11-24T08:00:00Z\",\"end\":\"2026-11-24T16:00:00Z\","
+                        + "\"zone\":\"UTC\",\"requiredHeadcount\":1,\"unpopular\":true}"))
+        .andExpect(status().isCreated());
+    mockMvc
+        .perform(
+            as(mockMvc, put("/api/objectives"), organisation, "ADMIN")
+                .content("{\"fairness\":3,\"preferences\":2}"))
+        .andExpect(status().isOk());
+    String roster = generateRoster(organisation, ASSESSED_DAY_START, ASSESSED_DAY_END);
+
+    mockMvc
+        .perform(as(mockMvc, get(assessment(roster)), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.objectives.length()").value(3))
+        .andExpect(jsonPath("$.objectives[0].objective").value("FAIRNESS"))
+        .andExpect(jsonPath("$.objectives[0].measure").value(1))
+        .andExpect(jsonPath("$.objectives[0].weight").value(3))
+        .andExpect(jsonPath("$.objectives[1].objective").value("PREFERENCES"))
+        .andExpect(jsonPath("$.objectives[1].measure").value(1))
+        .andExpect(jsonPath("$.objectives[1].weight").value(2))
+        .andExpect(jsonPath("$.objectives[2].objective").value("DISRUPTION"))
+        .andExpect(jsonPath("$.objectives[2].measure").value(0))
+        .andExpect(jsonPath("$.objectives[2].weight").isEmpty())
+        .andExpect(jsonPath("$.weightedTotal").value(5));
+  }
+
   @Test
   void GivenAnAdmin_WhenAssessingADraft_ThenItIsAnswered() throws Exception {
     String organisation = anOrganisation(mockMvc);
@@ -1269,6 +1318,42 @@ class RosteringHttpTest {
         .perform(as(mockMvc, get("/api/shifts/" + shift), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.zone").value("Asia/Tokyo"));
+  }
+
+  /** ADR-010: the Scheduler says which shifts are unpopular, and the mark is kept as said. */
+  @Test
+  void GivenAShiftMarkedUnpopular_WhenDefined_ThenTheMarkIsEchoedAndReadBack() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String body =
+        mockMvc
+            .perform(
+                as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
+                    .content(
+                        "{\"start\":\"2026-12-05T22:00:00Z\",\"end\":\"2026-12-06T06:00:00Z\","
+                            + "\"zone\":\"UTC\",\"requiredHeadcount\":1,\"unpopular\":true}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.unpopular").value(true))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String shift = body.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/shifts/" + shift), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.unpopular").value(true));
+  }
+
+  /** Absent is not marked: nobody said the shift is unpopular, so fairness does not count it. */
+  @Test
+  void GivenNoMark_WhenDefiningAShift_ThenItIsNotUnpopular() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String shift = defineShift(organisation, "2026-12-07T08:00:00Z", "2026-12-07T16:00:00Z", 1);
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/shifts/" + shift), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.unpopular").value(false));
   }
 
   /**

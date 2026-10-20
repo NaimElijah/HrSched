@@ -14,6 +14,7 @@ import { OrganisationsPage } from './pages/OrganisationsPage';
 import { PeoplePage } from './pages/PeoplePage';
 import { QualificationsPage } from './pages/QualificationsPage';
 import { RostersPage } from './pages/RostersPage';
+import { ObjectivesPage } from './pages/ObjectivesPage';
 import { RulesPage } from './pages/RulesPage';
 import { ShiftsPage } from './pages/ShiftsPage';
 import { SwapsPage } from './pages/SwapsPage';
@@ -191,7 +192,12 @@ export function App() {
         {current === 'People' ? <PeoplePage /> : null}
         {current === 'Accounts' ? <AccountsPage /> : null}
         {current === 'Qualifications' ? <QualificationsPage /> : null}
-        {current === 'Rules' ? <RulesPage /> : null}
+        {current === 'Rules' ? (
+          <>
+            <RulesPage />
+            <ObjectivesPage />
+          </>
+        ) : null}
         {current === 'Shifts' ? <ShiftsPage span={span} /> : null}
         {current === 'Rosters' ? <RostersPage span={span} people={people.value ?? []} /> : null}
         {current === 'Swaps' ? <SwapsPage people={people.value ?? []} /> : null}

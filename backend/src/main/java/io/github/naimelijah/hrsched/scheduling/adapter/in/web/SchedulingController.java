@@ -2,12 +2,14 @@ package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.in.AssignToShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ConfigureConstraintsUseCase;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.ConfigureObjectivesUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ManageShiftsUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseObjectivesCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ViewOwnScheduleUseCase;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
@@ -50,16 +52,19 @@ public class SchedulingController {
 
   private final ManageShiftsUseCase manageShifts;
   private final ConfigureConstraintsUseCase configureConstraints;
+  private final ConfigureObjectivesUseCase configureObjectives;
   private final PlanRostersUseCase planRosters;
   private final ViewOwnScheduleUseCase viewOwnSchedule;
 
   public SchedulingController(
       ManageShiftsUseCase manageShifts,
       ConfigureConstraintsUseCase configureConstraints,
+      ConfigureObjectivesUseCase configureObjectives,
       PlanRostersUseCase planRosters,
       ViewOwnScheduleUseCase viewOwnSchedule) {
     this.manageShifts = manageShifts;
     this.configureConstraints = configureConstraints;
+    this.configureObjectives = configureObjectives;
     this.planRosters = planRosters;
     this.viewOwnSchedule = viewOwnSchedule;
   }
@@ -69,11 +74,17 @@ public class SchedulingController {
       @AuthenticationPrincipal Actor actor, @RequestBody DefineShiftRequest request) {
     Set<QualificationId> required = request.toRequiredQualifications();
     ZoneId zone = request.toZone();
+    boolean unpopular = request.toUnpopular();
     ShiftId id =
         manageShifts.defineShift(
             actor,
             new DefineShiftCommand(
-                actingIn(actor), request.toPeriod(), zone, request.requiredHeadcount(), required));
+                actingIn(actor),
+                request.toPeriod(),
+                zone,
+                request.requiredHeadcount(),
+                required,
+                unpopular));
     return ResponseEntity.created(URI.create("/api/shifts/" + id.value()))
         .body(
             new ShiftResponse(
@@ -82,7 +93,8 @@ public class SchedulingController {
                 request.end(),
                 zone.getId(),
                 request.requiredHeadcount(),
-                required.stream().map(QualificationId::value).toList()));
+                required.stream().map(QualificationId::value).toList(),
+                unpopular));
   }
 
   /**
@@ -147,6 +159,25 @@ public class SchedulingController {
         .findConstraints(actor, actingIn(actor), version)
         .map(ConstraintSetResponse::from)
         .orElseThrow(() -> new UnknownConstraintVersionException(version));
+  }
+
+  /**
+   * Replaces the organisation's objective weights (F35): an Admin's to set, as the rules are.
+   * Whatever is left out is no longer weighed.
+   */
+  @PutMapping("/objectives")
+  public ObjectiveWeightsResponse reviseObjectives(
+      @AuthenticationPrincipal Actor actor, @RequestBody ObjectiveWeightsRequest request) {
+    return ObjectiveWeightsResponse.from(
+        configureObjectives.reviseObjectives(
+            actor, new ReviseObjectivesCommand(actingIn(actor), request.toWeights())));
+  }
+
+  /** The organisation's objective weights (F36). Any member may read them, as the rules. */
+  @GetMapping("/objectives")
+  public ObjectiveWeightsResponse findObjectives(@AuthenticationPrincipal Actor actor) {
+    return ObjectiveWeightsResponse.from(
+        configureObjectives.findObjectives(actor, actingIn(actor)));
   }
 
   @PostMapping("/rosters")

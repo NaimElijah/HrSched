@@ -8,6 +8,7 @@ import { Busy, Failure, Violations } from '../components/Feedback';
 import { dayLabel, localDate, shiftLabel, timeLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
+import { ObjectiveScores } from './ObjectiveScores';
 
 /** One local day of the board, and the shifts that start on it, earliest first. */
 interface Day {
@@ -176,6 +177,10 @@ export function RosterBoard({
                     <Violations violations={assessment.value.violations} nameOf={nameOf} />
                   )}
                   <p>{shortfallSummary(assessment.value.shortfalls.length)}</p>
+                  <ObjectiveScores
+                    objectives={assessment.value.objectives}
+                    weightedTotal={assessment.value.weightedTotal}
+                  />
                 </>
               )}
               <p className="hint">

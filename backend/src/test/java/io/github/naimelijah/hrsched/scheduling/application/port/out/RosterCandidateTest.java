@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.application.port.out;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
@@ -36,15 +37,22 @@ class RosterCandidateTest {
 
   private static RosterCandidate candidate(
       Set<QualificationId> qualifications, List<TimeRange> unavailability) {
-    return new RosterCandidate(EmployeeId.newId(), "Ada", qualifications, unavailability);
+    return new RosterCandidate(
+        EmployeeId.newId(), "Ada", qualifications, unavailability, StatedPreferences.none());
   }
 
   private static Stream<ThrowingCallable> nullFields() {
     return Stream.of(
-        () -> new RosterCandidate(null, "Ada", Set.of(), List.of()),
-        () -> new RosterCandidate(EmployeeId.newId(), null, Set.of(), List.of()),
-        () -> new RosterCandidate(EmployeeId.newId(), "Ada", null, List.of()),
-        () -> new RosterCandidate(EmployeeId.newId(), "Ada", Set.of(), null));
+        () -> new RosterCandidate(null, "Ada", Set.of(), List.of(), StatedPreferences.none()),
+        () ->
+            new RosterCandidate(
+                EmployeeId.newId(), null, Set.of(), List.of(), StatedPreferences.none()),
+        () ->
+            new RosterCandidate(
+                EmployeeId.newId(), "Ada", null, List.of(), StatedPreferences.none()),
+        () ->
+            new RosterCandidate(
+                EmployeeId.newId(), "Ada", Set.of(), null, StatedPreferences.none()));
   }
 
   @ParameterizedTest

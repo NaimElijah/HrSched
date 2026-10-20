@@ -49,13 +49,13 @@ implemented; `not yet` means the requirement is decided and the linked issue tra
 
 | ID | Role | Requirement | Enforced by |
 | --- | --- | --- | --- |
-| F1 | Scheduler | Define the shifts that need covering, with headcount and qualifications | `SchedulingService`, `RosteringHttpTest` |
+| F1 | Scheduler | Define the shifts that need covering, with headcount and qualifications, marking any that people would rather not work as unpopular | `SchedulingService`, `RosteringHttpTest`; the mark: `Shift`, `JdbcShiftRepository`, `JdbcShiftRepositoryTest`, `RosteringHttpTest.GivenAShiftMarkedUnpopular_WhenDefined_ThenTheMarkIsEchoedAndReadBack` ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). *The mark is the Scheduler's to give: nothing infers it from the clock or from preferences, and it changes no rule a roster must obey. Shifts stored before V10 are not marked.* |
 | F1a | Any member | See the shifts needing covering over a span | `SchedulingService`, `SchedulingServiceTest` |
 | F2 | Scheduler | Assign an employee to a shift, and remove that assignment | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *Drafts only: a published roster is superseded, never edited (R6).* |
 | F3 | Scheduler | Publish a draft roster, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest`. Every breach at once, of every kind — R3, R35, R4, R5, R18 and the working-time rules: `SchedulingServiceTest.GivenADraftBreakingSeveralRulesAtOnce_WhenPublishing_ThenEveryViolationIsListed` (R3, R4, R18), `…GivenADraftBreakingEveryKindOfRule_WhenAssessedAndThenPublished_ThenPublicationRefusesWithExactlyTheAssessedViolations` (adds R5 and a working-time rule), `…GivenTwoDraftsPuttingOnePersonInTwoPlaces_WhenTheSecondIsPublished_ThenItIsRefused` (R35), [ADR-042](../ADRs/ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md). *Absorbed F12, which restated it.* |
 | F4 | Admin, Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest`. *Availability, qualifications and contracted hours are on the listing; the roster half is served by F11a rather than repeated here.* |
 | F5 | Any member linked to an employee | See their own published roster | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *The assignments naming them, from published rosters only — the whole roster stays Admin and Scheduler (R12). Tested for the Employee role only ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
-| F6 | Employee, or an Admin or Scheduler on their behalf | Declare when they cannot work, and state soft preferences, and see what they declared | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). *Seeing what they declared is authorised as declaring is, and refused for a colleague: `EmployeeServiceTest.GivenAnEmployee_WhenReadingTheirOwnDeclarations_ThenBothAreReturned`, `EmployeeHttpTest.GivenAColleague_WhenReadingSomebodyElsesUnavailability_ThenItIsForbidden`. Preferences shaping generation: not yet — an objective, weighted under Q13 ([#27](https://github.com/NaimElijah/HrSched/issues/27)). Declaring on somebody's behalf is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)); reading it back is tested for an Admin and a Scheduler.* |
+| F6 | Employee, or an Admin or Scheduler on their behalf | Declare when they cannot work, and state soft preferences, and see what they declared | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). *Seeing what they declared is authorised as declaring is, and refused for a colleague: `EmployeeServiceTest.GivenAnEmployee_WhenReadingTheirOwnDeclarations_ThenBothAreReturned`, `EmployeeHttpTest.GivenAColleague_WhenReadingSomebodyElsesUnavailability_ThenItIsForbidden`. Preferences are an objective: the draft check counts those a draft goes against (F34), but generation does not yet try to honour them ([#28](https://github.com/NaimElijah/HrSched/issues/28)). Declaring on somebody's behalf is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)); reading it back is tested for an Admin and a Scheduler.* |
 | F7 | Employee, or an Admin or Scheduler on their behalf | Request a swap of one of their assignments with another employee: a transfer of that shift, or a two-way exchange of two | `SwapService`, `SwapServiceTest`, `SwapHttpTest` ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)). *The transfer is built; the exchange: not yet — [#82](https://github.com/NaimElijah/HrSched/issues/82). Acting on somebody's behalf is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
 | F8 | Admin | Add employees | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` |
 | F9 | Admin | Define qualifications, and grant them to employees | `QualificationService`, `QualificationServiceTest`, `QualificationHttpTest`; granting: `EmployeeService`, `EmployeeServiceTest` |
@@ -84,7 +84,9 @@ implemented; `not yet` means the requirement is decided and the linked issue tra
 | F31 | Operator | Close an organisation | not yet — [#93](https://github.com/NaimElijah/HrSched/issues/93) |
 | F32 | Admin | Apply a jurisdiction preset shipped with HrSched to their organisation's constraint set | not yet — [#105](https://github.com/NaimElijah/HrSched/issues/105) |
 | F33 | Operator | Reset an organisation's Admin password, after verifying the request outside the application | not yet — [#107](https://github.com/NaimElijah/HrSched/issues/107). *A deliberate exception to [ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md), needing an ADR of its own (Q28, [#114](https://github.com/NaimElijah/HrSched/issues/114)).* |
-| F34 | Admin, Scheduler | See whether a draft breaks any rule, and which shifts it leaves short, without publishing it | `SchedulingService.findAssessment`, `SchedulingServiceTest`, `RosteringHttpTest`; that it agrees with publication: `SchedulingServiceTest.GivenADraftBreakingEveryKindOfRule_WhenAssessedAndThenPublished_ThenPublicationRefusesWithExactlyTheAssessedViolations`, [ADR-042](../ADRs/ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md). *Added from the owner's backlog ([#205](https://github.com/NaimElijah/HrSched/issues/205)) after the 2026-09-22 review. Advisory: publication decides. Judging a draft with proposed changes applied is not yet built, nor is the latency target measured ([#143](https://github.com/NaimElijah/HrSched/issues/143)).* |
+| F34 | Admin, Scheduler | See whether a draft breaks any rule, which shifts it leaves short, and how it scores on the organisation's objectives, without publishing it | `SchedulingService.findAssessment`, `SchedulingServiceTest`, `RosteringHttpTest`; that it agrees with publication: `SchedulingServiceTest.GivenADraftBreakingEveryKindOfRule_WhenAssessedAndThenPublished_ThenPublicationRefusesWithExactlyTheAssessedViolations`, [ADR-042](../ADRs/ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md). *Added from the owner's backlog ([#205](https://github.com/NaimElijah/HrSched/issues/205)) after the 2026-09-22 review. Advisory: publication decides. The score: `RosterMeasures`, `RosterMeasuresTest`, `RosterScore`, `RosterScoreTest`, `SchedulingServiceTest`, `RosteringHttpTest.GivenWeightedObjectives_WhenADraftIsAssessed_ThenEachMeasureAndTheTotalAreListed` ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). Judging a draft with proposed changes applied is not yet built, nor is the latency target measured ([#143](https://github.com/NaimElijah/HrSched/issues/143)).* |
+| F35 | Admin | Weight the objectives that make one legal roster better than another: fairness, preferences and disruption | `SchedulingService`, `SchedulingServiceTest`, `ObjectivesHttpTest`, `JdbcObjectiveWeightsRepository`, `JdbcObjectiveWeightsRepositoryTest` ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). *Added from the owner's backlog ([#27](https://github.com/NaimElijah/HrSched/issues/27)) after the 2026-09-22 review, answering Q13. A revision replaces the weights whole, as a constraint revision does; an objective left out is not weighed.* |
+| F36 | Any member | See the organisation's objective weights | `SchedulingService`, `SchedulingServiceTest`, `ObjectivesHttpTest.GivenAnEmployee_WhenReadingTheWeights_ThenTheyAreShown`. *As any member sees the rules (F21).* |
 
 **Swaps (F7, F17)** are approved by a **Scheduler**; the other employee is informed rather than asked,
 and being informed means a notification they can go and read. Approving does not edit the published
@@ -174,6 +176,7 @@ a published roster is superseded rather than edited (R6).
 | R37 | Roster history is append-only: what was authoritative at any past moment can be reconstructed exactly. *`Roster` (`RosterTest`), `SchedulingService` (`SchedulingServiceTest`), `JdbcRosterRepository` and the `roster_one_published_per_moment` constraint (`JdbcRosterRepositoryTest`), migration `V6` (`AppendOnlyRosterHistoryMigrationTest`) ([ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)). Exact from V6 on: nothing earlier was recorded.* |
 | R38 | A sign-in name is an email address. *Not yet — [#108](https://github.com/NaimElijah/HrSched/issues/108)* |
 | R39 | Operators and Admins sign in with a second factor as well as a password. *Not yet — [#109](https://github.com/NaimElijah/HrSched/issues/109)* |
+| R40 | Every objective weight is a whole number of at least one, and an objective with no weight is left out of the score. *`ObjectiveWeights`, `ObjectiveWeightsTest`; the schema's checks on `objective_weights`, `JdbcObjectiveWeightsRepositoryTest`; `ObjectivesHttpTest`* |
 
 A roster moves `DRAFT → PUBLISHED → SUPERSEDED`, and no other transition is legal. Exactly one
 roster is authoritative for any given moment, which is what R11 enforces.
@@ -216,13 +219,21 @@ Required but not yet built, each with its threshold a configured value (R25):
 
 ### What makes one legal roster better than another
 
-The objectives a generator should optimise, **none of them modelled yet**: fair distribution of
-unpopular shifts, respect for stated preferences, and minimal disruption when re-generating a
-published roster. These are explicitly *not* constraints — see ADR-005.
+Three objectives, explicitly *not* constraints (ADR-005): they rank legal rosters and decide
+nothing, so a roster scoring well is still refused if it breaks a rule. Each is a count, and lower
+is better ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)
+defines them, and says why):
+
+- **fairness** — the most unpopular shifts any one person carries, where a shift is unpopular
+  because the Scheduler marked it so (F1);
+- **respect for stated preferences** — the preferences a roster goes against (F6);
+- **minimal disruption** — the assignments a roster changes from the published rosters it would
+  supersede.
 
 **Each organisation weights the objectives itself** (Q13), as it configures its own constraint set:
-a weight is configuration, never a constant. How they are modelled is ADR-010, which is reserved and
-now owed ([#27](https://github.com/NaimElijah/HrSched/issues/27)).
+a weight is configuration, never a constant (F35, R40). The draft check scores a draft under those
+weights (F34). **Generation does not optimise them yet**: the greedy generator ignores all three,
+and a solver that optimises them is [#28](https://github.com/NaimElijah/HrSched/issues/28).
 
 ---
 
@@ -372,7 +383,7 @@ applicant tracking, and being the HR system of record.
 | Q26 | Which roster governs a shift that straddles two roster periods, and is R3 judged across rosters or within one? | Either roster may carry it, and R3 is judged across every authoritative roster — R35, [#98](https://github.com/NaimElijah/HrSched/issues/98) | 2026-09-22 |
 | Q32 | Must an account holding the EMPLOYEE role always be linked to an employee? | Yes, and existing unlinked ones are disabled until linked — R34, [#97](https://github.com/NaimElijah/HrSched/issues/97) | 2026-09-22 |
 | Q33 | May an assignment have more than one pending swap request, and what becomes of a pending request once its roster is superseded? | One only (R32), and it lapses (R33) — [#94](https://github.com/NaimElijah/HrSched/issues/94) | 2026-09-22 |
-| Q13 | How are the generator objectives weighted against one another? | Each organisation weights them itself, as configuration. ADR-010 is now owed — [#27](https://github.com/NaimElijah/HrSched/issues/27) | 2026-09-22 |
+| Q13 | How are the generator objectives weighted against one another? | Each organisation weights them itself, as configuration — [ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md), [#27](https://github.com/NaimElijah/HrSched/issues/27) | 2026-09-22 |
 | Q14 | Over what reference period is a weekly maximum averaged? | A reference period configured in the constraint set — [#104](https://github.com/NaimElijah/HrSched/issues/104) | 2026-09-22 |
 | Q17 | Which time zone are working-time rules evaluated in? | Each shift's own — R36, [#29](https://github.com/NaimElijah/HrSched/issues/29) | 2026-09-22 |
 | Q20 | Should an Admin be able to read their organisation's audit trail? | Yes: the trail is durable, stored with the change it records, and an Admin reads their own organisation's only — [#31](https://github.com/NaimElijah/HrSched/issues/31). Its retention is Q23 | 2026-09-22 |

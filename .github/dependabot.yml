@@ -1,7 +1,12 @@
 version: 2
+
+# Every entry targets dev: a branch reaches main only through a dev-to-main pull request, and an
+# update merged straight into main would leave dev behind it. Dependabot reads this file from the
+# default branch, so a change here takes effect once it has been promoted to main.
 updates:
   - package-ecosystem: maven
     directory: /backend
+    target-branch: dev
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
@@ -12,14 +17,27 @@ updates:
   # silent non-coverage rather than a visible failure.
   - package-ecosystem: npm
     directory: /frontend
+    target-branch: dev
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
     commit-message:
       prefix: 'chore(deps)'
+    groups:
+      # @vitest/coverage-v8 peers the exact Vitest version (ADR-015), so a pull request that bumps
+      # one without the other cannot pass npm ci.
+      vitest:
+        patterns:
+          - 'vitest'
+          - '@vitest/*'
+    ignore:
+      # typescript-eslint does not yet admit TypeScript 7 as a peer. Remove when it does (ADR-043).
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     commit-message:

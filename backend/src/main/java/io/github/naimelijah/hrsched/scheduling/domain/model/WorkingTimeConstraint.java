@@ -19,7 +19,7 @@ import java.util.Optional;
  *
  * <p>Every constraint here is HARD. A schedule either satisfies it or the roster cannot be
  * published; there is no override and no weighting. What a generator should merely *prefer* is a
- * separate concept entirely — see {@code Objectives}.
+ * separate concept entirely — see {@link Objective} and {@link ObjectiveWeights} (ADR-010).
  */
 public sealed interface WorkingTimeConstraint
     permits MinimumRestBetweenAssignments,

@@ -34,7 +34,7 @@ sees the file.
 - **Never put a suggested working-time number in a form field.** A default is a legal threshold
   chosen by a developer — the statute rule in `.claude/CLAUDE.md` covers the UI too.
 - **Frontend versions are ahead of most published guidance.** React 19, Vite 8, TypeScript 6,
-  ESLint 10, Vitest 4. Check the installed package before trusting a recalled API — the same
+  ESLint 10, Vitest 5. Check the installed package before trusting a recalled API — the same
   discipline the Spring Boot 4.x renames forced. Already found this way: Vitest 4 moves the `test`
   key off Vite's config type (import `defineConfig` from `vitest/config`), and
   `eslint-plugin-react-hooks` 7 exposes flat config under `configs.flat`.
