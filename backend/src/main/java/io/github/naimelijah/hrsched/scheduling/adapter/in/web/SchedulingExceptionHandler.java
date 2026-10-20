@@ -6,6 +6,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
@@ -105,6 +106,7 @@ public class SchedulingExceptionHandler {
     InvalidTimeRangeException.class,
     InvalidHeadcountException.class,
     InvalidConstraintException.class,
+    InvalidObjectiveWeightException.class,
     DuplicateAssignmentException.class,
     UnknownRequiredQualificationException.class,
     SwapWithThemselfException.class,

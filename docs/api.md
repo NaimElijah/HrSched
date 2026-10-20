@@ -24,6 +24,7 @@ exact role. A resource in another organisation answers `404`, the same as one th
 | Availability | `POST`, `GET /api/employees/{id}/unavailability`, `/{id}/preferences`; `DELETE /{id}/unavailability?start&end`, `/{id}/preferences?start&end&strength` | The person, Admin or Scheduler |
 | Qualifications | `POST /api/qualifications`; `GET` list and one | Admin; reading any member |
 | Rules | `PUT /api/constraints`; `GET /api/constraints`, `/{version}` | Admin; reading any member |
+| Objectives | `PUT /api/objectives`; `GET /api/objectives` | Admin; reading any member |
 | Shifts | `POST /api/shifts`; `GET /api/shifts?from&to`, `/{id}` | Scheduler; reading any member |
 | Rosters | `POST /api/rosters`, `/{id}/assignments`, `/{id}/publication`; `DELETE /{id}/assignments/{shift}/{employee}`; `GET` list and one, and `/{id}/assessment` | Scheduler; reading and checking also Admin |
 | Swaps | `POST /api/swaps`, `/{id}/approval`, `/{id}/rejection`; `GET` list and one | Asking: the person, Admin or Scheduler; deciding: Scheduler; reading: the parties |

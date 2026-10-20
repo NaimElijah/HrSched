@@ -10,6 +10,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCo
 import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseObjectivesCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosterAssessment;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosteredShift;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
@@ -21,8 +22,11 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.Objective;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
 import io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
@@ -59,6 +63,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -98,6 +103,7 @@ class SchedulingServiceTest {
   private FakeShifts shifts;
   private FakeRosters rosters;
   private FakeConstraintSets constraintSets;
+  private FakeObjectiveWeights objectiveWeights;
   private FakeWorkforce workforce;
   private RecordingAuditTrail audit;
   private SchedulingService service;
@@ -107,6 +113,7 @@ class SchedulingServiceTest {
     shifts = new FakeShifts();
     rosters = new FakeRosters();
     constraintSets = new FakeConstraintSets();
+    objectiveWeights = new FakeObjectiveWeights();
     workforce = new FakeWorkforce();
     audit = new RecordingAuditTrail();
     service = withClock(Clock.fixed(NOW, ZoneOffset.UTC));
@@ -117,6 +124,7 @@ class SchedulingServiceTest {
         shifts,
         rosters,
         constraintSets,
+        objectiveWeights,
         new FakeSwaps(new CallLog()),
         workforce,
         new FirstFitGenerator(),
@@ -539,6 +547,116 @@ class SchedulingServiceTest {
         .containsExactly(
             new AuditedChange(
                 ACME, admin.id(), SchedulingChange.CONSTRAINTS_REVISED, ACME.value()));
+  }
+
+  // --- F35, F36: how an organisation weights the objectives (ADR-010). Every weight is invented.
+
+  private static ReviseObjectivesCommand weighting(OrganisationId organisation, int fairness) {
+    return new ReviseObjectivesCommand(organisation, Map.of(Objective.FAIRNESS, fairness));
+  }
+
+  @Test
+  void GivenAnAdmin_WhenWeightingTheObjectives_ThenTheWeightsAreReadBack() {
+    service.reviseObjectives(admin(ACME), weighting(ACME, 3));
+
+    assertThat(service.findObjectives(scheduler(ACME), ACME).weightOf(Objective.FAIRNESS))
+        .contains(3);
+  }
+
+  /** Nothing weighted is a configuration, not a missing record: every roster scores alike. */
+  @Test
+  void GivenNothingWeighted_WhenReadingTheWeights_ThenNoObjectiveIsWeighed() {
+    assertThat(service.findObjectives(admin(ACME), ACME)).isEqualTo(ObjectiveWeights.none(ACME));
+  }
+
+  /** F36: any member reads them, as any member reads the rules (F21). */
+  @Test
+  void GivenAnEmployee_WhenReadingTheWeights_ThenTheyAreShown() {
+    service.reviseObjectives(admin(ACME), weighting(ACME, 2));
+
+    assertThat(
+            service
+                .findObjectives(new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE), ACME)
+                .weightOf(Objective.FAIRNESS))
+        .contains(2);
+  }
+
+  /** Revision replaces the weights whole: what is left out stops being weighed. */
+  @Test
+  void GivenWeightsRevised_WhenAnObjectiveIsLeftOut_ThenItIsNoLongerWeighed() {
+    service.reviseObjectives(admin(ACME), weighting(ACME, 3));
+
+    service.reviseObjectives(
+        admin(ACME), new ReviseObjectivesCommand(ACME, Map.of(Objective.DISRUPTION, 1)));
+
+    ObjectiveWeights read = service.findObjectives(admin(ACME), ACME);
+    assertThat(read.weightOf(Objective.FAIRNESS)).isEmpty();
+    assertThat(read.weightOf(Objective.DISRUPTION)).contains(1);
+  }
+
+  @Test
+  void GivenAScheduler_WhenWeightingTheObjectives_ThenItIsRefusedAndNothingIsStored() {
+    assertThatThrownBy(() -> service.reviseObjectives(scheduler(ACME), weighting(ACME, 3)))
+        .describedAs("weighing what makes a roster better is the Admin's, as the rules are")
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(objectiveWeights.find(ACME)).isEmpty();
+  }
+
+  @Test
+  void GivenAnEmployee_WhenWeightingTheObjectives_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                service.reviseObjectives(
+                    new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE), weighting(ACME, 3)))
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenWeightingOurObjectives_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.reviseObjectives(admin(RIVAL), weighting(ACME, 3)))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(objectiveWeights.find(ACME)).isEmpty();
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingOurWeights_ThenItIsRefused() {
+    service.reviseObjectives(admin(ACME), weighting(ACME, 3));
+
+    assertThatThrownBy(() -> service.findObjectives(admin(RIVAL), ACME))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenWeightingTheObjectives_ThenItIsRefused() {
+    assertThatThrownBy(
+            () -> service.reviseObjectives(new Operator(UserId.newId()), weighting(ACME, 3)))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingTheWeights_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.findObjectives(new Operator(UserId.newId()), ACME))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenAnAdmin_WhenWeightingTheObjectives_ThenTheOrganisationIsTheSubject() {
+    TenantActor admin = admin(ACME);
+
+    service.reviseObjectives(admin, weighting(ACME, 3));
+
+    assertThat(audit.of(SchedulingChange.OBJECTIVES_REVISED))
+        .containsExactly(
+            new AuditedChange(ACME, admin.id(), SchedulingChange.OBJECTIVES_REVISED, ACME.value()));
+  }
+
+  /** Refused before anything is written, so neither a row nor an audit line outlives it. */
+  @Test
+  void GivenAWeightBelowOne_WhenWeighting_ThenNothingIsStoredOrRecorded() {
+    assertThatThrownBy(() -> service.reviseObjectives(admin(ACME), weighting(ACME, 0)))
+        .isInstanceOf(InvalidObjectiveWeightException.class);
+    assertThat(objectiveWeights.find(ACME)).isEmpty();
+    assertThat(audit.of(SchedulingChange.OBJECTIVES_REVISED)).isEmpty();
   }
 
   @Test

@@ -116,6 +116,26 @@ export interface DefineShiftRequest {
   readonly unpopular: boolean;
 }
 
+/**
+ * Mirrors ObjectiveWeightsResponse: each objective's weight, or null when it is not weighed
+ * (ADR-010). Echoed whole because revising replaces the weights whole.
+ */
+export interface ObjectiveWeights {
+  readonly fairness: number | null;
+  readonly preferences: number | null;
+  readonly disruption: number | null;
+}
+
+/**
+ * How an organisation weighs the objectives. Every field is optional and none has a default: an
+ * objective left out is not weighed.
+ */
+export interface ObjectiveWeightsRequest {
+  readonly fairness?: number | undefined;
+  readonly preferences?: number | undefined;
+  readonly disruption?: number | undefined;
+}
+
 export const scheduling = {
   findShifts: (from: string, to: string): Promise<Shift[]> =>
     api.get<Shift[]>(`/api/shifts?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
@@ -195,4 +215,10 @@ export const scheduling = {
 
   reviseConstraints: (constraints: ConstraintSetRequest): Promise<ConstraintSet> =>
     api.put<ConstraintSet>('/api/constraints', constraints),
+
+  findObjectives: (): Promise<ObjectiveWeights> => api.get<ObjectiveWeights>('/api/objectives'),
+
+  /** Replaces the weights whole; an objective left out stops being weighed. Admin only. */
+  reviseObjectives: (weights: ObjectiveWeightsRequest): Promise<ObjectiveWeights> =>
+    api.put<ObjectiveWeights>('/api/objectives', weights),
 };

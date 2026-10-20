@@ -22,6 +22,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUs
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.Notifier;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.ObjectiveWeightsRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
@@ -175,6 +176,7 @@ public class UseCaseConfiguration {
       ShiftRepository shifts,
       RosterRepository rosters,
       ConstraintSetRepository constraintSets,
+      ObjectiveWeightsRepository objectiveWeights,
       SwapRequestRepository swaps,
       WorkforceDirectory workforce,
       RosterGenerator generator,
@@ -184,7 +186,16 @@ public class UseCaseConfiguration {
       PlatformTransactionManager transactions) {
     return transactional(
         new SchedulingService(
-            shifts, rosters, constraintSets, swaps, workforce, generator, notifier, audit, clock),
+            shifts,
+            rosters,
+            constraintSets,
+            objectiveWeights,
+            swaps,
+            workforce,
+            generator,
+            notifier,
+            audit,
+            clock),
         transactions);
   }
 

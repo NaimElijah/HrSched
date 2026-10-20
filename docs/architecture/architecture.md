@@ -106,8 +106,8 @@ Three rules hold this together, and each fails the build when broken:
 | `notifications.application` | Raising and reading notifications. `NotifyUseCase` is this context's **published API** and is deliberately not on a controller; `ReadNotificationsUseCase` is strictly self-service, and whose inbox is read comes from the acting identity rather than from any parameter. Takes a `Clock`, so when something happened is an input rather than an ambient fact. |
 | `workforce.domain.model` | `Employee` (aggregate root: qualifications, unavailability, preferences, contract terms), `Qualification`, `ShiftPreference`, `ContractTerms`. |
 | `workforce.application` | Employee and qualification use cases. `FindRosterableEmployeesUseCase` is this context's **published API**, returning `RosterableEmployee` rather than the aggregate. A use case that changes an employee reads them with `EmployeeRepository.findForUpdate`, so two changes to one person at once — an Admin's and their own — take turns and both apply ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)). |
-| `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule` and the `WorkingPeriod`s it holds, `HeldWork`. |
-| `scheduling.application` | Shift definition, constraint configuration, roster generation and publication. Assembles the evidence constraints are judged against. |
+| `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule` and the `WorkingPeriod`s it holds, `HeldWork`; `Objective`, `ObjectiveWeights` and the `StatedPreferences` a candidate carries ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). |
+| `scheduling.application` | Shift definition, constraint and objective configuration, roster generation and publication. Assembles the evidence constraints are judged against. |
 | `scheduling.adapter.out.workforce` | An anti-corruption layer: one of **two** classes in scheduling permitted to name another context, and only its published port. |
 | `scheduling.adapter.out.notification` | The other one. Translates "a swap was approved" into the word the `notifications` context uses for it, so nothing inward of the `Notifier` port knows that context exists ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. |
@@ -168,7 +168,7 @@ about. The rules are the coarse outer line; the use case behind each route is wh
 | `POST`/`GET /api/organisations` | `OPERATOR` |
 | `GET /api/organisations/{id}` | any role; the use case decides whose |
 | `/api/accounts/**` | `ADMIN` |
-| `/api/employees/**`, `/api/qualifications/**`, `/api/shifts/**`, `/api/constraints/**`, `/api/rosters/**`, `/api/me/**`, `/api/swaps/**`, `/api/notifications/**` | any tenant role |
+| `/api/employees/**`, `/api/qualifications/**`, `/api/shifts/**`, `/api/constraints/**`, `/api/objectives/**`, `/api/rosters/**`, `/api/me/**`, `/api/swaps/**`, `/api/notifications/**` | any tenant role |
 | anything else | nobody |
 
 **A verified signature is not enough, and that is the point.** The decoder proves a token is one
@@ -298,9 +298,12 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   `ConstraintSet`, never a constant. A jurisdiction is a *preset*: a named set of values loaded
   as data, whose numbers must be sourced from the statute. This is the single most important
   property of the model, and the reason the constraint types carry their own thresholds.
-- **Constraints are hard; objectives do not exist yet.** `ConstraintSet` holds only rules that
-  must never be broken. Fairness, preferences and disruption — what makes one legal roster better
-  than another — are a separate concept that is not modelled.
+- **Constraints are hard; objectives only rank.** `ConstraintSet` holds only rules that must never
+  be broken. Fairness, preferences and disruption — what makes one legal roster better than another
+  — are `Objective`s, and `ObjectiveWeights` says how much one organisation cares about each: a
+  whole number of at least one, or not weighed at all, with no default anywhere (R40). Weights are
+  one row per organisation, replaced whole and never versioned, because nothing is judged against
+  a weight ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)).
 - **Tenancy is in every signature, on purpose.** Repository lookups take an `OrganisationId`, so
   a cross-tenant read cannot be written by forgetting a filter. See
   [ADR-009](../ADRs/ADR-009-tenant-isolation-in-the-domain.md). A `save` takes no organisation of
