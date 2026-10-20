@@ -18,6 +18,12 @@ public enum SchedulingChange {
    */
   CONSTRAINTS_REVISED,
 
+  /**
+   * An organisation's objective weights were replaced (ADR-010). Like the rules, revision replaces
+   * them whole, so an objective omitted stops being weighed. No roster's legality changes.
+   */
+  OBJECTIVES_REVISED,
+
   /** A draft roster was produced. It binds nobody until it is published. */
   ROSTER_GENERATED,
 

@@ -28,7 +28,20 @@ class ShiftTest {
       new TimeRange(Instant.parse("2026-09-07T08:00:00Z"), Instant.parse("2026-09-07T16:00:00Z"));
 
   private static Shift shift(int headcount) {
-    return new Shift(ShiftId.newId(), ACME, MONDAY_DAY, ZoneOffset.UTC, headcount, Set.of());
+    return new Shift(ShiftId.newId(), ACME, MONDAY_DAY, ZoneOffset.UTC, headcount, Set.of(), false);
+  }
+
+  @Test
+  void GivenAShiftMarkedUnpopular_WhenConstructed_ThenItKeepsTheMark() {
+    assertThat(
+            new Shift(ShiftId.newId(), ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), true)
+                .unpopular())
+        .isTrue();
+  }
+
+  @Test
+  void GivenAShiftNotMarked_WhenConstructed_ThenItIsNotUnpopular() {
+    assertThat(shift(1).unpopular()).isFalse();
   }
 
   @Test
@@ -44,14 +57,14 @@ class ShiftTest {
 
   @Test
   void GivenANullIdentity_WhenConstructingAShift_ThenItIsRejected() {
-    assertThatThrownBy(() -> new Shift(null, ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()))
+    assertThatThrownBy(() -> new Shift(null, ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false))
         .isInstanceOf(NullPointerException.class);
   }
 
   @Test
   void GivenANullOrganisation_WhenConstructingAShift_ThenItIsRejected() {
     assertThatThrownBy(
-            () -> new Shift(ShiftId.newId(), null, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()))
+            () -> new Shift(ShiftId.newId(), null, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false))
         .isInstanceOf(NullPointerException.class);
   }
 
@@ -60,19 +73,21 @@ class ShiftTest {
    */
   @Test
   void GivenANullZone_WhenConstructingAShift_ThenItIsRejected() {
-    assertThatThrownBy(() -> new Shift(ShiftId.newId(), ACME, MONDAY_DAY, null, 1, Set.of()))
+    assertThatThrownBy(() -> new Shift(ShiftId.newId(), ACME, MONDAY_DAY, null, 1, Set.of(), false))
         .isInstanceOf(NullPointerException.class);
   }
 
   @Test
   void GivenANullPeriod_WhenConstructingAShift_ThenItIsRejected() {
-    assertThatThrownBy(() -> new Shift(ShiftId.newId(), ACME, null, ZoneOffset.UTC, 1, Set.of()))
+    assertThatThrownBy(
+            () -> new Shift(ShiftId.newId(), ACME, null, ZoneOffset.UTC, 1, Set.of(), false))
         .isInstanceOf(NullPointerException.class);
   }
 
   @Test
   void GivenNullQualifications_WhenConstructingAShift_ThenItIsRejected() {
-    assertThatThrownBy(() -> new Shift(ShiftId.newId(), ACME, MONDAY_DAY, ZoneOffset.UTC, 1, null))
+    assertThatThrownBy(
+            () -> new Shift(ShiftId.newId(), ACME, MONDAY_DAY, ZoneOffset.UTC, 1, null, false))
         .isInstanceOf(NullPointerException.class);
   }
 
@@ -85,7 +100,7 @@ class ShiftTest {
   @Test
   void GivenAMutableSetOfQualifications_WhenConstructingAShift_ThenLaterChangesAreNotSeen() {
     Set<QualificationId> required = new HashSet<>(Set.of(QualificationId.newId()));
-    Shift shift = new Shift(ShiftId.newId(), ACME, MONDAY_DAY, ZoneOffset.UTC, 1, required);
+    Shift shift = new Shift(ShiftId.newId(), ACME, MONDAY_DAY, ZoneOffset.UTC, 1, required, false);
 
     required.add(QualificationId.newId());
 
@@ -103,7 +118,7 @@ class ShiftTest {
   @Test
   void GivenTwoShiftsSharingAnIdentity_WhenComparingThem_ThenTheyAreTheSameShift() {
     ShiftId id = ShiftId.newId();
-    Shift original = new Shift(id, ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of());
+    Shift original = new Shift(id, ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false);
     Shift rescheduled =
         new Shift(
             id,
@@ -112,7 +127,8 @@ class ShiftTest {
                 Instant.parse("2026-09-07T09:00:00Z"), Instant.parse("2026-09-07T17:00:00Z")),
             ZoneOffset.UTC,
             2,
-            Set.of());
+            Set.of(),
+            false);
 
     assertThat(original).isEqualTo(rescheduled).hasSameHashCodeAs(rescheduled);
   }

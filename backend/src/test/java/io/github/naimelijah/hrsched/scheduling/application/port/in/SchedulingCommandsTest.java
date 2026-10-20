@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
+import io.github.naimelijah.hrsched.scheduling.domain.model.Objective;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.WorkingTimeConstraint;
@@ -15,8 +18,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
@@ -40,14 +45,16 @@ class SchedulingCommandsTest {
 
   private static Stream<ThrowingCallable> nullFields() {
     return Stream.of(
-        () -> new DefineShiftCommand(null, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of()),
-        () -> new DefineShiftCommand(ACME, null, ZoneOffset.UTC, 1, Set.of()),
-        () -> new DefineShiftCommand(ACME, MONDAY_DAY, null, 1, Set.of()),
-        () -> new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, null),
+        () -> new DefineShiftCommand(null, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false),
+        () -> new DefineShiftCommand(ACME, null, ZoneOffset.UTC, 1, Set.of(), false),
+        () -> new DefineShiftCommand(ACME, MONDAY_DAY, null, 1, Set.of(), false),
+        () -> new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, null, false),
         () -> new GenerateRosterCommand(null, MONDAY_DAY),
         () -> new GenerateRosterCommand(ACME, null),
         () -> new ReviseConstraintsCommand(null, List.of()),
-        () -> new ReviseConstraintsCommand(ACME, null));
+        () -> new ReviseConstraintsCommand(ACME, null),
+        () -> new ReviseObjectivesCommand(null, Map.of()),
+        () -> new ReviseObjectivesCommand(ACME, null));
   }
 
   @ParameterizedTest
@@ -60,7 +67,7 @@ class SchedulingCommandsTest {
   void GivenAMutableSetOfQualifications_WhenDefiningAShift_ThenLaterChangesAreNotSeen() {
     Set<QualificationId> required = new HashSet<>(Set.of(QualificationId.newId()));
     DefineShiftCommand command =
-        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, required);
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, required, false);
 
     required.add(QualificationId.newId());
 
@@ -89,9 +96,32 @@ class SchedulingCommandsTest {
   }
 
   @Test
+  void GivenAMutableMapOfWeights_WhenRevisingObjectives_ThenLaterChangesAreNotSeen() {
+    Map<Objective, Integer> weights = new HashMap<>(Map.of(Objective.FAIRNESS, 2)); // invented
+    ReviseObjectivesCommand command = new ReviseObjectivesCommand(ACME, weights);
+
+    weights.clear();
+
+    assertThat(command.weights()).containsEntry(Objective.FAIRNESS, 2);
+  }
+
+  /**
+   * As with a headcount, the command copies a weight and the domain judges it: a weight of zero
+   * reaches {@code ObjectiveWeights}, which is where R40 lives.
+   */
+  @Test
+  void GivenAWeightBelowOne_WhenRevisingObjectives_ThenTheCommandAcceptsItAndTheDomainRefusesIt() {
+    ReviseObjectivesCommand command =
+        new ReviseObjectivesCommand(ACME, Map.of(Objective.FAIRNESS, 0));
+
+    assertThatThrownBy(() -> new ObjectiveWeights(command.organisation(), command.weights()))
+        .isInstanceOf(InvalidObjectiveWeightException.class);
+  }
+
+  @Test
   void GivenAHeadcountBelowOne_WhenDefiningAShift_ThenTheCommandAcceptsItAndTheDomainRefusesIt() {
     DefineShiftCommand command =
-        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 0, Set.of());
+        new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 0, Set.of(), false);
 
     assertThatThrownBy(
             () ->
@@ -101,7 +131,8 @@ class SchedulingCommandsTest {
                     command.period(),
                     ZoneOffset.UTC,
                     command.requiredHeadcount(),
-                    command.requiredQualifications()))
+                    command.requiredQualifications(),
+                    false))
         .isInstanceOf(InvalidHeadcountException.class);
   }
 }

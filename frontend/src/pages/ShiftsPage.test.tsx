@@ -133,6 +133,26 @@ describe('what a listed shift requires', () => {
 
     expect(await screen.findByText('q-unknown')).toBeInTheDocument();
   });
+
+  it('GivenAShiftMarkedUnpopular_WhenListed_ThenTheMarkIsShown', async () => {
+    routeTo({
+      shifts: [
+        {
+          id: 's-1',
+          start: '2026-10-05T22:00:00Z',
+          end: '2026-10-06T06:00:00Z',
+          zone: 'UTC',
+          requiredHeadcount: 1,
+          requiredQualifications: [],
+          unpopular: true,
+        },
+      ],
+    });
+
+    show();
+
+    expect(await screen.findByRole('cell', { name: 'Unpopular' })).toBeInTheDocument();
+  });
 });
 
 describe('validating before anything is sent', () => {
@@ -239,6 +259,32 @@ describe('defining a shift', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
     await waitFor(() => expect(postedBody(stub).requiredQualifications).toEqual([]));
+  });
+
+  it('GivenTheUnpopularBoxTicked_WhenDefining_ThenTheShiftIsMarkedUnpopular', async () => {
+    const stub = routeTo();
+    show();
+    await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
+
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T22:00');
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-06T06:00');
+    await userEvent.click(screen.getByLabelText('Unpopular'));
+    await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
+
+    await waitFor(() => expect(postedBody(stub).unpopular).toBe(true));
+  });
+
+  /** Nobody said it is unpopular, so it is sent as not marked rather than left for the backend. */
+  it('GivenTheUnpopularBoxLeftClear_WhenDefining_ThenTheShiftIsSentAsNotMarked', async () => {
+    const stub = routeTo();
+    show();
+    await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
+
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00');
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00');
+    await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
+
+    await waitFor(() => expect(postedBody(stub).unpopular).toBe(false));
   });
 
   it('GivenTheBackendRefuses_WhenDefining_ThenTheRefusalIsShown', async () => {

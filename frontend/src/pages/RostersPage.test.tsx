@@ -57,8 +57,22 @@ const WITH_GRACE = {
   assignments: [...ROSTER.assignments, { shift: 'shift-1', employee: 'emp-2' }],
 };
 
-/** What checking a draft answers when it breaks no rule and leaves no shift short. */
-const NOTHING_WRONG = { roster: 'roster-1', constraintVersion: 1, violations: [], shortfalls: [] };
+/**
+ * What checking a draft answers when it breaks no rule, leaves no shift short, and is scored by an
+ * organisation that weighs nothing.
+ */
+const NOTHING_WRONG = {
+  roster: 'roster-1',
+  constraintVersion: 1,
+  violations: [],
+  shortfalls: [],
+  objectives: [
+    { objective: 'FAIRNESS', measure: 0, weight: null },
+    { objective: 'PREFERENCES', measure: 0, weight: null },
+    { objective: 'DISRUPTION', measure: 0, weight: null },
+  ],
+  weightedTotal: 0,
+};
 
 /**
  * A draft with Ada on its one shift, and Grace free to be assigned.
@@ -733,6 +747,49 @@ describe('the board of a draft', () => {
     const check = await theCheck(await openBoard());
 
     expect(await within(check).findByText('1 shift is short of people.')).toBeInTheDocument();
+  });
+
+  /** ADR-010: each count beside the weight on it, and what the weighted ones come to. Invented. */
+  it('GivenWeightedObjectives_WhenTheDraftIsChecked_ThenEachCountAndTheTotalAreShown', async () => {
+    aDraft({
+      '/api/rosters/roster-1/assessment': {
+        status: 200,
+        body: {
+          ...NOTHING_WRONG,
+          objectives: [
+            { objective: 'FAIRNESS', measure: 2, weight: 3 },
+            { objective: 'PREFERENCES', measure: 1, weight: null },
+            { objective: 'DISRUPTION', measure: 4, weight: 1 },
+          ],
+          weightedTotal: 10,
+        },
+      },
+    });
+    renderPage();
+
+    const check = await theCheck(await openBoard());
+    const fairness = await within(check).findByRole('row', { name: /^Fairness/ });
+
+    expect(
+      within(fairness)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent),
+    ).toEqual(['Fairness: the most unpopular shifts any one person carries', '2', '3']);
+    expect(within(check).getByRole('row', { name: /^Preferences/ })).toHaveTextContent(
+      'not weighed',
+    );
+    expect(check).toHaveTextContent('Weighted total: 10.');
+  });
+
+  it('GivenNothingWeighed_WhenTheDraftIsChecked_ThenItSaysEveryDraftTotalsZero', async () => {
+    aDraft();
+    renderPage();
+
+    const check = await theCheck(await openBoard());
+
+    expect(
+      await within(check).findByText('No objective is weighed, so every draft totals zero.'),
+    ).toBeInTheDocument();
   });
 
   /** A published roster was judged when it was published (Q9), so there is nothing to check. */

@@ -46,7 +46,7 @@ class JdbcShiftRepositoryTest {
 
   private static Shift shift(OrganisationId organisation, String start, String end) {
     return new Shift(
-        ShiftId.newId(), organisation, between(start, end), ZoneOffset.UTC, 1, Set.of());
+        ShiftId.newId(), organisation, between(start, end), ZoneOffset.UTC, 1, Set.of(), false);
   }
 
   private static TimeRange theDay() {
@@ -61,7 +61,8 @@ class JdbcShiftRepositoryTest {
         between("2026-09-07T09:00:00Z", "2026-09-07T17:00:00Z"),
         ZoneId.of("Europe/London"),
         2,
-        Set.of());
+        Set.of(),
+        true);
   }
 
   @Test
@@ -86,7 +87,8 @@ class JdbcShiftRepositoryTest {
             between("2026-09-07T17:00:00Z", "2026-09-07T23:00:00Z"),
             london,
             1,
-            Set.of());
+            Set.of(),
+            false);
     repository.save(evening);
 
     assertThat(repository.findById(ACME, evening.id()))
@@ -170,7 +172,8 @@ class JdbcShiftRepositoryTest {
             between("2026-09-07T09:00:00Z", "2026-09-07T17:00:00Z"),
             ZoneOffset.UTC,
             2,
-            Set.of());
+            Set.of(),
+            true);
     repository.save(original);
     repository.save(revised);
 
@@ -178,8 +181,39 @@ class JdbcShiftRepositoryTest {
     // version were held. A distinguishing field is the only thing that can tell them apart.
     assertThat(repository.findWithin(ACME, theDay()))
         .singleElement()
-        .extracting(Shift::requiredHeadcount)
-        .isEqualTo(2);
+        .satisfies(
+            held -> {
+              assertThat(held.requiredHeadcount()).isEqualTo(2);
+              assertThat(held.unpopular()).isTrue();
+            });
+  }
+
+  /**
+   * Shifts compare by identity, so finding one says nothing about its mark; whether the Scheduler
+   * marked it unpopular (ADR-010) is asserted on its own, through both reads.
+   */
+  @Test
+  void GivenAShiftMarkedUnpopular_WhenReadBack_ThenItIsStillMarked() {
+    Shift night =
+        new Shift(
+            ShiftId.newId(),
+            ACME,
+            between("2026-09-07T22:00:00Z", "2026-09-08T06:00:00Z"),
+            ZoneOffset.UTC,
+            1,
+            Set.of(),
+            true);
+    Shift morning = shift(ACME, "2026-09-07T08:00:00Z", "2026-09-07T16:00:00Z");
+    repository.save(night);
+    repository.save(morning);
+
+    assertThat(repository.findById(ACME, night.id()))
+        .get()
+        .extracting(Shift::unpopular)
+        .isEqualTo(true);
+    assertThat(repository.findWithin(ACME, theDay()))
+        .extracting(Shift::unpopular)
+        .containsExactly(false, true);
   }
 
   @Test
@@ -198,7 +232,8 @@ class JdbcShiftRepositoryTest {
             between("2026-09-07T08:00:00Z", "2026-09-07T16:00:00Z"),
             ZoneOffset.UTC,
             1,
-            Set.of(forklift, crane));
+            Set.of(forklift, crane),
+            false);
     repository.save(morning);
 
     assertThat(repository.findById(ACME, morning.id()))
@@ -214,9 +249,9 @@ class JdbcShiftRepositoryTest {
     QualificationId crane = QualificationId.newId();
     ShiftId id = ShiftId.newId();
     TimeRange period = between("2026-09-07T08:00:00Z", "2026-09-07T16:00:00Z");
-    repository.save(new Shift(id, ACME, period, ZoneOffset.UTC, 1, Set.of(forklift)));
+    repository.save(new Shift(id, ACME, period, ZoneOffset.UTC, 1, Set.of(forklift), false));
 
-    repository.save(new Shift(id, ACME, period, ZoneOffset.UTC, 1, Set.of(crane)));
+    repository.save(new Shift(id, ACME, period, ZoneOffset.UTC, 1, Set.of(crane), false));
 
     assertThat(repository.findById(ACME, id))
         .get()

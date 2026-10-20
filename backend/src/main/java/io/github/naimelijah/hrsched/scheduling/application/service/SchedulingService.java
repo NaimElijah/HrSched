@@ -2,12 +2,14 @@ package io.github.naimelijah.hrsched.scheduling.application.service;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.in.AssignToShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ConfigureConstraintsUseCase;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.ConfigureObjectivesUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ManageShiftsUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseObjectivesCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosterAssessment;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosteredShift;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ViewOwnScheduleUseCase;
@@ -15,6 +17,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.Notifier;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.ObjectiveWeightsRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
@@ -27,15 +30,19 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterMeasures;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterScore;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
@@ -79,6 +86,7 @@ import java.util.stream.Stream;
 public class SchedulingService
     implements ManageShiftsUseCase,
         ConfigureConstraintsUseCase,
+        ConfigureObjectivesUseCase,
         PlanRostersUseCase,
         ViewOwnScheduleUseCase {
 
@@ -103,6 +111,7 @@ public class SchedulingService
   private final ShiftRepository shifts;
   private final RosterRepository rosters;
   private final ConstraintSetRepository constraintSets;
+  private final ObjectiveWeightsRepository objectiveWeights;
   private final SwapRequestRepository swaps;
   private final WorkforceDirectory workforce;
   private final RosterGenerator generator;
@@ -111,6 +120,8 @@ public class SchedulingService
   private final Clock clock;
 
   /**
+   * @param objectiveWeights how each organisation weights the objectives a draft is scored on
+   *     (ADR-010)
    * @param swaps the requests a publication lapses when it supersedes the roster they name (R33)
    * @param notifier how the parties to a lapsed request are told
    * @param clock what a publication reads the time from, so that when it happened is an input a
@@ -120,6 +131,7 @@ public class SchedulingService
       ShiftRepository shifts,
       RosterRepository rosters,
       ConstraintSetRepository constraintSets,
+      ObjectiveWeightsRepository objectiveWeights,
       SwapRequestRepository swaps,
       WorkforceDirectory workforce,
       RosterGenerator generator,
@@ -129,6 +141,8 @@ public class SchedulingService
     this.shifts = Objects.requireNonNull(shifts, "shifts must not be null");
     this.rosters = Objects.requireNonNull(rosters, "rosters must not be null");
     this.constraintSets = Objects.requireNonNull(constraintSets, "constraintSets must not be null");
+    this.objectiveWeights =
+        Objects.requireNonNull(objectiveWeights, "objectiveWeights must not be null");
     this.swaps = Objects.requireNonNull(swaps, "swaps must not be null");
     this.workforce = Objects.requireNonNull(workforce, "workforce must not be null");
     this.generator = Objects.requireNonNull(generator, "generator must not be null");
@@ -148,7 +162,8 @@ public class SchedulingService
             command.period(),
             command.zone(),
             command.requiredHeadcount(),
-            command.requiredQualifications());
+            command.requiredQualifications(),
+            command.unpopular());
     shifts.save(shift);
     recorded(actor, command.organisation(), SchedulingChange.SHIFT_DEFINED, shift.id().value());
     return shift.id();
@@ -199,6 +214,29 @@ public class SchedulingService
             () ->
                 Optional.of(ConstraintSet.initial(organisation))
                     .filter(initial -> initial.version() == version));
+  }
+
+  /**
+   * F35. The weights are checked as the domain builds them, after the actor is authorised and
+   * before anything is stored, so a refusal leaves neither a row nor an audit line behind.
+   */
+  @Override
+  public ObjectiveWeights reviseObjectives(Actor actor, ReviseObjectivesCommand command) {
+    authorise(actor, command.organisation(), MAY_CONFIGURE);
+    ObjectiveWeights revised = new ObjectiveWeights(command.organisation(), command.weights());
+    objectiveWeights.save(revised);
+    recorded(
+        actor,
+        command.organisation(),
+        SchedulingChange.OBJECTIVES_REVISED,
+        command.organisation().value());
+    return revised;
+  }
+
+  @Override
+  public ObjectiveWeights findObjectives(Actor actor, OrganisationId organisation) {
+    actor.requireAccessTo(organisation);
+    return weightsOf(organisation);
   }
 
   @Override
@@ -321,7 +359,12 @@ public class SchedulingService
     List<Roster> existing = rosters.findByOrganisation(organisation);
 
     List<ConstraintViolation> violations =
-        violationsOf(actor, organisation, draft, constraints, existing);
+        violationsOf(
+            organisation,
+            draft,
+            constraints,
+            existing,
+            workforce.candidatesFor(actor, organisation));
     if (!violations.isEmpty()) {
       throw new RosterNotCompliantException(violations);
     }
@@ -480,6 +523,9 @@ public class SchedulingService
    * The same judgement {@code publish} refuses by, run without the publication lock and without
    * holding the draft: it decides nothing, so it holds nothing, and its answer is advice that
    * publication checks again (ADR-042). Named {@code find…}, so it runs read-only.
+   *
+   * <p>It also scores the draft on the organisation's objectives (ADR-010), from the same reads, so
+   * the score and the violations describe one draft as it stood at one moment.
    */
   @Override
   public RosterAssessment findAssessment(
@@ -496,14 +542,41 @@ public class SchedulingService
           "only a draft is checked; a published roster was judged when it was published");
     }
     ConstraintSet constraints = currentOrInitial(organisation);
+    List<Roster> existing = rosters.findByOrganisation(organisation);
+    List<RosterCandidate> candidates = workforce.candidatesFor(actor, organisation);
     List<ConstraintViolation> violations =
-        violationsOf(
-            actor, organisation, draft, constraints, rosters.findByOrganisation(organisation));
+        violationsOf(organisation, draft, constraints, existing, candidates);
+    List<Shift> inPeriod = shifts.findWithin(organisation, draft.period());
     return new RosterAssessment(
         draft.id(),
         constraints.version(),
         violations,
-        draft.shortfallsAmong(shifts.findWithin(organisation, draft.period())));
+        draft.shortfallsAmong(inPeriod),
+        scoreOf(organisation, draft, inPeriod, candidates, existing));
+  }
+
+  /**
+   * How a draft measures on the objectives, and what that comes to under its organisation's weights
+   * (ADR-010).
+   *
+   * @param inPeriod every shift overlapping the draft's period, which holds every shift it assigns
+   * @param candidates the directory's answer the draft was judged against, carrying what each
+   *     person said about when they would like to work
+   * @param existing every roster the organisation holds, from which the ones this would supersede
+   *     are found
+   */
+  private RosterScore scoreOf(
+      OrganisationId organisation,
+      Roster draft,
+      List<Shift> inPeriod,
+      List<RosterCandidate> candidates,
+      List<Roster> existing) {
+    Map<ShiftId, Shift> byId = new LinkedHashMap<>();
+    inPeriod.forEach(shift -> byId.put(shift.id(), shift));
+    Map<EmployeeId, StatedPreferences> preferences = new LinkedHashMap<>();
+    candidates.forEach(candidate -> preferences.put(candidate.id(), candidate.preferences()));
+    return new RosterScore(
+        RosterMeasures.of(draft, byId, preferences, existing), weightsOf(organisation));
   }
 
   @Override
@@ -526,19 +599,20 @@ public class SchedulingService
    * organisation (R5), judged by {@link AssignmentEligibility} against one read of the directory.
    * Listed together, so a refusal names everything wrong at once.
    *
-   * @param actor whoever is acting, carried to the directory so the answer is scoped to them
    * @param existing every roster the organisation holds, from which the work held beside this one
    *     is found
+   * @param candidates the directory's answer for the organisation, read by the caller with the
+   *     acting identity so it is scoped to them
    * @return every rule broken, empty if the roster may be published
    * @throws RosterNotVerifiableException if a shift this roster assigns, or one its people hold
    *     beside it, cannot be resolved: whatever cannot be placed in time cannot be judged
    */
   private List<ConstraintViolation> violationsOf(
-      Actor actor,
       OrganisationId organisation,
       Roster roster,
       ConstraintSet constraints,
-      List<Roster> existing) {
+      List<Roster> existing,
+      List<RosterCandidate> candidates) {
     Map<ShiftId, Shift> assigned = assignedShifts(organisation, roster);
     List<HeldWork> heldElsewhere =
         heldElsewhere(
@@ -550,9 +624,7 @@ public class SchedulingService
 
     List<ConstraintViolation> violations = new ArrayList<>();
     violations.addAll(roster.violationsUnder(constraints, periods, heldElsewhere));
-    violations.addAll(
-        AssignmentEligibility.breachesOn(
-            roster, assigned, workforce.candidatesFor(actor, organisation)));
+    violations.addAll(AssignmentEligibility.breachesOn(roster, assigned, candidates));
     return List.copyOf(violations);
   }
 
@@ -684,6 +756,11 @@ public class SchedulingService
     return constraintSets
         .findCurrent(organisation)
         .orElseGet(() -> ConstraintSet.initial(organisation));
+  }
+
+  /** Nothing stored is the organisation that has weighted nothing, not a missing record. */
+  private ObjectiveWeights weightsOf(OrganisationId organisation) {
+    return objectiveWeights.find(organisation).orElseGet(() -> ObjectiveWeights.none(organisation));
   }
 
   private void authorise(Actor actor, OrganisationId organisation, Set<Role> permitted) {

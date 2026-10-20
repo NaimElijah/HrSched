@@ -36,17 +36,44 @@ class PublishedLanguageTest {
   private static RosterableEmployee ada(
       Set<QualificationId> qualifications, List<TimeRange> unavailability) {
     return new RosterableEmployee(
-        EmployeeId.newId(), "Ada", qualifications, unavailability, Optional.empty());
+        EmployeeId.newId(),
+        "Ada",
+        qualifications,
+        unavailability,
+        Optional.empty(),
+        List.of(),
+        List.of());
   }
 
   private static Stream<ThrowingCallable> nullFields() {
     return Stream.of(
-        () -> new RosterableEmployee(null, "Ada", Set.of(), List.of(), Optional.empty()),
         () ->
-            new RosterableEmployee(EmployeeId.newId(), null, Set.of(), List.of(), Optional.empty()),
-        () -> new RosterableEmployee(EmployeeId.newId(), "Ada", null, List.of(), Optional.empty()),
-        () -> new RosterableEmployee(EmployeeId.newId(), "Ada", Set.of(), null, Optional.empty()),
-        () -> new RosterableEmployee(EmployeeId.newId(), "Ada", Set.of(), List.of(), null),
+            new RosterableEmployee(
+                null, "Ada", Set.of(), List.of(), Optional.empty(), List.of(), List.of()),
+        () ->
+            new RosterableEmployee(
+                EmployeeId.newId(),
+                null,
+                Set.of(),
+                List.of(),
+                Optional.empty(),
+                List.of(),
+                List.of()),
+        () ->
+            new RosterableEmployee(
+                EmployeeId.newId(), "Ada", null, List.of(), Optional.empty(), List.of(), List.of()),
+        () ->
+            new RosterableEmployee(
+                EmployeeId.newId(), "Ada", Set.of(), null, Optional.empty(), List.of(), List.of()),
+        () ->
+            new RosterableEmployee(
+                EmployeeId.newId(), "Ada", Set.of(), List.of(), null, List.of(), List.of()),
+        () ->
+            new RosterableEmployee(
+                EmployeeId.newId(), "Ada", Set.of(), List.of(), Optional.empty(), null, List.of()),
+        () ->
+            new RosterableEmployee(
+                EmployeeId.newId(), "Ada", Set.of(), List.of(), Optional.empty(), List.of(), null),
         () -> new PublishedQualification(null, "Forklift"),
         () -> new PublishedQualification(QualificationId.newId(), null));
   }
@@ -97,7 +124,9 @@ class PublishedLanguageTest {
             "Ada",
             Set.of(),
             List.of(),
-            Optional.of(Duration.ofMinutes(2400))); // invented
+            Optional.of(Duration.ofMinutes(2400)),
+            List.of(),
+            List.of()); // invented
 
     assertThat(contracted.weeklyContractedHours()).contains(Duration.ofMinutes(2400));
   }

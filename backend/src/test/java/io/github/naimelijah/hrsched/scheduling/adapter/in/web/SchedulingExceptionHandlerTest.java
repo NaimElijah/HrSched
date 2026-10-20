@@ -7,6 +7,8 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.Objective;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
@@ -98,6 +100,7 @@ class SchedulingExceptionHandlerTest {
             Instant.parse("2026-09-07T16:00:00Z"), Instant.parse("2026-09-07T08:00:00Z")),
         new InvalidHeadcountException(0),
         new InvalidConstraintException("Minimum rest must be positive"),
+        new InvalidObjectiveWeightException(Objective.FAIRNESS),
         new DuplicateAssignmentException(new Assignment(ShiftId.newId(), EmployeeId.newId())),
         new UnknownRequiredQualificationException(Set.of(QualificationId.newId())),
         new MalformedRequestException("shift is required"));

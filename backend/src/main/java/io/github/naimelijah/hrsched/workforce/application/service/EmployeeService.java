@@ -23,6 +23,7 @@ import io.github.naimelijah.hrsched.workforce.application.port.out.Qualification
 import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChange;
 import io.github.naimelijah.hrsched.workforce.domain.model.ContractTerms;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
+import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
@@ -168,7 +169,16 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
         employee.name(),
         employee.qualifications(),
         employee.unavailability(),
-        employee.contractTerms().map(ContractTerms::weeklyContractedHours));
+        employee.contractTerms().map(ContractTerms::weeklyContractedHours),
+        spansStated(employee, PreferenceStrength.PREFERS),
+        spansStated(employee, PreferenceStrength.PREFERS_NOT));
+  }
+
+  private static List<TimeRange> spansStated(Employee employee, PreferenceStrength strength) {
+    return employee.preferences().stream()
+        .filter(preference -> preference.strength() == strength)
+        .map(ShiftPreference::period)
+        .toList();
   }
 
   /**

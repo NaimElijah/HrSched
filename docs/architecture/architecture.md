@@ -106,8 +106,8 @@ Three rules hold this together, and each fails the build when broken:
 | `notifications.application` | Raising and reading notifications. `NotifyUseCase` is this context's **published API** and is deliberately not on a controller; `ReadNotificationsUseCase` is strictly self-service, and whose inbox is read comes from the acting identity rather than from any parameter. Takes a `Clock`, so when something happened is an input rather than an ambient fact. |
 | `workforce.domain.model` | `Employee` (aggregate root: qualifications, unavailability, preferences, contract terms), `Qualification`, `ShiftPreference`, `ContractTerms`. |
 | `workforce.application` | Employee and qualification use cases. `FindRosterableEmployeesUseCase` is this context's **published API**, returning `RosterableEmployee` rather than the aggregate. A use case that changes an employee reads them with `EmployeeRepository.findForUpdate`, so two changes to one person at once — an Admin's and their own — take turns and both apply ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)). |
-| `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule` and the `WorkingPeriod`s it holds, `HeldWork`. |
-| `scheduling.application` | Shift definition, constraint configuration, roster generation and publication. Assembles the evidence constraints are judged against. |
+| `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule` and the `WorkingPeriod`s it holds, `HeldWork`; `Objective`, `ObjectiveWeights` and the `StatedPreferences` a candidate carries ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). |
+| `scheduling.application` | Shift definition, constraint and objective configuration, roster generation and publication. Assembles the evidence constraints are judged against. |
 | `scheduling.adapter.out.workforce` | An anti-corruption layer: one of **two** classes in scheduling permitted to name another context, and only its published port. |
 | `scheduling.adapter.out.notification` | The other one. Translates "a swap was approved" into the word the `notifications` context uses for it, so nothing inward of the `Notifier` port knows that context exists ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `scheduling.adapter.out.generation` | `GreedyRosterGenerator` — a placeholder implementation of the generation port. It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. |
@@ -168,7 +168,7 @@ about. The rules are the coarse outer line; the use case behind each route is wh
 | `POST`/`GET /api/organisations` | `OPERATOR` |
 | `GET /api/organisations/{id}` | any role; the use case decides whose |
 | `/api/accounts/**` | `ADMIN` |
-| `/api/employees/**`, `/api/qualifications/**`, `/api/shifts/**`, `/api/constraints/**`, `/api/rosters/**`, `/api/me/**`, `/api/swaps/**`, `/api/notifications/**` | any tenant role |
+| `/api/employees/**`, `/api/qualifications/**`, `/api/shifts/**`, `/api/constraints/**`, `/api/objectives/**`, `/api/rosters/**`, `/api/me/**`, `/api/swaps/**`, `/api/notifications/**` | any tenant role |
 | anything else | nobody |
 
 **A verified signature is not enough, and that is the point.** The decoder proves a token is one
@@ -298,9 +298,13 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   `ConstraintSet`, never a constant. A jurisdiction is a *preset*: a named set of values loaded
   as data, whose numbers must be sourced from the statute. This is the single most important
   property of the model, and the reason the constraint types carry their own thresholds.
-- **Constraints are hard; objectives do not exist yet.** `ConstraintSet` holds only rules that
-  must never be broken. Fairness, preferences and disruption — what makes one legal roster better
-  than another — are a separate concept that is not modelled.
+- **Constraints are hard; objectives only rank.** `ConstraintSet` holds only rules that must never
+  be broken. Fairness, preferences and disruption — what makes one legal roster better than another
+  — are `Objective`s, and `ObjectiveWeights` says how much one organisation cares about each: a
+  whole number of at least one, or not weighed at all, with no default anywhere (R40). Weights are
+  one row per organisation, replaced whole and never versioned, because nothing is judged against
+  a weight. The draft check scores a draft under them; generation does not use them yet
+  ([#28](https://github.com/NaimElijah/HrSched/issues/28), [ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)).
 - **Tenancy is in every signature, on purpose.** Repository lookups take an `OrganisationId`, so
   a cross-tenant read cannot be written by forgetting a filter. See
   [ADR-009](../ADRs/ADR-009-tenant-isolation-in-the-domain.md). A `save` takes no organisation of
@@ -407,6 +411,10 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   yet be planned for
   ([#136](https://github.com/NaimElijah/HrSched/issues/136),
   [ADR-034](../ADRs/ADR-034-count-working-days-in-each-shifts-own-time-zone.md)).
+- **A shift may be marked unpopular,** by the Scheduler defining it, and by nobody else: nothing
+  infers it from the clock, the weekday or anybody's preferences. It changes no rule; it is what
+  the fairness objective counts ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). V10 stored every earlier shift as not
+  marked and then dropped the column's default, so the mark is always somebody's answer.
 - **`MaximumWeeklyWorkingTime` treats the roster period as the reference period.** Jurisdictions
   that average over a longer window cannot be expressed; that needs history beyond the roster.
 - **The user interface enforces nothing.** Every rule is the backend's. The UI renders refusals —
@@ -550,6 +558,11 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   `find…`, it runs read-only, takes neither the publication lock nor a row lock, stores and records
   nothing, and answers drafts only — a published roster was judged under the version it records
   (Q9), so asking about one is a 409. Admins and Schedulers may ask ([ADR-042](../ADRs/ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md)).
+  From the same reads it also scores the draft: `RosterMeasures.of` counts the heaviest
+  unpopular load, the preferences gone against and the assignments changed from the published
+  rosters the draft would supersede, found by `Roster.isSupersededBy` as publication finds them,
+  and `RosterScore` totals them under the organisation's `ObjectiveWeights`. The directory is read
+  once for both the judgement and the preferences ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)).
 - **Nobody is published in two places at once, whatever the rules say.** Judging a roster lists
   every pair of overlapping shifts in each person's work (R3), whatever the constraint set says. It
   cannot be left to the rules: minimum rest is the only one that notices an overlap, it is optional,
@@ -578,8 +591,12 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   own declarations are read the way they are declared instead: `findUnavailability` and
   `findPreferences` admit the person themself, decided by `TenantActor.isThemself`, or an Admin or
   Scheduler on their behalf (F6). That answers for one person at a time, so it widens nothing.
-  Preferences reach the API only through that read: `RosterableEmployee` still carries none,
-  because nothing in scheduling weighs them yet.
+  Preferences reach the API only through that read. They also cross into scheduling, on the
+  restricted listing: `RosterableEmployee` carries each person's stated spans, one list per
+  strength, and `RosterCandidate` holds them as `StatedPreferences`, which never decide whether
+  anybody may work, only how a roster scores
+  ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)).
+  Contracted hours still do not cross.
 - **A declaration is withdrawn by what it says, because it has no identity** (F26). Unavailability
   is a `TimeRange` and a preference a `ShiftPreference` value inside the `Employee` aggregate, and
   their rows are keyed by an ordinal the repository renumbers on every save. So

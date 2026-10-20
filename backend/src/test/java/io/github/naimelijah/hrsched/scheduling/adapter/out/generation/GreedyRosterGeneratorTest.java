@@ -8,6 +8,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
@@ -49,11 +50,13 @@ class GreedyRosterGeneratorTest {
         new TimeRange(Instant.parse(start), Instant.parse(end)),
         ZoneOffset.UTC,
         headcount,
-        needed);
+        needed,
+        false);
   }
 
   private static RosterCandidate anyone(String name) {
-    return new RosterCandidate(EmployeeId.newId(), name, Set.of(), List.of());
+    return new RosterCandidate(
+        EmployeeId.newId(), name, Set.of(), List.of(), StatedPreferences.none());
   }
 
   @Test
@@ -112,7 +115,8 @@ class GreedyRosterGeneratorTest {
                 Instant.parse("2026-09-06T15:00:00Z"), Instant.parse("2026-09-06T21:00:00Z")),
             tokyo,
             1,
-            Set.of());
+            Set.of(),
+            false);
     Shift morning =
         new Shift(
             ShiftId.newId(),
@@ -121,7 +125,8 @@ class GreedyRosterGeneratorTest {
                 Instant.parse("2026-09-06T23:00:00Z"), Instant.parse("2026-09-07T05:00:00Z")),
             tokyo,
             1,
-            Set.of());
+            Set.of(),
+            false);
     ConstraintSet tenHourDays =
         ConstraintSet.initial(ACME)
             .revisedTo(List.of(new MaximumDailyWorkingTime(Duration.ofHours(10))));

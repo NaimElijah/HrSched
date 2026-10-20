@@ -2,6 +2,7 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.workforce;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
+import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
@@ -52,6 +53,10 @@ public class WorkforceDirectoryAdapter implements WorkforceDirectory {
 
   private static RosterCandidate translate(RosterableEmployee employee) {
     return new RosterCandidate(
-        employee.id(), employee.name(), employee.qualifications(), employee.unavailability());
+        employee.id(),
+        employee.name(),
+        employee.qualifications(),
+        employee.unavailability(),
+        new StatedPreferences(employee.wouldLikeToWork(), employee.wouldRatherNotWork()));
   }
 }
