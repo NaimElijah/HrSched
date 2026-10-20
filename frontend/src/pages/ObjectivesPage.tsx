@@ -36,6 +36,11 @@ export function ObjectivesPage() {
 
   async function revise(event: React.FormEvent) {
     event.preventDefault();
+    // Unlike the rules, weights are not versioned: a revision sent before the stored weights are
+    // known would unweigh them for good, so there is nothing to send until they are.
+    if (loaded === null) {
+      return;
+    }
     setFailure(null);
     const weight = (key: ObjectiveField): number | undefined => {
       const value = shown(key).trim();
@@ -79,7 +84,9 @@ export function ObjectivesPage() {
             />
           </label>
         ))}
-        <button type="submit">Weigh objectives</button>
+        <button type="submit" disabled={loaded === null}>
+          Weigh objectives
+        </button>
       </form>
 
       <Failure error={failure} />

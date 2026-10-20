@@ -87,6 +87,31 @@ describe('the objectives page', () => {
     expect(sentBody(stub).disruption).toBe(1);
   });
 
+  /**
+   * Weights are not versioned, so a revision sent without the stored ones would unweigh them for
+   * good. Until they have loaded, the form has nothing to resend, and so it sends nothing.
+   */
+  it('GivenTheStoredWeightsFailedToLoad_WhenTryingToRevise_ThenNothingIsSent', async () => {
+    const stub = vi.fn((_path: string, init?: RequestInit) => {
+      void _path;
+      void init;
+      return Promise.resolve({
+        ok: false,
+        status: 500,
+        headers: new Headers(),
+        text: () => Promise.resolve(JSON.stringify({ detail: 'Something went wrong.' })),
+      });
+    });
+    vi.stubGlobal('fetch', stub);
+    show();
+    await screen.findByRole('alert');
+
+    await userEvent.type(screen.getByLabelText(/Fairness weight/), '4');
+    await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
+
+    expect(stub.mock.calls.some((call) => call[1]?.method === 'PUT')).toBe(false);
+  });
+
   it('GivenAClearedWeight_WhenRevising_ThenThatObjectiveIsNoLongerWeighed', async () => {
     const stub = routeTo(STORED);
     show();
