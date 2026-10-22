@@ -71,8 +71,8 @@ owner has chosen to leave open for now ([Q15](docs/requirements/requirements.md#
 - **See your own work.** An employee sees their assignments on published rosters only, and reads
   back the absences and preferences they declared.
 
-Generation fills every place the rules allow, with the CP-SAT solver ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)), but does not yet
-weigh the organisation's objectives.
+Generation fills every place the rules allow, then weighs the organisation's objectives, with the
+CP-SAT solver ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)).
 
 ## Architecture
 
@@ -373,10 +373,10 @@ decides). The [requirements](docs/requirements/requirements.md) mark each row de
 built.
 
 **Known limitations:**
-- **Generation does not yet weigh the objectives.** CP-SAT fills every place the rules allow, but
-  ignores fairness, preferences and disruption. ADR-010 defines those objectives and the draft check
-  scores a draft on them under the organisation's weights
-  ([#28](https://github.com/NaimElijah/HrSched/issues/28)).
+- **Generation answers within the request.** Each of the solver's two searches stops at
+  `hrsched.generation.time-limit-per-phase` with the best roster it has found. At the largest stated
+  size that may not be the best there is; the ten minutes the targets allow need a background job
+  ([#246](https://github.com/NaimElijah/HrSched/issues/246)). Two generations of one week can differ, each as legal as the other.
 - **A shift's zone is the Scheduler's browser zone.** The Shifts page sends the zone its times were
   typed in, and no page shows a shift's zone yet
   ([#136](https://github.com/NaimElijah/HrSched/issues/136)).

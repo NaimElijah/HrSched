@@ -9,6 +9,8 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWo
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MinimumRestBetweenAssignments;
+import io.github.naimelijah.hrsched.scheduling.domain.model.Objective;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
@@ -25,8 +27,10 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -51,6 +55,9 @@ final class GenerationInstances {
   static final TimeRange WEEK =
       new TimeRange(Instant.parse("2026-10-19T00:00:00Z"), Instant.parse("2026-10-26T00:00:00Z"));
 
+  /** Invented: when the roster being replaced was published, before the week it covers. */
+  private static final Instant PUBLISHED = Instant.parse("2026-10-01T09:00:00Z");
+
   private static final List<ZoneId> ZONES =
       List.of(ZoneId.of("Europe/London"), ZoneId.of("Asia/Tokyo"), ZoneOffset.UTC);
 
@@ -63,7 +70,8 @@ final class GenerationInstances {
    * @param people how many candidates
    * @param shifts how many shifts, each starting on the hour somewhere in {@link #WEEK}
    * @return a request for a draft over {@link #WEEK}, carrying a little work over from a
-   *     neighbouring roster, beside some work held there that only makes people busy
+   *     neighbouring roster, beside some work held there that only makes people busy; with
+   *     objectives weighted, and sometimes a published roster for the week to replace
    */
   static GenerationRequest instance(long seed, int people, int shifts) {
     Random random = new Random(seed);
@@ -138,7 +146,54 @@ final class GenerationInstances {
       }
     }
 
-    return new GenerationRequest(seeded, toCover, candidates, constraints, held);
+    return new GenerationRequest(
+        seeded,
+        toCover,
+        candidates,
+        constraints,
+        held,
+        weights(random, organisation),
+        replaced(random, organisation, toCover, candidates));
+  }
+
+  /** Invented: each objective weighed most of the time, from one to five. */
+  private static ObjectiveWeights weights(Random random, OrganisationId organisation) {
+    Map<Objective, Integer> weights = new EnumMap<>(Objective.class);
+    for (Objective objective : Objective.values()) {
+      if (random.nextDouble() < 0.7) {
+        weights.put(objective, 1 + random.nextInt(5));
+      }
+    }
+    return new ObjectiveWeights(organisation, weights);
+  }
+
+  /**
+   * Sometimes a published roster for the same week, which the draft would supersede: some of its
+   * assignments name shifts the draft covers, and one names a shift it does not, as a roster
+   * published before a shift was moved would.
+   */
+  private static List<Roster> replaced(
+      Random random,
+      OrganisationId organisation,
+      List<Shift> shifts,
+      List<RosterCandidate> candidates) {
+    if (random.nextDouble() >= 0.6) {
+      return List.of();
+    }
+    Set<Assignment> carried = new LinkedHashSet<>();
+    for (int i = 0; i < shifts.size() / 2; i++) {
+      carried.add(
+          new Assignment(
+              shifts.get(random.nextInt(shifts.size())).id(),
+              candidates.get(random.nextInt(candidates.size())).id()));
+    }
+    carried.add(
+        new Assignment(
+            new ShiftId(uuid(random)), candidates.get(random.nextInt(candidates.size())).id()));
+    return List.of(
+        new Roster(new RosterId(uuid(random)), organisation, WEEK)
+            .withAssignments(List.copyOf(carried))
+            .publishedUnder(1, PUBLISHED));
   }
 
   private static Map<ShiftId, WorkingPeriod> periodsOf(List<Shift> shifts) {

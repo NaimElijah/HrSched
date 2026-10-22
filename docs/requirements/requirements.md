@@ -4,8 +4,8 @@
 domain is modelled, and a React user interface offers every capability below — for the three roles
 within an organisation and for the platform Operator — over a PostgreSQL that survives a restart.
 People sign in, and every request is authenticated by a token HrSched signed and authorised
-against the account it names. Generation fills every place the rules allow, but does not yet weigh
-the objectives.
+against the account it names. Generation fills every place the rules allow, then weighs the
+objectives.
 
 Nothing in the user interface *enforces* a requirement. The `Enforced by` column below names
 backend classes and tests on purpose: a screen that appears to satisfy a rule is not evidence that
@@ -56,7 +56,7 @@ implemented; `not yet` means the requirement is decided and the linked issue tra
 | F3 | Scheduler | Publish a draft roster, which is refused if it breaks any rule | `SchedulingService`, `RosteringHttpTest`. Every breach at once, of every kind — R3, R35, R4, R5, R18 and the working-time rules: `SchedulingServiceTest.GivenADraftBreakingSeveralRulesAtOnce_WhenPublishing_ThenEveryViolationIsListed` (R3, R4, R18), `…GivenADraftBreakingEveryKindOfRule_WhenAssessedAndThenPublished_ThenPublicationRefusesWithExactlyTheAssessedViolations` (adds R5 and a working-time rule), `…GivenTwoDraftsPuttingOnePersonInTwoPlaces_WhenTheSecondIsPublished_ThenItIsRefused` (R35), [ADR-042](../ADRs/ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md). *Absorbed F12, which restated it.* |
 | F4 | Admin, Scheduler | See the roster and availability of every employee in their organisation | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest`. *Availability, qualifications and contracted hours are on the listing; the roster half is served by F11a rather than repeated here.* |
 | F5 | Any member linked to an employee | See their own published roster | `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`. *The assignments naming them, from published rosters only — the whole roster stays Admin and Scheduler (R12). Tested for the Employee role only ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
-| F6 | Employee, or an Admin or Scheduler on their behalf | Declare when they cannot work, and state soft preferences, and see what they declared | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). *Seeing what they declared is authorised as declaring is, and refused for a colleague: `EmployeeServiceTest.GivenAnEmployee_WhenReadingTheirOwnDeclarations_ThenBothAreReturned`, `EmployeeHttpTest.GivenAColleague_WhenReadingSomebodyElsesUnavailability_ThenItIsForbidden`. Preferences are an objective: the draft check counts those a draft goes against (F34), but generation does not yet try to honour them ([#28](https://github.com/NaimElijah/HrSched/issues/28)). Declaring on somebody's behalf is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)); reading it back is tested for an Admin and a Scheduler.* |
+| F6 | Employee, or an Admin or Scheduler on their behalf | Declare when they cannot work, and state soft preferences, and see what they declared | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` ([ADR-012](../ADRs/ADR-012-acting-identity-carries-its-employee-record.md)). *Seeing what they declared is authorised as declaring is, and refused for a colleague: `EmployeeServiceTest.GivenAnEmployee_WhenReadingTheirOwnDeclarations_ThenBothAreReturned`, `EmployeeHttpTest.GivenAColleague_WhenReadingSomebodyElsesUnavailability_ThenItIsForbidden`. Preferences are an objective: the draft check counts those a draft goes against (F34), and generation honours them where it can once every place it can fill is filled, if the organisation weighs them: `CpSatRosterGeneratorTest.GivenPreferencesWeighed_WhenGenerating_ThenNobodyIsPutWhereTheyWouldRatherNotBe`, `…ThenEachWhoAskedForAShiftGetsIt` ([ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)). Declaring on somebody's behalf is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)); reading it back is tested for an Admin and a Scheduler.* |
 | F7 | Employee, or an Admin or Scheduler on their behalf | Request a swap of one of their assignments with another employee: a transfer of that shift, or a two-way exchange of two | `SwapService`, `SwapServiceTest`, `SwapHttpTest` ([ADR-022](../ADRs/ADR-022-approving-a-swap-publishes-a-replacement-roster.md)). *The transfer is built; the exchange: not yet — [#82](https://github.com/NaimElijah/HrSched/issues/82). Acting on somebody's behalf is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
 | F8 | Admin | Add employees | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` |
 | F9 | Admin | Define qualifications, and grant them to employees | `QualificationService`, `QualificationServiceTest`, `QualificationHttpTest`; granting: `EmployeeService`, `EmployeeServiceTest` |
@@ -98,8 +98,8 @@ unavailable or unqualified, who must be reassigned first. Whether the colleague 
 rather than when an Employee asks, because deciding it means reading colleagues' unavailability.
 
 **Roster generation is automatic** — that is the point of the product. A Scheduler states what
-needs covering and the system produces a legal roster, filling every place the rules allow
-([ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)). It does not yet weigh the objectives below.
+needs covering and the system produces a legal roster, filling every place the rules allow and
+then ranking those rosters by the objectives below ([ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)).
 
 ---
 
@@ -233,8 +233,9 @@ defines them, and says why):
 
 **Each organisation weights the objectives itself** (Q13), as it configures its own constraint set:
 a weight is configuration, never a constant (F35, R40). The draft check scores a draft under those
-weights (F34). **Generation does not optimise them yet**: the solver fills every place the rules
-allow and ignores all three ([#28](https://github.com/NaimElijah/HrSched/issues/28)).
+weights (F34). **Generation minimises the same score, second to coverage**: once the solver has
+filled every place it can, it keeps at least that many filled and minimises the weighted total
+(`CpSatRosterGeneratorTest`, `GenerationBenchmarkTest`, [ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)).
 
 ---
 

@@ -12,8 +12,11 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWo
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MinimumRestBetweenAssignments;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterMeasures;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterScore;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
@@ -91,7 +94,24 @@ abstract class RosterGeneratorContract {
   /** Generation into an empty draft for {@link #THE_WEEK}, with nothing held elsewhere. */
   static GenerationRequest request(
       List<Shift> shifts, List<RosterCandidate> candidates, ConstraintSet constraints) {
-    return new GenerationRequest(emptyDraft(), shifts, candidates, constraints, List.of());
+    return request(emptyDraft(), shifts, candidates, constraints, List.of());
+  }
+
+  /** Generation with nothing weighted and no published roster to replace. */
+  static GenerationRequest request(
+      Roster draft,
+      List<Shift> shifts,
+      List<RosterCandidate> candidates,
+      ConstraintSet constraints,
+      List<HeldWork> heldElsewhere) {
+    return new GenerationRequest(
+        draft,
+        shifts,
+        candidates,
+        constraints,
+        heldElsewhere,
+        ObjectiveWeights.none(draft.organisation()),
+        List.of());
   }
 
   /** {@code holder}'s copy of {@code shift} on a neighbouring published roster. */
@@ -108,7 +128,7 @@ abstract class RosterGeneratorContract {
       RosterCandidate holder,
       List<RosterCandidate> candidates,
       ConstraintSet constraints) {
-    return new GenerationRequest(
+    return request(
         emptyDraft().with(new Assignment(shift.id(), holder.id())),
         List.of(shift),
         candidates,
@@ -175,6 +195,27 @@ abstract class RosterGeneratorContract {
         .violationsUnder(request.constraints(), periods, request.heldElsewhere())
         .forEach(violation -> breaches.add(violation.toString()));
     return breaches;
+  }
+
+  /**
+   * ADR-010's weighted score of the draft with {@code added} on it, as the domain computes it for
+   * the draft check: the yardstick generators are compared by, owned by neither of them.
+   */
+  static long scoreOf(GenerationRequest request, List<Assignment> added) {
+    Roster filled =
+        request
+            .draft()
+            .withAssignments(
+                Stream.concat(request.draft().assignments().stream(), added.stream()).toList());
+    Map<ShiftId, Shift> shifts = new LinkedHashMap<>();
+    request.shifts().forEach(shift -> shifts.put(shift.id(), shift));
+    Map<EmployeeId, StatedPreferences> preferences = new LinkedHashMap<>();
+    request
+        .candidates()
+        .forEach(candidate -> preferences.put(candidate.id(), candidate.preferences()));
+    return new RosterScore(
+            RosterMeasures.of(filled, shifts, preferences, request.superseded()), request.weights())
+        .weightedTotal();
   }
 
   @Test
@@ -370,7 +411,7 @@ abstract class RosterGeneratorContract {
     List<Assignment> added =
         generator()
             .generate(
-                new GenerationRequest(
+                request(
                     emptyDraft(),
                     List.of(monday),
                     List.of(ada),
@@ -418,7 +459,7 @@ abstract class RosterGeneratorContract {
     List<Assignment> added =
         generator()
             .generate(
-                new GenerationRequest(
+                request(
                     overstaffed,
                     List.of(needsOne),
                     List.of(anyone("Ada"), grace, alan),
@@ -441,7 +482,7 @@ abstract class RosterGeneratorContract {
     List<Assignment> added =
         generator()
             .generate(
-                new GenerationRequest(
+                request(
                     request.draft(),
                     List.of(monday, tuesday),
                     request.candidates(),

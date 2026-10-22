@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
@@ -46,6 +47,8 @@ class GenerationRequestTest {
           Set.of(),
           false);
 
+  private static final ObjectiveWeights NONE = ObjectiveWeights.none(ACME);
+
   private static Roster emptyDraft() {
     return new Roster(RosterId.newId(), ACME, THE_WEEK);
   }
@@ -58,17 +61,61 @@ class GenerationRequestTest {
     return Stream.of(
         () ->
             new GenerationRequest(
-                null, List.of(), List.of(), ConstraintSet.initial(ACME), List.of()),
+                null,
+                List.of(),
+                List.of(),
+                ConstraintSet.initial(ACME),
+                List.of(),
+                NONE,
+                List.of()),
         () ->
             new GenerationRequest(
-                emptyDraft(), null, List.of(), ConstraintSet.initial(ACME), List.of()),
+                emptyDraft(),
+                null,
+                List.of(),
+                ConstraintSet.initial(ACME),
+                List.of(),
+                NONE,
+                List.of()),
         () ->
             new GenerationRequest(
-                emptyDraft(), List.of(), null, ConstraintSet.initial(ACME), List.of()),
-        () -> new GenerationRequest(emptyDraft(), List.of(), List.of(), null, List.of()),
+                emptyDraft(),
+                List.of(),
+                null,
+                ConstraintSet.initial(ACME),
+                List.of(),
+                NONE,
+                List.of()),
         () ->
             new GenerationRequest(
-                emptyDraft(), List.of(), List.of(), ConstraintSet.initial(ACME), null));
+                emptyDraft(), List.of(), List.of(), null, List.of(), NONE, List.of()),
+        () ->
+            new GenerationRequest(
+                emptyDraft(),
+                List.of(),
+                List.of(),
+                ConstraintSet.initial(ACME),
+                null,
+                NONE,
+                List.of()),
+        () ->
+            new GenerationRequest(
+                emptyDraft(),
+                List.of(),
+                List.of(),
+                ConstraintSet.initial(ACME),
+                List.of(),
+                null,
+                List.of()),
+        () ->
+            new GenerationRequest(
+                emptyDraft(),
+                List.of(),
+                List.of(),
+                ConstraintSet.initial(ACME),
+                List.of(),
+                NONE,
+                null));
   }
 
   @ParameterizedTest
@@ -84,7 +131,13 @@ class GenerationRequestTest {
     assertThatThrownBy(
             () ->
                 new GenerationRequest(
-                    published, List.of(MONDAY), List.of(), ConstraintSet.initial(ACME), List.of()))
+                    published,
+                    List.of(MONDAY),
+                    List.of(),
+                    ConstraintSet.initial(ACME),
+                    List.of(),
+                    NONE,
+                    List.of()))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -100,6 +153,8 @@ class GenerationRequestTest {
                     List.of(),
                     List.of(candidate(ada)),
                     ConstraintSet.initial(ACME),
+                    List.of(),
+                    NONE,
                     List.of()))
         .isInstanceOf(IllegalArgumentException.class);
   }
@@ -115,7 +170,46 @@ class GenerationRequestTest {
                     List.of(MONDAY),
                     List.of(candidate(ada), candidate(ada)),
                     ConstraintSet.initial(ACME),
+                    List.of(),
+                    NONE,
                     List.of()))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void GivenAnotherOrganisationsWeights_WhenRequestingGeneration_ThenItIsRefused() {
+    assertThatThrownBy(
+            () ->
+                new GenerationRequest(
+                    emptyDraft(),
+                    List.of(MONDAY),
+                    List.of(),
+                    ConstraintSet.initial(ACME),
+                    List.of(),
+                    ObjectiveWeights.none(OrganisationId.newId()),
+                    List.of()))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  /** Disruption is counted against the rosters the draft replaces, and only against those. */
+  @Test
+  void GivenARosterTheDraftWouldNotSupersede_WhenOfferedAsSuperseded_ThenItIsRefused() {
+    TimeRange nextWeek =
+        new TimeRange(Instant.parse("2026-10-12T00:00:00Z"), Instant.parse("2026-10-19T00:00:00Z"));
+    Roster alongside =
+        new Roster(RosterId.newId(), ACME, nextWeek)
+            .publishedUnder(1, Instant.parse("2026-10-01T09:00:00Z"));
+
+    assertThatThrownBy(
+            () ->
+                new GenerationRequest(
+                    emptyDraft(),
+                    List.of(MONDAY),
+                    List.of(),
+                    ConstraintSet.initial(ACME),
+                    List.of(),
+                    NONE,
+                    List.of(alongside)))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -125,7 +219,13 @@ class GenerationRequestTest {
     List<RosterCandidate> candidates = new ArrayList<>(List.of(candidate(EmployeeId.newId())));
     GenerationRequest request =
         new GenerationRequest(
-            emptyDraft(), shifts, candidates, ConstraintSet.initial(ACME), List.of());
+            emptyDraft(),
+            shifts,
+            candidates,
+            ConstraintSet.initial(ACME),
+            List.of(),
+            NONE,
+            List.of());
 
     shifts.clear();
     candidates.clear();

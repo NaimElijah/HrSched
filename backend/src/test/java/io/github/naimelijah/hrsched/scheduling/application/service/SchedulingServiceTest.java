@@ -1982,6 +1982,35 @@ class SchedulingServiceTest {
   }
 
   /**
+   * ADR-010: the generator is asked to rank by the organisation's own weights, and to count the
+   * assignments it changes against the published roster the draft would replace.
+   */
+  @Test
+  void GivenWeightsAndAPublishedWeek_WhenTheWeekIsGeneratedAgain_ThenTheGeneratorIsAskedWithBoth() {
+    available(ACME, "Ada");
+    aShift(ACME, Set.of());
+    service.reviseObjectives(admin(ACME), weighting(ACME, 3));
+    Roster published = publishTheWeek();
+    List<GenerationRequest> asked = new ArrayList<>();
+
+    generatingWith(
+            request -> {
+              asked.add(request);
+              return List.of();
+            })
+        .generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+
+    assertThat(asked)
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.weights().weightOf(Objective.FAIRNESS)).contains(3);
+              assertThat(request.superseded()).containsExactly(published);
+              assertThat(request.heldElsewhere()).isEmpty();
+            });
+  }
+
+  /**
    * Somebody carried over who can no longer legally stay refuses generation, naming the breach,
    * before a generator is asked anything and before anything is stored or recorded. Leaving them
    * off instead would have the two rosters disagree about who works the shift.

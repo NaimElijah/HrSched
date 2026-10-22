@@ -25,7 +25,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *
  * <p>Every rule is a constraint of the model {@link RosterModel} states, so whatever the solver
  * answers is legal by construction, and a shift nobody can legally take is left short rather than
- * filled illegally. Within that, it fills as many places as it can.
+ * filled illegally. Within that it solves twice. The first search fills as many places as it can
+ * (F11). The second, when the organisation weights anything, keeps at least that many filled and
+ * minimises the weighted score (ADR-010). Two searches rather than one weighted sum, because
+ * weights are unbounded, and a coefficient on coverage larger than any score could overflow.
  *
  * <p>How short it leaves them is the product's own success metric, so it is measured here. This is
  * the only place that knows both what was asked for and what could legally be filled: by the time
@@ -79,14 +82,35 @@ public class CpSatRosterGenerator implements RosterGenerator {
     RosterModel roster = RosterModel.of(request);
     List<Assignment> added = List.of();
     CpSolverStatus coverage = CpSolverStatus.OPTIMAL;
+    CpSolverStatus objectives = CpSolverStatus.OPTIMAL;
     double seconds = 0;
     if (!roster.choices().isEmpty()) {
       roster.model().maximize(roster.coverage());
-      CpSolver solver = solver();
-      coverage = solver.solve(roster.model());
+      CpSolver filling = solver();
+      coverage = filling.solve(roster.model());
       requireARoster(coverage, roster);
-      added = roster.added(solver);
-      seconds = solver.wallTime();
+      added = roster.added(filling);
+      seconds = filling.wallTime();
+
+      if (!request.weights().weights().isEmpty()) {
+        roster.keepCoverageOf(filling);
+        roster.model().clearObjective();
+        roster.model().minimize(roster.score());
+        CpSolver ranking = solver();
+        objectives = ranking.solve(roster.model());
+        seconds += ranking.wallTime();
+        if (objectives == CpSolverStatus.UNKNOWN) {
+          // The first solve's roster meets every constraint of the second, so it stands: legal,
+          // as full as any found, and only not yet ranked.
+          log.atWarn()
+              .addKeyValue("organisation", request.draft().organisation().value())
+              .addKeyValue("timeLimit", timeLimit)
+              .log("Objectives not weighed within the time limit; the fullest roster stands");
+        } else {
+          requireARoster(objectives, roster);
+          added = roster.added(ranking);
+        }
+      }
     }
 
     int places = request.shifts().stream().mapToInt(Shift::requiredHeadcount).sum();
@@ -102,6 +126,7 @@ public class CpSatRosterGenerator implements RosterGenerator {
         .addKeyValue("candidates", request.candidates().size())
         .addKeyValue("choices", roster.choices().size())
         .addKeyValue("coverageStatus", coverage)
+        .addKeyValue("objectivesStatus", objectives)
         .addKeyValue("solveSeconds", seconds)
         .addKeyValue("places", places)
         .addKeyValue("uncovered", gaps)

@@ -10,8 +10,8 @@ these choices were made, see the [ADRs](../ADRs/).
 > people and shifts, configure rules, generate a roster, adjust it by hand, publish it, and swap a
 > shift — and it is all stored in PostgreSQL, so it survives a restart. People sign in, and every
 > request is authenticated by a token HrSched signed and authorised against the account it names.
-> Generation fills every place the rules allow, with the CP-SAT solver (see [ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)), but
-> **does not yet weigh the organisation's objectives**.
+> Generation fills every place the rules allow, then minimises the organisation's weighted
+> objectives, with the CP-SAT solver (see [ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)).
 
 ---
 
@@ -110,7 +110,7 @@ Three rules hold this together, and each fails the build when broken:
 | `scheduling.application` | Shift definition, constraint and objective configuration, roster generation and publication. Assembles the evidence constraints are judged against. |
 | `scheduling.adapter.out.workforce` | An anti-corruption layer: one of **two** classes in scheduling permitted to name another context, and only its published port. |
 | `scheduling.adapter.out.notification` | The other one. Translates "a swap was approved" into the word the `notifications` context uses for it, so nothing inward of the `Notifier` port knows that context exists ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
-| `scheduling.adapter.out.generation` | `CpSatRosterGenerator` — the generation port, solved with CP-SAT from Google OR-Tools ([ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)). `RosterModel` states the request as one boolean per person who could take each shift, and every rule as a constraint over them: eligibility and time are decided in Java with the domain's own methods, and each kind of working-time rule is one case of an exhaustive `switch`, so a new kind does not compile until it is stated. It fills as many places as it can within `hrsched.generation.time-limit-per-phase`, and refuses to run inside a transaction (ADR-045). It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. The greedy generator it replaced lives on in the tests, as the baseline it is measured against. |
+| `scheduling.adapter.out.generation` | `CpSatRosterGenerator` — the generation port, solved with CP-SAT from Google OR-Tools ([ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)). `RosterModel` states the request as one boolean per person who could take each shift, and every rule as a constraint over them: eligibility and time are decided in Java with the domain's own methods, and each kind of working-time rule is one case of an exhaustive `switch`, so a new kind does not compile until it is stated. It searches twice, each within `hrsched.generation.time-limit-per-phase`: first for as many places filled as it can, then, if the organisation weighs anything, for the lowest weighted score that keeps at least that many filled, starting from the first answer. Its score restates `RosterMeasures` exactly. It refuses to run inside a transaction (ADR-045). It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. The greedy generator it replaced lives on in the tests, as the baseline it is measured against. |
 | `*.adapter.out.persistence` | `Jdbc*Repository` — hand-written SQL through `JdbcClient`, one per driven port, every read carrying its organisation in the `WHERE` clause. A `findForUpdate` holds the root's row until the use case's transaction ends, and refuses outside a writable one ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)). The one exception is named as such in its port: `JdbcAccountRepository.findBySignInName`, which sign-in needs because a submitted name is all it has to go on. No ORM: the domain may not be annotated, so mapping is explicit ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). |
 | `*.adapter.out.audit` | `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog` and `NotificationAuditLog` — one per context, each implementing its own context's `AuditTrail` port and turning one recorded change into a structured log event and a counter. All four are named for their contexts because Spring derives a bean name from the simple class name alone, so four classes called `AuditLog` would collide at startup rather than at compile time. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
@@ -313,8 +313,8 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   — are `Objective`s, and `ObjectiveWeights` says how much one organisation cares about each: a
   whole number of at least one, or not weighed at all, with no default anywhere (R40). Weights are
   one row per organisation, replaced whole and never versioned, because nothing is judged against
-  a weight. The draft check scores a draft under them; generation does not use them yet
-  ([#28](https://github.com/NaimElijah/HrSched/issues/28), [ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)).
+  a weight. The draft check scores a draft under them, and generation minimises the same score
+  once it has filled every place it can ([ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md), [ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)).
 - **Tenancy is in every signature, on purpose.** Repository lookups take an `OrganisationId`, so
   a cross-tenant read cannot be written by forgetting a filter. See
   [ADR-009](../ADRs/ADR-009-tenant-isolation-in-the-domain.md). A `save` takes no organisation of

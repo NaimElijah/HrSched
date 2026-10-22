@@ -269,7 +269,8 @@ public class SchedulingService
 
   /**
    * Everything generation decides from, with the work people already hold on the rosters that stay
-   * authoritative beside the new draft (R35).
+   * authoritative beside the new draft (R35), the organisation's weights, and the published rosters
+   * the draft would replace, which its disruption is counted against (ADR-010).
    *
    * <p>A shift this draft covers that one of those rosters already staffs keeps the same people:
    * they start on the draft, count toward its headcount, and the generator fills only the places
@@ -290,10 +291,9 @@ public class SchedulingService
         .forEach(shift -> toCover.put(shift.id(), shift));
     List<RosterCandidate> candidates = workforce.candidatesFor(actor, organisation);
     ConstraintSet constraints = currentOrInitial(organisation);
+    List<Roster> existing = rosters.findByOrganisation(organisation);
     List<Roster> authoritative =
-        rosters.findByOrganisation(organisation).stream()
-            .filter(existing -> existing.staysAuthoritativeBeside(empty))
-            .toList();
+        existing.stream().filter(roster -> roster.staysAuthoritativeBeside(empty)).toList();
 
     Set<EmployeeId> concerned = new LinkedHashSet<>();
     candidates.forEach(candidate -> concerned.add(candidate.id()));
@@ -315,7 +315,13 @@ public class SchedulingService
       throw new RosterNotCompliantException(violations);
     }
     return new GenerationRequest(
-        seeded, List.copyOf(toCover.values()), candidates, constraints, held);
+        seeded,
+        List.copyOf(toCover.values()),
+        candidates,
+        constraints,
+        held,
+        weightsOf(organisation),
+        existing.stream().filter(roster -> roster.isSupersededBy(seeded)).toList());
   }
 
   /**

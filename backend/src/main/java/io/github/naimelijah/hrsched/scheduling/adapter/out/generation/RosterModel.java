@@ -3,7 +3,9 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.generation;
 import com.google.ortools.sat.BoolVar;
 import com.google.ortools.sat.CpModel;
 import com.google.ortools.sat.CpSolver;
+import com.google.ortools.sat.IntVar;
 import com.google.ortools.sat.IntervalVar;
+import com.google.ortools.sat.LinearArgument;
 import com.google.ortools.sat.LinearExpr;
 import com.google.ortools.sat.LinearExprBuilder;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
@@ -13,10 +15,13 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWo
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MinimumRestBetweenAssignments;
+import io.github.naimelijah.hrsched.scheduling.domain.model.Objective;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.scheduling.domain.model.WorkingTimeConstraint;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
+import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -24,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -303,6 +309,165 @@ final class RosterModel {
       }
     }
     return literals;
+  }
+
+  /**
+   * ADR-010's weighted score of the roster the solver chooses: the sum, over each weighted
+   * objective, of its weight times its measure, lower being better.
+   *
+   * <p>Each measure restates {@code RosterMeasures} over the draft's own people and the solver's
+   * choices, with every auxiliary variable pinned exactly, so at any solution its value is what the
+   * domain would compute for that roster, not merely at the optimum.
+   *
+   * @return the score; zero when nothing is weighted
+   */
+  LinearExpr score() {
+    LinearExprBuilder score = LinearExpr.newBuilder();
+    for (Objective objective : Objective.values()) {
+      request
+          .weights()
+          .weightOf(objective)
+          .ifPresent(weight -> score.addTerm(measureOf(objective), weight));
+    }
+    return score.build();
+  }
+
+  private LinearArgument measureOf(Objective objective) {
+    return switch (objective) {
+      case FAIRNESS -> heaviestUnpopularLoad();
+      case PREFERENCES -> preferencesGoneAgainst();
+      case DISRUPTION -> assignmentsChanged();
+    };
+  }
+
+  /** Fairness: the most unpopular shifts any one person carries, or zero if nobody carries one. */
+  private LinearArgument heaviestUnpopularLoad() {
+    Map<EmployeeId, LinearExprBuilder> loads = new LinkedHashMap<>();
+    for (Assignment assignment : request.draft().assignments()) {
+      if (shifts.get(assignment.shift()).unpopular()) {
+        loads.computeIfAbsent(assignment.employee(), employee -> LinearExpr.newBuilder()).add(1);
+      }
+    }
+    pairs.forEach(
+        (pair, chosen) -> {
+          if (shifts.get(pair.shift()).unpopular()) {
+            loads.computeIfAbsent(pair.employee(), employee -> LinearExpr.newBuilder()).add(chosen);
+          }
+        });
+    if (loads.isEmpty()) {
+      return LinearExpr.constant(0);
+    }
+    long unpopular = request.shifts().stream().filter(Shift::unpopular).count();
+    IntVar heaviest = model.newIntVar(0, unpopular, "fairness");
+    List<LinearArgument> each = new ArrayList<>();
+    each.add(LinearExpr.constant(0));
+    loads.values().forEach(load -> each.add(load.build()));
+    model.addMaxEquality(heaviest, each);
+    return heaviest;
+  }
+
+  /**
+   * Preferences: one for each assignment inside a span its assignee would rather not work, and one
+   * for each span a candidate would like to work, overlapping the draft's period, that none of
+   * their assignments overlaps.
+   */
+  private LinearArgument preferencesGoneAgainst() {
+    Map<EmployeeId, StatedPreferences> stated = new HashMap<>();
+    request.candidates().forEach(candidate -> stated.put(candidate.id(), candidate.preferences()));
+    LinearExprBuilder against = LinearExpr.newBuilder();
+    for (Assignment assignment : request.draft().assignments()) {
+      if (ratherNot(stated, assignment)) {
+        against.add(1);
+      }
+    }
+    pairs.forEach(
+        (pair, chosen) -> {
+          if (ratherNot(stated, pair)) {
+            against.add(chosen);
+          }
+        });
+    for (RosterCandidate candidate : request.candidates()) {
+      for (TimeRange wish : candidate.preferences().wouldLikeToWork()) {
+        if (!wish.overlaps(request.draft().period())
+            || carried.getOrDefault(candidate.id(), List.of()).stream()
+                .anyMatch(shift -> wish.overlaps(shift.period()))) {
+          continue;
+        }
+        BoolVar[] meeting =
+            open.getOrDefault(candidate.id(), List.of()).stream()
+                .filter(shift -> wish.overlaps(shift.period()))
+                .map(shift -> pairs.get(new Assignment(shift.id(), candidate.id())))
+                .toArray(BoolVar[]::new);
+        against.add(1);
+        if (meeting.length > 0) {
+          BoolVar met = model.newBoolVar("met");
+          model.addMaxEquality(met, meeting);
+          against.addTerm(met, -1);
+        }
+      }
+    }
+    return against.build();
+  }
+
+  private boolean ratherNot(Map<EmployeeId, StatedPreferences> stated, Assignment assignment) {
+    TimeRange when = shifts.get(assignment.shift()).period();
+    return stated
+        .getOrDefault(assignment.employee(), StatedPreferences.none())
+        .wouldRatherNotWork()
+        .stream()
+        .anyMatch(when::overlaps);
+  }
+
+  /**
+   * Disruption: one for each assignment the superseded rosters carried that the draft drops,
+   * wherever its shift lies, and one for each the draft adds on a shift overlapping one of their
+   * periods.
+   */
+  private LinearArgument assignmentsChanged() {
+    if (request.superseded().isEmpty()) {
+      return LinearExpr.constant(0);
+    }
+    Set<Assignment> before = new HashSet<>();
+    request.superseded().forEach(replaced -> before.addAll(replaced.assignments()));
+    Set<Assignment> kept = Set.copyOf(request.draft().assignments());
+    LinearExprBuilder changed = LinearExpr.newBuilder();
+    for (Assignment assignment : before) {
+      if (!kept.contains(assignment)) {
+        changed.add(1);
+        BoolVar chosen = pairs.get(assignment);
+        if (chosen != null) {
+          changed.addTerm(chosen, -1);
+        }
+      }
+    }
+    for (Assignment assignment : request.draft().assignments()) {
+      if (!before.contains(assignment) && liesWhereTheyGoverned(assignment)) {
+        changed.add(1);
+      }
+    }
+    pairs.forEach(
+        (pair, chosen) -> {
+          if (!before.contains(pair) && liesWhereTheyGoverned(pair)) {
+            changed.add(chosen);
+          }
+        });
+    return changed.build();
+  }
+
+  private boolean liesWhereTheyGoverned(Assignment assignment) {
+    TimeRange when = shifts.get(assignment.shift()).period();
+    return request.superseded().stream().anyMatch(replaced -> replaced.period().overlaps(when));
+  }
+
+  /**
+   * Keeps every later solution at least as full as {@code solver}'s, and starts the search from it:
+   * the second solve ranks rosters without trading away a place the first one filled.
+   */
+  void keepCoverageOf(CpSolver solver) {
+    LinearExpr filled = coverage();
+    model.addGreaterOrEqual(filled, solver.value(filled));
+    model.clearHints();
+    pairs.values().forEach(chosen -> model.addHint(chosen, solver.booleanValue(chosen)));
   }
 
   CpModel model() {

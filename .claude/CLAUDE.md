@@ -41,10 +41,12 @@ How the backend enforces each of these is in `backend/CLAUDE.md`.
 
 ## Two things are not what they look like
 
-- **Generation fills shifts, but does not yet optimise.** `CpSatRosterGenerator` solves with
-  CP-SAT (ADR-044) and fills every place the rules allow. It ignores fairness, preferences and
-  disruption: ADR-010 defines them and the draft check scores them, but nothing generates against
-  them yet.
+- **Generation is a solver that answers within the request.** `CpSatRosterGenerator` (ADR-044)
+  fills every place the rules allow, then minimises ADR-010's weighted score, each search stopped
+  at `hrsched.generation.time-limit-per-phase`: at the stated scale that is the best found, not
+  proven optimal (#246). It runs outside any transaction (ADR-045) and is not deterministic.
+  OR-Tools is held at 9.12, because later Windows libraries crash the JVM on the Visual C++
+  runtime JDK 21 bundles.
 - **The audit trail is a log stream, not a trail.** Every change and refusal is recorded through
   an `AuditTrail` driven port, but nothing is stored and nothing is queryable: the record lives
   only wherever stdout is collected (ADR-018). The requirement is now a durable trail an Admin
