@@ -1,6 +1,6 @@
 # ADR-005: Automatic roster generation, behind a port, with a greedy first implementation
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md)
 - **Date:** 2026-08-30
 
 ## Context

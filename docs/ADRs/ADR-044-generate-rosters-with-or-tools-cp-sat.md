@@ -33,7 +33,7 @@ Forces:
 ## Decision
 
 **We generate with CP-SAT, the constraint programming solver in Google OR-Tools
-(`com.google.ortools:ortools-java` 9.15.6755), confined to `scheduling.adapter.out.generation`.**
+(`com.google.ortools:ortools-java` 9.12.4544), confined to `scheduling.adapter.out.generation`.**
 It replaces `GreedyRosterGenerator` as the one generator wired in. Greedy moves to the tests, as the
 baseline a benchmark measures CP-SAT against.
 
@@ -56,6 +56,22 @@ baseline a benchmark measures CP-SAT against.
 - **The model is checked from both sides by property tests on seeded problems**: whatever the
   domain accepts the model accepts, whatever the model returns the domain accepts, and the
   solver's score equals `RosterScore` computed by the domain.
+
+### The version
+
+**9.12.4544 (2025-02), not the newest, 9.15.6755 (2026-01).** From 9.13 on, OR-Tools' Windows
+libraries need the Visual C++ runtime 14.40 or later. Oracle JDK 21 bundles 14.36 in its `bin`
+directory, and Windows resolves a library's dependencies from the application's directory before
+`System32`, so on a developer's Windows machine the JVM crashes in `msvcp140.dll` on the first
+solve. Tried on that machine:
+
+- 9.13.4784, 9.14.6206 and 9.15.6755 crash the JVM.
+- 9.12.4544 and 9.11.4210 pass every solver test.
+- 9.15.6755 passes every solver test on the same JDK with only its bundled runtime replaced by
+  14.50, so the runtime is the cause.
+
+Linux, where CI and every deployment run, is unaffected. Dependabot ignores 9.13 and later.
+**Revisit** when the JDK developers run on Windows bundles runtime 14.40 or later, or none.
 
 ### Licence and maintenance
 
@@ -83,11 +99,12 @@ baseline a benchmark measures CP-SAT against.
 **Harder**
 
 - **Native code.** OR-Tools is C++ reached over JNI.
-  - Five platform jars of 21 to 26 MB each come with it, so the backend jar grows by about 125 MB.
+  - Five platform jars of 16 to 23 MB each come with it, so the backend jar grows by about 95 MB.
     Trimming the platforms the deployed image does not need is #157's decision.
-  - The natives need a glibc-based image, not Alpine.
-  - They are extracted to `java.io.tmpdir` at startup, which must be writable.
-  - The executable jar has to unpack them before they load.
+  - The natives need a glibc-based image, not Alpine, and on Windows a Visual C++ runtime recent
+    enough for the version pinned (above).
+  - They are extracted to `java.io.tmpdir` when the generator starts, which must be writable. The
+    executable jar loads them as packaged, which starting it showed.
   - **A crash in native code takes the JVM with it**, where a Java exception would fail one
     request. **Revisit** on the first such crash in production, by moving the solve into a separate
     process.

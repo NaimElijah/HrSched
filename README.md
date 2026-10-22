@@ -71,8 +71,8 @@ owner has chosen to leave open for now ([Q15](docs/requirements/requirements.md#
 - **See your own work.** An employee sees their assignments on published rosters only, and reads
   back the absences and preferences they declared.
 
-What it does not do yet is the thing the product is named for: generation is greedy, not optimised
-([ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)).
+Generation fills every place the rules allow, with the CP-SAT solver ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)), but does not yet
+weigh the organisation's objectives.
 
 ## Architecture
 
@@ -124,6 +124,7 @@ Components, the authentication sequence and the data flow are in
 | Security | Spring Security, OAuth2 resource server | 7.1.1 | Verifies the RS256 tokens HrSched signs itself |
 | Database | PostgreSQL | 18 | Its constraints refuse what the domain must never store |
 | Persistence | Spring JDBC + Flyway | 12.4.0 | Hand-written SQL behind the ports, no ORM ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) |
+| Generation | Google OR-Tools, CP-SAT | 9.12.4544 | Every rule is a constraint, so a generated roster is legal by construction ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) |
 | Tests | JUnit Jupiter, Testcontainers | 6.0.3 / 2.0.5 | Every test that touches storage runs on a real PostgreSQL |
 | Architecture | ArchUnit | 1.5.1 | Turns the dependency rules into build failures |
 | Observability | OpenTelemetry starter, Micrometer Prometheus | Boot BOM | A trace id on every response and log line; metrics pulled, not pushed |
@@ -183,6 +184,7 @@ supplies a throwaway signing key and the local operator. A deployment sets the v
 | `hrsched.security.password.minimum-length` | `15` | NIST SP 800-63B-4, single-factor |
 | `hrsched.security.password.bcrypt-strength` | `12` | Bcrypt's work factor; tests use `4` |
 | `hrsched.security.sign-in.lockout-threshold` / `-duration` | `10` / `15m` | When an account locks, and for how long |
+| `hrsched.generation.time-limit-per-phase` | `10s` | How long each of the solver's searches may run before it answers with the best roster found ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) |
 | `management.endpoints.web.exposure.include` | `health,info,metrics,prometheus` | An allow list: `/actuator/**` needs no token, so `env`, `loggers` and `heapdump` stay shut ([#78](https://github.com/NaimElijah/HrSched/issues/78)) |
 | `management.endpoint.health.probes.enabled` | `true` | Liveness and readiness probes outside Kubernetes too |
 | `logging.structured.format.console` | `ecs` | Elastic Common Schema JSON, always ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
@@ -357,7 +359,7 @@ HrSched/
 | PostgreSQL, hand-written SQL, and a real database in every test ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) | JPA, Spring Data JDBC, jOOQ, an embedded database | Docker to build; every adapter maps rows by hand |
 | Its own tokens, with the organisation taken from the account ([ADR-011](docs/ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md)) | An external OIDC provider, while there is one API and one SPA; roles as token claims, unrevocable until expiry | A database read per request; HrSched stores password hashes |
 | Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
-| Generation behind a port, greedy for now ([ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)) | The Timefold solver at once, before ADR-010 said what to optimise | The product does not yet do what it is named for |
+| Generation with CP-SAT behind a port ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md), [ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)) | Timefold, whose search must drive a broken rule's penalty to zero and proves no bound; a MIP solver | About 95 MB of native libraries; no determinism under a time limit; OR-Tools held at 9.12 for the Visual C++ runtime JDK 21 bundles on Windows |
 
 All 43 decisions, and the two still waiting to be recorded, are in the
 [ADR index](docs/ADRs/README.md).
@@ -371,10 +373,10 @@ decides). The [requirements](docs/requirements/requirements.md) mark each row de
 built.
 
 **Known limitations:**
-- **Generation optimises nothing.** `GreedyRosterGenerator` takes the first eligible person for each
-  shift, and ignores fairness, preferences and disruption. ADR-010 defines those objectives and the
-  draft check scores a draft on them under the organisation's weights, but the solver that would
-  optimise them is [#28](https://github.com/NaimElijah/HrSched/issues/28).
+- **Generation does not yet weigh the objectives.** CP-SAT fills every place the rules allow, but
+  ignores fairness, preferences and disruption. ADR-010 defines those objectives and the draft check
+  scores a draft on them under the organisation's weights
+  ([#28](https://github.com/NaimElijah/HrSched/issues/28)).
 - **A shift's zone is the Scheduler's browser zone.** The Shifts page sends the zone its times were
   typed in, and no page shows a shift's zone yet
   ([#136](https://github.com/NaimElijah/HrSched/issues/136)).

@@ -14,8 +14,8 @@ import { RosterBoard } from './RosterBoard';
  * listed and there is no override, so the refusal is rendered inline as a first-class outcome
  * rather than as an error toast to dismiss.
  *
- * Generation is greedy and optimises nothing (ADR-005), which this page says plainly rather than
- * letting a scheduler assume the result is good.
+ * Generation fills every place the rules allow but does not yet weigh the objectives (ADR-044),
+ * which this page says plainly rather than letting a scheduler assume the result is good.
  *
  * The people come from the shell, which already loads them and already decides which refusal of
  * that listing to keep quiet about; asking again here doubled the request and repeated its failure.
@@ -57,9 +57,8 @@ export function RostersPage({
     <section>
       <h2>Rosters</h2>
       <p className="hint">
-        Generation is greedy: it takes the first eligible person and optimises nothing — not
-        fairness, not preferences, not disruption. It leaves a shift short rather than filling it
-        illegally.
+        Generation fills as many places as the rules allow, but does not yet weigh fairness,
+        preferences or disruption. It leaves a shift short rather than filling it illegally.
       </p>
 
       <button

@@ -23,6 +23,14 @@
 		<archunit.version>1.5.1</archunit.version>
 		<jacoco.version>0.8.15</jacoco.version>
 		<testcontainers.version>2.0.5</testcontainers.version>
+		<!--
+		  Not the newest. From 9.13 on, OR-Tools' Windows libraries need the Visual C++ runtime 14.40
+		  or later, and the JDK 21 a developer runs here bundles 14.36, which Windows loads first:
+		  the JVM crashes on the first solve. 9.12 is the newest that runs on it. Dependabot ignores
+		  9.13 and later until that changes. See ADR-044.
+		-->
+		<ortools.version>9.12.4544</ortools.version>
+		<jna.version>5.18.1</jna.version>
 	</properties>
 
 	<dependencies>
@@ -108,6 +116,20 @@
 			<artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
 		</dependency>
 
+		<!--
+		  Roster generation: CP-SAT, the constraint solver in Google OR-Tools, reached over JNI. It
+		  replaces the greedy placeholder ADR-005 shipped; an exact optimiser for a 0-1 problem of
+		  this size is not something to write by hand. Brings native libraries for five platforms
+		  and protobuf-java, which the Boot BOM already manages. Confined to
+		  scheduling.adapter.out.generation. Apache-2.0, maintained by Google, and pinned because no
+		  BOM manages it. See ADR-044.
+		-->
+		<dependency>
+			<groupId>com.google.ortools</groupId>
+			<artifactId>ortools-java</artifactId>
+			<version>${ortools.version}</version>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
@@ -156,6 +178,22 @@
 				<version>${testcontainers.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
+			</dependency>
+			<!--
+			  OR-Tools asks for JNA 5.14.0, and Maven would choose it over the 5.18.1 that
+			  Testcontainers' Docker client was built against, only because it is nearer in the
+			  tree. Pinned to the newer, so neither runs on a JNA older than it expects.
+			  LGPL-2.1-or-later or Apache-2.0, at the user's choice. See ADR-044.
+			-->
+			<dependency>
+				<groupId>net.java.dev.jna</groupId>
+				<artifactId>jna</artifactId>
+				<version>${jna.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>net.java.dev.jna</groupId>
+				<artifactId>jna-platform</artifactId>
+				<version>${jna.version}</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>

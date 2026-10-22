@@ -12,7 +12,7 @@ import java.util.List;
  * hold nothing elsewhere that overlaps it.
  *
  * <p>Hand-written, like every other double here. It stands in for the real generator so the use
- * case tests are about the use case rather than about what the greedy adapter happens to produce.
+ * case tests are about the use case rather than about what the solver happens to produce.
  *
  * <p>Shared by the tests in this package rather than nested in one of them, the same arrangement
  * workforce uses for its audit double: the callers are in this package, so it crosses no boundary.

@@ -13,7 +13,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-002](ADR-002-single-command-build-gate.md) | Make `./mvnw verify` the single build gate, formatted by Spotless | Accepted | 2026-08-29 |
 | [ADR-003](ADR-003-hexagonal-architecture-with-ddd.md) | Structure the application as a hexagon, enforced by ArchUnit | Accepted | 2026-08-29 |
 | [ADR-004](ADR-004-postgresql-behind-the-driven-ports.md) | Store every aggregate in PostgreSQL, behind the driven ports | Accepted | 2026-09-06 |
-| [ADR-005](ADR-005-roster-generation-behind-a-port.md) | Automatic roster generation, behind a port, with a greedy first implementation | Accepted | 2026-08-30 |
+| [ADR-005](ADR-005-roster-generation-behind-a-port.md) | Automatic roster generation, behind a port, with a greedy first implementation | Superseded by [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md) | 2026-08-30 |
 | [ADR-006](ADR-006-organise-packages-by-bounded-context.md) | Organise packages by bounded context, not by layer | Accepted | 2026-08-29 |
 | [ADR-007](ADR-007-monorepo-backend-and-frontend.md) | Keep backend and frontend in one repository, as sibling directories | Accepted | 2026-08-29 |
 | [ADR-008](ADR-008-context-integration.md) | Contexts integrate through published ports and a minimal shared kernel | Accepted | 2026-08-30 |

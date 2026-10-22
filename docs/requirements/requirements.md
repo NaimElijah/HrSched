@@ -4,7 +4,8 @@
 domain is modelled, and a React user interface offers every capability below — for the three roles
 within an organisation and for the platform Operator — over a PostgreSQL that survives a restart.
 People sign in, and every request is authenticated by a token HrSched signed and authorised
-against the account it names. Generation is greedy rather than optimised.
+against the account it names. Generation fills every place the rules allow, but does not yet weigh
+the objectives.
 
 Nothing in the user interface *enforces* a requirement. The `Enforced by` column below names
 backend classes and tests on purpose: a screen that appears to satisfy a rule is not evidence that
@@ -60,7 +61,7 @@ implemented; `not yet` means the requirement is decided and the linked issue tra
 | F8 | Admin | Add employees | `EmployeeService`, `EmployeeServiceTest`, `EmployeeHttpTest` |
 | F9 | Admin | Define qualifications, and grant them to employees | `QualificationService`, `QualificationServiceTest`, `QualificationHttpTest`; granting: `EmployeeService`, `EmployeeServiceTest` |
 | F10 | Admin | Configure the organisation's working-time constraint set | `SchedulingService`, `RosteringHttpTest` |
-| F11 | Scheduler | Generate a draft roster covering a period, filling every shift it legally can | `SchedulingService`, `RosteringHttpTest`. *Partly met: the greedy generator can use somebody up early and strand a later shift that a better assignment would have covered ([ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md)). A solver is [#28](https://github.com/NaimElijah/HrSched/issues/28).* |
+| F11 | Scheduler | Generate a draft roster covering a period, filling every shift it legally can | `SchedulingService`, `RosteringHttpTest`, `CpSatRosterGenerator`, `CpSatRosterGeneratorTest.GivenSomebodyGreedyUsesUpEarly_WhenGenerating_ThenTheShiftOnlyTheyCouldTakeIsCoveredToo` ([ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)). *Within a time limit per search, so at the largest stated size the answer is the best found in it; the ten minutes the scale targets allow need generation as a background job — [#246](https://github.com/NaimElijah/HrSched/issues/246).* |
 | F11a | Admin, Scheduler | See the rosters their organisation holds | `SchedulingService`, `RosteringHttpTest`. *No test reads them as an Admin yet ([#100](https://github.com/NaimElijah/HrSched/issues/100)).* |
 | F12 | — | *Retired on 2026-09-22: it restated F3. The number is not reused.* | — |
 | F13 | Operator | Administer organisations across the platform | `OrganisationService`, `OrganisationServiceTest`, `OrganisationHttpTest` ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)). *Onboard, list and read. Any member may also read their own organisation's record, which is tested for an Admin only ([#100](https://github.com/NaimElijah/HrSched/issues/100)). Renaming is F30 and closing is F31. Onboarding creates the organisation's first Admin in the same transaction - the operator is refused everything inside an organisation but F33 ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)), so one onboarded without an Admin would have nobody able to add one. That Admin must change the password they were given before anything else (ADR-029).* |
@@ -97,8 +98,8 @@ unavailable or unqualified, who must be reassigned first. Whether the colleague 
 rather than when an Employee asks, because deciding it means reading colleagues' unavailability.
 
 **Roster generation is automatic** — that is the point of the product. A Scheduler states what
-needs covering and the system produces a legal roster. Today it does so greedily and optimises
-nothing; see [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md).
+needs covering and the system produces a legal roster, filling every place the rules allow
+([ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)). It does not yet weigh the objectives below.
 
 ---
 
@@ -139,7 +140,7 @@ a published roster is superseded rather than edited (R6).
 | --- | --- |
 | R1 | A time range must end strictly after it starts. *`TimeRange`, `TimeRangeTest`* |
 | R2 | An employee, an organisation and a qualification must each have a name that is not blank. *`Employee`, `EmployeeTest`; `Organisation`, `OrganisationTest`; `Qualification`, `QualificationTest`* |
-| R3 | An employee may not hold two overlapping assignments. *`Roster`, `RosterTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`; at swap approval `SwapServiceTest`; in generation `GreedyRosterGeneratorTest`* |
+| R3 | An employee may not hold two overlapping assignments. *`Roster`, `RosterTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`; at swap approval `SwapServiceTest`; in generation `RosterGeneratorContract`, run by `CpSatRosterGeneratorTest`* |
 | R4 | An employee may only cover a shift whose qualifications they all hold. *`RosterCandidate`, `RosterCandidateTest`; on the manual path `SchedulingService`, `SchedulingServiceTest`; at swap approval `SwapServiceTest`; at publication `AssignmentEligibility`, `SchedulingServiceTest`* |
 | R5 | An employee may only be assigned within their own organisation. *`SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`; at publication `AssignmentEligibility`, `SchedulingServiceTest`* |
 | R6 | A published roster may not be edited; it is superseded by a new version. *`Roster`, `RosterTest`, `SchedulingService`, `SchedulingServiceTest`* |
@@ -172,7 +173,7 @@ a published roster is superseded rather than edited (R6).
 | R33 | A pending swap request lapses when the roster it names is superseded, and its parties are told. *`SwapRequest`, `SwapRequestTest`; in the publication that supersedes the roster `SchedulingService`, `SwapServiceTest`, `SwapHttpTest`; requests already pending on a superseded roster lapsed by V7, `SwapRequestMigrationTest` ([ADR-039](../ADRs/ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md))* |
 | R34 | An account holding the Employee role is always linked to an employee of its own organisation. One stored unlinked before the rule is disabled, and may be restored only once it is linked; linking it does not restore it. *`Account`, `AccountTest`; `AccountService`, `AccountAdministrationTest`, `SessionServiceTest`, `AccountHttpTest`; the ones already stored disabled by migration `V9`, which adds the `account_employee_role_is_linked` constraint, `EmployeeAccountLinkMigrationTest`* |
 | R35 | A shift straddling two roster periods may be carried by either roster, and R3 is judged across every authoritative roster rather than within one. *`Roster`, `HeldWork`, `RosterTest`; at assignment and publication `SchedulingService`, `SchedulingServiceTest`, `RosteringHttpTest`; at swap approval `SwapServiceTest` ([ADR-033](../ADRs/ADR-033-judge-r3-across-authoritative-rosters-under-the-publication-lock.md)). Generation is given that work as time each person is busy, so it never drafts what publication refuses for this: `RosteringHttpTest.GivenTheirEveningOnLastWeeksPublishedRoster_WhenNextWeekIsGenerated_ThenItIsPublishable` ([#130](https://github.com/NaimElijah/HrSched/issues/130))* |
-| R36 | Working-time rules count days in each shift's own time zone. *`Shift`, `WorkingPeriod`, `EmployeeSchedule`, `EmployeeScheduleTest`, `ConstraintSetTest`; in generation `GreedyRosterGeneratorTest`; at publication `SchedulingServiceTest`, `RosteringHttpTest`; stored by `JdbcShiftRepository`, `JdbcShiftRepositoryTest` ([ADR-034](../ADRs/ADR-034-count-working-days-in-each-shifts-own-time-zone.md)). The zone sent is the browser's, so a site in another zone cannot yet be planned for — [#136](https://github.com/NaimElijah/HrSched/issues/136)* |
+| R36 | Working-time rules count days in each shift's own time zone. *`Shift`, `WorkingPeriod`, `EmployeeSchedule`, `EmployeeScheduleTest`, `ConstraintSetTest`, `WorkingPeriodTest`; in generation `RosterGeneratorContract`, run by `CpSatRosterGeneratorTest`; at publication `SchedulingServiceTest`, `RosteringHttpTest`; stored by `JdbcShiftRepository`, `JdbcShiftRepositoryTest` ([ADR-034](../ADRs/ADR-034-count-working-days-in-each-shifts-own-time-zone.md)). The zone sent is the browser's, so a site in another zone cannot yet be planned for — [#136](https://github.com/NaimElijah/HrSched/issues/136)* |
 | R37 | Roster history is append-only: what was authoritative at any past moment can be reconstructed exactly. *`Roster` (`RosterTest`), `SchedulingService` (`SchedulingServiceTest`), `JdbcRosterRepository` and the `roster_one_published_per_moment` constraint (`JdbcRosterRepositoryTest`), migration `V6` (`AppendOnlyRosterHistoryMigrationTest`) ([ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)). Exact from V6 on: nothing earlier was recorded.* |
 | R38 | A sign-in name is an email address. *Not yet — [#108](https://github.com/NaimElijah/HrSched/issues/108)* |
 | R39 | Operators and Admins sign in with a second factor as well as a password. *Not yet — [#109](https://github.com/NaimElijah/HrSched/issues/109)* |
@@ -232,8 +233,8 @@ defines them, and says why):
 
 **Each organisation weights the objectives itself** (Q13), as it configures its own constraint set:
 a weight is configuration, never a constant (F35, R40). The draft check scores a draft under those
-weights (F34). **Generation does not optimise them yet**: the greedy generator ignores all three,
-and a solver that optimises them is [#28](https://github.com/NaimElijah/HrSched/issues/28).
+weights (F34). **Generation does not optimise them yet**: the solver fills every place the rules
+allow and ignores all three ([#28](https://github.com/NaimElijah/HrSched/issues/28)).
 
 ---
 

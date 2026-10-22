@@ -1318,8 +1318,8 @@ class SchedulingServiceTest {
 
   /**
    * The gate nothing bypasses. A draft can carry overlapping work without passing through {@code
-   * assign} — a generator is a port, and this one is not the greedy adapter — and an empty
-   * constraint set checks nothing, so publication has to refuse it for itself.
+   * assign} — this one is stored directly, as no use case would store it — and an empty constraint
+   * set checks nothing, so publication has to refuse it for itself.
    */
   @Test
   void GivenADraftAlreadyCarryingOverlappingWork_WhenPublishingWithNoRules_ThenItIsRefused() {
