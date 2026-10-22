@@ -44,8 +44,9 @@ read.**
   - `FAILED`, a defect, logged at ERROR where it happened.
 - **A generation still `PENDING` past its `lost_at` reads as `LOST`.** That instant is fixed when the
   generation is asked for, at `hrsched.generation.lost-after` later, which exceeds the longest a
-  solve may run. The status is derived when it is read, from the clock, so nothing has to sweep, and
-  every instance agrees. It stays lost: a solve that outlasts the instant stores no draft, because
+  solve may run: the generator refuses to start unless it exceeds both searches together. The
+  status is derived when it is read, from the clock, so nothing has to sweep, and every instance
+  agrees. It stays lost: a solve that outlasts the instant stores no draft, because
   the Scheduler has already been told to generate again.
 - **At most `hrsched.generation.concurrent-runs` solves run at once on an instance.** One asked for
   beyond that is refused with a 503 before anything runs, and its record says `FAILED`. Nothing

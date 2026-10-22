@@ -6,6 +6,7 @@ import com.google.ortools.sat.CpSolverStatus;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationPolicy;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.micrometer.core.instrument.DistributionSummary;
@@ -40,6 +41,9 @@ public class CpSatRosterGenerator implements RosterGenerator {
 
   private static final Logger log = LoggerFactory.getLogger(CpSatRosterGenerator.class);
 
+  /** As many places as it can fill, then the organisation's objectives. */
+  private static final int SEARCHES = 2;
+
   private final Duration timeLimit;
   private final DistributionSummary required;
   private final DistributionSummary unfilled;
@@ -50,8 +54,18 @@ public class CpSatRosterGenerator implements RosterGenerator {
    *
    * @param meters where coverage is recorded, one observation per generation
    * @param properties how long each of the solver's searches may run
+   * @param policy how long a generation may stay pending before it reads as lost
+   * @throws IllegalArgumentException if both searches could run for that long, so that a solve
+   *     still searching would be reported lost (ADR-046)
    */
-  public CpSatRosterGenerator(MeterRegistry meters, GenerationProperties properties) {
+  public CpSatRosterGenerator(
+      MeterRegistry meters, GenerationProperties properties, GenerationPolicy policy) {
+    Duration searching = properties.timeLimitPerPhase().multipliedBy(SEARCHES);
+    if (policy.lostAfter().compareTo(searching) <= 0) {
+      throw new IllegalArgumentException(
+          "hrsched.generation.lost-after is %s, but the solver may search for %s, so a solve still searching would be reported lost"
+              .formatted(policy.lostAfter(), searching));
+    }
     Loader.loadNativeLibraries();
     this.timeLimit = properties.timeLimitPerPhase();
     this.required =

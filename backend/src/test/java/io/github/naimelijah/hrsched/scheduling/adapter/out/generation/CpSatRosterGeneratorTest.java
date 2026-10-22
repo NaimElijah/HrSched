@@ -11,6 +11,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandid
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationPolicy;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Objective;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
@@ -51,12 +52,17 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
   /** Invented: ample for every problem here to be solved to proven optimality. */
   private static final Duration LIMIT = Duration.ofSeconds(10);
 
+  /** Invented: longer than both searches together, as the generator requires. */
+  private static final GenerationPolicy OUTLASTING_BOTH_SEARCHES =
+      new GenerationPolicy(LIMIT.multipliedBy(3));
+
   /** How many seeded problems each property is checked on. */
   private static final int SEEDS = 25;
 
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private final CpSatRosterGenerator generator =
-      new CpSatRosterGenerator(meters, new GenerationProperties(LIMIT, 1));
+      new CpSatRosterGenerator(
+          meters, new GenerationProperties(LIMIT, 1), OUTLASTING_BOTH_SEARCHES);
 
   @Override
   protected RosterGenerator generator() {
@@ -448,5 +454,22 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> new GenerationProperties(null, 1))
         .isInstanceOf(NullPointerException.class);
+  }
+
+  /**
+   * ADR-046: a generation still pending at its lost-at instant reads as lost, and the Scheduler is
+   * told to start again. A policy that both searches could outlast would say so of a solve still
+   * searching, so the generator, and with it startup, refuses it.
+   */
+  @Test
+  void GivenALostAfterBothSearchesCouldOutlast_WhenTheGeneratorIsMade_ThenItIsRefused() {
+    GenerationProperties limited = new GenerationProperties(LIMIT, 1);
+
+    assertThatThrownBy(
+            () ->
+                new CpSatRosterGenerator(
+                    meters, limited, new GenerationPolicy(LIMIT.multipliedBy(2))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("hrsched.generation.lost-after");
   }
 }

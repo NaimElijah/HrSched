@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationPolicy;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
@@ -37,7 +38,11 @@ class GenerationBenchmarkTest {
   void GivenSeededProblems_WhenBothGenerate_ThenTheSolverIsNeverWorseAndBetterOverall(
       TestReporter report) {
     CpSatRosterGenerator solver =
-        new CpSatRosterGenerator(new SimpleMeterRegistry(), new GenerationProperties(LIMIT, 1));
+        new CpSatRosterGenerator(
+            new SimpleMeterRegistry(),
+            new GenerationProperties(LIMIT, 1),
+            // Invented: longer than both searches together, as the generator requires.
+            new GenerationPolicy(LIMIT.multipliedBy(3)));
     GreedyRosterGenerator greedy = new GreedyRosterGenerator();
     int solverPlaces = 0;
     int greedyPlaces = 0;

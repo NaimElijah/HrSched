@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationPolicy;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
@@ -48,7 +49,9 @@ class GenerationAtScaleRun {
     GenerationRequest problem = GenerationInstances.instance(SEED, PEOPLE, SHIFTS);
     CpSatRosterGenerator solver =
         new CpSatRosterGenerator(
-            new SimpleMeterRegistry(), new GenerationProperties(configuredLimit(), 1));
+            new SimpleMeterRegistry(),
+            new GenerationProperties(configured("hrsched.generation.time-limit-per-phase"), 1),
+            new GenerationPolicy(configured("hrsched.generation.lost-after")));
 
     long started = System.nanoTime();
     List<Assignment> solved = solver.generate(problem);
@@ -67,14 +70,13 @@ class GenerationAtScaleRun {
     assertThat(breachesOf(problem, solved)).isEmpty();
   }
 
-  /** The limit production runs under, read from where the application reads it. */
-  private static Duration configuredLimit() throws IOException {
+  /** A duration production runs under, read from where the application reads it. */
+  private static Duration configured(String key) throws IOException {
     Properties application = new Properties();
     try (InputStream properties =
         GenerationAtScaleRun.class.getResourceAsStream("/application.properties")) {
       application.load(properties);
     }
-    return DurationStyle.detectAndParse(
-        application.getProperty("hrsched.generation.time-limit-per-phase"));
+    return DurationStyle.detectAndParse(application.getProperty(key));
   }
 }
