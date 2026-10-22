@@ -2,10 +2,13 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.generation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
+import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
@@ -36,6 +39,8 @@ import org.junit.jupiter.api.Test;
 class GreedyRosterGeneratorTest {
 
   private static final OrganisationId ACME = OrganisationId.newId();
+  private static final TimeRange SPAN =
+      new TimeRange(Instant.parse("2026-09-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z"));
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private final GreedyRosterGenerator generator = new GreedyRosterGenerator(meters);
 
@@ -54,6 +59,13 @@ class GreedyRosterGeneratorTest {
         false);
   }
 
+  /** Generation into an empty draft over a span holding every shift below. */
+  private static GenerationRequest request(
+      List<Shift> shifts, List<RosterCandidate> candidates, ConstraintSet constraints) {
+    return new GenerationRequest(
+        new Roster(RosterId.newId(), ACME, SPAN), shifts, candidates, constraints);
+  }
+
   private static RosterCandidate anyone(String name) {
     return new RosterCandidate(
         EmployeeId.newId(), name, Set.of(), List.of(), StatedPreferences.none());
@@ -66,7 +78,7 @@ class GreedyRosterGeneratorTest {
 
     List<Assignment> assignments =
         generator.generate(
-            List.of(needsATicket), List.of(anyone("Ada")), ConstraintSet.initial(ACME));
+            request(List.of(needsATicket), List.of(anyone("Ada")), ConstraintSet.initial(ACME)));
 
     assertThat(assignments)
         .describedAs("a roster honest about a gap beats one that hides it")
@@ -80,7 +92,8 @@ class GreedyRosterGeneratorTest {
 
     List<Assignment> assignments =
         generator.generate(
-            List.of(morning, clashing), List.of(anyone("Ada")), ConstraintSet.initial(ACME));
+            request(
+                List.of(morning, clashing), List.of(anyone("Ada")), ConstraintSet.initial(ACME)));
 
     assertThat(assignments).hasSize(1);
   }
@@ -94,7 +107,7 @@ class GreedyRosterGeneratorTest {
             .revisedTo(List.of(new MaximumDailyWorkingTime(Duration.ofHours(1))));
 
     List<Assignment> assignments =
-        generator.generate(List.of(eightHours), List.of(anyone("Ada")), oneHourDays);
+        generator.generate(request(List.of(eightHours), List.of(anyone("Ada")), oneHourDays));
 
     assertThat(assignments).isEmpty();
   }
@@ -132,7 +145,8 @@ class GreedyRosterGeneratorTest {
             .revisedTo(List.of(new MaximumDailyWorkingTime(Duration.ofHours(10))));
 
     List<Assignment> assignments =
-        generator.generate(List.of(lateNight, morning), List.of(anyone("Ada")), tenHourDays);
+        generator.generate(
+            request(List.of(lateNight, morning), List.of(anyone("Ada")), tenHourDays));
 
     assertThat(assignments).extracting(Assignment::shift).containsExactly(lateNight.id());
   }
@@ -143,9 +157,10 @@ class GreedyRosterGeneratorTest {
 
     List<Assignment> assignments =
         generator.generate(
-            List.of(needsTwo),
-            List.of(anyone("Ada"), anyone("Grace"), anyone("Alan")),
-            ConstraintSet.initial(ACME));
+            request(
+                List.of(needsTwo),
+                List.of(anyone("Ada"), anyone("Grace"), anyone("Alan")),
+                ConstraintSet.initial(ACME)));
 
     assertThat(assignments).hasSize(2);
     assertThat(assignments.stream().map(Assignment::employee).distinct()).hasSize(2);
@@ -154,9 +169,10 @@ class GreedyRosterGeneratorTest {
   @Test
   void GivenAShiftNobodyCanCover_WhenGenerating_ThenTheGapIsMeasuredRatherThanOnlyLeft() {
     generator.generate(
-        List.of(shift("2026-10-05T09:00:00Z", "2026-10-05T17:00:00Z", 3, Set.of())),
-        List.of(),
-        ConstraintSet.initial(ACME));
+        request(
+            List.of(shift("2026-10-05T09:00:00Z", "2026-10-05T17:00:00Z", 3, Set.of())),
+            List.of(),
+            ConstraintSet.initial(ACME)));
 
     assertThat(summary("hrsched.shifts.required").totalAmount()).isEqualTo(3.0);
     assertThat(summary("hrsched.shifts.uncovered").totalAmount()).isEqualTo(3.0);
@@ -165,9 +181,10 @@ class GreedyRosterGeneratorTest {
   @Test
   void GivenAFullyCoveredShift_WhenGenerating_ThenNoGapIsRecorded() {
     generator.generate(
-        List.of(shift("2026-10-05T09:00:00Z", "2026-10-05T17:00:00Z", 1, Set.of())),
-        List.of(anyone("Ada")),
-        ConstraintSet.initial(ACME));
+        request(
+            List.of(shift("2026-10-05T09:00:00Z", "2026-10-05T17:00:00Z", 1, Set.of())),
+            List.of(anyone("Ada")),
+            ConstraintSet.initial(ACME)));
 
     assertThat(summary("hrsched.shifts.required").totalAmount()).isEqualTo(1.0);
     assertThat(summary("hrsched.shifts.uncovered").totalAmount()).isZero();
@@ -176,9 +193,10 @@ class GreedyRosterGeneratorTest {
   @Test
   void GivenAPartlyCoveredShift_WhenGenerating_ThenOnlyTheUnfilledPlacesCount() {
     generator.generate(
-        List.of(shift("2026-10-05T09:00:00Z", "2026-10-05T17:00:00Z", 3, Set.of())),
-        List.of(anyone("Ada")),
-        ConstraintSet.initial(ACME));
+        request(
+            List.of(shift("2026-10-05T09:00:00Z", "2026-10-05T17:00:00Z", 3, Set.of())),
+            List.of(anyone("Ada")),
+            ConstraintSet.initial(ACME)));
 
     assertThat(summary("hrsched.shifts.required").totalAmount()).isEqualTo(3.0);
     assertThat(summary("hrsched.shifts.uncovered").totalAmount()).isEqualTo(2.0);
@@ -190,7 +208,7 @@ class GreedyRosterGeneratorTest {
    */
   @Test
   void GivenNoShiftsAtAll_WhenGenerating_ThenTheGenerationIsStillCounted() {
-    generator.generate(List.of(), List.of(anyone("Ada")), ConstraintSet.initial(ACME));
+    generator.generate(request(List.of(), List.of(anyone("Ada")), ConstraintSet.initial(ACME)));
 
     assertThat(summary("hrsched.shifts.required").count()).isEqualTo(1L);
     assertThat(summary("hrsched.shifts.uncovered").count()).isEqualTo(1L);

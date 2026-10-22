@@ -11,6 +11,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRoste
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PublishedSwapRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RequestSwapCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
@@ -19,7 +20,6 @@ import io.github.naimelijah.hrsched.scheduling.application.service.RecordingNoti
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
-import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
@@ -27,7 +27,6 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
-import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException;
@@ -822,8 +821,7 @@ class SwapServiceTest {
    */
   private static final class AssignsNobody implements RosterGenerator {
     @Override
-    public List<Assignment> generate(
-        List<Shift> toCover, List<RosterCandidate> candidates, ConstraintSet constraints) {
+    public List<Assignment> generate(GenerationRequest request) {
       return List.of();
     }
   }

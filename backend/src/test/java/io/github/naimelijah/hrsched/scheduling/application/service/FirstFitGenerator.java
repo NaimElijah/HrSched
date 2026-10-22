@@ -1,9 +1,8 @@
 package io.github.naimelijah.hrsched.scheduling.application.service;
 
-import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
-import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,11 +20,10 @@ import java.util.List;
 final class FirstFitGenerator implements RosterGenerator {
 
   @Override
-  public List<Assignment> generate(
-      List<Shift> shifts, List<RosterCandidate> candidates, ConstraintSet constraints) {
+  public List<Assignment> generate(GenerationRequest request) {
     List<Assignment> assignments = new ArrayList<>();
-    for (Shift shift : shifts) {
-      candidates.stream()
+    for (Shift shift : request.shifts()) {
+      request.candidates().stream()
           .filter(candidate -> candidate.couldCover(shift.period(), shift.requiredQualifications()))
           .limit(shift.requiredHeadcount())
           .forEach(candidate -> assignments.add(new Assignment(shift.id(), candidate.id())));

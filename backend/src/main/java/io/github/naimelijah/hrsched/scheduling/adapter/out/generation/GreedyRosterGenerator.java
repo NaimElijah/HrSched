@@ -1,9 +1,9 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.generation;
 
+import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
-import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.EmployeeSchedule;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.WorkingPeriod;
@@ -61,20 +61,21 @@ public class GreedyRosterGenerator implements RosterGenerator {
   }
 
   @Override
-  public List<Assignment> generate(
-      List<Shift> shifts, List<RosterCandidate> candidates, ConstraintSet constraints) {
+  public List<Assignment> generate(GenerationRequest request) {
     List<Assignment> assignments = new ArrayList<>();
     Map<EmployeeId, List<WorkingPeriod>> committed = new LinkedHashMap<>();
 
     List<Shift> chronological =
-        shifts.stream().sorted(Comparator.comparing(shift -> shift.period().start())).toList();
+        request.shifts().stream()
+            .sorted(Comparator.comparing(shift -> shift.period().start()))
+            .toList();
 
     int places = 0;
     int gaps = 0;
     for (Shift shift : chronological) {
       int stillNeeded = shift.requiredHeadcount();
       places += stillNeeded;
-      for (RosterCandidate candidate : candidates) {
+      for (RosterCandidate candidate : request.candidates()) {
         if (stillNeeded == 0) {
           break;
         }
@@ -87,7 +88,10 @@ public class GreedyRosterGenerator implements RosterGenerator {
           continue;
         }
         proposed.add(shift.workingPeriod());
-        if (!constraints.violationsFor(new EmployeeSchedule(candidate.id(), proposed)).isEmpty()) {
+        if (!request
+            .constraints()
+            .violationsFor(new EmployeeSchedule(candidate.id(), proposed))
+            .isEmpty()) {
           continue;
         }
         committed.put(candidate.id(), proposed);

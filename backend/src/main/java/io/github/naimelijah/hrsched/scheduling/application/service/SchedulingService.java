@@ -16,6 +16,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.ViewOwnSchedu
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.Notifier;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ObjectiveWeightsRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
@@ -242,15 +243,18 @@ public class SchedulingService
   @Override
   public Roster generateDraft(Actor actor, GenerateRosterCommand command) {
     authorise(actor, command.organisation(), MAY_SCHEDULE);
-    List<Shift> toCover = shifts.findWithin(command.organisation(), command.period());
-    List<RosterCandidate> candidates = workforce.candidatesFor(actor, command.organisation());
-    ConstraintSet constraints = currentOrInitial(command.organisation());
+    Roster empty = new Roster(RosterId.newId(), command.organisation(), command.period());
+    GenerationRequest request =
+        new GenerationRequest(
+            empty,
+            shifts.findWithin(command.organisation(), command.period()),
+            workforce.candidatesFor(actor, command.organisation()),
+            currentOrInitial(command.organisation()));
 
-    List<Assignment> assignments = generator.generate(toCover, candidates, constraints);
+    List<Assignment> added = generator.generate(request);
 
     Roster draft =
-        new Roster(RosterId.newId(), command.organisation(), command.period())
-            .withAssignments(assignments);
+        empty.withAssignments(Stream.concat(empty.assignments().stream(), added.stream()).toList());
     rosters.save(draft);
     recorded(actor, command.organisation(), SchedulingChange.ROSTER_GENERATED, draft.id().value());
     return draft;

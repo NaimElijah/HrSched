@@ -1,8 +1,6 @@
 package io.github.naimelijah.hrsched.scheduling.application.port.out;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
-import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
-import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import java.util.List;
 
 /**
@@ -19,11 +17,13 @@ import java.util.List;
 public interface RosterGenerator {
 
   /**
-   * @param shifts what needs covering
-   * @param candidates who could cover it
-   * @param constraints the rules any answer must satisfy
-   * @return assignments covering as much as it can, satisfying every constraint
+   * Who to add to the draft. Only additions: what the draft already carries stays, so no generator
+   * can take anybody off it.
+   *
+   * @param request the draft, the shifts it may assign, who may be assigned, and the rules
+   * @return assignments to add, covering as much as it can: each names one of the request's shifts
+   *     and one of its candidates, none is already on the draft, and the draft with them added
+   *     satisfies every constraint
    */
-  List<Assignment> generate(
-      List<Shift> shifts, List<RosterCandidate> candidates, ConstraintSet constraints);
+  List<Assignment> generate(GenerationRequest request);
 }
