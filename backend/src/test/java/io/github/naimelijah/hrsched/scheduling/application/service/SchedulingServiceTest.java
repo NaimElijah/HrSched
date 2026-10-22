@@ -14,6 +14,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseObjecti
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosterAssessment;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosteredShift;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
@@ -23,6 +24,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
@@ -65,6 +67,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -1873,9 +1876,9 @@ class SchedulingServiceTest {
 
   /**
    * The main path, which counting one assignment twice would break. Generation re-covers a shift
-   * running past the end of the week it was published in, and picks the same person for it, so next
-   * week's roster carries Ada on Sunday night too. Either roster may carry that shift (R35), and it
-   * is one place to be, not two (ADR-033).
+   * running past the end of the week it was published in, and carries over whoever that week put on
+   * it (#130), so next week's roster carries Ada on Sunday night too. Either roster may carry that
+   * shift (R35), and it is one place to be, not two (ADR-033).
    */
   @Test
   void GivenAShiftStraddlingIntoNextWeek_WhenNextWeekIsGeneratedAndPublished_ThenItIsPublished() {
@@ -1894,6 +1897,83 @@ class SchedulingServiceTest {
     assertThat(rosters.byId(thisWeek.id()).status())
         .describedAs("rosters that only touch do not supersede each other")
         .isEqualTo(RosterStatus.PUBLISHED);
+  }
+
+  /**
+   * #130: what a generator is asked carries over whoever the published neighbour puts on a shift
+   * this draft covers too, and holds the rest of their work there as time they are busy.
+   */
+  @Test
+  void GivenAStraddlingShiftStaffedOnThePublishedNeighbour_WhenGenerating_ThenTheyAreCarriedOver() {
+    available(ACME, "Ada");
+    EmployeeId grace = available(ACME, "Grace");
+    Roster thisWeek = storedDraft(THE_WEEK);
+    ShiftId sundayNight = shiftAt(SUNDAY_NIGHT);
+    ShiftId sundayEvening =
+        shiftAt(
+            new TimeRange(
+                Instant.parse("2026-10-11T16:00:00Z"), Instant.parse("2026-10-11T20:00:00Z")));
+    assign(thisWeek, sundayNight, grace);
+    assign(thisWeek, sundayEvening, grace);
+    service.publish(scheduler(ACME), ACME, thisWeek.id());
+    List<GenerationRequest> asked = new ArrayList<>();
+
+    Roster nextWeek =
+        generatingWith(
+                request -> {
+                  asked.add(request);
+                  return List.of();
+                })
+            .generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK));
+
+    assertThat(nextWeek.assignments()).containsExactly(new Assignment(sundayNight, grace));
+    assertThat(asked)
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.draft().assignments())
+                  .containsExactly(new Assignment(sundayNight, grace));
+              assertThat(request.heldElsewhere())
+                  .extracting(HeldWork::shift, HeldWork::employee, HeldWork::roster)
+                  .containsExactlyInAnyOrder(
+                      tuple(sundayNight, grace, thisWeek.id()),
+                      tuple(sundayEvening, grace, thisWeek.id()));
+            });
+  }
+
+  /**
+   * Somebody carried over who can no longer legally stay refuses generation, naming the breach,
+   * before a generator is asked anything and before anything is stored or recorded. Leaving them
+   * off instead would have the two rosters disagree about who works the shift.
+   */
+  @Test
+  void GivenSomebodyCarriedOverWhoHasSinceDeclaredThemselvesAway_WhenGenerating_ThenItIsRefused() {
+    EmployeeId grace = available(ACME, "Grace");
+    Roster thisWeek = storedDraft(THE_WEEK);
+    ShiftId sundayNight = shiftAt(SUNDAY_NIGHT);
+    assign(thisWeek, sundayNight, grace);
+    service.publish(scheduler(ACME), ACME, thisWeek.id());
+    workforce.declareUnavailable(ACME, grace, NEXT_MONDAY_EARLY);
+    audit.forget();
+    List<GenerationRequest> asked = new ArrayList<>();
+
+    assertThatThrownBy(
+            () ->
+                generatingWith(
+                        request -> {
+                          asked.add(request);
+                          return List.of();
+                        })
+                    .generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK)))
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations())
+                    .containsExactly(ConstraintViolation.declaredUnavailable(grace, sundayNight)));
+
+    assertThat(asked).isEmpty();
+    assertThat(rosters.findByOrganisation(ACME)).containsExactly(rosters.byId(thisWeek.id()));
+    assertThat(audit.changes()).isEmpty();
   }
 
   @Test

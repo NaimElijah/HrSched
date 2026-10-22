@@ -243,18 +243,63 @@ public class SchedulingService
   @Override
   public Roster generateDraft(Actor actor, GenerateRosterCommand command) {
     authorise(actor, command.organisation(), MAY_SCHEDULE);
-    Roster empty = new Roster(RosterId.newId(), command.organisation(), command.period());
-    GenerationRequest request =
-        new GenerationRequest(
-            empty,
-            shifts.findWithin(command.organisation(), command.period()),
-            workforce.candidatesFor(actor, command.organisation()),
-            currentOrInitial(command.organisation()));
+    GenerationRequest request = generationRequestFor(actor, command);
 
     Roster draft = generated(request, generator.generate(request));
     rosters.save(draft);
     recorded(actor, command.organisation(), SchedulingChange.ROSTER_GENERATED, draft.id().value());
     return draft;
+  }
+
+  /**
+   * Everything generation decides from, with the work people already hold on the rosters that stay
+   * authoritative beside the new draft (R35).
+   *
+   * <p>A shift this draft covers that one of those rosters already staffs keeps the same people:
+   * they start on the draft, count toward its headcount, and the generator fills only the places
+   * left (#130, decided on 2026-10-22). Any other work held there is time its holder is busy.
+   *
+   * @throws RosterNotCompliantException if the work carried over cannot stay: somebody on it is no
+   *     longer eligible for it, or it breaks a rule by itself. Refused before anything is
+   *     generated, because leaving them off would have the published roster and the new draft
+   *     disagree about who works that shift; it is the published one that has to change
+   * @throws RosterNotVerifiableException if a shift held on one of those rosters cannot be resolved
+   */
+  private GenerationRequest generationRequestFor(Actor actor, GenerateRosterCommand command) {
+    OrganisationId organisation = command.organisation();
+    Roster empty = new Roster(RosterId.newId(), organisation, command.period());
+    Map<ShiftId, Shift> toCover = new LinkedHashMap<>();
+    shifts
+        .findWithin(organisation, command.period())
+        .forEach(shift -> toCover.put(shift.id(), shift));
+    List<RosterCandidate> candidates = workforce.candidatesFor(actor, organisation);
+    ConstraintSet constraints = currentOrInitial(organisation);
+    List<Roster> authoritative =
+        rosters.findByOrganisation(organisation).stream()
+            .filter(existing -> existing.staysAuthoritativeBeside(empty))
+            .toList();
+
+    Set<EmployeeId> concerned = new LinkedHashSet<>();
+    candidates.forEach(candidate -> concerned.add(candidate.id()));
+    authoritative.stream()
+        .flatMap(roster -> roster.assignments().stream())
+        .filter(assignment -> toCover.containsKey(assignment.shift()))
+        .forEach(assignment -> concerned.add(assignment.employee()));
+    List<HeldWork> held = heldElsewhere(organisation, authoritative, concerned);
+    Roster seeded =
+        empty.withAssignments(
+            held.stream()
+                .filter(work -> toCover.containsKey(work.shift()))
+                .map(work -> new Assignment(work.shift(), work.employee()))
+                .distinct()
+                .toList());
+
+    List<ConstraintViolation> violations = judged(seeded, constraints, toCover, held, candidates);
+    if (!violations.isEmpty()) {
+      throw new RosterNotCompliantException(violations);
+    }
+    return new GenerationRequest(
+        seeded, List.copyOf(toCover.values()), candidates, constraints, held);
   }
 
   /**
@@ -310,7 +355,7 @@ public class SchedulingService
             broken.add("shift %s is staffed above %d".formatted(shift.value(), allowed));
           }
         });
-    judged(draft, request.constraints(), offered, List.of(), request.candidates())
+    judged(draft, request.constraints(), offered, request.heldElsewhere(), request.candidates())
         .forEach(violation -> broken.add(violation.toString()));
     if (!broken.isEmpty()) {
       throw new IllegalStateException("The generator broke its promises: " + broken);

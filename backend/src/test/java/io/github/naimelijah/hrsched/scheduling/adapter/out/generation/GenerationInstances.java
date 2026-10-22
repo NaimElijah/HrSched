@@ -2,7 +2,9 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.generation;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
+import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWorkingDays;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
@@ -12,6 +14,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
+import io.github.naimelijah.hrsched.scheduling.domain.model.WorkingPeriod;
 import io.github.naimelijah.hrsched.scheduling.domain.model.WorkingTimeConstraint;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -23,7 +26,9 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -57,7 +62,8 @@ final class GenerationInstances {
    * @param seed what every choice is drawn from
    * @param people how many candidates
    * @param shifts how many shifts, each starting on the hour somewhere in {@link #WEEK}
-   * @return a request for an empty draft over {@link #WEEK}
+   * @return a request for a draft over {@link #WEEK}, carrying a little work over from a
+   *     neighbouring roster, beside some work held there that only makes people busy
    */
   static GenerationRequest instance(long seed, int people, int shifts) {
     Random random = new Random(seed);
@@ -92,11 +98,53 @@ final class GenerationInstances {
               new StatedPreferences(maybeASpan(random, 0.5), maybeASpan(random, 0.5))));
     }
 
-    return new GenerationRequest(
-        new Roster(new RosterId(uuid(random)), organisation, WEEK),
-        toCover,
-        candidates,
-        ConstraintSet.initial(organisation).revisedTo(rules(random)));
+    ConstraintSet constraints = ConstraintSet.initial(organisation).revisedTo(rules(random));
+    Roster empty = new Roster(new RosterId(uuid(random)), organisation, WEEK);
+    RosterId neighbour = new RosterId(uuid(random));
+
+    // Invented: some people hold a shift on a neighbouring published roster, which only makes them
+    // busy while it runs.
+    List<HeldWork> held = new ArrayList<>();
+    for (RosterCandidate candidate : candidates) {
+      if (random.nextDouble() < 0.3) {
+        Instant start = WEEK.start().plus(Duration.ofHours(random.nextInt(7 * 24)));
+        held.add(
+            new HeldWork(
+                neighbour,
+                new ShiftId(uuid(random)),
+                candidate.id(),
+                new TimeRange(start, start.plus(Duration.ofHours(4 + random.nextInt(7))))));
+      }
+    }
+
+    // And some hold one of these very shifts there, so the draft starts with them carried over, as
+    // the use case seeds it (#130). Only work that could legally stay is carried, as the use case
+    // refuses anything else before a generator is asked.
+    Roster seeded = empty;
+    for (int attempt = 0; attempt < 3; attempt++) {
+      Shift shift = toCover.get(random.nextInt(toCover.size()));
+      RosterCandidate candidate = candidates.get(random.nextInt(candidates.size()));
+      Assignment carried = new Assignment(shift.id(), candidate.id());
+      if (seeded.assignments().contains(carried)
+          || !candidate.couldCover(shift.period(), shift.requiredQualifications())) {
+        continue;
+      }
+      List<HeldWork> withIt = new ArrayList<>(held);
+      withIt.add(new HeldWork(neighbour, shift.id(), candidate.id(), shift.period()));
+      Roster tried = seeded.with(carried);
+      if (tried.violationsUnder(constraints, periodsOf(toCover), withIt).isEmpty()) {
+        seeded = tried;
+        held = withIt;
+      }
+    }
+
+    return new GenerationRequest(seeded, toCover, candidates, constraints, held);
+  }
+
+  private static Map<ShiftId, WorkingPeriod> periodsOf(List<Shift> shifts) {
+    Map<ShiftId, WorkingPeriod> periods = new LinkedHashMap<>();
+    shifts.forEach(shift -> periods.put(shift.id(), shift.workingPeriod()));
+    return periods;
   }
 
   /**

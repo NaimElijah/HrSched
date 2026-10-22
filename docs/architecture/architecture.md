@@ -241,8 +241,14 @@ sequenceDiagram
     D->>F: findRosterable(actor, organisation)
     F-->>D: RosterableEmployee[]
     D-->>S: RosterCandidate[]
-    S->>G: generate(shifts, candidates, constraints)
-    G-->>S: assignments
+    S->>S: work held on the authoritative rosters beside it (R35)
+    S->>S: seed the draft with whoever they put on its shifts (#130)
+    alt that work cannot stay
+        S-->>C: 422 with every violation listed
+    end
+    S->>G: generate(request)
+    G-->>S: assignments to add
+    S->>S: judge the filled draft; a broken promise is a defect, 500
     S-->>C: 201 DRAFT roster
 
     C->>W: POST /api/rosters/{id}/publication
@@ -521,14 +527,14 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   what the shift demands (R4), and has not declared they cannot work when it runs (F6) — plus that
   the shift falls inside the roster's own period, which generation cannot violate because it only
   ever assigns shifts it found there, and that the person holds no other shift overlapping it (R3):
-  on this draft, which generation cannot violate because it skips anybody already working then, or
-  on a published roster that stays authoritative beside the draft (R35), which generation can,
-  because it is given no other roster's work
+  on this draft, or on a published roster that stays authoritative beside the draft (R35).
+  Generation cannot violate either: it is given that work as time each person is busy, and keeps
+  whoever such a roster already puts on a shift the draft covers
   ([#130](https://github.com/NaimElijah/HrSched/issues/130)). It deliberately leaves the
-  working-time rules to publication,
-  exactly as generation does: those judge a whole schedule rather than a single assignment, so the
-  honest place for them is the step that cannot be bypassed, and a hand-made roster breaking a daily
-  limit is refused at publication just as a generated one is.
+  working-time rules to publication: those judge a whole schedule rather than a single assignment,
+  so the honest place for them is the step that cannot be bypassed, and a hand-made roster breaking
+  a daily limit is refused at publication. Generation, which builds whole schedules, judges them as
+  it fills them, and the use case judges its answer again before storing it.
   The availability half of that was missing at first, and the asymmetry was the point: generation
   filters candidates through `RosterCandidate.couldCover`, which tests availability, so it refused to
   roster somebody through their declared absence while assigning by hand accepted it — and
@@ -554,7 +560,8 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   `findAssessment` (`GET /api/rosters/{id}/assessment`) runs the same `violationsOf` that
   `publish` refuses by, and adds coverage: `Roster.shortfallsAmong` lists each shift in the
   draft's period that it puts fewer people on than required, counting only the draft's own
-  assignments ([#130](https://github.com/NaimElijah/HrSched/issues/130)). It is advisory: named
+  assignments, which include anybody generation carried over from a neighbouring roster
+  ([#130](https://github.com/NaimElijah/HrSched/issues/130)). It is advisory: named
   `find…`, it runs read-only, takes neither the publication lock nor a row lock, stores and records
   nothing, and answers drafts only — a published roster was judged under the version it records
   (Q9), so asking about one is a 409. Admins and Schedulers may ask ([ADR-042](../ADRs/ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md)).
@@ -582,9 +589,17 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   it, as early word. Nothing in the schema backs this up the way `roster_one_published_per_moment`
   backs R11, because `roster_assignment` stores no times. Held work is checked for R3 only: the
   working-time rules still judge one roster at a time
-  ([#131](https://github.com/NaimElijah/HrSched/issues/131)), and generation is given no other
-  roster's work ([#130](https://github.com/NaimElijah/HrSched/issues/130))
+  ([#131](https://github.com/NaimElijah/HrSched/issues/131))
   ([ADR-033](../ADRs/ADR-033-judge-r3-across-authoritative-rosters-under-the-publication-lock.md)).
+- **Generation carries a straddling shift's people over (#130).** Generation reads the same held
+  work, for every candidate and for everybody on a shift the draft covers. Whoever an authoritative
+  roster beside the draft already puts on one of its shifts starts on the draft, counts toward that
+  shift's headcount, and stays: a generator only ever adds. Any other held work is time its holder
+  is busy, so nobody is put where publication would refuse them for R35. If that carried work could
+  not stay (somebody on it has since declared they cannot work then, lost a qualification, or
+  breaks a rule by it alone), generation is refused with the same 422 publication gives, before a
+  generator is asked: leaving them off would have the published roster and the draft disagree
+  about who works the shift ([#130](https://github.com/NaimElijah/HrSched/issues/130)).
 - **Reading the people of an organisation is restricted to Admins and Schedulers**, because
   unavailability is personal data. Generation reaches the same data through the anti-corruption
   layer carrying the Scheduler's own identity, so the restriction holds there too. One person's

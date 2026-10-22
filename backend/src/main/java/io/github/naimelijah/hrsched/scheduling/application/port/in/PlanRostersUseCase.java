@@ -15,9 +15,14 @@ public interface PlanRostersUseCase {
   /**
    * Builds a draft roster covering a period, assigning people to every shift it can.
    *
+   * <p>A shift the draft covers that a published roster beside it already staffs keeps those
+   * people, and nobody is put on a shift overlapping other work they hold there (R35, #130).
+   *
    * @param actor whoever is generating it; must be a Scheduler
    * @param command which organisation and which period
    * @return the draft, which may leave shifts uncovered if nobody eligible is available
+   * @throws RosterNotCompliantException if somebody that published roster puts on one of these
+   *     shifts could not stay on it: the published roster has to change first
    */
   Roster generateDraft(Actor actor, GenerateRosterCommand command);
 
@@ -27,12 +32,12 @@ public interface PlanRostersUseCase {
    * <p>Checks the rules that are about the assignment itself: the person is one of the
    * organisation's own (R5), holds every qualification the shift demands (R4), and has not declared
    * that they cannot work when it runs (F6) — the same three questions generation asks — and holds
-   * no other shift overlapping it (R3): on this draft, which generation never produces either, or
-   * on a published roster that stays authoritative beside it (R35). That last check takes no
+   * no other shift overlapping it (R3): on this draft, or on a published roster that stays
+   * authoritative beside it (R35), neither of which generation produces. That last check takes no
    * publication lock, so publication asks it again (ADR-033). It deliberately does <em>not</em>
-   * check working-time rules, exactly as generation does not: those judge a whole schedule rather
-   * than one assignment, and they are enforced where they can be enforced honestly, at publication,
-   * which cannot be bypassed.
+   * check working-time rules, which generation does as it builds whole schedules: those judge a
+   * whole schedule rather than one assignment, and they are enforced where they can be enforced
+   * honestly, at publication, which cannot be bypassed.
    *
    * @param actor whoever is assigning; must be a Scheduler
    * @param command which draft, which shift, and who

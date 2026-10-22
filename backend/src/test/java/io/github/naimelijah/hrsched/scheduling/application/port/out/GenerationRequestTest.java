@@ -56,10 +56,19 @@ class GenerationRequestTest {
 
   private static Stream<ThrowingCallable> nullFields() {
     return Stream.of(
-        () -> new GenerationRequest(null, List.of(), List.of(), ConstraintSet.initial(ACME)),
-        () -> new GenerationRequest(emptyDraft(), null, List.of(), ConstraintSet.initial(ACME)),
-        () -> new GenerationRequest(emptyDraft(), List.of(), null, ConstraintSet.initial(ACME)),
-        () -> new GenerationRequest(emptyDraft(), List.of(), List.of(), null));
+        () ->
+            new GenerationRequest(
+                null, List.of(), List.of(), ConstraintSet.initial(ACME), List.of()),
+        () ->
+            new GenerationRequest(
+                emptyDraft(), null, List.of(), ConstraintSet.initial(ACME), List.of()),
+        () ->
+            new GenerationRequest(
+                emptyDraft(), List.of(), null, ConstraintSet.initial(ACME), List.of()),
+        () -> new GenerationRequest(emptyDraft(), List.of(), List.of(), null, List.of()),
+        () ->
+            new GenerationRequest(
+                emptyDraft(), List.of(), List.of(), ConstraintSet.initial(ACME), null));
   }
 
   @ParameterizedTest
@@ -75,7 +84,7 @@ class GenerationRequestTest {
     assertThatThrownBy(
             () ->
                 new GenerationRequest(
-                    published, List.of(MONDAY), List.of(), ConstraintSet.initial(ACME)))
+                    published, List.of(MONDAY), List.of(), ConstraintSet.initial(ACME), List.of()))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -87,7 +96,11 @@ class GenerationRequestTest {
     assertThatThrownBy(
             () ->
                 new GenerationRequest(
-                    carrying, List.of(), List.of(candidate(ada)), ConstraintSet.initial(ACME)))
+                    carrying,
+                    List.of(),
+                    List.of(candidate(ada)),
+                    ConstraintSet.initial(ACME),
+                    List.of()))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -101,7 +114,8 @@ class GenerationRequestTest {
                     emptyDraft(),
                     List.of(MONDAY),
                     List.of(candidate(ada), candidate(ada)),
-                    ConstraintSet.initial(ACME)))
+                    ConstraintSet.initial(ACME),
+                    List.of()))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -110,7 +124,8 @@ class GenerationRequestTest {
     List<Shift> shifts = new ArrayList<>(List.of(MONDAY));
     List<RosterCandidate> candidates = new ArrayList<>(List.of(candidate(EmployeeId.newId())));
     GenerationRequest request =
-        new GenerationRequest(emptyDraft(), shifts, candidates, ConstraintSet.initial(ACME));
+        new GenerationRequest(
+            emptyDraft(), shifts, candidates, ConstraintSet.initial(ACME), List.of());
 
     shifts.clear();
     candidates.clear();

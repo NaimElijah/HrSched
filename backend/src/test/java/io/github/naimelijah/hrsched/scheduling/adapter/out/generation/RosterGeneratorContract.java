@@ -7,6 +7,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandid
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWorkingDays;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
@@ -83,11 +84,36 @@ abstract class RosterGeneratorContract {
     return ConstraintSet.initial(ACME).revisedTo(List.of(rules));
   }
 
-  /** Generation into an empty draft for {@link #THE_WEEK}. */
+  static Roster emptyDraft() {
+    return new Roster(RosterId.newId(), ACME, THE_WEEK);
+  }
+
+  /** Generation into an empty draft for {@link #THE_WEEK}, with nothing held elsewhere. */
   static GenerationRequest request(
       List<Shift> shifts, List<RosterCandidate> candidates, ConstraintSet constraints) {
+    return new GenerationRequest(emptyDraft(), shifts, candidates, constraints, List.of());
+  }
+
+  /** {@code holder}'s copy of {@code shift} on a neighbouring published roster. */
+  static HeldWork heldOn(Shift shift, RosterCandidate holder) {
+    return new HeldWork(RosterId.newId(), shift.id(), holder.id(), shift.period());
+  }
+
+  /**
+   * Generation of {@code shift} into a draft already carrying {@code holder} on it, as the use case
+   * seeds a draft when a neighbouring roster staffs that shift (#130).
+   */
+  static GenerationRequest carrying(
+      Shift shift,
+      RosterCandidate holder,
+      List<RosterCandidate> candidates,
+      ConstraintSet constraints) {
     return new GenerationRequest(
-        new Roster(RosterId.newId(), ACME, THE_WEEK), shifts, candidates, constraints);
+        emptyDraft().with(new Assignment(shift.id(), holder.id())),
+        List.of(shift),
+        candidates,
+        constraints,
+        List.of(heldOn(shift, holder)));
   }
 
   /**
@@ -146,7 +172,7 @@ abstract class RosterGeneratorContract {
     Map<ShiftId, WorkingPeriod> periods = new LinkedHashMap<>();
     shifts.forEach((id, shift) -> periods.put(id, shift.workingPeriod()));
     filled
-        .violationsUnder(request.constraints(), periods, List.of())
+        .violationsUnder(request.constraints(), periods, request.heldElsewhere())
         .forEach(violation -> breaches.add(violation.toString()));
     return breaches;
   }
@@ -323,6 +349,106 @@ abstract class RosterGeneratorContract {
 
     assertThat(added).hasSize(2);
     assertThat(added.stream().map(Assignment::employee).distinct()).hasSize(2);
+  }
+
+  /**
+   * R35: a different shift held on another authoritative roster makes its holder busy while it
+   * runs, however free this draft leaves them.
+   */
+  @Test
+  void GivenWorkHeldElsewhereOverlappingAShift_WhenGenerating_ThenItsHolderIsNotPutOnIt() {
+    Shift monday = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1, Set.of());
+    RosterCandidate ada = anyone("Ada");
+    HeldWork evening =
+        new HeldWork(
+            RosterId.newId(),
+            ShiftId.newId(),
+            ada.id(),
+            new TimeRange(
+                Instant.parse("2026-10-05T15:00:00Z"), Instant.parse("2026-10-05T23:00:00Z")));
+
+    List<Assignment> added =
+        generator()
+            .generate(
+                new GenerationRequest(
+                    emptyDraft(),
+                    List.of(monday),
+                    List.of(ada),
+                    ConstraintSet.initial(ACME),
+                    List.of(evening)));
+
+    assertThat(added).isEmpty();
+  }
+
+  /** #130: people carried over count toward the headcount, and stay; only the rest is filled. */
+  @Test
+  void GivenADraftAlreadyCarryingSomebody_WhenGenerating_ThenOnlyThePlacesLeftAreFilled() {
+    Shift needsTwo = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 2, Set.of());
+    RosterCandidate grace = anyone("Grace");
+
+    List<Assignment> added =
+        generator()
+            .generate(
+                carrying(
+                    needsTwo,
+                    grace,
+                    List.of(anyone("Ada"), grace, anyone("Alan")),
+                    ConstraintSet.initial(ACME)));
+
+    assertThat(added).hasSize(1);
+    assertThat(added).extracting(Assignment::employee).doesNotContain(grace.id());
+  }
+
+  /**
+   * People carried over beyond the headcount stay too, because the generator only ever adds, and
+   * nobody is added beside them.
+   */
+  @Test
+  void GivenADraftCarryingMoreThanAShiftNeeds_WhenGenerating_ThenNobodyIsAddedToIt() {
+    Shift needsOne = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1, Set.of());
+    RosterCandidate grace = anyone("Grace");
+    RosterCandidate alan = anyone("Alan");
+    Roster overstaffed =
+        emptyDraft()
+            .withAssignments(
+                List.of(
+                    new Assignment(needsOne.id(), grace.id()),
+                    new Assignment(needsOne.id(), alan.id())));
+
+    List<Assignment> added =
+        generator()
+            .generate(
+                new GenerationRequest(
+                    overstaffed,
+                    List.of(needsOne),
+                    List.of(anyone("Ada"), grace, alan),
+                    ConstraintSet.initial(ACME),
+                    List.of(heldOn(needsOne, grace), heldOn(needsOne, alan))));
+
+    assertThat(added).isEmpty();
+  }
+
+  /** Work carried over is work its holder does in this roster, so their rules count it. */
+  @Test
+  void GivenCarriedWork_WhenGenerating_ThenItCountsTowardItsHoldersRules() {
+    Shift monday = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1, Set.of());
+    Shift tuesday = shift("2026-10-06T08:00:00Z", "2026-10-06T16:00:00Z", 1, Set.of());
+    RosterCandidate ada = anyone("Ada");
+    // Invented: twelve hours, room for one eight-hour shift and not two.
+    ConstraintSet twelveHourWeeks = rules(new MaximumWeeklyWorkingTime(Duration.ofHours(12)));
+
+    GenerationRequest request = carrying(monday, ada, List.of(ada), twelveHourWeeks);
+    List<Assignment> added =
+        generator()
+            .generate(
+                new GenerationRequest(
+                    request.draft(),
+                    List.of(monday, tuesday),
+                    request.candidates(),
+                    twelveHourWeeks,
+                    request.heldElsewhere()));
+
+    assertThat(added).isEmpty();
   }
 
   @Test
