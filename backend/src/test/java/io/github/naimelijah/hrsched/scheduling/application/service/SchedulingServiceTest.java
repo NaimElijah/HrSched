@@ -750,6 +750,32 @@ class SchedulingServiceTest {
     assertThat(audit.changes()).containsExactly(SchedulingChange.GENERATION_REQUESTED);
   }
 
+  /**
+   * ADR-046: whatever ends a solve unhandled ends its generation failed, so nobody polling it waits
+   * until it reads as lost. An Error too: a solve at the largest stated size runs to gigabytes.
+   */
+  @Test
+  void GivenASolveEndedByAnError_WhenGenerating_ThenTheGenerationFailsAndTheErrorIsThrownOn() {
+    available(ACME, "Ada");
+    aShift(ACME, Set.of());
+    OutOfMemoryError invented = new OutOfMemoryError("an invented error");
+
+    assertThatThrownBy(
+            () ->
+                generatingWith(
+                        request -> {
+                          throw invented;
+                        })
+                    .startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)))
+        .isSameAs(invented);
+
+    assertThat(generations.all())
+        .singleElement()
+        .extracting(RosterGeneration::status)
+        .isEqualTo(GenerationStatus.FAILED);
+    assertThat(rosters.findByOrganisation(ACME)).isEmpty();
+  }
+
   @Test
   void GivenAGenerationOfAnotherOrganisation_WhenReadByOurScheduler_ThenItIsRefused() {
     GenerationState theirs =

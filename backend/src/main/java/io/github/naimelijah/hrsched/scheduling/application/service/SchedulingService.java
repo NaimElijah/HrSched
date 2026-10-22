@@ -333,14 +333,16 @@ public class SchedulingService
           command.organisation(),
           SchedulingChange.GENERATION_REFUSED,
           requested.id().value());
-    } catch (RuntimeException failure) {
+    } catch (RuntimeException | Error failure) {
+      // An Error too, such as running out of memory: unrecorded, the generation would stay pending
+      // until it read as lost, and the Scheduler would be told the server stopped.
       try {
         units.writing(
             () -> {
               generations.save(requested.failed(clock.instant()));
               return requested;
             });
-      } catch (RuntimeException unrecorded) {
+      } catch (RuntimeException | Error unrecorded) {
         failure.addSuppressed(unrecorded);
       }
       throw failure;

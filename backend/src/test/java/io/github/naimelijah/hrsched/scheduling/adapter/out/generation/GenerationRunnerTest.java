@@ -3,6 +3,11 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.generation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
@@ -10,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 /**
@@ -104,6 +110,44 @@ class GenerationRunnerTest {
     startWhenFree(next::countDown);
 
     assertThat(next.await(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
+  }
+
+  /**
+   * An Error ending a solve, such as running out of memory, is logged here at ERROR as an exception
+   * is, with the trace it ran under, rather than reaching only the thread's default handler. The
+   * pool replaces the thread it ends, so the next solve still runs.
+   */
+  @Test
+  void GivenWorkEndedByAnError_WhenTheNextIsStarted_ThenTheErrorWasLoggedAndTheNextStillRuns()
+      throws InterruptedException {
+    Logger logger =
+        ((LoggerContext) LoggerFactory.getILoggerFactory())
+            .getLogger(GenerationRunner.class.getName());
+    ListAppender<ILoggingEvent> captured = new ListAppender<>();
+    captured.start();
+    logger.addAppender(captured);
+    try {
+      OutOfMemoryError invented = new OutOfMemoryError("an invented error");
+      runner.start(
+          () -> {
+            throw invented;
+          });
+      CountDownLatch next = new CountDownLatch(1);
+
+      startWhenFree(next::countDown);
+
+      assertThat(next.await(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
+      assertThat(captured.list)
+          .singleElement()
+          .satisfies(
+              logged -> {
+                assertThat(logged.getLevel()).isEqualTo(Level.ERROR);
+                assertThat(logged.getThrowableProxy().getMessage())
+                    .isEqualTo(invented.getMessage());
+              });
+    } finally {
+      logger.detachAppender(captured);
+    }
   }
 
   /**

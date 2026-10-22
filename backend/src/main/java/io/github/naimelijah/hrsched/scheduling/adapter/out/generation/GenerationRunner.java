@@ -77,6 +77,11 @@ public class GenerationRunner implements BackgroundWork {
       work.run();
     } catch (RuntimeException failure) {
       log.atError().setCause(failure).log("Roster generation failed");
+    } catch (Error failure) {
+      // Logged here, with the trace it ran under, then thrown on: the thread it ends is replaced by
+      // the pool, and the default handler alone would only print it.
+      log.atError().setCause(failure).log("Roster generation failed");
+      throw failure;
     } finally {
       MDC.clear();
     }
