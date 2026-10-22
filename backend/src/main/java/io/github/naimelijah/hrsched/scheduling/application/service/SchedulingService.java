@@ -493,8 +493,14 @@ public class SchedulingService
             broken.add("shift %s is staffed above %d".formatted(shift.value(), allowed));
           }
         });
+    // Never a violation's detail: it says how long somebody worked on a day, or when they rested,
+    // and this message is logged where the solve ran.
     judged(draft, request.constraints(), offered, request.heldElsewhere(), request.candidates())
-        .forEach(violation -> broken.add(violation.toString()));
+        .forEach(
+            violation ->
+                broken.add(
+                    "employee %s breaks %s"
+                        .formatted(violation.employee().value(), violation.constraint())));
     if (!broken.isEmpty()) {
       throw new IllegalStateException("The generator broke its promises: " + broken);
     }

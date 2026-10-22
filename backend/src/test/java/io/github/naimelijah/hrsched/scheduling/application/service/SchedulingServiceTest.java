@@ -515,6 +515,31 @@ class SchedulingServiceTest {
     assertGenerationRefused(request -> List.of(new Assignment(day, ada)));
   }
 
+  /**
+   * The defect is logged where the solve ran, and a violation's detail is roster data: how long
+   * somebody worked on a day, or rested between two shifts. So the defect names the rule and whose
+   * schedule breaks it, by identity only.
+   */
+  @Test
+  void GivenAGeneratorBreakingAWorkingTimeRule_WhenGenerating_ThenTheDefectNamesNoHoursOrDays() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId day = aShift(ACME, Set.of());
+    // Invented: one hour a day, which the eight-hour shift cannot satisfy.
+    service.reviseConstraints(
+        admin(ACME),
+        new ReviseConstraintsCommand(
+            ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(1)))));
+
+    assertThatThrownBy(
+            () ->
+                generatingWith(request -> List.of(new Assignment(day, ada)))
+                    .startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(
+            "employee %s breaks maximum daily working time".formatted(ada.value()))
+        .hasMessageNotContaining("worked on");
+  }
+
   @Test
   void
       GivenAGeneratorRosteringSomebodyThroughTheirDeclaredAbsence_WhenGenerating_ThenNothingIsStored() {
