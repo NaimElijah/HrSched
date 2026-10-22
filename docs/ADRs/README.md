@@ -51,6 +51,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-042](ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md) | Judge a roster by one check that publication and an advisory read share | Accepted | 2026-10-19 |
 | [ADR-043](ADR-043-defer-typescript-7-until-typescript-eslint-supports-it.md) | Stay on TypeScript 6 until typescript-eslint supports TypeScript 7 | Accepted | 2026-10-20 |
 | [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md) | Generate rosters with CP-SAT from Google OR-Tools | Accepted | 2026-10-22 |
+| [ADR-045](ADR-045-generate-outside-the-use-cases-transaction.md) | Generate outside the use case's transaction, between a read and a write | Accepted | 2026-10-22 |
 
 ## Decisions waiting to be recorded
 
