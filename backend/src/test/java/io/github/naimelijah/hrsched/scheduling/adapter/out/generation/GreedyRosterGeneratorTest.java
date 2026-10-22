@@ -2,123 +2,52 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.generation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
-import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
-import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
-import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
-import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
-import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
-import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
-import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
- * Specification of the placeholder generator.
+ * Specification of the placeholder generator: every promise in {@link RosterGeneratorContract},
+ * plus what only greedy does.
  *
- * <p>It is asserted on for what it promises — never breaking a rule, and leaving a shift short
- * rather than filling it illegally — and deliberately not for roster quality, which it makes no
- * attempt at. See ADR-005.
+ * <p>It is asserted on for what it promises, and deliberately not for roster quality, which it
+ * makes no attempt at. See ADR-005.
  *
  * <p>Every constraint value below is invented to force a specific outcome and says nothing about
  * any jurisdiction.
  */
-class GreedyRosterGeneratorTest {
+class GreedyRosterGeneratorTest extends RosterGeneratorContract {
 
-  private static final OrganisationId ACME = OrganisationId.newId();
-  private static final TimeRange SPAN =
-      new TimeRange(Instant.parse("2026-09-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z"));
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private final GreedyRosterGenerator generator = new GreedyRosterGenerator(meters);
+
+  @Override
+  protected RosterGenerator generator() {
+    return generator;
+  }
 
   private DistributionSummary summary(String name) {
     return meters.get(name).summary();
   }
 
-  private static Shift shift(String start, String end, int headcount, Set<QualificationId> needed) {
-    return new Shift(
-        ShiftId.newId(),
-        ACME,
-        new TimeRange(Instant.parse(start), Instant.parse(end)),
-        ZoneOffset.UTC,
-        headcount,
-        needed,
-        false);
-  }
-
-  /** Generation into an empty draft over a span holding every shift below. */
-  private static GenerationRequest request(
-      List<Shift> shifts, List<RosterCandidate> candidates, ConstraintSet constraints) {
-    return new GenerationRequest(
-        new Roster(RosterId.newId(), ACME, SPAN), shifts, candidates, constraints);
-  }
-
-  private static RosterCandidate anyone(String name) {
-    return new RosterCandidate(
-        EmployeeId.newId(), name, Set.of(), List.of(), StatedPreferences.none());
-  }
-
-  @Test
-  void GivenNobodyQualified_WhenGenerating_ThenTheShiftIsLeftShortRatherThanFilled() {
-    Shift needsATicket =
-        shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1, Set.of(QualificationId.newId()));
-
-    List<Assignment> assignments =
-        generator.generate(
-            request(List.of(needsATicket), List.of(anyone("Ada")), ConstraintSet.initial(ACME)));
-
-    assertThat(assignments)
-        .describedAs("a roster honest about a gap beats one that hides it")
-        .isEmpty();
-  }
-
-  @Test
-  void GivenOnePersonAndTwoOverlappingShifts_WhenGenerating_ThenTheyCoverOnlyOne() {
-    Shift morning = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1, Set.of());
-    Shift clashing = shift("2026-10-05T12:00:00Z", "2026-10-05T20:00:00Z", 1, Set.of());
-
-    List<Assignment> assignments =
-        generator.generate(
-            request(
-                List.of(morning, clashing), List.of(anyone("Ada")), ConstraintSet.initial(ACME)));
-
-    assertThat(assignments).hasSize(1);
-  }
-
-  @Test
-  void GivenAConstraintTheAssignmentWouldBreak_WhenGenerating_ThenNobodyIsAssigned() {
-    Shift eightHours = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1, Set.of());
-    // Invented: one hour a day, which no eight-hour shift can satisfy.
-    ConstraintSet oneHourDays =
-        ConstraintSet.initial(ACME)
-            .revisedTo(List.of(new MaximumDailyWorkingTime(Duration.ofHours(1))));
-
-    List<Assignment> assignments =
-        generator.generate(request(List.of(eightHours), List.of(anyone("Ada")), oneHourDays));
-
-    assertThat(assignments).isEmpty();
-  }
-
   /**
-   * Generation judges the same rules publication does, so it counts days in each shift's zone too
-   * (R36). Both Tokyo shifts fall on the 7th there, twelve hours against an invented cap of ten, so
-   * Ada can take only the first. Counted in UTC they straddle two days and she would get both.
+   * Greedy takes shifts in the order they start, so of two it cannot both give one person, that
+   * person gets the earlier. The contract asks only that they get one of them.
    */
   @Test
-  void GivenTwoShiftsOnOneLocalDay_WhenGeneratingUnderADailyCap_ThenOnlyOneIsAssignedToThem() {
+  void GivenTwoShiftsOnOneLocalDay_WhenGeneratingUnderADailyCap_ThenTheEarlierIsTheOneAssigned() {
     ZoneId tokyo = ZoneId.of("Asia/Tokyo");
     Shift lateNight =
         new Shift(
@@ -140,30 +69,14 @@ class GreedyRosterGeneratorTest {
             1,
             Set.of(),
             false);
-    ConstraintSet tenHourDays =
-        ConstraintSet.initial(ACME)
-            .revisedTo(List.of(new MaximumDailyWorkingTime(Duration.ofHours(10))));
+    // Invented: ten hours a day, two hours short of both shifts together.
+    ConstraintSet tenHourDays = rules(new MaximumDailyWorkingTime(Duration.ofHours(10)));
 
-    List<Assignment> assignments =
+    List<Assignment> added =
         generator.generate(
-            request(List.of(lateNight, morning), List.of(anyone("Ada")), tenHourDays));
+            request(List.of(morning, lateNight), List.of(anyone("Ada")), tenHourDays));
 
-    assertThat(assignments).extracting(Assignment::shift).containsExactly(lateNight.id());
-  }
-
-  @Test
-  void GivenEnoughPeople_WhenGenerating_ThenHeadcountIsMetWithoutRepeatingAnyone() {
-    Shift needsTwo = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 2, Set.of());
-
-    List<Assignment> assignments =
-        generator.generate(
-            request(
-                List.of(needsTwo),
-                List.of(anyone("Ada"), anyone("Grace"), anyone("Alan")),
-                ConstraintSet.initial(ACME)));
-
-    assertThat(assignments).hasSize(2);
-    assertThat(assignments.stream().map(Assignment::employee).distinct()).hasSize(2);
+    assertThat(added).extracting(Assignment::shift).containsExactly(lateNight.id());
   }
 
   @Test
