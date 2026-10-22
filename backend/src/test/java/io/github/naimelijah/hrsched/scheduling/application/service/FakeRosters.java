@@ -16,6 +16,7 @@ final class FakeRosters implements RosterRepository {
 
   private final Map<RosterId, Roster> stored = new LinkedHashMap<>();
   private final CallLog log;
+  private Runnable onSave = () -> {};
 
   /** A store recording into a log of its own. */
   FakeRosters() {
@@ -54,6 +55,15 @@ final class FakeRosters implements RosterRepository {
           roster.id(), before, "a roster can only be changed while a draft");
     }
     stored.put(roster.id(), roster);
+    onSave.run();
+  }
+
+  /**
+   * Runs {@code observer} after every save, so a test can see where a use case stored something:
+   * inside which unit of work, for one.
+   */
+  void observeSaves(Runnable observer) {
+    onSave = observer;
   }
 
   /**

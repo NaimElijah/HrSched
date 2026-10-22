@@ -1,6 +1,8 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
@@ -80,5 +82,43 @@ final class SchedulingHttpRequests {
       MockMvc mockMvc, MockHttpServletRequestBuilder request, String organisation, String employee)
       throws Exception {
     return TestTenants.asThemself(mockMvc, request, organisation, employee);
+  }
+
+  /**
+   * Generates a draft over HTTP the way the SPA does (ADR-046): start it, answered 202, then read
+   * how it ended. The suite runs each generation on the requesting thread, so it has ended by then.
+   *
+   * @param mockMvc the client whose Spring context issues the token
+   * @param organisation the organisation generating
+   * @param start the span's start, an ISO-8601 instant
+   * @param end the span's end
+   * @return the draft's identity
+   * @throws AssertionError if the generation did not end with a draft
+   */
+  static String generateDraft(MockMvc mockMvc, String organisation, String start, String end)
+      throws Exception {
+    String started =
+        mockMvc
+            .perform(
+                as(mockMvc, post("/api/rosters/generations"), organisation, "SCHEDULER")
+                    .content("{\"start\":\"%s\",\"end\":\"%s\"}".formatted(start, end)))
+            .andExpect(status().isAccepted())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String ended =
+        mockMvc
+            .perform(
+                as(
+                    mockMvc,
+                    get("/api/rosters/generations/" + JsonPath.read(started, "$.id")),
+                    organisation,
+                    "SCHEDULER"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("SUCCEEDED"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return JsonPath.read(ended, "$.roster");
   }
 }

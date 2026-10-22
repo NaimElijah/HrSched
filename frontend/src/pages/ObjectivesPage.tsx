@@ -66,8 +66,8 @@ export function ObjectivesPage() {
       <p className="hint">
         Each objective is a count, and lower is better. A weight says how much it matters against
         the others; blank means it is not weighed. A draft&apos;s check shows each count and the
-        weighted total. Weights never make a roster legal or illegal, and generation does not use
-        them yet.
+        weighted total. Weights never make a roster legal or illegal. Generation fills every place
+        it can first, then keeps the weighted total as low as it can.
       </p>
 
       <form onSubmit={revise} className="grid">

@@ -44,7 +44,7 @@ A context may reference another context's `application.port.in` package and **no
   touches an adapter, a context reaches past another's published ports, the kernel depends on a
   context, or a context's layers form a cycle. Never weaken or delete a rule to make code pass —
   the rule is the point. Deleting one that provably cannot fail is different, and needs the proof.
-- **When adding an architecture rule, watch it fail first.** All ten rules here have been
+- **When adding an architecture rule, watch it fail first.** All eleven rules here have been
   observed failing on a deliberately introduced violation, then reverted; a rule that has only
   ever been green proves nothing. The same applies to a test: a fix whose test was never seen
   failing has not been shown to fix anything.
@@ -105,7 +105,13 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
 - **Every use case is one transaction**, wrapped in `UseCaseConfiguration` rather than annotated,
   because the architecture test forbids Spring in the application layer (ADR-023). The wrapper,
   `TransactionalUseCases`, is a subclass proxy: a service must stay non-final, a service calling
-  its own method bypasses it, and only methods named `find…` run read-only.
+  its own method bypasses it, and only methods named `find…` run read-only. **The one exception is
+  `startGeneration`** (ADR-045, ADR-046): the proxy leaves it alone, and it marks out its own units
+  through `UnitsOfWork`, so the generation commits before its solve is handed to a thread and the
+  solve holds no connection. Do not add another without an ADR.
+- **Generations run on `GenerationRunner`'s threads, but not under test.** The shared test context
+  (`PostgresBackedApplication`) replaces it with a runner that works on the calling thread, so an
+  HTTP test's generation has ended by the time the request starting it is answered.
 - **Publications within an organisation take turns.** `RosterRepository.lockPublicationsOf` takes
   a transaction-scoped advisory lock, before any read the decision depends on: in `publish`, and
   in raising, approving and rejecting a swap (ADR-027, ADR-039). It throws outside a use case's

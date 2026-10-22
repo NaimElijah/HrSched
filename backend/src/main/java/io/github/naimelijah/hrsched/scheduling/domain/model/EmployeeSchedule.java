@@ -1,11 +1,8 @@
 package io.github.naimelijah.hrsched.scheduling.domain.model;
 
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
-import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZonedDateTime;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -60,22 +57,7 @@ public record EmployeeSchedule(EmployeeId employee, List<WorkingPeriod> workingP
   public Map<LocalDate, Duration> workingTimePerDay() {
     Map<LocalDate, Duration> perDay = new TreeMap<>();
     for (WorkingPeriod working : workingPeriods) {
-      TimeRange period = working.period();
-      Instant cursor = period.start();
-      while (cursor.isBefore(period.end())) {
-        LocalDate day = LocalDate.ofInstant(cursor, working.zone());
-        ZonedDateTime nextDay = day.plusDays(1).atStartOfDay(working.zone());
-        // When the clocks go back across midnight, the next day starts twice and atStartOfDay
-        // answers with the first, which can lie before the cursor. The day being counted runs
-        // until the second.
-        if (!nextDay.toInstant().isAfter(cursor)) {
-          nextDay = nextDay.withLaterOffsetAtOverlap();
-        }
-        Instant midnight = nextDay.toInstant();
-        Instant sliceEnd = midnight.isBefore(period.end()) ? midnight : period.end();
-        perDay.merge(day, Duration.between(cursor, sliceEnd), Duration::plus);
-        cursor = sliceEnd;
-      }
+      working.timePerDay().forEach((day, time) -> perDay.merge(day, time, Duration::plus));
     }
     return Collections.unmodifiableMap(perDay);
   }

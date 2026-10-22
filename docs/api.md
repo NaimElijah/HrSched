@@ -26,7 +26,7 @@ exact role. A resource in another organisation answers `404`, the same as one th
 | Rules | `PUT /api/constraints`; `GET /api/constraints`, `/{version}` | Admin; reading any member |
 | Objectives | `PUT /api/objectives`; `GET /api/objectives` | Admin; reading any member |
 | Shifts | `POST /api/shifts`; `GET /api/shifts?from&to`, `/{id}` | Scheduler; reading any member |
-| Rosters | `POST /api/rosters`, `/{id}/assignments`, `/{id}/publication`; `DELETE /{id}/assignments/{shift}/{employee}`; `GET` list and one, and `/{id}/assessment` | Scheduler; reading and checking also Admin |
+| Rosters | `POST /api/rosters/generations`, `/{id}/assignments`, `/{id}/publication`; `DELETE /{id}/assignments/{shift}/{employee}`; `GET` list and one, `/{id}/assessment`, and `/generations/{id}` | Scheduler; reading, checking and reading a generation also Admin |
 | Swaps | `POST /api/swaps`, `/{id}/approval`, `/{id}/rejection`; `GET` list and one | Asking: the person, Admin or Scheduler; deciding: Scheduler; reading: the parties |
 | Me | `GET /api/me/schedule?from&to`; `GET /api/notifications`; `POST /api/notifications/{id}/read` | Any member, their own only |
 
@@ -105,9 +105,12 @@ api "$ADMIN" -X PUT localhost:8080/api/constraints \
 api "$SCHEDULER" -X POST localhost:8080/api/shifts -d '{"start":"2026-11-02T08:00:00Z",
   "end":"2026-11-02T16:00:00Z","zone":"Europe/London","requiredHeadcount":1}'
 
-# 4. Generate a draft for the day, then publish it.
-ROSTER=$(api "$SCHEDULER" -X POST localhost:8080/api/rosters \
+# 4. Generate a draft for the day. It runs in the background: ask until it ends, then publish.
+GENERATION=$(api "$SCHEDULER" -X POST localhost:8080/api/rosters/generations \
   -d '{"start":"2026-11-02T00:00:00Z","end":"2026-11-03T00:00:00Z"}' | jq -r .id)
+generation() { api "$SCHEDULER" "localhost:8080/api/rosters/generations/$GENERATION"; }
+while [ "$(generation | jq -r .status)" = PENDING ]; do sleep 1; done
+ROSTER=$(generation | jq -r .roster)
 api "$SCHEDULER" -X POST "localhost:8080/api/rosters/$ROSTER/publication"
 ```
 
@@ -116,6 +119,23 @@ The last call answers with the published roster, shown in the README's
 it as work people would rather not do; left out, it is not marked
 ([ADR-010](ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). A `PUT /api/constraints` replaces the whole set rather than
 merging into it, and every limit is optional: one left out is not enforced.
+
+## Generating a draft
+
+`POST /api/rosters/generations` with a `start` and an `end` answers `202` at once, with where to read
+the generation in `Location`, because a solve at the largest stated size takes minutes ([ADR-046](ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)).
+`GET /api/rosters/generations/{id}` then answers its `status`:
+
+- `PENDING` while it is solved.
+- `SUCCEEDED`, with the draft's id in `roster`.
+- `REFUSED`, with `violations` in the shape a publication refusal uses: people a published roster
+  carries onto these shifts can no longer stay on them, and it is that roster that has to change
+  ([#130](https://github.com/NaimElijah/HrSched/issues/130)).
+- `FAILED`, a defect the server logged.
+- `LOST`, still pending past `hrsched.generation.lost-after`: the server solving it stopped.
+
+When an instance is already solving `hrsched.generation.concurrent-runs` generations, one more
+answers `503` rather than waiting.
 
 ## Checking a draft
 

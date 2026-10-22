@@ -12,6 +12,11 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: 'chore(deps)'
+    ignore:
+      # From 9.13 on, OR-Tools' Windows libraries crash the JVM on the Visual C++ runtime JDK 21
+      # bundles. Remove when the JDK developers run bundles 14.40 or later (ADR-044).
+      - dependency-name: 'com.google.ortools:*'
+        versions: ['>= 9.13']
 
   # ADR-007 warned that a second ecosystem needs its own entry, and that forgetting it means
   # silent non-coverage rather than a visible failure.

@@ -15,7 +15,8 @@ import java.util.Optional;
  * from the statute. A set belonging to no jurisdiction at all is equally valid.
  *
  * <p>Sealed so that the constraints the system can express are enumerable in one place, which is
- * what lets a configuration format and a future solver be written against them exhaustively.
+ * what lets a configuration format and the solver be written against them exhaustively: the
+ * solver's model states each kind in a {@code switch} with no default (ADR-044).
  *
  * <p>Every constraint here is HARD. A schedule either satisfies it or the roster cannot be
  * published; there is no override and no weighting. What a generator should merely *prefer* is a

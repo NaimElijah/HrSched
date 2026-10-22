@@ -17,9 +17,11 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPe
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownConstraintVersionException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownGenerationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
@@ -66,6 +68,8 @@ public class SchedulingExceptionHandler {
   private static final String DENIED = "hrsched.access.denied";
 
   private static final String REFUSED = "hrsched.rosters.refused";
+
+  private static final String GENERATIONS_BUSY = "hrsched.generations.busy";
 
   private final MeterRegistry meters;
 
@@ -264,11 +268,29 @@ public class SchedulingExceptionHandler {
   }
 
   /**
+   * As many generations as an instance may run at once already are (ADR-046). A 503 rather than a
+   * 4xx: nothing about the request was wrong, and asking again shortly may succeed.
+   */
+  @ExceptionHandler(TooManyGenerationsException.class)
+  public ProblemDetail handleTooManyGenerations(TooManyGenerationsException exception) {
+    log.atWarn().log("Generation refused: every run is busy");
+    Counter.builder(GENERATIONS_BUSY)
+        .description("Generations refused because every run was busy: saturation")
+        .register(meters)
+        .increment();
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
+    problem.setTitle("Generation is busy");
+    return problem;
+  }
+
+  /**
    * Everything reported as absence, including a cross-tenant attempt: the response must never
    * confirm that a resource exists in an organisation the caller may not see.
    */
   @ExceptionHandler({
     UnknownRosterException.class,
+    UnknownGenerationException.class,
     UnknownShiftException.class,
     UnknownAssigneeException.class,
     UnknownAssignmentException.class,

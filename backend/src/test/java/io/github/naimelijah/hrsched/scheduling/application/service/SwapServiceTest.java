@@ -11,6 +11,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRoste
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PublishedSwapRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RequestSwapCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
@@ -19,15 +20,14 @@ import io.github.naimelijah.hrsched.scheduling.application.service.RecordingNoti
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
-import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationPolicy;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
-import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException;
@@ -101,6 +101,13 @@ class SwapServiceTest {
   private FakeSwaps swaps;
   private RecordingNotifier notifier;
   private RecordingAuditTrail audit;
+  private FakeGenerations generations;
+
+  /**
+   * Invented: how long a generation may stay pending here; every one ends on the calling thread.
+   */
+  private static final GenerationPolicy LOST_AFTER = new GenerationPolicy(Duration.ofMinutes(15));
+
   private SchedulingService scheduling;
   private SwapService service;
 
@@ -117,6 +124,7 @@ class SwapServiceTest {
     swaps = new FakeSwaps(log);
     notifier = new RecordingNotifier();
     audit = new RecordingAuditTrail();
+    generations = new FakeGenerations();
     scheduling =
         new SchedulingService(
             shifts,
@@ -126,6 +134,10 @@ class SwapServiceTest {
             swaps,
             workforce,
             new AssignsNobody(),
+            new RecordingUnitsOfWork(),
+            generations,
+            Runnable::run,
+            LOST_AFTER,
             notifier,
             audit,
             Clock.fixed(RAISED_AT, ZoneOffset.UTC));
@@ -176,7 +188,7 @@ class SwapServiceTest {
    */
   private Roster publishedWith(EmployeeId who, ShiftId shift) {
     Roster draft =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, who));
     return scheduling.publish(scheduler(ACME), ACME, draft.id());
   }
@@ -287,7 +299,7 @@ class SwapServiceTest {
   void GivenADraftRoster_WhenAskingForASwapAgainstIt_ThenItIsRefused() {
     ShiftId shift = aShift(Set.of());
     Roster draft =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
     assertThatThrownBy(
             () ->
@@ -447,7 +459,7 @@ class SwapServiceTest {
             scheduler(ACME),
             new DefineShiftCommand(ACME, earlyMonday, ZoneOffset.UTC, 1, Set.of(), false));
     Roster draft =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), monday, ada));
     scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), early, grace));
     Roster original = scheduling.publish(scheduler(ACME), ACME, draft.id());
@@ -561,7 +573,7 @@ class SwapServiceTest {
             scheduler(ACME),
             new DefineShiftCommand(ACME, afternoon, ZoneOffset.UTC, 1, Set.of(), false));
     Roster draft =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), day, ada));
     scheduling.assign(
         scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), gracesAfternoon, grace));
@@ -607,7 +619,7 @@ class SwapServiceTest {
             new DefineShiftCommand(ACME, sundayNight, ZoneOffset.UTC, 1, Set.of(), false));
     Roster original = publishedWith(ada, adasNight);
     Roster nextDraft =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, nextWeek));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, nextWeek));
     ShiftId gracesEarly =
         scheduling.defineShift(
             scheduler(ACME),
@@ -657,7 +669,7 @@ class SwapServiceTest {
             scheduler(ACME),
             new DefineShiftCommand(ACME, tuesday, ZoneOffset.UTC, 1, Set.of(), false));
     Roster draft =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), adasDay, ada));
     scheduling.assign(
         scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), gracesTuesday, grace));
@@ -756,7 +768,7 @@ class SwapServiceTest {
     ShiftId mine = aShift(Set.of());
     ShiftId theirs = aShift(Set.of());
     Roster draft =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), mine, ada));
     scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), theirs, hopper));
     Roster published = scheduling.publish(scheduler(ACME), ACME, draft.id());
@@ -822,8 +834,7 @@ class SwapServiceTest {
    */
   private static final class AssignsNobody implements RosterGenerator {
     @Override
-    public List<Assignment> generate(
-        List<Shift> toCover, List<RosterCandidate> candidates, ConstraintSet constraints) {
+    public List<Assignment> generate(GenerationRequest request) {
       return List.of();
     }
   }
@@ -896,7 +907,7 @@ class SwapServiceTest {
         service.requestSwap(
             themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
     Roster nextWeek =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK));
 
     scheduling.publish(scheduler(ACME), ACME, nextWeek.id());
 
@@ -944,7 +955,7 @@ class SwapServiceTest {
             scheduler(ACME),
             new DefineShiftCommand(ACME, NEXT_MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster nextDraft =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK));
     scheduling.assign(
         scheduler(ACME), new AssignToShiftCommand(ACME, nextDraft.id(), nextMonday, ada));
     Roster nextWeek = scheduling.publish(scheduler(ACME), ACME, nextDraft.id());
@@ -956,7 +967,8 @@ class SwapServiceTest {
             themself(ACME, ada),
             new RequestSwapCommand(ACME, nextWeek.id(), nextMonday, ada, grace));
     Roster bothWeeks =
-        scheduling.generateDraft(
+        Generations.draft(
+            scheduling,
             scheduler(ACME),
             new GenerateRosterCommand(ACME, new TimeRange(THE_WEEK.start(), NEXT_WEEK.end())));
 
@@ -984,11 +996,15 @@ class SwapServiceTest {
             new RefusesTheSecondLapse(swaps),
             workforce,
             new AssignsNobody(),
+            new RecordingUnitsOfWork(),
+            generations,
+            Runnable::run,
+            LOST_AFTER,
             notifier,
             audit,
             Clock.fixed(RAISED_AT, ZoneOffset.UTC));
     Roster replacement =
-        publishing.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(publishing, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     notifier.told.clear();
     audit.forget();
 
@@ -1047,7 +1063,7 @@ class SwapServiceTest {
             scheduler(ACME),
             new DefineShiftCommand(ACME, TUESDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster draft =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), monday, ada));
     scheduling.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), tuesday, alan));
     Roster original = scheduling.publish(scheduler(ACME), ACME, draft.id());
@@ -1072,7 +1088,7 @@ class SwapServiceTest {
         service.requestSwap(
             themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
     Roster replacement =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
     assertThatThrownBy(
             () ->
@@ -1090,7 +1106,7 @@ class SwapServiceTest {
         new SwapRequest(SwapRequestId.newId(), RIVAL, original.id(), shift, ada, grace, RAISED_AT)
             .approved();
     Roster replacement =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
     assertThatThrownBy(
             () -> scheduling.publishApproving(scheduler(ACME), ACME, replacement.id(), theirs))
@@ -1106,7 +1122,7 @@ class SwapServiceTest {
         new SwapRequest(SwapRequestId.newId(), ACME, RosterId.newId(), shift, ada, grace, RAISED_AT)
             .approved();
     Roster replacement =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
     assertThatThrownBy(
             () -> scheduling.publishApproving(scheduler(ACME), ACME, replacement.id(), elsewhere))
@@ -1161,7 +1177,7 @@ class SwapServiceTest {
         service.requestSwap(
             themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
     Roster empty =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
     assertThatThrownBy(
             () ->
@@ -1175,7 +1191,7 @@ class SwapServiceTest {
   /** A draft over THE_WEEK carrying one person on one shift, as a swap's replacement would. */
   private Roster replacementWith(EmployeeId who, ShiftId shift) {
     Roster draft =
-        scheduling.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(scheduling, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     return scheduling.assign(
         scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, who));
   }

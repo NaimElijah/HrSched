@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.anOrganisation;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.as;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.asThemself;
+import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.generateDraft;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -80,12 +81,7 @@ class SwapHttpTest {
    */
   private Rostered publishedFor(String organisation, String employee) throws Exception {
     String roster =
-        JsonPath.read(
-            created(
-                as(mockMvc, post("/api/rosters"), organisation, "SCHEDULER")
-                    .content(
-                        "{\"start\":\"2026-12-07T00:00:00Z\",\"end\":\"2026-12-08T00:00:00Z\"}")),
-            "$.id");
+        generateDraft(mockMvc, organisation, "2026-12-07T00:00:00Z", "2026-12-08T00:00:00Z");
     String shift = defineShift(organisation, "2026-12-07T08:00:00Z", "2026-12-07T16:00:00Z");
     mockMvc
         .perform(
@@ -159,12 +155,7 @@ class SwapHttpTest {
   private Rostered publishedForBoth(String organisation, String first, String second)
       throws Exception {
     String roster =
-        JsonPath.read(
-            created(
-                as(mockMvc, post("/api/rosters"), organisation, "SCHEDULER")
-                    .content(
-                        "{\"start\":\"2026-12-07T00:00:00Z\",\"end\":\"2026-12-08T00:00:00Z\"}")),
-            "$.id");
+        generateDraft(mockMvc, organisation, "2026-12-07T00:00:00Z", "2026-12-08T00:00:00Z");
     String morning = defineShift(organisation, "2026-12-07T00:00:00Z", "2026-12-07T08:00:00Z");
     String afternoon = defineShift(organisation, "2026-12-07T08:00:00Z", "2026-12-07T16:00:00Z");
     assign(organisation, roster, morning, first);
@@ -448,12 +439,7 @@ class SwapHttpTest {
                             .formatted(rostered.roster(), rostered.shift(), ada, grace))),
             "$.id");
     String replacement =
-        JsonPath.read(
-            created(
-                as(mockMvc, post("/api/rosters"), organisation, "SCHEDULER")
-                    .content(
-                        "{\"start\":\"2026-12-07T00:00:00Z\",\"end\":\"2026-12-08T00:00:00Z\"}")),
-            "$.id");
+        generateDraft(mockMvc, organisation, "2026-12-07T00:00:00Z", "2026-12-08T00:00:00Z");
 
     mockMvc
         .perform(
@@ -507,12 +493,7 @@ class SwapHttpTest {
     String ada = addEmployee(organisation, "Ada Lovelace");
     String grace = addEmployee(organisation, "Grace Hopper");
     String roster =
-        JsonPath.read(
-            created(
-                as(mockMvc, post("/api/rosters"), organisation, "SCHEDULER")
-                    .content(
-                        "{\"start\":\"2026-12-14T00:00:00Z\",\"end\":\"2026-12-15T00:00:00Z\"}")),
-            "$.id");
+        generateDraft(mockMvc, organisation, "2026-12-14T00:00:00Z", "2026-12-15T00:00:00Z");
     String shift = defineShift(organisation, "2026-12-14T08:00:00Z", "2026-12-14T16:00:00Z");
     mockMvc
         .perform(

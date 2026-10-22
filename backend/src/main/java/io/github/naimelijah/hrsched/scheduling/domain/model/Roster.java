@@ -286,8 +286,9 @@ public final class Roster {
    * shift requires, and by how many.
    *
    * <p>A headcount is the least a shift needs (R22), so more people than it requires is never
-   * short. Only this roster's own assignments are counted: a shift straddling into an adjacent
-   * period may also be staffed there, and whether that counts here is still open (#130, #135).
+   * short. Only this roster's own assignments are counted. A shift straddling into an adjacent
+   * period may also be staffed there; generation carries those people onto this roster, so they
+   * count here as its own (#130), while somebody put on it by hand is counted only where they are.
    *
    * @param shifts the shifts to count, usually every one overlapping this roster's period; any
    *     outside it are ignored
