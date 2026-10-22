@@ -665,6 +665,13 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   `roster_generation_violation`; or FAILED. One still PENDING past its `lost_at`, fixed at
   `hrsched.generation.lost-after` after it was asked for, reads as LOST, derived from the clock on
   every read, so nothing sweeps ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)).
+- **At the largest stated size, a solve takes minutes and gigabytes.** Measured on an 8-core, 16 GB
+  development machine with `GenerationAtScaleRun` (`./mvnw spotless:apply test
+  -Dtest=GenerationAtScaleRun`, kept out of the build): the coverage search alone spent 75 s in
+  presolve on 359,449 choices and reached 978 of 980 places after 139 s; a run of both searches took
+  the JVM to about 7 GB, mostly the solver's native memory, and was stopped for want of more before
+  it finished. Sizing instances, and how many solves one runs at once, is
+  [#170](https://github.com/NaimElijah/HrSched/issues/170)'s to decide.
 - **Changes to one roster take turns on its row.** `assign` and `unassign` read the draft with
   `RosterRepository.findForUpdate`, which holds its row until the use case's transaction ends, so a
   second edit of the same draft waits, then reads the first one's change: both apply. `publish`

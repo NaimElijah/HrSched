@@ -303,8 +303,9 @@ filled every place it can, it keeps at least that many filled and minimises the 
   Schedulers** work in one organisation at once. Interactive requests answer within **300 ms at the
   95th percentile**. Generating a draft at the largest size takes at most **10 minutes**, so it runs
   as a background job ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). Decided on
-  2026-09-22 ([#36](https://github.com/NaimElijah/HrSched/issues/36)). *Nothing measures any of
-  these yet.*
+  2026-09-22 ([#36](https://github.com/NaimElijah/HrSched/issues/36)). *`GenerationAtScaleRun`
+  measures generation at the largest size, run by hand rather than in the build; nothing measures
+  the rest yet.*
 - **Availability** — HrSched is up around the clock, because people read their roster before a
   shift at any hour: **99.9%** of each month. A disaster loses **no committed write**, and service
   is restored within **1 hour**. Decided on 2026-09-22
