@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Employee } from '../api/workforce';
 import { dayLabel, timeLabel } from '../components/localDates';
@@ -95,8 +96,16 @@ function aDraft(overrides: Record<string, Answer> = {}) {
 function renderPage(people: readonly Employee[] = [ADA, GRACE]) {
   return render(
     <SignedIn session={A_TENANT}>
-      <RostersPage span={SPAN} people={people} />
+      <AsTheShellHoldsIt people={people} />
     </SignedIn>,
+  );
+}
+
+/** The page, with the generation it waits for held above it, as App holds it. */
+function AsTheShellHoldsIt({ people }: { people: readonly Employee[] }) {
+  const [waitingFor, setWaitingFor] = useState<string | null>(null);
+  return (
+    <RostersPage span={SPAN} people={people} waitingFor={waitingFor} onWaitingFor={setWaitingFor} />
   );
 }
 
@@ -528,7 +537,7 @@ describe('the board of a draft', () => {
     aDraft({ 'POST /api/rosters/roster-1/assignments': { status: 200, body: WITH_GRACE } });
     const { rerender } = render(
       <SignedIn session={A_TENANT}>
-        <RostersPage span={SPAN} people={[ADA, GRACE]} />
+        <AsTheShellHoldsIt people={[ADA, GRACE]} />
       </SignedIn>,
     );
     const board = await openBoard();
@@ -549,7 +558,7 @@ describe('the board of a draft', () => {
           role: 'EMPLOYEE',
         }}
       >
-        <RostersPage span={SPAN} people={[ADA, GRACE]} />
+        <AsTheShellHoldsIt people={[ADA, GRACE]} />
       </SignedIn>,
     );
 

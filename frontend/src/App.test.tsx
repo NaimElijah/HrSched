@@ -359,6 +359,55 @@ describe('navigating', () => {
     expect(screen.getByRole('heading', { name: 'Qualifications' })).toBeInTheDocument();
   });
 
+  /**
+   * ADR-046: a generation runs for minutes, and the Scheduler looks at other tabs meanwhile. Coming
+   * back finds it still awaited, then shows how it ended, rather than a page that has forgotten it
+   * and offers to start a second solve.
+   */
+  it('GivenAGenerationRunning_WhenTheRostersTabIsLeftAndOpenedAgain_ThenItIsStillAwaited', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const pending = { id: 'gen-1', status: 'PENDING', roster: null, violations: [] };
+      let generation: Answer = { status: 200, body: pending };
+      loadingThrough({ ...A_TENANT, role: 'SCHEDULER' }, () => ({
+        '/api/rosters/generations': { status: 202, body: pending },
+        '/api/rosters/generations/gen-1': generation,
+      }));
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      show();
+      await user.click(await screen.findByRole('button', { name: 'Rosters' }));
+      await user.click(
+        await screen.findByRole('button', { name: 'Generate a draft for this span' }),
+      );
+      expect(await screen.findByText('Generating a draft…')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Shifts' }));
+      generation = {
+        status: 200,
+        body: {
+          ...pending,
+          status: 'REFUSED',
+          violations: [
+            {
+              employee: 'emp-1',
+              constraint: 'declared unavailability',
+              detail: 'shift shift-1 runs through time they declared they cannot work',
+            },
+          ],
+        },
+      };
+      await user.click(screen.getByRole('button', { name: 'Rosters' }));
+
+      expect(await screen.findByText('Generating a draft…')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeDisabled();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(await screen.findByText(/^Generation refused/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeEnabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('GivenTheSwapsTab_WhenPressed_ThenTheDecisionQueueIsShown', async () => {
     loadingAs({ ...A_TENANT, role: 'SCHEDULER' });
     show();

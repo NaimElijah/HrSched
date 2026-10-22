@@ -656,8 +656,10 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   ([ADR-045](../ADRs/ADR-045-generate-outside-the-use-cases-transaction.md), [ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)).
 - **A draft is generated in the background, and the generation is a row.** `POST
   /api/rosters/generations` answers 202 at once, and the SPA asks `GET
-  /api/rosters/generations/{id}` every second until it ends. `GenerationRunner` runs each solve on a
-  daemon thread, at most `hrsched.generation.concurrent-runs` at once, refusing one more with a 503
+  /api/rosters/generations/{id}` every second until it ends. The shell, not the Rosters page, holds
+  which generation it is waiting for, so leaving that tab and coming back resumes the wait.
+  `GenerationRunner` runs each solve on a daemon thread, at most `hrsched.generation.concurrent-runs`
+  at once, refusing one more with a 503
   rather than queueing it, and carries the request's logging context, trace id included, onto the
   thread. `RosterGeneration` is stored by `JdbcRosterGenerationRepository` in `roster_generation`
   (`V12`), so any instance can answer a poll. It ends once: SUCCEEDED naming its draft, stored in the

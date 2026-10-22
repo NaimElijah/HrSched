@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Violation } from '../api/problem';
-import { scheduling } from '../api/scheduling';
+import { scheduling, type Generation } from '../api/scheduling';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure, Violations } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
@@ -49,10 +49,19 @@ class GenerationRefused extends Error {
 export function RostersPage({
   span,
   people,
+  waitingFor,
+  onWaitingFor,
 }: {
   span: { from: string; to: string };
   /** Everybody the acting role may list, to name assignees and offer on the board. */
   people: readonly Employee[];
+  /**
+   * The generation started here and not yet seen to end. Held by the shell rather than by this
+   * page, which is gone whenever another tab is open, so that coming back keeps waiting for it
+   * instead of offering to start a second solve.
+   */
+  waitingFor: string | null;
+  onWaitingFor: (generation: string | null) => void;
 }) {
   const sessionKey = useSessionKey();
   const [failure, setFailure] = useState<unknown>(null);
@@ -63,7 +72,8 @@ export function RostersPage({
   // Bumped whenever the list changes a roster, so an open board is rebuilt from what is now stored.
   // A change made on the board does not bump it: the board already holds what the server returned.
   const [revision, setRevision] = useState(0);
-  const [generating, setGenerating] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const generating = starting || waitingFor !== null;
 
   const rosters = useAsync(() => scheduling.findRosters(), sessionKey);
   const personById = new Map(people.map((person) => [person.id, person]));
@@ -80,26 +90,80 @@ export function RostersPage({
     }
   }
 
-  /** Starts a generation and waits for it to end, refusing however it ended without a draft. */
-  async function generate() {
-    setGenerating(true);
-    try {
-      let generation = await scheduling.startGeneration(span.from, span.to);
-      while (generation.status === 'PENDING') {
+  /** Shows how a generation ended, refusing however it ended without a draft. */
+  function ended(generation: Generation) {
+    onWaitingFor(null);
+    if (generation.status === 'SUCCEEDED') {
+      rosters.reload();
+      setRevision((previous) => previous + 1);
+    } else if (generation.status === 'REFUSED') {
+      setFailure(new GenerationRefused(generation.violations));
+    } else if (generation.status === 'LOST') {
+      setFailure(
+        new Error('The generation was lost: the server running it stopped. Generate again.'),
+      );
+    } else if (generation.status === 'FAILED') {
+      setFailure(
+        new Error('The generation failed. Generate again, and report it if it fails again.'),
+      );
+    }
+  }
+
+  // Read by the wait below, which outlives the render it began in.
+  const end = useRef(ended);
+  const stopWaiting = useRef(onWaitingFor);
+  useEffect(() => {
+    end.current = ended;
+    stopWaiting.current = onWaitingFor;
+  });
+
+  // Asks once a second until the generation ends, for as long as this page is open. Leaving stops
+  // the asking but not the waiting: the shell still holds the generation, so coming back resumes.
+  useEffect(() => {
+    if (waitingFor === null) {
+      return undefined;
+    }
+    let live = true;
+    const wait = async () => {
+      let generation: Generation;
+      do {
         await pause(GENERATION_POLL_MS);
-        generation = await scheduling.findGeneration(generation.id);
+        if (!live) {
+          return;
+        }
+        generation = await scheduling.findGeneration(waitingFor);
+        if (!live) {
+          return;
+        }
+      } while (generation.status === 'PENDING');
+      end.current(generation);
+    };
+    wait().catch((error: unknown) => {
+      if (live) {
+        stopWaiting.current(null);
+        setFailure(error);
       }
-      if (generation.status === 'REFUSED') {
-        throw new GenerationRefused(generation.violations);
+    });
+    return () => {
+      live = false;
+    };
+  }, [waitingFor]);
+
+  /** Starts a generation, then waits for it to end. */
+  async function generate() {
+    setFailure(null);
+    setStarting(true);
+    try {
+      const started = await scheduling.startGeneration(span.from, span.to);
+      if (started.status === 'PENDING') {
+        onWaitingFor(started.id);
+      } else {
+        ended(started);
       }
-      if (generation.status === 'LOST') {
-        throw new Error('The generation was lost: the server running it stopped. Generate again.');
-      }
-      if (generation.status === 'FAILED') {
-        throw new Error('The generation failed. Generate again, and report it if it fails again.');
-      }
+    } catch (error) {
+      setFailure(error);
     } finally {
-      setGenerating(false);
+      setStarting(false);
     }
   }
 
@@ -112,7 +176,7 @@ export function RostersPage({
         it illegally.
       </p>
 
-      <button type="button" disabled={generating} onClick={() => void act(generate)}>
+      <button type="button" disabled={generating} onClick={() => void generate()}>
         Generate a draft for this span
       </button>
       <p className="busy" role="status">
