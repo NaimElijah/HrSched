@@ -359,7 +359,7 @@ HrSched/
 | Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
 | Generation behind a port, greedy for now ([ADR-005](docs/ADRs/ADR-005-roster-generation-behind-a-port.md)) | The Timefold solver at once, before ADR-010 said what to optimise | The product does not yet do what it is named for |
 
-All 41 decisions, and the two still waiting to be recorded, are in the
+All 42 decisions, and the two still waiting to be recorded, are in the
 [ADR index](docs/ADRs/README.md).
 
 ## Status and limitations
