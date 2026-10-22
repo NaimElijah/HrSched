@@ -96,10 +96,15 @@ class JdbcRosterGenerationRepositoryTest {
         .containsExactlyElementsOf(broken);
   }
 
+  /** Refused, so it has violation rows too, which are reached only through their organisation's. */
   @Test
   void GivenAnotherOrganisationsGeneration_WhenReadByUs_ThenNothingIsFound() {
     RosterGeneration theirs = askedBy(RIVAL);
     repository.save(theirs);
+    repository.save(
+        theirs.refused(
+            List.of(ConstraintViolation.declaredUnavailable(EmployeeId.newId(), ShiftId.newId())),
+            ASKED.plusSeconds(1)));
 
     assertThat(repository.findById(ACME, theirs.id())).isEmpty();
   }

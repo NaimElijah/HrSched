@@ -92,9 +92,13 @@ public class JdbcRosterGenerationRepository implements RosterGenerationRepositor
     List<ConstraintViolation> violations =
         jdbc.sql(
                 """
-                SELECT employee_id, constraint_name, detail FROM roster_generation_violation
-                WHERE generation_id = :id ORDER BY position
+                SELECT violation.employee_id, violation.constraint_name, violation.detail
+                FROM roster_generation_violation violation
+                JOIN roster_generation generation ON generation.id = violation.generation_id
+                WHERE generation.organisation_id = :organisation AND generation.id = :id
+                ORDER BY violation.position
                 """)
+            .param("organisation", organisation.value())
             .param("id", id.value())
             .query(
                 (row, rowNumber) ->
