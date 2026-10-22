@@ -13,9 +13,9 @@ import { Inbox } from './Inbox';
  * Employee self-service: who I am, the work that names me, and when I cannot work.
  *
  * Unavailability is hard — nobody is rostered during it. A preference is soft and never blocks a
- * roster. A draft's check counts the preferences it goes against (ADR-010), but generation does not
- * yet try to honour them (#28). This page says so rather than implying the preference will be
- * honoured.
+ * roster. A draft's check counts the preferences it goes against (ADR-010), and generation honours
+ * them where it can, after filling every place it can (ADR-044). This page says so rather than
+ * implying the preference will be honoured.
  *
  * What they declared is read back from the backend rather than remembered from the form (F6), so
  * the list shows what was stored, including anything an Admin or Scheduler declared for them. Each
@@ -216,8 +216,8 @@ export function MePage({
       <h3>When I cannot work</h3>
       <p className="hint">
         Unavailability is hard: nobody is rostered during it. A preference is soft and never blocks
-        a roster. A Scheduler&apos;s check of a draft counts the preferences it goes against, but
-        nothing generates rosters to honour them yet.
+        a roster. Generation honours it where it can, if your organisation weighs preferences, but
+        filling every shift comes first.
       </p>
 
       <form className="grid">

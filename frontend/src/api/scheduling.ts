@@ -63,6 +63,22 @@ export interface Roster {
 }
 
 /**
+ * How a draft's generation stands. Mirrors GenerationResponse (ADR-046).
+ *
+ * A solve at the largest stated size takes minutes, so asking for a draft starts a generation, and
+ * the draft is read once it has ended. `LOST` is one still pending when it should long since have
+ * ended: the server solving it stopped.
+ */
+export interface Generation {
+  readonly id: string;
+  readonly status: 'PENDING' | 'SUCCEEDED' | 'REFUSED' | 'FAILED' | 'LOST';
+  /** The draft, once it succeeded. */
+  readonly roster: string | null;
+  /** What the work it would carry over from a published roster breaks, when it was refused. */
+  readonly violations: readonly Violation[];
+}
+
+/**
  * Mirrors ConstraintSetResponse: a version, the rules by name, and their thresholds.
  *
  * The thresholds matter because revising replaces the whole set. A caller changing one rule has to
@@ -155,8 +171,12 @@ export const scheduling = {
 
   findRosters: (): Promise<Roster[]> => api.get<Roster[]>('/api/rosters'),
 
-  generateRoster: (from: string, to: string): Promise<Roster> =>
-    api.post<Roster>('/api/rosters', { start: from, end: to }),
+  /** Answered at once, while the draft is still being built (ADR-046). */
+  startGeneration: (from: string, to: string): Promise<Generation> =>
+    api.post<Generation>('/api/rosters/generations', { start: from, end: to }),
+
+  findGeneration: (id: string): Promise<Generation> =>
+    api.get<Generation>(path`/api/rosters/generations/${id}`),
 
   /** Throws an ApiError with `isRuleBreach` and a populated `violations` when the rules refuse it. */
   publishRoster: (id: string): Promise<Roster> =>

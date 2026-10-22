@@ -1,8 +1,10 @@
 package io.github.naimelijah.hrsched.shared.testsupport;
 
+import io.github.naimelijah.hrsched.scheduling.application.port.out.BackgroundWork;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
@@ -27,5 +29,17 @@ public class PostgresBackedApplication {
   @ServiceConnection
   PostgreSQLContainer postgres() {
     return PostgresDatabase.container();
+  }
+
+  /**
+   * Runs each generation on the thread that asked for it, so a draft exists by the time the request
+   * starting it has been answered, and no test has to wait on another thread to see it (ADR-046).
+   * The pool generations run on in a deployment is specified on its own, in {@code
+   * GenerationRunnerTest}.
+   */
+  @Bean
+  @Primary
+  BackgroundWork generateOnTheCallingThread() {
+    return Runnable::run;
   }
 }

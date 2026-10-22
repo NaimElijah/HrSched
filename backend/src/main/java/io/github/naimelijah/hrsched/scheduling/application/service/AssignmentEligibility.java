@@ -32,12 +32,11 @@ import java.util.Set;
  * assignment, so the roster judges them, beside its overlaps.
  *
  * <p>Unavailability <em>is</em> here, and the first version of this left it out. That was a real
- * hole: {@code GreedyRosterGenerator} filters candidates through {@code
- * RosterCandidate.couldCover}, which tests availability as well as qualifications, so generation
- * refused to roster somebody through their declared absence while assigning by hand accepted it —
- * and publication could not catch it afterwards, because unavailability is not a {@code
- * WorkingTimeConstraint} and an empty constraint set checks nothing at all. A rule enforced on one
- * of two paths is not enforced.
+ * hole: generation filters candidates through {@code RosterCandidate.couldCover}, which tests
+ * availability as well as qualifications, so generation refused to roster somebody through their
+ * declared absence while assigning by hand accepted it — and publication could not catch it
+ * afterwards, because unavailability is not a {@code WorkingTimeConstraint} and an empty constraint
+ * set checks nothing at all. A rule enforced on one of two paths is not enforced.
  */
 final class AssignmentEligibility {
 

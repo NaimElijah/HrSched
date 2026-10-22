@@ -64,6 +64,11 @@ export function App() {
   const { state, session, key, restoreFailure, retryRestore } = useSession();
   const [tab, setTab] = useState<Tab>('People');
   const [span, setSpan] = useState(() => defaultSpan(new Date()));
+  // The generation the Rosters page is waiting for, held here because that page is gone whenever
+  // another tab is open, and a solve takes minutes (ADR-046). Tied to the session that started it,
+  // so nobody signing in after is shown a wait, or an outcome, that was somebody else's.
+  const [generation, setGeneration] = useState<{ session: string; id: string } | null>(null);
+  const waitingFor = generation?.session === key ? generation.id : null;
 
   const operator = session?.kind === 'OPERATOR';
   const tabs = operator ? OPERATOR_TABS : TENANT_TABS;
@@ -199,7 +204,14 @@ export function App() {
           </>
         ) : null}
         {current === 'Shifts' ? <ShiftsPage span={span} /> : null}
-        {current === 'Rosters' ? <RostersPage span={span} people={people.value ?? []} /> : null}
+        {current === 'Rosters' ? (
+          <RostersPage
+            span={span}
+            people={people.value ?? []}
+            waitingFor={waitingFor}
+            onWaitingFor={(id) => setGeneration(id === null ? null : { session: key, id })}
+          />
+        ) : null}
         {current === 'Swaps' ? <SwapsPage people={people.value ?? []} /> : null}
         {current === 'Me' ? <MePage span={span} people={people.value ?? []} /> : null}
         {current === 'Organisations' ? <OrganisationsPage /> : null}

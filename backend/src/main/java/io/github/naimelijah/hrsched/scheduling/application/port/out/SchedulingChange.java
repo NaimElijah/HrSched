@@ -24,8 +24,22 @@ public enum SchedulingChange {
    */
   OBJECTIVES_REVISED,
 
+  /**
+   * A draft was asked for, to be generated in the background (ADR-046). The subject is the
+   * generation. It ends as ROSTER_GENERATED, as GENERATION_REFUSED, or failed, which is a defect
+   * logged where it happened.
+   */
+  GENERATION_REQUESTED,
+
   /** A draft roster was produced. It binds nobody until it is published. */
   ROSTER_GENERATED,
+
+  /**
+   * A generation ended without a draft, because work it would carry over from a published roster
+   * breaks a rule (#130). Recorded here because it ends in the background, where no request is left
+   * to be refused.
+   */
+  GENERATION_REFUSED,
 
   /**
    * Somebody was put on a shift by hand rather than by the generator. Recorded separately from

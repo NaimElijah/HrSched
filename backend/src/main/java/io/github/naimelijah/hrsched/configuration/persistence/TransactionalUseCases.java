@@ -1,6 +1,8 @@
 package io.github.naimelijah.hrsched.configuration.persistence;
 
 import java.lang.reflect.Method;
+import java.util.Arrays;
+import java.util.List;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -34,6 +36,12 @@ import org.springframework.transaction.interceptor.TransactionInterceptor;
  * {@code UseCaseConfiguration} reads as it did before. Nothing here works on a self-invocation — a
  * service calling its own method does not pass through the proxy — which changes nothing today,
  * because a nested call is already inside its caller's transaction.
+ *
+ * <p>A method named as outside any transaction is left alone entirely, for a use case that marks
+ * out its own units of work because part of it must hold no connection: generation, whose solve
+ * runs for seconds (ADR-045). It gets no transaction attribute at all rather than {@code NEVER} or
+ * {@code SUPPORTS}, because those still open an empty scope with synchronisation active, and the
+ * first repository call inside it would bind a connection to the thread until the method returned.
  */
 public final class TransactionalUseCases {
 
@@ -42,26 +50,43 @@ public final class TransactionalUseCases {
   /**
    * @param useCase a service implementing one or more driving ports
    * @param transactions the manager the transaction is begun on
-   * @return the same service, with every public method wrapped in a transaction
+   * @param outsideAnyTransaction methods of {@code useCase}, usually named through the driving port
+   *     declaring them, that mark out their own units of work and must be left alone (ADR-045)
+   * @return the same service, with every other public method wrapped in a transaction
    */
   @SuppressWarnings("unchecked")
-  public static <T> T transactional(T useCase, PlatformTransactionManager transactions) {
+  public static <T> T transactional(
+      T useCase, PlatformTransactionManager transactions, Method... outsideAnyTransaction) {
     ProxyFactory factory = new ProxyFactory(useCase);
     factory.setProxyTargetClass(true);
-    factory.addAdvice(new TransactionInterceptor(transactions, byMethodName()));
+    factory.addAdvice(
+        new TransactionInterceptor(transactions, byMethodName(List.of(outsideAnyTransaction))));
     return (T) factory.getProxy();
   }
 
-  private static TransactionAttributeSource byMethodName() {
+  private static TransactionAttributeSource byMethodName(List<Method> outsideAnyTransaction) {
     return new TransactionAttributeSource() {
       @Override
       public TransactionAttribute getTransactionAttribute(Method method, Class<?> targetClass) {
+        if (outsideAnyTransaction.stream().anyMatch(left -> isTheSame(left, method))) {
+          return null;
+        }
         DefaultTransactionAttribute attribute =
             new DefaultTransactionAttribute(TransactionDefinition.PROPAGATION_REQUIRED);
         attribute.setReadOnly(reads(method.getName()));
         return attribute;
       }
     };
+  }
+
+  /**
+   * The proxy is asked about the implementing class's method, and the method left alone is usually
+   * named through the interface declaring it, so they are compared by signature rather than
+   * identity.
+   */
+  private static boolean isTheSame(Method named, Method invoked) {
+    return named.getName().equals(invoked.getName())
+        && Arrays.equals(named.getParameterTypes(), invoked.getParameterTypes());
   }
 
   /**
