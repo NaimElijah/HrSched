@@ -616,9 +616,9 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   shift's headcount, and stays: a generator only ever adds. Any other held work is time its holder
   is busy, so nobody is put where publication would refuse them for R35. If that carried work could
   not stay (somebody on it has since declared they cannot work then, lost a qualification, or
-  breaks a rule by it alone), generation is refused with the same 422 publication gives, before a
-  generator is asked: leaving them off would have the published roster and the draft disagree
-  about who works the shift ([#130](https://github.com/NaimElijah/HrSched/issues/130)).
+  breaks a rule by it alone), the generation ends REFUSED, listing the same violations publication
+  would, before a generator is asked: leaving them off would have the published roster and the
+  draft disagree about who works the shift ([#130](https://github.com/NaimElijah/HrSched/issues/130)).
 - **Reading the people of an organisation is restricted to Admins and Schedulers**, because
   unavailability is personal data. Generation reaches the same data through the anti-corruption
   layer carrying the Scheduler's own identity, so the restriction holds there too. One person's
