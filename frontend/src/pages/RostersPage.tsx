@@ -105,6 +105,8 @@ export function RostersPage({
     if (generation.status === 'SUCCEEDED') {
       rosters.reload();
       setRevision((previous) => previous + 1);
+      // Waited for, often for minutes, so it opens rather than waiting to be found in the list.
+      setSelected(generation.roster);
     } else if (generation.status === 'REFUSED') {
       setFailure(new GenerationRefused(generation.violations));
     } else if (generation.status === 'LOST') {

@@ -873,10 +873,11 @@ describe('the board of a draft', () => {
     expect(within(board).getByRole('button', { name: /^Remove Grace from/ })).toBeInTheDocument();
   });
 
-  it('GivenAGenerationStillPending_WhenItEnds_ThenTheDraftIsListedAndNothingIsRefused', async () => {
+  /** ADR-046: the Scheduler waited minutes for that draft, so it opens rather than hiding in the list. */
+  it('GivenAGenerationStillPending_WhenItEnds_ThenItsDraftIsListedAndOpened', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
-      const stub = routeTo({
+      const stub = aDraft({
         'POST /api/rosters/generations': {
           status: 202,
           body: { id: 'gen-1', status: 'PENDING', roster: null, violations: [] },
@@ -885,7 +886,6 @@ describe('the board of a draft', () => {
           status: 200,
           body: { id: 'gen-1', status: 'SUCCEEDED', roster: 'roster-1', violations: [] },
         },
-        '/api/rosters': { status: 200, body: [ROSTER] },
       });
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderPage();
@@ -900,6 +900,7 @@ describe('the board of a draft', () => {
         expect(callsTo(stub, 'GET', '/api/rosters').length).toBeGreaterThan(listedBefore),
       );
       expect(callsTo(stub, 'GET', '/api/rosters/generations/gen-1')).toHaveLength(1);
+      expect(await screen.findByRole('region', { name: /^Roster/ })).toBeInTheDocument();
       expect(screen.queryByText('Generating a draft…')).not.toBeInTheDocument();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     } finally {
