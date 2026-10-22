@@ -106,8 +106,12 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
   because the architecture test forbids Spring in the application layer (ADR-023). The wrapper,
   `TransactionalUseCases`, is a subclass proxy: a service must stay non-final, a service calling
   its own method bypasses it, and only methods named `find…` run read-only. **The one exception is
-  `generateDraft`** (ADR-045): the proxy leaves it alone, and it marks out its own units through
-  `UnitsOfWork` so that a solve holds no connection. Do not add another without an ADR.
+  `startGeneration`** (ADR-045, ADR-046): the proxy leaves it alone, and it marks out its own units
+  through `UnitsOfWork`, so the generation commits before its solve is handed to a thread and the
+  solve holds no connection. Do not add another without an ADR.
+- **Generations run on `GenerationRunner`'s threads, but not under test.** The shared test context
+  (`PostgresBackedApplication`) replaces it with a runner that works on the calling thread, so an
+  HTTP test's generation has ended by the time the request starting it is answered.
 - **Publications within an organisation take turns.** `RosterRepository.lockPublicationsOf` takes
   a transaction-scoped advisory lock, before any read the decision depends on: in `publish`, and
   in raising, approving and rejecting a swap (ADR-027, ADR-039). It throws outside a use case's

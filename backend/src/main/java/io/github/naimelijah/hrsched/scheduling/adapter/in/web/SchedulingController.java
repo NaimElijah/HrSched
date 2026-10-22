@@ -5,6 +5,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.ConfigureCons
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ConfigureObjectivesUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerationState;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ManageShiftsUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
@@ -12,10 +13,11 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstra
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseObjectivesCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ViewOwnScheduleUseCase;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
-import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownConstraintVersionException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownGenerationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
@@ -180,14 +182,31 @@ public class SchedulingController {
         configureObjectives.findObjectives(actor, actingIn(actor)));
   }
 
-  @PostMapping("/rosters")
-  public ResponseEntity<RosterResponse> generate(
+  /**
+   * Starts generating a draft for a span, and answers before it is built (ADR-046): 202, with where
+   * to ask how it stands. A solve at the largest stated size takes minutes, which no request can
+   * wait for.
+   */
+  @PostMapping("/rosters/generations")
+  public ResponseEntity<GenerationResponse> generate(
       @AuthenticationPrincipal Actor actor, @RequestBody PeriodRequest request) {
-    Roster draft =
-        planRosters.generateDraft(
+    GenerationState started =
+        planRosters.startGeneration(
             actor, new GenerateRosterCommand(actingIn(actor), request.toPeriod()));
-    return ResponseEntity.created(URI.create("/api/rosters/" + draft.id().value()))
-        .body(RosterResponse.from(draft));
+    return ResponseEntity.accepted()
+        .location(URI.create("/api/rosters/generations/" + started.id().value()))
+        .body(GenerationResponse.from(started));
+  }
+
+  /** How a generation stands: pending, or how it ended (ADR-046). */
+  @GetMapping("/rosters/generations/{id}")
+  public GenerationResponse findGeneration(
+      @AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
+    GenerationId generation = new GenerationId(id);
+    return planRosters
+        .findGeneration(actor, actingIn(actor), generation)
+        .map(GenerationResponse::from)
+        .orElseThrow(() -> new UnknownGenerationException(generation));
   }
 
   @GetMapping("/rosters")

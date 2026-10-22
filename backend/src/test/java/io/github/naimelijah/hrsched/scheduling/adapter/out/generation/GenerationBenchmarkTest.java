@@ -37,7 +37,7 @@ class GenerationBenchmarkTest {
   void GivenSeededProblems_WhenBothGenerate_ThenTheSolverIsNeverWorseAndBetterOverall(
       TestReporter report) {
     CpSatRosterGenerator solver =
-        new CpSatRosterGenerator(new SimpleMeterRegistry(), new GenerationProperties(LIMIT));
+        new CpSatRosterGenerator(new SimpleMeterRegistry(), new GenerationProperties(LIMIT, 1));
     GreedyRosterGenerator greedy = new GreedyRosterGenerator();
     int solverPlaces = 0;
     int greedyPlaces = 0;

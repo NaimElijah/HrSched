@@ -1,9 +1,11 @@
 package io.github.naimelijah.hrsched.scheduling.application.port.in;
 
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
+import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.List;
@@ -13,18 +15,30 @@ import java.util.Optional;
 public interface PlanRostersUseCase {
 
   /**
-   * Builds a draft roster covering a period, assigning people to every shift it can.
+   * Starts building a draft roster covering a period, assigning people to every shift it can, and
+   * answers before it is built: the solve runs in the background (ADR-046).
    *
    * <p>A shift the draft covers that a published roster beside it already staffs keeps those
-   * people, and nobody is put on a shift overlapping other work they hold there (R35, #130).
+   * people, and nobody is put on a shift overlapping other work they hold there (R35, #130). If
+   * somebody that roster puts on one of these shifts could not stay on it, the generation ends
+   * refused, listing why: the published roster has to change first.
    *
    * @param actor whoever is generating it; must be a Scheduler
    * @param command which organisation and which period
-   * @return the draft, which may leave shifts uncovered if nobody eligible is available
-   * @throws RosterNotCompliantException if somebody that published roster puts on one of these
-   *     shifts could not stay on it: the published roster has to change first
+   * @return the generation, pending, to be read back with {@link #findGeneration}
+   * @throws TooManyGenerationsException if as many generations as may run at once already are
    */
-  Roster generateDraft(Actor actor, GenerateRosterCommand command);
+  GenerationState startGeneration(Actor actor, GenerateRosterCommand command);
+
+  /**
+   * How a generation stands: pending, or ended with a draft, refused, failed, or lost with the
+   * instance that was solving it (ADR-046).
+   *
+   * @param actor whoever is asking; an Admin or a Scheduler of that organisation
+   * @return the generation, if that organisation asked for one with that identity
+   */
+  Optional<GenerationState> findGeneration(
+      Actor actor, OrganisationId organisation, GenerationId generation);
 
   /**
    * Puts one person on one shift of a draft (requirement F2).

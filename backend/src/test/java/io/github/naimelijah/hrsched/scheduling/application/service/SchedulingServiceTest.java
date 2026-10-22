@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.AssignToShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerationState;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseConstraintsCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseObjectivesCommand;
@@ -24,6 +25,8 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationPolicy;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
@@ -32,6 +35,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.Objective;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
 import io.github.naimelijah.hrsched.scheduling.domain.model.OverlappingAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterGeneration;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterMeasures;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
@@ -44,6 +48,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shortfall;
 import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
+import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
@@ -112,6 +117,13 @@ class SchedulingServiceTest {
   private FakeObjectiveWeights objectiveWeights;
   private FakeWorkforce workforce;
   private RecordingAuditTrail audit;
+  private FakeGenerations generations;
+
+  /**
+   * Invented: how long a generation may stay pending here; every one ends on the calling thread.
+   */
+  private static final GenerationPolicy LOST_AFTER = new GenerationPolicy(Duration.ofMinutes(15));
+
   private SchedulingService service;
 
   @BeforeEach
@@ -122,6 +134,7 @@ class SchedulingServiceTest {
     objectiveWeights = new FakeObjectiveWeights();
     workforce = new FakeWorkforce();
     audit = new RecordingAuditTrail();
+    generations = new FakeGenerations();
     service = withClock(Clock.fixed(NOW, ZoneOffset.UTC));
   }
 
@@ -144,6 +157,9 @@ class SchedulingServiceTest {
         workforce,
         generator,
         new RecordingUnitsOfWork(),
+        generations,
+        Runnable::run,
+        LOST_AFTER,
         new RecordingNotifier(),
         audit,
         clock);
@@ -179,7 +195,7 @@ class SchedulingServiceTest {
   /** Generates and publishes a roster for THE_WEEK, which supersedes any published before it. */
   private Roster publishTheWeek() {
     Roster draft =
-        service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(service, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     service.publish(scheduler(ACME), ACME, draft.id());
     return rosters.byId(draft.id());
   }
@@ -207,7 +223,7 @@ class SchedulingServiceTest {
         new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
 
     Roster draft =
-        service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(service, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     Roster published = service.publish(scheduler(ACME), ACME, draft.id());
 
     assertThat(published.status()).isEqualTo(RosterStatus.PUBLISHED);
@@ -222,7 +238,7 @@ class SchedulingServiceTest {
         scheduler(ACME),
         new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster draft =
-        service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(service, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
     // Invented: one hour a day, which the eight-hour shift already assigned cannot satisfy.
     service.reviseConstraints(
@@ -338,11 +354,11 @@ class SchedulingServiceTest {
         scheduler(ACME),
         new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster first =
-        service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(service, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     service.publish(scheduler(ACME), ACME, first.id());
 
     Roster second =
-        service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(service, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     service.publish(scheduler(ACME), ACME, second.id());
 
     assertThat(rosters.byId(first.id()).status())
@@ -395,7 +411,8 @@ class SchedulingServiceTest {
   @Test
   void GivenAnAdmin_WhenGeneratingARoster_ThenItIsRefused() {
     assertThatThrownBy(
-            () -> service.generateDraft(admin(ACME), new GenerateRosterCommand(ACME, THE_WEEK)))
+            () ->
+                Generations.draft(service, admin(ACME), new GenerateRosterCommand(ACME, THE_WEEK)))
         .describedAs("an Admin manages people and rules; building rosters is the Scheduler's")
         .isInstanceOf(NotPermittedException.class);
   }
@@ -444,7 +461,8 @@ class SchedulingServiceTest {
   void GivenASchedulerOfAnotherOrganisation_WhenGeneratingARoster_ThenItIsNotTheirs() {
     assertThatThrownBy(
             () ->
-                service.generateDraft(scheduler(RIVAL), new GenerateRosterCommand(ACME, THE_WEEK)))
+                Generations.draft(
+                    service, scheduler(RIVAL), new GenerateRosterCommand(ACME, THE_WEEK)))
         .isInstanceOf(CrossTenantAccessException.class);
   }
 
@@ -459,7 +477,7 @@ class SchedulingServiceTest {
         scheduler(ACME),
         new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster draft =
-        service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(service, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
     Actor operator = new Operator(UserId.newId());
 
@@ -566,35 +584,153 @@ class SchedulingServiceTest {
               return new FirstFitGenerator().generate(request);
             },
             units,
+            generations,
+            Runnable::run,
+            LOST_AFTER,
             new RecordingNotifier(),
             audit,
             Clock.fixed(NOW, ZoneOffset.UTC));
 
     Roster draft =
-        generating.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(generating, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
     assertThat(draft.assignments()).hasSize(1);
     assertThat(generatedIn).containsExactly(Optional.empty());
     assertThat(savedIn).containsExactly(Optional.of(RecordingUnitsOfWork.Unit.WRITING));
     assertThat(units.begun())
-        .containsExactly(RecordingUnitsOfWork.Unit.READING, RecordingUnitsOfWork.Unit.WRITING);
+        .describedAs("the generation stored, then the reads, then the draft (ADR-046)")
+        .containsExactly(
+            RecordingUnitsOfWork.Unit.WRITING,
+            RecordingUnitsOfWork.Unit.READING,
+            RecordingUnitsOfWork.Unit.WRITING);
   }
 
   /**
-   * Generating with {@code generator} is refused as a defect in it, and leaves neither a draft nor
-   * an audit line behind.
+   * ADR-046: every run busy refuses the generation before anything is solved, and stores it as
+   * failed, so nobody polling it waits for something that will never run.
+   */
+  @Test
+  void GivenEveryRunBusy_WhenAGenerationIsStarted_ThenItIsRefusedAndStoredAsFailed() {
+    available(ACME, "Ada");
+    aShift(ACME, Set.of());
+    audit.forget();
+    SchedulingService busy =
+        new SchedulingService(
+            shifts,
+            rosters,
+            constraintSets,
+            objectiveWeights,
+            new FakeSwaps(new CallLog()),
+            workforce,
+            new FirstFitGenerator(),
+            new RecordingUnitsOfWork(),
+            generations,
+            work -> {
+              throw new TooManyGenerationsException(2);
+            },
+            LOST_AFTER,
+            new RecordingNotifier(),
+            audit,
+            Clock.fixed(NOW, ZoneOffset.UTC));
+
+    assertThatThrownBy(
+            () -> busy.startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)))
+        .isInstanceOf(TooManyGenerationsException.class);
+
+    assertThat(generations.all())
+        .singleElement()
+        .extracting(RosterGeneration::status)
+        .isEqualTo(GenerationStatus.FAILED);
+    assertThat(rosters.findByOrganisation(ACME)).isEmpty();
+    assertThat(audit.changes()).containsExactly(SchedulingChange.GENERATION_REQUESTED);
+  }
+
+  /**
+   * ADR-046: a generation the instance stopped solving is never ended by anything, so once its
+   * lost-at instant has passed it reads as lost, rather than as pending for ever.
+   */
+  @Test
+  void GivenAGenerationNothingEverRan_WhenReadAfterItsLostAtInstant_ThenItIsLost() {
+    SchedulingService stopped = backgroundThatNeverRuns(Clock.fixed(NOW, ZoneOffset.UTC));
+    GenerationState started =
+        stopped.startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+    assertThat(started.status()).isEqualTo(GenerationStatus.PENDING);
+
+    SchedulingService later =
+        backgroundThatNeverRuns(Clock.fixed(NOW.plus(LOST_AFTER.lostAfter()), ZoneOffset.UTC));
+
+    assertThat(later.findGeneration(scheduler(ACME), ACME, started.id()))
+        .get()
+        .extracting(GenerationState::status)
+        .isEqualTo(GenerationStatus.LOST);
+  }
+
+  @Test
+  void GivenAGenerationOfAnotherOrganisation_WhenReadByOurScheduler_ThenItIsRefused() {
+    GenerationState theirs =
+        backgroundThatNeverRuns(Clock.fixed(NOW, ZoneOffset.UTC))
+            .startGeneration(scheduler(RIVAL), new GenerateRosterCommand(RIVAL, THE_WEEK));
+
+    assertThatThrownBy(() -> service.findGeneration(scheduler(ACME), RIVAL, theirs.id()))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(service.findGeneration(scheduler(ACME), ACME, theirs.id())).isEmpty();
+  }
+
+  /** As reading a roster is: it says who works when, which is about every colleague. */
+  @Test
+  void GivenAnEmployee_WhenReadingAGeneration_ThenItIsRefused() {
+    GenerationState started =
+        backgroundThatNeverRuns(Clock.fixed(NOW, ZoneOffset.UTC))
+            .startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+
+    assertThatThrownBy(
+            () ->
+                service.findGeneration(
+                    new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE), ACME, started.id()))
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  /** The service, over the same stores, with a background that accepts work and never runs it. */
+  private SchedulingService backgroundThatNeverRuns(Clock clock) {
+    return new SchedulingService(
+        shifts,
+        rosters,
+        constraintSets,
+        objectiveWeights,
+        new FakeSwaps(new CallLog()),
+        workforce,
+        new FirstFitGenerator(),
+        new RecordingUnitsOfWork(),
+        generations,
+        work -> {},
+        LOST_AFTER,
+        new RecordingNotifier(),
+        audit,
+        clock);
+  }
+
+  /**
+   * Generating with {@code generator} is refused as a defect in it, and leaves no draft behind:
+   * only the request is recorded, and the generation is stored as failed.
    */
   private void assertGenerationRefused(RosterGenerator generator) {
     audit.forget();
 
     assertThatThrownBy(
             () ->
-                generatingWith(generator)
-                    .generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)))
+                Generations.draft(
+                    generatingWith(generator),
+                    scheduler(ACME),
+                    new GenerateRosterCommand(ACME, THE_WEEK)))
         .isInstanceOf(IllegalStateException.class);
 
     assertThat(rosters.findByOrganisation(ACME)).isEmpty();
-    assertThat(audit.changes()).isEmpty();
+    assertThat(audit.changes()).containsExactly(SchedulingChange.GENERATION_REQUESTED);
+    assertThat(generations.all())
+        .describedAs("the generation is stored as failed, so nobody waits on it")
+        .singleElement()
+        .extracting(RosterGeneration::status)
+        .isEqualTo(GenerationStatus.FAILED);
   }
 
   @Test
@@ -654,8 +790,9 @@ class SchedulingServiceTest {
     service.defineShift(
         scheduler(ACME),
         new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
-    Roster ours = service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
-    service.generateDraft(scheduler(RIVAL), new GenerateRosterCommand(RIVAL, THE_WEEK));
+    Roster ours =
+        Generations.draft(service, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+    Generations.draft(service, scheduler(RIVAL), new GenerateRosterCommand(RIVAL, THE_WEEK));
 
     assertThat(service.findRosters(scheduler(ACME), ACME))
         .extracting(Roster::id)
@@ -804,7 +941,7 @@ class SchedulingServiceTest {
     TenantActor scheduler = scheduler(ACME);
     service.defineShift(
         scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
-    Roster draft = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+    Roster draft = Generations.draft(service, scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
 
     service.publish(scheduler, ACME, draft.id());
 
@@ -828,9 +965,10 @@ class SchedulingServiceTest {
     TenantActor scheduler = scheduler(ACME);
     service.defineShift(
         scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
-    Roster first = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+    Roster first = Generations.draft(service, scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
     service.publish(scheduler, ACME, first.id());
-    Roster second = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+    Roster second =
+        Generations.draft(service, scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
 
     service.publish(scheduler, ACME, second.id());
 
@@ -846,7 +984,7 @@ class SchedulingServiceTest {
     TenantActor scheduler = scheduler(ACME);
     service.defineShift(
         scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
-    Roster draft = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+    Roster draft = Generations.draft(service, scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
     // Invented: four hours a day, which the eight-hour shift already assigned cannot satisfy.
     service.reviseConstraints(
         admin(ACME),
@@ -871,9 +1009,10 @@ class SchedulingServiceTest {
     TenantActor scheduler = scheduler(ACME);
     service.defineShift(
         scheduler, new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
-    Roster first = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+    Roster first = Generations.draft(service, scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
     service.publish(scheduler, ACME, first.id());
-    Roster second = service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
+    Roster second =
+        Generations.draft(service, scheduler, new GenerateRosterCommand(ACME, THE_WEEK));
     service.publish(scheduler, ACME, second.id());
     audit.forget();
 
@@ -899,7 +1038,7 @@ class SchedulingServiceTest {
         service.publish(
             scheduler,
             ACME,
-            service.generateDraft(scheduler, new GenerateRosterCommand(ACME, THE_WEEK)).id());
+            Generations.draft(service, scheduler, new GenerateRosterCommand(ACME, THE_WEEK)).id());
     // Invented: four hours a day, which the eight-hour shift already assigned cannot satisfy.
     service.reviseConstraints(
         admin(ACME),
@@ -943,8 +1082,8 @@ class SchedulingServiceTest {
    * whatever the draft carries afterwards was put there by hand.
    */
   private Roster emptyDraft(OrganisationId organisation) {
-    return service.generateDraft(
-        scheduler(organisation), new GenerateRosterCommand(organisation, THE_WEEK));
+    return Generations.draft(
+        service, scheduler(organisation), new GenerateRosterCommand(organisation, THE_WEEK));
   }
 
   private EmployeeId qualified(
@@ -1925,11 +2064,11 @@ class SchedulingServiceTest {
     EmployeeId ada = available(ACME, "Ada");
     ShiftId sundayNight = shiftAt(SUNDAY_NIGHT);
     Roster thisWeek =
-        service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+        Generations.draft(service, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
     service.publish(scheduler(ACME), ACME, thisWeek.id());
 
     Roster nextWeek =
-        service.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK));
+        Generations.draft(service, scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK));
 
     assertThat(nextWeek.assignments()).containsExactly(new Assignment(sundayNight, ada));
     assertThat(service.publish(scheduler(ACME), ACME, nextWeek.id()).status())
@@ -1959,12 +2098,14 @@ class SchedulingServiceTest {
     List<GenerationRequest> asked = new ArrayList<>();
 
     Roster nextWeek =
-        generatingWith(
+        Generations.draft(
+            generatingWith(
                 request -> {
                   asked.add(request);
                   return List.of();
-                })
-            .generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK));
+                }),
+            scheduler(ACME),
+            new GenerateRosterCommand(ACME, NEXT_WEEK));
 
     assertThat(nextWeek.assignments()).containsExactly(new Assignment(sundayNight, grace));
     assertThat(asked)
@@ -1993,12 +2134,14 @@ class SchedulingServiceTest {
     Roster published = publishTheWeek();
     List<GenerationRequest> asked = new ArrayList<>();
 
-    generatingWith(
+    Generations.draft(
+        generatingWith(
             request -> {
               asked.add(request);
               return List.of();
-            })
-        .generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+            }),
+        scheduler(ACME),
+        new GenerateRosterCommand(ACME, THE_WEEK));
 
     assertThat(asked)
         .singleElement()
@@ -2011,9 +2154,9 @@ class SchedulingServiceTest {
   }
 
   /**
-   * Somebody carried over who can no longer legally stay refuses generation, naming the breach,
-   * before a generator is asked anything and before anything is stored or recorded. Leaving them
-   * off instead would have the two rosters disagree about who works the shift.
+   * Somebody carried over who can no longer legally stay ends the generation refused, naming the
+   * breach, before a generator is asked anything and with no draft stored. Leaving them off instead
+   * would have the two rosters disagree about who works the shift.
    */
   @Test
   void GivenSomebodyCarriedOverWhoHasSinceDeclaredThemselvesAway_WhenGenerating_ThenItIsRefused() {
@@ -2026,23 +2169,27 @@ class SchedulingServiceTest {
     audit.forget();
     List<GenerationRequest> asked = new ArrayList<>();
 
-    assertThatThrownBy(
-            () ->
-                generatingWith(
-                        request -> {
-                          asked.add(request);
-                          return List.of();
-                        })
-                    .generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK)))
-        .isInstanceOfSatisfying(
-            RosterNotCompliantException.class,
-            refused ->
-                assertThat(refused.violations())
-                    .containsExactly(ConstraintViolation.declaredUnavailable(grace, sundayNight)));
+    SchedulingService generating =
+        generatingWith(
+            request -> {
+              asked.add(request);
+              return List.of();
+            });
 
+    GenerationState started =
+        generating.startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, NEXT_WEEK));
+
+    GenerationState ended =
+        generating.findGeneration(scheduler(ACME), ACME, started.id()).orElseThrow();
+    assertThat(ended.status()).isEqualTo(GenerationStatus.REFUSED);
+    assertThat(ended.violations())
+        .containsExactly(ConstraintViolation.declaredUnavailable(grace, sundayNight));
+    assertThat(ended.roster()).isEmpty();
     assertThat(asked).isEmpty();
     assertThat(rosters.findByOrganisation(ACME)).containsExactly(rosters.byId(thisWeek.id()));
-    assertThat(audit.changes()).isEmpty();
+    assertThat(audit.changes())
+        .containsExactly(
+            SchedulingChange.GENERATION_REQUESTED, SchedulingChange.GENERATION_REFUSED);
   }
 
   @Test
@@ -2298,7 +2445,8 @@ class SchedulingServiceTest {
   @Test
   void GivenTheOperator_WhenGeneratingADraft_ThenItIsRefused() {
     assertThatThrownBy(
-            () -> service.generateDraft(anOperator(), new GenerateRosterCommand(ACME, THE_WEEK)))
+            () ->
+                Generations.draft(service, anOperator(), new GenerateRosterCommand(ACME, THE_WEEK)))
         .isInstanceOf(NotATenantMemberException.class);
   }
 

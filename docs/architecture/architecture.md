@@ -110,7 +110,7 @@ Three rules hold this together, and each fails the build when broken:
 | `scheduling.application` | Shift definition, constraint and objective configuration, roster generation and publication. Assembles the evidence constraints are judged against. |
 | `scheduling.adapter.out.workforce` | An anti-corruption layer: one of **two** classes in scheduling permitted to name another context, and only its published port. |
 | `scheduling.adapter.out.notification` | The other one. Translates "a swap was approved" into the word the `notifications` context uses for it, so nothing inward of the `Notifier` port knows that context exists ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
-| `scheduling.adapter.out.generation` | `CpSatRosterGenerator` — the generation port, solved with CP-SAT from Google OR-Tools ([ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)). `RosterModel` states the request as one boolean per person who could take each shift, and every rule as a constraint over them: eligibility and time are decided in Java with the domain's own methods, and each kind of working-time rule is one case of an exhaustive `switch`, so a new kind does not compile until it is stated. It searches twice, each within `hrsched.generation.time-limit-per-phase`: first for as many places filled as it can, then, if the organisation weighs anything, for the lowest weighted score that keeps at least that many filled, starting from the first answer. Its score restates `RosterMeasures` exactly. It refuses to run inside a transaction (ADR-045). It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. The greedy generator it replaced lives on in the tests, as the baseline it is measured against. |
+| `scheduling.adapter.out.generation` | `CpSatRosterGenerator` — the generation port, solved with CP-SAT from Google OR-Tools ([ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)). `RosterModel` states the request as one boolean per person who could take each shift, and every rule as a constraint over them: eligibility and time are decided in Java with the domain's own methods, and each kind of working-time rule is one case of an exhaustive `switch`, so a new kind does not compile until it is stated. It searches twice, each within `hrsched.generation.time-limit-per-phase`: first for as many places filled as it can, then, if the organisation weighs anything, for the lowest weighted score that keeps at least that many filled, starting from the first answer. Its score restates `RosterMeasures` exactly. It refuses to run inside a transaction (ADR-045). It also records coverage (`hrsched.shifts.required` and `hrsched.shifts.uncovered`), because it is the only place that still knows both what was asked for and what could legally be filled. The greedy generator it replaced lives on in the tests, as the baseline it is measured against. `GenerationRunner` implements the `BackgroundWork` port: the threads each solve runs on, after the request asking for it has been answered ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). |
 | `*.adapter.out.persistence` | `Jdbc*Repository` — hand-written SQL through `JdbcClient`, one per driven port, every read carrying its organisation in the `WHERE` clause. A `findForUpdate` holds the root's row until the use case's transaction ends, and refuses outside a writable one ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)). The one exception is named as such in its port: `JdbcAccountRepository.findBySignInName`, which sign-in needs because a submitted name is all it has to go on. No ORM: the domain may not be annotated, so mapping is explicit ([ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). |
 | `*.adapter.out.audit` | `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog` and `NotificationAuditLog` — one per context, each implementing its own context's `AuditTrail` port and turning one recorded change into a structured log event and a counter. All four are named for their contexts because Spring derives a bean name from the simple class name alone, so four classes called `AuditLog` would collide at startup rather than at compile time. |
 | `configuration` | Spring wiring. The only place permitted to see more than one context, which is why the rules exempt `@Configuration`-annotated classes and nothing else. |
@@ -232,11 +232,19 @@ sequenceDiagram
     participant D as WorkforceDirectoryAdapter
     participant F as workforce (published port)
     participant G as RosterGenerator
+    participant B as GenerationRunner
     participant R as ConstraintSet
 
-    C->>W: POST /api/rosters
-    W->>S: generateDraft(actor, period)
+    C->>W: POST /api/rosters/generations
+    W->>S: startGeneration(actor, period)
     S->>S: actor.requireAccessTo(organisation)
+    S->>S: store the generation, PENDING; record it
+    S->>B: start(the solve)
+    alt every run busy
+        S-->>C: 503, the generation stored as FAILED
+    end
+    S-->>C: 202, with where to read it
+    Note over B,S: on a thread of the runner's, as the Scheduler who asked
     S->>D: candidatesFor(actor, organisation)
     D->>F: findRosterable(actor, organisation)
     F-->>D: RosterableEmployee[]
@@ -244,12 +252,18 @@ sequenceDiagram
     S->>S: work held on the authoritative rosters beside it (R35)
     S->>S: seed the draft with whoever they put on its shifts (#130)
     alt that work cannot stay
-        S-->>C: 422 with every violation listed
+        S->>S: the generation ends REFUSED, with every violation
     end
     S->>G: generate(request)
     G-->>S: assignments to add
-    S->>S: judge the filled draft; a broken promise is a defect, 500
-    S-->>C: 201 DRAFT roster
+    S->>S: judge the filled draft; a broken promise is a defect: FAILED, logged
+    S->>S: store the draft and the generation SUCCEEDED, in one unit of work
+
+    loop every second, until it is no longer PENDING
+        C->>W: GET /api/rosters/generations/{id}
+        W->>S: findGeneration(actor, organisation, id)
+        S-->>C: its status: LOST if still pending past its lost-at
+    end
 
     C->>W: POST /api/rosters/{id}/publication
     W->>S: publish(actor, organisation, roster)
@@ -267,9 +281,10 @@ sequenceDiagram
 
 Everything is persisted. Publication is one transaction: the boundary is the use case, so a
 refusal at any point stores nothing ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)).
-Generation is the one use case that is not: it reads in one transaction, asks the generator with
-none open, and stores the draft in another, so that a solve holds no pooled connection while it
-runs ([ADR-045](../ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)). An audit entry is
+Generation is the one use case that is not: it stores the generation in one transaction, and its
+solve, on a thread of its own, reads in another, asks the generator with none open, and stores the
+draft in a third, so that a solve holds no pooled connection while it runs
+([ADR-045](../ADRs/ADR-045-generate-outside-the-use-cases-transaction.md), [ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). An audit entry is
 a log line, though, and no rollback takes one back. So publication makes every
 refusal it can before it supersedes and records anything. The one refusal that can still follow
 those entries is `RosterPublicationConflictException`, which needs a writer that skipped the
@@ -632,12 +647,24 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   the application layer and so `@Transactional` cannot go where a reader would look for it
   ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)). A nested use case joins
   its caller's transaction, which is what makes approving a swap atomic. The exception is
-  `generateDraft`, which the proxy is told to leave alone: it marks out its own units of work
-  through the `UnitsOfWork` port, reading in one and writing in another, so that the generator runs
-  with no transaction open and no connection held. The generator refuses to run inside a
+  `startGeneration`, which the proxy is told to leave alone: it marks out its own units of work
+  through the `UnitsOfWork` port, so the generation it stores commits before its solve is handed to
+  a thread, and the solve then reads in one unit and writes in another, with no transaction open
+  and no connection held while the generator runs. The generator refuses to run inside a
   transaction, so nesting generation inside another use case fails loudly rather than holding a
   connection for the length of a solve
-  ([ADR-045](../ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)).
+  ([ADR-045](../ADRs/ADR-045-generate-outside-the-use-cases-transaction.md), [ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)).
+- **A draft is generated in the background, and the generation is a row.** `POST
+  /api/rosters/generations` answers 202 at once, and the SPA asks `GET
+  /api/rosters/generations/{id}` every second until it ends. `GenerationRunner` runs each solve on a
+  daemon thread, at most `hrsched.generation.concurrent-runs` at once, refusing one more with a 503
+  rather than queueing it, and carries the request's logging context, trace id included, onto the
+  thread. `RosterGeneration` is stored by `JdbcRosterGenerationRepository` in `roster_generation`
+  (`V12`), so any instance can answer a poll. It ends once: SUCCEEDED naming its draft, stored in the
+  draft's own unit of work; REFUSED with the rules the work it would carry over breaks, kept in
+  `roster_generation_violation`; or FAILED. One still PENDING past its `lost_at`, fixed at
+  `hrsched.generation.lost-after` after it was asked for, reads as LOST, derived from the clock on
+  every read, so nothing sweeps ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)).
 - **Changes to one roster take turns on its row.** `assign` and `unassign` read the draft with
   `RosterRepository.findForUpdate`, which holds its row until the use case's transaction ends, so a
   second edit of the same draft waits, then reads the first one's change: both apply. `publish`

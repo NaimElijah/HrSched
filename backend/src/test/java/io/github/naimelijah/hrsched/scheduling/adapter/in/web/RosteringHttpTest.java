@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.anOrganisation;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.as;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.asThemself;
+import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.generateDraft;
 import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.STUCK_AFTER_SECONDS;
 import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitSomebodyWaitingOn;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -112,16 +113,7 @@ class RosteringHttpTest {
   }
 
   private String generateRoster(String organisation, String start, String end) throws Exception {
-    String body =
-        mockMvc
-            .perform(
-                as(mockMvc, post("/api/rosters"), organisation, "SCHEDULER")
-                    .content("{\"start\":\"%s\",\"end\":\"%s\"}".formatted(start, end)))
-            .andExpect(status().isCreated())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    return body.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
+    return generateDraft(mockMvc, organisation, start, end);
   }
 
   @Test
@@ -715,7 +707,7 @@ class RosteringHttpTest {
   /**
    * Somebody carried over who has since declared they cannot work that night cannot stay on it, and
    * leaving them off would have last week's roster and next week's disagree about who works it. So
-   * generation is refused, naming them, and it is last week's roster that has to change.
+   * the generation ends refused, naming them, and it is last week's roster that has to change.
    */
   @Test
   void GivenSomebodyCarriedOverWhoHasSinceDeclaredThemselvesAway_WhenGenerating_ThenItIsRefused()
@@ -732,16 +724,88 @@ class RosteringHttpTest {
                 .content("{\"start\":\"2026-12-14T00:00:00Z\",\"end\":\"2026-12-15T00:00:00Z\"}"))
         .andExpect(status().isNoContent());
 
+    String started =
+        mockMvc
+            .perform(
+                as(mockMvc, post("/api/rosters/generations"), organisation, "SCHEDULER")
+                    .content(
+                        "{\"start\":\"2026-12-14T00:00:00Z\",\"end\":\"2026-12-21T00:00:00Z\"}"))
+            .andExpect(status().isAccepted())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
     mockMvc
         .perform(
-            as(mockMvc, post("/api/rosters"), organisation, "SCHEDULER")
-                .content("{\"start\":\"2026-12-14T00:00:00Z\",\"end\":\"2026-12-21T00:00:00Z\"}"))
-        .andExpect(status().isUnprocessableEntity())
-        .andExpect(jsonPath("$.title").value("Roster breaks the rules"))
+            as(
+                mockMvc,
+                get("/api/rosters/generations/" + JsonPath.read(started, "$.id")),
+                organisation,
+                "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("REFUSED"))
+        .andExpect(jsonPath("$.roster").doesNotExist())
         .andExpect(jsonPath("$.violations.length()").value(1))
         .andExpect(jsonPath("$.violations[0].employee").value(grace))
         .andExpect(jsonPath("$.violations[0].constraint").value("declared unavailability"))
         .andExpect(jsonPath("$.violations[0].detail").value(containsString(sundayNight)));
+  }
+
+  /**
+   * ADR-046: asking for a draft is answered at once, 202, with where to read how the generation
+   * stands, because a solve at the largest stated size takes minutes.
+   */
+  @Test
+  void GivenAScheduler_WhenStartingAGeneration_ThenItIsAcceptedWithWhereToReadIt()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+
+    String started =
+        mockMvc
+            .perform(
+                as(mockMvc, post("/api/rosters/generations"), organisation, "SCHEDULER")
+                    .content(
+                        "{\"start\":\"2026-11-16T00:00:00Z\",\"end\":\"2026-11-17T00:00:00Z\"}"))
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.status").value("PENDING"))
+            .andReturn()
+            .getResponse()
+            .getHeader("Location");
+
+    assertThat(started).startsWith("/api/rosters/generations/");
+    mockMvc
+        .perform(as(mockMvc, get(started), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("SUCCEEDED"));
+  }
+
+  @Test
+  void GivenAnEmployee_WhenStartingAGeneration_ThenItIsForbidden() throws Exception {
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/generations"), anOrganisation(mockMvc), "EMPLOYEE")
+                .content("{\"start\":\"2026-11-16T00:00:00Z\",\"end\":\"2026-11-17T00:00:00Z\"}"))
+        .andExpect(status().isForbidden());
+  }
+
+  /** Another organisation's generation is as absent as one that never existed. */
+  @Test
+  void GivenAnotherOrganisationsGeneration_WhenRead_ThenItIsNotFound() throws Exception {
+    String theirs = anOrganisation(mockMvc);
+    String started =
+        mockMvc
+            .perform(
+                as(mockMvc, post("/api/rosters/generations"), theirs, "SCHEDULER")
+                    .content(
+                        "{\"start\":\"2026-11-16T00:00:00Z\",\"end\":\"2026-11-17T00:00:00Z\"}"))
+            .andExpect(status().isAccepted())
+            .andReturn()
+            .getResponse()
+            .getHeader("Location");
+
+    mockMvc
+        .perform(as(mockMvc, get(started), anOrganisation(mockMvc), "SCHEDULER"))
+        .andExpect(status().isNotFound());
   }
 
   @Test

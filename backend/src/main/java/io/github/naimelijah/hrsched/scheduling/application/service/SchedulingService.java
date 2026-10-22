@@ -5,6 +5,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.ConfigureCons
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ConfigureObjectivesUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.DefineShiftCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerationState;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ManageShiftsUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RemoveAssignmentCommand;
@@ -15,11 +16,13 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.RosteredShift
 import io.github.naimelijah.hrsched.scheduling.application.port.in.ViewOwnScheduleUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.BackgroundWork;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.Notifier;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ObjectiveWeightsRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerationRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
@@ -30,10 +33,13 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDir
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationPolicy;
 import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterGeneration;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterMeasures;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
@@ -47,6 +53,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPe
 import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
+import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
@@ -71,6 +78,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -118,6 +126,9 @@ public class SchedulingService
   private final WorkforceDirectory workforce;
   private final RosterGenerator generator;
   private final UnitsOfWork units;
+  private final RosterGenerationRepository generations;
+  private final BackgroundWork background;
+  private final GenerationPolicy generationPolicy;
   private final Notifier notifier;
   private final AuditTrail audit;
   private final Clock clock;
@@ -127,6 +138,10 @@ public class SchedulingService
    *     (ADR-010)
    * @param units the units of work generation marks out for itself, so that its solve holds no
    *     connection (ADR-045)
+   * @param generations where each generation is kept, so any instance can say how it stands
+   * @param background what runs a generation once the request that asked for it is answered
+   *     (ADR-046)
+   * @param generationPolicy how long a generation may stay pending before it counts as lost
    * @param swaps the requests a publication lapses when it supersedes the roster they name (R33)
    * @param notifier how the parties to a lapsed request are told
    * @param clock what a publication reads the time from, so that when it happened is an input a
@@ -141,6 +156,9 @@ public class SchedulingService
       WorkforceDirectory workforce,
       RosterGenerator generator,
       UnitsOfWork units,
+      RosterGenerationRepository generations,
+      BackgroundWork background,
+      GenerationPolicy generationPolicy,
       Notifier notifier,
       AuditTrail audit,
       Clock clock) {
@@ -153,6 +171,10 @@ public class SchedulingService
     this.workforce = Objects.requireNonNull(workforce, "workforce must not be null");
     this.generator = Objects.requireNonNull(generator, "generator must not be null");
     this.units = Objects.requireNonNull(units, "units must not be null");
+    this.generations = Objects.requireNonNull(generations, "generations must not be null");
+    this.background = Objects.requireNonNull(background, "background must not be null");
+    this.generationPolicy =
+        Objects.requireNonNull(generationPolicy, "generationPolicy must not be null");
     this.notifier = Objects.requireNonNull(notifier, "notifier must not be null");
     this.audit = Objects.requireNonNull(audit, "audit must not be null");
     this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -247,24 +269,118 @@ public class SchedulingService
   }
 
   /**
-   * Not one transaction, unlike every other use case here: it reads in one unit of work, generates
-   * outside any, and stores the draft in another, so that a solve running for seconds holds no
-   * connection (ADR-045). A draft stored from reads that changed during the solve is a draft like
-   * any other: publication judges it again.
+   * Not one transaction, unlike every other use case here (ADR-045, ADR-046). The generation is
+   * stored in a unit of work of its own, which commits before the solve is handed to a thread, so
+   * that thread always finds it. Then this answers, and the solve runs in the background.
+   *
+   * <p>One refused because too many are running is stored as failed, so nobody polling it waits.
    */
   @Override
-  public Roster generateDraft(Actor actor, GenerateRosterCommand command) {
+  public GenerationState startGeneration(Actor actor, GenerateRosterCommand command) {
     authorise(actor, command.organisation(), MAY_SCHEDULE);
+    RosterGeneration requested =
+        RosterGeneration.requested(
+            GenerationId.newId(),
+            command.organisation(),
+            command.period(),
+            clock.instant(),
+            generationPolicy);
+    units.writing(
+        () -> {
+          generations.save(requested);
+          return requested;
+        });
+    // Recorded once stored and before the solve is handed off, so the trail can never show a
+    // generation ending before it was asked for.
+    recorded(
+        actor,
+        command.organisation(),
+        SchedulingChange.GENERATION_REQUESTED,
+        requested.id().value());
+    try {
+      background.start(() -> complete(actor, command, requested));
+    } catch (TooManyGenerationsException busy) {
+      units.writing(
+          () -> {
+            generations.save(requested.failed(clock.instant()));
+            return requested;
+          });
+      throw busy;
+    }
+    return GenerationState.of(requested, clock.instant());
+  }
+
+  /**
+   * The solve, on a thread of its own, as the Scheduler who asked: their identity arrives as an
+   * argument, never from anything ambient (ADR-009). Called on this object rather than through the
+   * transactional proxy, so it marks out its own units of work, as generation always has (ADR-045).
+   *
+   * <p>The draft and the generation naming it are stored in one unit of work, so neither is ever
+   * found without the other. Anything else that goes wrong is a defect: the generation is stored as
+   * failed, and the failure is thrown on to be logged where it happened.
+   */
+  private void complete(Actor actor, GenerateRosterCommand command, RosterGeneration requested) {
+    try {
+      draftFor(
+          actor,
+          command,
+          draft -> generations.save(requested.succeeded(draft.id(), clock.instant())));
+    } catch (RosterNotCompliantException refused) {
+      units.writing(
+          () -> {
+            generations.save(requested.refused(refused.violations(), clock.instant()));
+            return requested;
+          });
+      recorded(
+          actor,
+          command.organisation(),
+          SchedulingChange.GENERATION_REFUSED,
+          requested.id().value());
+    } catch (RuntimeException failure) {
+      try {
+        units.writing(
+            () -> {
+              generations.save(requested.failed(clock.instant()));
+              return requested;
+            });
+      } catch (RuntimeException unrecorded) {
+        failure.addSuppressed(unrecorded);
+      }
+      throw failure;
+    }
+  }
+
+  /**
+   * Reads in one unit of work, generates outside any, and stores the draft, with whatever {@code
+   * alongside} stores, in another, so that a solve running for minutes holds no connection
+   * (ADR-045). A draft stored from reads that changed during the solve is a draft like any other:
+   * publication judges it again.
+   */
+  private Roster draftFor(Actor actor, GenerateRosterCommand command, Consumer<Roster> alongside) {
     GenerationRequest request = units.reading(() -> generationRequestFor(actor, command));
 
     Roster draft = generated(request, generator.generate(request));
     units.writing(
         () -> {
           rosters.save(draft);
+          alongside.accept(draft);
           return draft;
         });
     recorded(actor, command.organisation(), SchedulingChange.ROSTER_GENERATED, draft.id().value());
     return draft;
+  }
+
+  /**
+   * Named {@code find…}, so it runs read-only. Admins and Schedulers may ask, as they may read the
+   * rosters a generation produces.
+   */
+  @Override
+  public Optional<GenerationState> findGeneration(
+      Actor actor, OrganisationId organisation, GenerationId generation) {
+    authorise(actor, organisation, MAY_SEE_ROSTERS);
+    return generations
+        .findById(organisation, generation)
+        .map(found -> GenerationState.of(found, clock.instant()));
   }
 
   /**

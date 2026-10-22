@@ -184,7 +184,9 @@ supplies a throwaway signing key and the local operator. A deployment sets the v
 | `hrsched.security.password.minimum-length` | `15` | NIST SP 800-63B-4, single-factor |
 | `hrsched.security.password.bcrypt-strength` | `12` | Bcrypt's work factor; tests use `4` |
 | `hrsched.security.sign-in.lockout-threshold` / `-duration` | `10` / `15m` | When an account locks, and for how long |
-| `hrsched.generation.time-limit-per-phase` | `10s` | How long each of the solver's searches may run before it answers with the best roster found ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) |
+| `hrsched.generation.time-limit-per-phase` | `5m` | How long each of the solver's two searches may run before it answers with the best roster found: together, the ten minutes the requirements allow ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) |
+| `hrsched.generation.concurrent-runs` | `2` | Generations one instance solves at once; one more is refused with a 503, not queued ([ADR-046](docs/ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)) |
+| `hrsched.generation.lost-after` | `12m` | How long a generation may stay pending before it reads as lost, its instance having stopped |
 | `management.endpoints.web.exposure.include` | `health,info,metrics,prometheus` | An allow list: `/actuator/**` needs no token, so `env`, `loggers` and `heapdump` stay shut ([#78](https://github.com/NaimElijah/HrSched/issues/78)) |
 | `management.endpoint.health.probes.enabled` | `true` | Liveness and readiness probes outside Kubernetes too |
 | `logging.structured.format.console` | `ecs` | Elastic Common Schema JSON, always ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
@@ -373,10 +375,11 @@ decides). The [requirements](docs/requirements/requirements.md) mark each row de
 built.
 
 **Known limitations:**
-- **Generation answers within the request.** Each of the solver's two searches stops at
-  `hrsched.generation.time-limit-per-phase` with the best roster it has found. At the largest stated
-  size that may not be the best there is; the ten minutes the targets allow need a background job
-  ([#246](https://github.com/NaimElijah/HrSched/issues/246)). Two generations of one week can differ, each as legal as the other.
+- **Generation takes minutes at the largest size.** It runs in the background and the Rosters page
+  waits for it ([ADR-046](docs/ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). Each of the solver's two searches stops at
+  `hrsched.generation.time-limit-per-phase` with the best roster it has found, which at the largest
+  stated size may not be the best there is. Two generations of one week can differ, each as legal
+  as the other.
 - **A shift's zone is the Scheduler's browser zone.** The Shifts page sends the zone its times were
   typed in, and no page shows a shift's zone yet
   ([#136](https://github.com/NaimElijah/HrSched/issues/136)).

@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import type { Violation } from '../api/problem';
 import { scheduling } from '../api/scheduling';
 import type { Employee } from '../api/workforce';
-import { Busy, Failure } from '../components/Feedback';
+import { Busy, Failure, Violations } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
 import { ApprovingRules } from './ApprovingRules';
@@ -15,11 +16,36 @@ import { RosterBoard } from './RosterBoard';
  * rather than as an error toast to dismiss.
  *
  * Generation fills every place the rules allow and only then weighs the objectives (ADR-044),
- * which this page says plainly rather than letting a scheduler assume more than that.
+ * which this page says plainly rather than letting a scheduler assume more than that. It runs in the
+ * background, for minutes at the largest size (ADR-046), so the page starts it and asks once a second
+ * whether it has ended.
  *
  * The people come from the shell, which already loads them and already decides which refusal of
  * that listing to keep quiet about; asking again here doubled the request and repeated its failure.
  */
+/** How long to wait between asking whether a generation has ended (ADR-046). */
+const GENERATION_POLL_MS = 1000;
+
+const pause = (milliseconds: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+
+/**
+ * A generation that ended without a draft because work a published roster carries onto these
+ * shifts can no longer stay there (#130). Told apart from a publication refusal, because what has to
+ * change is that published roster, not this draft.
+ */
+class GenerationRefused extends Error {
+  readonly violations: readonly Violation[];
+
+  constructor(violations: readonly Violation[]) {
+    super('Generation refused');
+    this.name = 'GenerationRefused';
+    this.violations = violations;
+  }
+}
+
 export function RostersPage({
   span,
   people,
@@ -37,6 +63,7 @@ export function RostersPage({
   // Bumped whenever the list changes a roster, so an open board is rebuilt from what is now stored.
   // A change made on the board does not bump it: the board already holds what the server returned.
   const [revision, setRevision] = useState(0);
+  const [generating, setGenerating] = useState(false);
 
   const rosters = useAsync(() => scheduling.findRosters(), sessionKey);
   const personById = new Map(people.map((person) => [person.id, person]));
@@ -53,6 +80,29 @@ export function RostersPage({
     }
   }
 
+  /** Starts a generation and waits for it to end, refusing however it ended without a draft. */
+  async function generate() {
+    setGenerating(true);
+    try {
+      let generation = await scheduling.startGeneration(span.from, span.to);
+      while (generation.status === 'PENDING') {
+        await pause(GENERATION_POLL_MS);
+        generation = await scheduling.findGeneration(generation.id);
+      }
+      if (generation.status === 'REFUSED') {
+        throw new GenerationRefused(generation.violations);
+      }
+      if (generation.status === 'LOST') {
+        throw new Error('The generation was lost: the server running it stopped. Generate again.');
+      }
+      if (generation.status === 'FAILED') {
+        throw new Error('The generation failed. Generate again, and report it if it fails again.');
+      }
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   return (
     <section>
       <h2>Rosters</h2>
@@ -62,14 +112,25 @@ export function RostersPage({
         it illegally.
       </p>
 
-      <button
-        type="button"
-        onClick={() => void act(() => scheduling.generateRoster(span.from, span.to))}
-      >
+      <button type="button" disabled={generating} onClick={() => void act(generate)}>
         Generate a draft for this span
       </button>
+      <p className="busy" role="status">
+        {generating ? 'Generating a draft…' : null}
+      </p>
 
-      <Failure error={failure} nameOf={nameOf} />
+      {failure instanceof GenerationRefused ? (
+        <div className="failure failure--rules" role="alert">
+          <strong>
+            Generation refused: a published roster carries people onto these shifts who can no
+            longer stay on them.
+          </strong>
+          <p>Change that published roster first, then generate again.</p>
+          <Violations violations={failure.violations} nameOf={nameOf} />
+        </div>
+      ) : (
+        <Failure error={failure} nameOf={nameOf} />
+      )}
       <Failure error={rosters.error} />
       <Busy busy={rosters.busy} />
 

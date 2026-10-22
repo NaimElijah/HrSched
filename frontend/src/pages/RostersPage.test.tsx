@@ -863,4 +863,110 @@ describe('the board of a draft', () => {
     expect(board).toBeInTheDocument();
     expect(within(board).getByRole('button', { name: /^Remove Grace from/ })).toBeInTheDocument();
   });
+
+  it('GivenAGenerationStillPending_WhenItEnds_ThenTheDraftIsListedAndNothingIsRefused', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const stub = routeTo({
+        'POST /api/rosters/generations': {
+          status: 202,
+          body: { id: 'gen-1', status: 'PENDING', roster: null, violations: [] },
+        },
+        'GET /api/rosters/generations/gen-1': {
+          status: 200,
+          body: { id: 'gen-1', status: 'SUCCEEDED', roster: 'roster-1', violations: [] },
+        },
+        '/api/rosters': { status: 200, body: [ROSTER] },
+      });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderPage();
+      await screen.findByRole('button', { name: 'Open' });
+      const listedBefore = callsTo(stub, 'GET', '/api/rosters').length;
+
+      await user.click(screen.getByRole('button', { name: 'Generate a draft for this span' }));
+      expect(await screen.findByText('Generating a draft…')).toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      await waitFor(() =>
+        expect(callsTo(stub, 'GET', '/api/rosters').length).toBeGreaterThan(listedBefore),
+      );
+      expect(callsTo(stub, 'GET', '/api/rosters/generations/gen-1')).toHaveLength(1);
+      expect(screen.queryByText('Generating a draft…')).not.toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * #130: work a published roster carries onto these shifts that can no longer stay there refuses
+   * the generation, naming who and why, and says it is that published roster that has to change.
+   */
+  it('GivenAGenerationRefusedForWorkCarriedOver_WhenItEnds_ThenWhoAndWhyAreShown', async () => {
+    routeTo({
+      'POST /api/rosters/generations': {
+        status: 202,
+        body: {
+          id: 'gen-1',
+          status: 'REFUSED',
+          roster: null,
+          violations: [
+            {
+              employee: 'emp-1',
+              constraint: 'declared unavailability',
+              detail: 'shift shift-1 runs through time they declared they cannot work',
+            },
+          ],
+        },
+      },
+      '/api/rosters': { status: 200, body: [] },
+    });
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Generate a draft for this span' }),
+    );
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/^Generation refused/);
+    expect(alert).toHaveTextContent('Change that published roster first');
+    expect(within(alert).getByText('Ada')).toBeInTheDocument();
+    expect(alert).toHaveTextContent('declared unavailability');
+  });
+
+  it('GivenAGenerationLostWithTheServerSolvingIt_WhenItEnds_ThenItSaysToGenerateAgain', async () => {
+    routeTo({
+      'POST /api/rosters/generations': {
+        status: 202,
+        body: { id: 'gen-1', status: 'LOST', roster: null, violations: [] },
+      },
+      '/api/rosters': { status: 200, body: [] },
+    });
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Generate a draft for this span' }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The generation was lost: the server running it stopped. Generate again.',
+    );
+  });
+
+  it('GivenEveryRunBusy_WhenGenerating_ThenWhatTheServerSaidIsShown', async () => {
+    routeTo({
+      'POST /api/rosters/generations': {
+        status: 503,
+        body: { title: 'Generation is busy', detail: '2 generations are already running' },
+      },
+      '/api/rosters': { status: 200, body: [] },
+    });
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Generate a draft for this span' }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('already running');
+  });
 });

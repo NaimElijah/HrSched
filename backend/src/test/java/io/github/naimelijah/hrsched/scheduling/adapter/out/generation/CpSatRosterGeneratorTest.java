@@ -56,7 +56,7 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
 
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private final CpSatRosterGenerator generator =
-      new CpSatRosterGenerator(meters, new GenerationProperties(LIMIT));
+      new CpSatRosterGenerator(meters, new GenerationProperties(LIMIT, 1));
 
   @Override
   protected RosterGenerator generator() {
@@ -444,9 +444,9 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
 
   @Test
   void GivenNoTimeLimit_WhenConfigured_ThenItIsRefused() {
-    assertThatThrownBy(() -> new GenerationProperties(Duration.ZERO))
+    assertThatThrownBy(() -> new GenerationProperties(Duration.ZERO, 1))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> new GenerationProperties(null))
+    assertThatThrownBy(() -> new GenerationProperties(null, 1))
         .isInstanceOf(NullPointerException.class);
   }
 }

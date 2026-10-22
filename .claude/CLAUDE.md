@@ -41,10 +41,12 @@ How the backend enforces each of these is in `backend/CLAUDE.md`.
 
 ## Two things are not what they look like
 
-- **Generation is a solver that answers within the request.** `CpSatRosterGenerator` (ADR-044)
-  fills every place the rules allow, then minimises ADR-010's weighted score, each search stopped
-  at `hrsched.generation.time-limit-per-phase`: at the stated scale that is the best found, not
-  proven optimal (#246). It runs outside any transaction (ADR-045) and is not deterministic.
+- **Generation is a solver, in the background.** `CpSatRosterGenerator` (ADR-044) fills every
+  place the rules allow, then minimises ADR-010's weighted score, each search stopped at
+  `hrsched.generation.time-limit-per-phase`: at the stated scale that is the best found, not proven
+  optimal. `POST /api/rosters/generations` answers 202, the solve runs on `GenerationRunner`'s
+  threads, and the generation is a row any instance reads back (ADR-046). It runs outside any
+  transaction (ADR-045) and is not deterministic.
   OR-Tools is held at 9.12, because later Windows libraries crash the JVM on the Visual C++
   runtime JDK 21 bundles.
 - **The audit trail is a log stream, not a trail.** Every change and refusal is recorded through
