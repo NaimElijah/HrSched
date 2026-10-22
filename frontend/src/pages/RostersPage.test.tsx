@@ -1040,6 +1040,27 @@ describe('the board of a draft', () => {
     );
   });
 
+  /** A defect the server logged: there is no draft, and nothing the Scheduler did caused it. */
+  it('GivenAGenerationThatFailed_WhenItEnds_ThenItSaysToGenerateAgainAndReportIt', async () => {
+    routeTo({
+      'POST /api/rosters/generations': {
+        status: 202,
+        body: { id: 'gen-1', status: 'FAILED', roster: null, violations: [] },
+      },
+      '/api/rosters': { status: 200, body: [] },
+    });
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Generate a draft for this span' }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The generation failed. Generate again, and report it if it fails again.',
+    );
+    expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeEnabled();
+  });
+
   it('GivenEveryRunBusy_WhenGenerating_ThenWhatTheServerSaidIsShown', async () => {
     routeTo({
       'POST /api/rosters/generations': {
