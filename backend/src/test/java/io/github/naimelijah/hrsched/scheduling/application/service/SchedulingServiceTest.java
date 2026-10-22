@@ -15,6 +15,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.RosterAssessm
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosteredShift;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
@@ -122,6 +123,15 @@ class SchedulingServiceTest {
   }
 
   private SchedulingService withClock(Clock clock) {
+    return with(clock, new FirstFitGenerator());
+  }
+
+  /** The service, generating with {@code generator} instead of the first-fit double. */
+  private SchedulingService generatingWith(RosterGenerator generator) {
+    return with(Clock.fixed(NOW, ZoneOffset.UTC), generator);
+  }
+
+  private SchedulingService with(Clock clock, RosterGenerator generator) {
     return new SchedulingService(
         shifts,
         rosters,
@@ -129,7 +139,7 @@ class SchedulingServiceTest {
         objectiveWeights,
         new FakeSwaps(new CallLog()),
         workforce,
-        new FirstFitGenerator(),
+        generator,
         new RecordingNotifier(),
         audit,
         clock);
@@ -453,13 +463,97 @@ class SchedulingServiceTest {
         .isInstanceOf(NotATenantMemberException.class);
   }
 
+  // --- #28: what a generator answers is checked before it is stored ----------------------------
+
   /**
-   * Assigns the first candidates who could cover each shift, checking nothing else.
-   *
-   * <p>Deliberately not the greedy adapter: this test is about what the service does with whatever
-   * a generator returns, including a roster the current rules reject. {@code
-   * GreedyRosterGeneratorTest} covers the real one.
+   * A generator is ours, and so is its promise never to break a rule. An answer breaking it is a
+   * defect in that generator, refused loudly before anything is stored: saved, it would be a draft
+   * publication refuses only later, and a refusal nobody asked for.
    */
+  @Test
+  void GivenAGeneratorPuttingSomebodyInTwoPlacesAtOnce_WhenGenerating_ThenNothingIsStored() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId day = aShift(ACME, Set.of());
+    ShiftId sameDay = aShift(ACME, Set.of());
+
+    assertGenerationRefused(
+        request -> List.of(new Assignment(day, ada), new Assignment(sameDay, ada)));
+  }
+
+  @Test
+  void GivenAGeneratorBreakingAWorkingTimeRule_WhenGenerating_ThenNothingIsStored() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId day = aShift(ACME, Set.of());
+    // Invented: one hour a day, which the eight-hour shift cannot satisfy.
+    service.reviseConstraints(
+        admin(ACME),
+        new ReviseConstraintsCommand(
+            ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(1)))));
+
+    assertGenerationRefused(request -> List.of(new Assignment(day, ada)));
+  }
+
+  @Test
+  void
+      GivenAGeneratorRosteringSomebodyThroughTheirDeclaredAbsence_WhenGenerating_ThenNothingIsStored() {
+    EmployeeId ada = EmployeeId.newId();
+    workforce.add(
+        ACME,
+        new RosterCandidate(ada, "Ada", Set.of(), List.of(MONDAY_DAY), StatedPreferences.none()));
+    ShiftId day = aShift(ACME, Set.of());
+
+    assertGenerationRefused(request -> List.of(new Assignment(day, ada)));
+  }
+
+  @Test
+  void GivenAGeneratorNamingAShiftItWasNotAskedToCover_WhenGenerating_ThenNothingIsStored() {
+    EmployeeId ada = available(ACME, "Ada");
+
+    assertGenerationRefused(request -> List.of(new Assignment(ShiftId.newId(), ada)));
+  }
+
+  @Test
+  void GivenAGeneratorNamingSomebodyWhoIsNotACandidate_WhenGenerating_ThenNothingIsStored() {
+    ShiftId day = aShift(ACME, Set.of());
+
+    assertGenerationRefused(request -> List.of(new Assignment(day, EmployeeId.newId())));
+  }
+
+  @Test
+  void GivenAGeneratorStaffingAShiftAboveItsHeadcount_WhenGenerating_ThenNothingIsStored() {
+    EmployeeId ada = available(ACME, "Ada");
+    EmployeeId grace = available(ACME, "Grace");
+    ShiftId needsOne = aShift(ACME, Set.of());
+
+    assertGenerationRefused(
+        request -> List.of(new Assignment(needsOne, ada), new Assignment(needsOne, grace)));
+  }
+
+  @Test
+  void GivenAGeneratorAddingOnePersonToOneShiftTwice_WhenGenerating_ThenNothingIsStored() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId day = aShift(ACME, Set.of());
+
+    assertGenerationRefused(request -> List.of(new Assignment(day, ada), new Assignment(day, ada)));
+  }
+
+  /**
+   * Generating with {@code generator} is refused as a defect in it, and leaves neither a draft nor
+   * an audit line behind.
+   */
+  private void assertGenerationRefused(RosterGenerator generator) {
+    audit.forget();
+
+    assertThatThrownBy(
+            () ->
+                generatingWith(generator)
+                    .generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(rosters.findByOrganisation(ACME)).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
   @Test
   void GivenShiftsInsideAndOutsideASpan_WhenListingThem_ThenOnlyTheOverlappingOnesComeBack() {
     service.defineShift(

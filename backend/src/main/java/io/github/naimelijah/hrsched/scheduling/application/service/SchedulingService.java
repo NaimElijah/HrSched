@@ -251,12 +251,70 @@ public class SchedulingService
             workforce.candidatesFor(actor, command.organisation()),
             currentOrInitial(command.organisation()));
 
-    List<Assignment> added = generator.generate(request);
-
-    Roster draft =
-        empty.withAssignments(Stream.concat(empty.assignments().stream(), added.stream()).toList());
+    Roster draft = generated(request, generator.generate(request));
     rosters.save(draft);
     recorded(actor, command.organisation(), SchedulingChange.ROSTER_GENERATED, draft.id().value());
+    return draft;
+  }
+
+  /**
+   * The draft a generator's answer makes, once that answer is shown to keep every promise of {@link
+   * RosterGenerator#generate}.
+   *
+   * <p>Checked here rather than trusted, so it holds whichever generator is wired in. A generator
+   * is our own code, so an answer breaking a promise is a defect in it: refused loudly before
+   * anything is stored, rather than saved as a draft that publication would refuse only later.
+   *
+   * @param added what the generator answered
+   * @return the request's draft with {@code added} on it
+   * @throws IllegalStateException naming, by identity only, every promise the answer breaks
+   */
+  private static Roster generated(GenerationRequest request, List<Assignment> added) {
+    Map<ShiftId, Shift> offered = new LinkedHashMap<>();
+    request.shifts().forEach(shift -> offered.put(shift.id(), shift));
+    Set<EmployeeId> candidates =
+        request.candidates().stream().map(RosterCandidate::id).collect(Collectors.toSet());
+
+    List<String> broken = new ArrayList<>();
+    Set<Assignment> onDraft = new LinkedHashSet<>(request.draft().assignments());
+    for (Assignment assignment : added) {
+      if (!offered.containsKey(assignment.shift())) {
+        broken.add("shift %s was not offered".formatted(assignment.shift().value()));
+      }
+      if (!candidates.contains(assignment.employee())) {
+        broken.add("employee %s is not a candidate".formatted(assignment.employee().value()));
+      }
+      if (!onDraft.add(assignment)) {
+        broken.add(
+            "employee %s is on shift %s twice"
+                .formatted(assignment.employee().value(), assignment.shift().value()));
+      }
+    }
+    if (!broken.isEmpty()) {
+      throw new IllegalStateException("The generator broke its promises: " + broken);
+    }
+
+    Roster draft = request.draft().withAssignments(List.copyOf(onDraft));
+    Map<ShiftId, Integer> carried = new HashMap<>();
+    request
+        .draft()
+        .assignments()
+        .forEach(assignment -> carried.merge(assignment.shift(), 1, Integer::sum));
+    Map<ShiftId, Integer> staffed = new LinkedHashMap<>();
+    draft.assignments().forEach(assignment -> staffed.merge(assignment.shift(), 1, Integer::sum));
+    staffed.forEach(
+        (shift, count) -> {
+          int allowed =
+              Math.max(offered.get(shift).requiredHeadcount(), carried.getOrDefault(shift, 0));
+          if (count > allowed) {
+            broken.add("shift %s is staffed above %d".formatted(shift.value(), allowed));
+          }
+        });
+    judged(draft, request.constraints(), offered, List.of(), request.candidates())
+        .forEach(violation -> broken.add(violation.toString()));
+    if (!broken.isEmpty()) {
+      throw new IllegalStateException("The generator broke its promises: " + broken);
+    }
     return draft;
   }
 
