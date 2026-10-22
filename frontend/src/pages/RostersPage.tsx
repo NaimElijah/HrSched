@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Violation } from '../api/problem';
+import { ApiError, type Violation } from '../api/problem';
 import { scheduling, type Generation } from '../api/scheduling';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure, Violations } from '../components/Feedback';
@@ -25,6 +25,13 @@ import { RosterBoard } from './RosterBoard';
  */
 /** How long to wait between asking whether a generation has ended (ADR-046). */
 const GENERATION_POLL_MS = 1000;
+
+/**
+ * Whether a failure to ask how a generation stands may pass: the network failing, which rejects
+ * rather than answering, or a server error, which is what a gateway answers while the server behind
+ * it is replaced. Anything the server refused is an answer, and asking again would get it again.
+ */
+const passing = (error: unknown): boolean => !(error instanceof ApiError) || error.status >= 500;
 
 const pause = (milliseconds: number) =>
   new Promise<void>((resolve) => {
@@ -74,6 +81,8 @@ export function RostersPage({
   const [revision, setRevision] = useState(0);
   const [starting, setStarting] = useState(false);
   const generating = starting || waitingFor !== null;
+  // Why asking how the generation stands last failed, while it is still being asked.
+  const [askingFailed, setAskingFailed] = useState<unknown>(null);
 
   const rosters = useAsync(() => scheduling.findRosters(), sessionKey);
   const personById = new Map(people.map((person) => [person.id, person]));
@@ -119,28 +128,45 @@ export function RostersPage({
 
   // Asks once a second until the generation ends, for as long as this page is open. Leaving stops
   // the asking but not the waiting: the shell still holds the generation, so coming back resumes.
+  // The network or a server being replaced failing for a moment is asked past, since the solve
+  // carries on elsewhere; any other refusal ends the wait.
   useEffect(() => {
     if (waitingFor === null) {
       return undefined;
     }
     let live = true;
     const wait = async () => {
-      let generation: Generation;
-      do {
+      for (;;) {
         await pause(GENERATION_POLL_MS);
         if (!live) {
           return;
         }
-        generation = await scheduling.findGeneration(waitingFor);
+        let generation: Generation;
+        try {
+          generation = await scheduling.findGeneration(waitingFor);
+        } catch (error) {
+          if (!passing(error)) {
+            throw error;
+          }
+          if (live) {
+            setAskingFailed(error);
+          }
+          continue;
+        }
         if (!live) {
           return;
         }
-      } while (generation.status === 'PENDING');
-      end.current(generation);
+        setAskingFailed(null);
+        if (generation.status !== 'PENDING') {
+          end.current(generation);
+          return;
+        }
+      }
     };
     wait().catch((error: unknown) => {
       if (live) {
         stopWaiting.current(null);
+        setAskingFailed(null);
         setFailure(error);
       }
     });
@@ -181,7 +207,11 @@ export function RostersPage({
       </button>
       <p className="busy" role="status">
         {generating ? 'Generating a draft…' : null}
+        {generating && askingFailed !== null
+          ? ' Asking how it stands failed, so asking again.'
+          : null}
       </p>
+      {generating ? <Failure error={askingFailed} /> : null}
 
       {failure instanceof GenerationRefused ? (
         <div className="failure failure--rules" role="alert">

@@ -908,6 +908,83 @@ describe('the board of a draft', () => {
   });
 
   /**
+   * ADR-046: a deployment replaces the server mid-solve, so asking how a generation stands can fail
+   * for a moment while the solve carries on elsewhere. That failure is shown, and asked past.
+   */
+  it('GivenAskingHowAGenerationStandsFailsOnce_WhenAskedAgain_ThenTheWaitCarriesOnToItsEnd', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const pending = { id: 'gen-1', status: 'PENDING', roster: null, violations: [] };
+      const answers = {
+        'POST /api/rosters/generations': { status: 202, body: pending },
+        'GET /api/rosters/generations/gen-1': { status: 502, body: null },
+        '/api/rosters': { status: 200, body: [ROSTER] },
+      };
+      routeTo(answers);
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderPage();
+      await user.click(
+        await screen.findByRole('button', { name: 'Generate a draft for this span' }),
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(await screen.findByText(/asking again/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeDisabled();
+
+      routeTo({
+        ...answers,
+        'GET /api/rosters/generations/gen-1': {
+          status: 200,
+          body: { ...pending, status: 'SUCCEEDED', roster: 'roster-1' },
+        },
+      });
+      await vi.advanceTimersByTimeAsync(1000);
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: 'Generate a draft for this span' }),
+        ).toBeEnabled(),
+      );
+      expect(screen.queryByText(/asking again/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A refusal to answer is no passing failure: the wait stops, and says why. */
+  it('GivenAGenerationTheServerDoesNotFind_WhenAsked_ThenTheWaitStopsAndSaysWhy', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const stub = routeTo({
+        'POST /api/rosters/generations': {
+          status: 202,
+          body: { id: 'gen-1', status: 'PENDING', roster: null, violations: [] },
+        },
+        'GET /api/rosters/generations/gen-1': {
+          status: 404,
+          body: { title: 'Not found', detail: 'No such generation in this organisation' },
+        },
+        '/api/rosters': { status: 200, body: [] },
+      });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderPage();
+      await user.click(
+        await screen.findByRole('button', { name: 'Generate a draft for this span' }),
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/^Nothing here/);
+      expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeEnabled();
+      const asked = callsTo(stub, 'GET', '/api/rosters/generations/gen-1').length;
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(callsTo(stub, 'GET', '/api/rosters/generations/gen-1')).toHaveLength(asked);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
    * #130: work a published roster carries onto these shifts that can no longer stay there refuses
    * the generation, naming who and why, and says it is that published roster that has to change.
    */
