@@ -619,12 +619,32 @@ public class SchedulingService
             organisation,
             existing.stream().filter(other -> other.staysAuthoritativeBeside(roster)).toList(),
             roster.assignments().stream().map(Assignment::employee).collect(Collectors.toSet()));
+    return judged(roster, constraints, assigned, heldElsewhere, candidates);
+  }
+
+  /**
+   * The judgement {@link #violationsOf} makes, from evidence already resolved: nothing here reads a
+   * port, so a caller holding the shifts, the work held elsewhere and the directory's answer can
+   * ask it without reading any of them again.
+   *
+   * @param shifts every shift the roster assigns, by identity; any others are ignored
+   * @param heldElsewhere work on the rosters that stay authoritative beside this one
+   * @return every rule broken, empty if the roster may be published
+   * @throws RosterNotVerifiableException if a shift the roster assigns is missing from {@code
+   *     shifts}
+   */
+  private static List<ConstraintViolation> judged(
+      Roster roster,
+      ConstraintSet constraints,
+      Map<ShiftId, Shift> shifts,
+      List<HeldWork> heldElsewhere,
+      List<RosterCandidate> candidates) {
     Map<ShiftId, WorkingPeriod> periods = new LinkedHashMap<>();
-    assigned.forEach((id, shift) -> periods.put(id, shift.workingPeriod()));
+    shifts.forEach((id, shift) -> periods.put(id, shift.workingPeriod()));
 
     List<ConstraintViolation> violations = new ArrayList<>();
     violations.addAll(roster.violationsUnder(constraints, periods, heldElsewhere));
-    violations.addAll(AssignmentEligibility.breachesOn(roster, assigned, candidates));
+    violations.addAll(AssignmentEligibility.breachesOn(roster, shifts, candidates));
     return List.copyOf(violations);
   }
 
