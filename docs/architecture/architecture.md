@@ -666,7 +666,9 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   draft's own unit of work; REFUSED with the rules the work it would carry over breaks, kept in
   `roster_generation_violation`; or FAILED. One still PENDING past its `lost_at`, fixed at
   `hrsched.generation.lost-after` after it was asked for, reads as LOST, derived from the clock on
-  every read, so nothing sweeps ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)).
+  every read, so nothing sweeps. It stays lost: a solve ending after that instant stores no draft,
+  because `RosterGeneration` refuses to end, and the use case ends it before writing anything
+  ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)).
 - **At the largest stated size, a solve takes minutes and gigabytes.** Measured on an 8-core, 16 GB
   development machine with `GenerationAtScaleRun` (`./mvnw spotless:apply test
   -Dtest=GenerationAtScaleRun`, kept out of the build): the coverage search alone spent 75 s in

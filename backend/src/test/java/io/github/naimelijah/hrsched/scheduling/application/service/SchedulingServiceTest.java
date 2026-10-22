@@ -192,6 +192,35 @@ class SchedulingServiceTest {
     }
   }
 
+  /** Reads whatever it was last moved to, so that a test can let time pass during a solve. */
+  private static final class MovableClock extends Clock {
+
+    private Instant now;
+
+    MovableClock(Instant start) {
+      now = start;
+    }
+
+    void moveTo(Instant later) {
+      now = later;
+    }
+
+    @Override
+    public Instant instant() {
+      return now;
+    }
+
+    @Override
+    public ZoneId getZone() {
+      return ZoneOffset.UTC;
+    }
+
+    @Override
+    public Clock withZone(ZoneId zone) {
+      throw new UnsupportedOperationException("these tests read instants only");
+    }
+  }
+
   /** Generates and publishes a roster for THE_WEEK, which supersedes any published before it. */
   private Roster publishTheWeek() {
     Roster draft =
@@ -688,6 +717,37 @@ class SchedulingServiceTest {
         .get()
         .extracting(GenerationState::status)
         .isEqualTo(GenerationStatus.LOST);
+  }
+
+  /**
+   * ADR-046: from its lost-at instant a generation reads as lost, and the Scheduler is told to
+   * generate again. A solve outlasting that instant leaves it lost and stores no draft, rather than
+   * ending it after all with a draft nobody is waiting for.
+   */
+  @Test
+  void GivenASolveOutlastingItsLostAtInstant_WhenItEnds_ThenTheGenerationStaysLost() {
+    available(ACME, "Ada");
+    aShift(ACME, Set.of());
+    MovableClock clock = new MovableClock(NOW);
+    SchedulingService slow =
+        with(
+            clock,
+            request -> {
+              clock.moveTo(NOW.plus(LOST_AFTER.lostAfter()));
+              return new FirstFitGenerator().generate(request);
+            });
+    audit.forget();
+
+    assertThatThrownBy(
+            () -> slow.startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(generations.all())
+        .singleElement()
+        .extracting(generation -> generation.statusAt(clock.instant()))
+        .isEqualTo(GenerationStatus.LOST);
+    assertThat(rosters.findByOrganisation(ACME)).isEmpty();
+    assertThat(audit.changes()).containsExactly(SchedulingChange.GENERATION_REQUESTED);
   }
 
   @Test

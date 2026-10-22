@@ -45,7 +45,8 @@ read.**
 - **A generation still `PENDING` past its `lost_at` reads as `LOST`.** That instant is fixed when the
   generation is asked for, at `hrsched.generation.lost-after` later, which exceeds the longest a
   solve may run. The status is derived when it is read, from the clock, so nothing has to sweep, and
-  every instance agrees.
+  every instance agrees. It stays lost: a solve that outlasts the instant stores no draft, because
+  the Scheduler has already been told to generate again.
 - **At most `hrsched.generation.concurrent-runs` solves run at once on an instance.** One asked for
   beyond that is refused with a 503 before anything runs, and its record says `FAILED`. Nothing
   queues, so a generation begins the moment it is accepted, and `lost_at` measures a solve rather

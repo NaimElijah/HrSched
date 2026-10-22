@@ -54,6 +54,22 @@ class RosterGenerationTest {
     assertThat(asked.statusAt(asked.lostAt())).isEqualTo(GenerationStatus.LOST);
   }
 
+  /**
+   * Read as lost from its lost-at instant, and the Scheduler told to generate again, it stays lost:
+   * a solve that outlasted that instant cannot end it after all.
+   */
+  @Test
+  void GivenAGenerationAtItsLostAtInstant_WhenItEnds_ThenItIsRejected() {
+    RosterGeneration asked = asked();
+
+    assertThatThrownBy(() -> asked.succeeded(RosterId.newId(), asked.lostAt()))
+        .isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> asked.refused(List.of(BROKEN), asked.lostAt()))
+        .isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> asked.failed(asked.lostAt()))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
   @Test
   void GivenAGenerationThatSucceeded_WhenReadLongAfter_ThenItStillNamesItsDraft() {
     RosterId draft = RosterId.newId();

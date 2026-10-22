@@ -12,8 +12,9 @@ import java.util.Optional;
  *
  * <p>Immutable. It is {@link GenerationStatus#PENDING} from the moment it is asked for until it
  * ends, once: with a draft, refused for the rules the work carried over breaks, or failed. One
- * still pending past {@link #lostAt()} reads as {@link GenerationStatus#LOST}, because the instance
- * solving it stopped, and nothing else would ever end it.
+ * still pending at {@link #lostAt()} reads as {@link GenerationStatus#LOST}, because the instance
+ * solving it stopped, and nothing else would ever end it. From then on nothing may: the Scheduler
+ * has been told it was lost.
  */
 public final class RosterGeneration {
 
@@ -121,10 +122,10 @@ public final class RosterGeneration {
    * @param draft the draft it produced
    * @param at when it ended
    * @return it, ended with that draft
-   * @throws IllegalStateException if it has already ended
+   * @throws IllegalStateException if it has already ended, or is lost by {@code at}
    */
   public RosterGeneration succeeded(RosterId draft, Instant at) {
-    requirePending();
+    requireEndableAt(at);
     Objects.requireNonNull(draft, "draft must not be null");
     return ended(GenerationStatus.SUCCEEDED, draft, List.of(), at);
   }
@@ -133,41 +134,39 @@ public final class RosterGeneration {
    * @param broken every rule the work carried over breaks, at least one
    * @param at when it ended
    * @return it, refused
-   * @throws IllegalStateException if it has already ended, or nothing was broken
+   * @throws IllegalStateException if it has already ended, is lost by {@code at}, or nothing was
+   *     broken
    */
   public RosterGeneration refused(List<ConstraintViolation> broken, Instant at) {
-    requirePending();
+    requireEndableAt(at);
     return ended(GenerationStatus.REFUSED, null, broken, at);
   }
 
   /**
    * @param at when it ended
    * @return it, failed
-   * @throws IllegalStateException if it has already ended
+   * @throws IllegalStateException if it has already ended, or is lost by {@code at}
    */
   public RosterGeneration failed(Instant at) {
-    requirePending();
+    requireEndableAt(at);
     return ended(GenerationStatus.FAILED, null, List.of(), at);
   }
 
   private RosterGeneration ended(
       GenerationStatus outcome, RosterId draft, List<ConstraintViolation> broken, Instant at) {
     return new RosterGeneration(
-        id,
-        organisation,
-        period,
-        requestedAt,
-        lostAt,
-        outcome,
-        draft,
-        broken,
-        Objects.requireNonNull(at, "at must not be null"));
+        id, organisation, period, requestedAt, lostAt, outcome, draft, broken, at);
   }
 
-  private void requirePending() {
+  private void requireEndableAt(Instant at) {
+    Objects.requireNonNull(at, "at must not be null");
     if (status != GenerationStatus.PENDING) {
       throw new IllegalStateException(
           "Generation %s has already ended, %s".formatted(id.value(), status));
+    }
+    if (statusAt(at) == GenerationStatus.LOST) {
+      throw new IllegalStateException(
+          "Generation %s was lost at %s, and stays lost".formatted(id.value(), lostAt));
     }
   }
 

@@ -78,7 +78,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -317,14 +316,12 @@ public class SchedulingService
    *
    * <p>The draft and the generation naming it are stored in one unit of work, so neither is ever
    * found without the other. Anything else that goes wrong is a defect: the generation is stored as
-   * failed, and the failure is thrown on to be logged where it happened.
+   * failed, and the failure is thrown on to be logged where it happened. One that is lost by the
+   * time it ends is stored as nothing at all, and stays lost.
    */
   private void complete(Actor actor, GenerateRosterCommand command, RosterGeneration requested) {
     try {
-      draftFor(
-          actor,
-          command,
-          draft -> generations.save(requested.succeeded(draft.id(), clock.instant())));
+      draftFor(actor, command, requested);
     } catch (RosterNotCompliantException refused) {
       units.writing(
           () -> {
@@ -351,23 +348,26 @@ public class SchedulingService
   }
 
   /**
-   * Reads in one unit of work, generates outside any, and stores the draft, with whatever {@code
-   * alongside} stores, in another, so that a solve running for minutes holds no connection
-   * (ADR-045). A draft stored from reads that changed during the solve is a draft like any other:
-   * publication judges it again.
+   * Reads in one unit of work, generates outside any, and stores the draft and {@code requested},
+   * ended with it, in another, so that a solve running for minutes holds no connection (ADR-045). A
+   * draft stored from reads that changed during the solve is a draft like any other: publication
+   * judges it again.
+   *
+   * @throws IllegalStateException if {@code requested} is lost by the time the solve ends, before
+   *     anything is written (ADR-046)
    */
-  private Roster draftFor(Actor actor, GenerateRosterCommand command, Consumer<Roster> alongside) {
+  private void draftFor(Actor actor, GenerateRosterCommand command, RosterGeneration requested) {
     GenerationRequest request = units.reading(() -> generationRequestFor(actor, command));
 
     Roster draft = generated(request, generator.generate(request));
+    RosterGeneration succeeded = requested.succeeded(draft.id(), clock.instant());
     units.writing(
         () -> {
           rosters.save(draft);
-          alongside.accept(draft);
+          generations.save(succeeded);
           return draft;
         });
     recorded(actor, command.organisation(), SchedulingChange.ROSTER_GENERATED, draft.id().value());
-    return draft;
   }
 
   /**
