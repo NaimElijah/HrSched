@@ -190,6 +190,26 @@ class HexagonalArchitectureTest {
           .because("a meter or a span needs a backend, and the hexagon may not know it has one");
 
   /**
+   * The solver stays in the one adapter that drives it (ADR-044).
+   *
+   * <p>OR-Tools is native code with a modelling discipline of its own, a version held back for one
+   * platform's runtime, and a crash that takes the JVM with it. Confined to {@code
+   * scheduling.adapter.out.generation}, it can be replaced, upgraded or moved into a process of its
+   * own by changing one package. The rules that keep frameworks out of the domain and the
+   * application name packages; none of them names this library, so without this rule a model type
+   * could reach a use case unnoticed.
+   */
+  @ArchTest
+  static final ArchRule the_solver_stays_in_its_adapter =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("..scheduling.adapter.out.generation..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("com.google.ortools..")
+          .because("CP-SAT is infrastructure behind the RosterGenerator port (ADR-044)");
+
+  /**
    * Who is acting arrives as an argument, and is never fetched from the air.
    *
    * <p>Spring Security keeps the authenticated caller in a thread-local, and reading it is one line
