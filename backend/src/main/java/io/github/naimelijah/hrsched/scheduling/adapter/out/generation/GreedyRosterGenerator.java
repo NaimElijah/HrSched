@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Fills shifts by taking the first eligible person who still fits the rules.
@@ -63,8 +64,17 @@ public class GreedyRosterGenerator implements RosterGenerator {
             .register(meters);
   }
 
+  /**
+   * @throws IllegalStateException if asked inside a transaction, where a long generation would hold
+   *     a pooled connection for as long as it ran (ADR-045)
+   */
   @Override
   public List<Assignment> generate(GenerationRequest request) {
+    if (TransactionSynchronizationManager.isActualTransactionActive()
+        || TransactionSynchronizationManager.isSynchronizationActive()) {
+      throw new IllegalStateException(
+          "Generation runs outside any transaction, so that it holds no connection (ADR-045)");
+    }
     List<Assignment> assignments = new ArrayList<>();
     Map<ShiftId, Shift> byId = new HashMap<>();
     request.shifts().forEach(shift -> byId.put(shift.id(), shift));

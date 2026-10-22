@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.generation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
@@ -17,6 +18,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Specification of the placeholder generator: every promise in {@link RosterGeneratorContract},
@@ -113,6 +115,24 @@ class GreedyRosterGeneratorTest extends RosterGeneratorContract {
 
     assertThat(summary("hrsched.shifts.required").totalAmount()).isEqualTo(3.0);
     assertThat(summary("hrsched.shifts.uncovered").totalAmount()).isEqualTo(2.0);
+  }
+
+  /**
+   * ADR-045: generation must hold no connection, so asking for it inside a transaction is a mistake
+   * in the caller, refused before anything else.
+   */
+  @Test
+  void GivenATransactionAlreadyOpen_WhenGenerating_ThenItIsRefused() {
+    TransactionSynchronizationManager.initSynchronization();
+    try {
+      assertThatThrownBy(
+              () ->
+                  generator.generate(
+                      request(List.of(), List.of(anyone("Ada")), ConstraintSet.initial(ACME))))
+          .isInstanceOf(IllegalStateException.class);
+    } finally {
+      TransactionSynchronizationManager.clearSynchronization();
+    }
   }
 
   /**

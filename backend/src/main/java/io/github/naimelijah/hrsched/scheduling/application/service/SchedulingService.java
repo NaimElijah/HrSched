@@ -25,6 +25,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterReposi
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SchedulingChange;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestRepository;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.UnitsOfWork;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
@@ -116,6 +117,7 @@ public class SchedulingService
   private final SwapRequestRepository swaps;
   private final WorkforceDirectory workforce;
   private final RosterGenerator generator;
+  private final UnitsOfWork units;
   private final Notifier notifier;
   private final AuditTrail audit;
   private final Clock clock;
@@ -123,6 +125,8 @@ public class SchedulingService
   /**
    * @param objectiveWeights how each organisation weights the objectives a draft is scored on
    *     (ADR-010)
+   * @param units the units of work generation marks out for itself, so that its solve holds no
+   *     connection (ADR-045)
    * @param swaps the requests a publication lapses when it supersedes the roster they name (R33)
    * @param notifier how the parties to a lapsed request are told
    * @param clock what a publication reads the time from, so that when it happened is an input a
@@ -136,6 +140,7 @@ public class SchedulingService
       SwapRequestRepository swaps,
       WorkforceDirectory workforce,
       RosterGenerator generator,
+      UnitsOfWork units,
       Notifier notifier,
       AuditTrail audit,
       Clock clock) {
@@ -147,6 +152,7 @@ public class SchedulingService
     this.swaps = Objects.requireNonNull(swaps, "swaps must not be null");
     this.workforce = Objects.requireNonNull(workforce, "workforce must not be null");
     this.generator = Objects.requireNonNull(generator, "generator must not be null");
+    this.units = Objects.requireNonNull(units, "units must not be null");
     this.notifier = Objects.requireNonNull(notifier, "notifier must not be null");
     this.audit = Objects.requireNonNull(audit, "audit must not be null");
     this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -240,13 +246,23 @@ public class SchedulingService
     return weightsOf(organisation);
   }
 
+  /**
+   * Not one transaction, unlike every other use case here: it reads in one unit of work, generates
+   * outside any, and stores the draft in another, so that a solve running for seconds holds no
+   * connection (ADR-045). A draft stored from reads that changed during the solve is a draft like
+   * any other: publication judges it again.
+   */
   @Override
   public Roster generateDraft(Actor actor, GenerateRosterCommand command) {
     authorise(actor, command.organisation(), MAY_SCHEDULE);
-    GenerationRequest request = generationRequestFor(actor, command);
+    GenerationRequest request = units.reading(() -> generationRequestFor(actor, command));
 
     Roster draft = generated(request, generator.generate(request));
-    rosters.save(draft);
+    units.writing(
+        () -> {
+          rosters.save(draft);
+          return draft;
+        });
     recorded(actor, command.organisation(), SchedulingChange.ROSTER_GENERATED, draft.id().value());
     return draft;
   }

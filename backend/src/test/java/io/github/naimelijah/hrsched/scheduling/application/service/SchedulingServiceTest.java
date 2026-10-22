@@ -143,6 +143,7 @@ class SchedulingServiceTest {
         new FakeSwaps(new CallLog()),
         workforce,
         generator,
+        new RecordingUnitsOfWork(),
         new RecordingNotifier(),
         audit,
         clock);
@@ -538,6 +539,45 @@ class SchedulingServiceTest {
     ShiftId day = aShift(ACME, Set.of());
 
     assertGenerationRefused(request -> List.of(new Assignment(day, ada), new Assignment(day, ada)));
+  }
+
+  /**
+   * ADR-045: generation reads in one unit of work, generates outside any, and stores the draft in
+   * another, so a solve running for seconds holds no connection.
+   */
+  @Test
+  void GivenADraftToGenerate_WhenGenerating_ThenTheGeneratorWorksOutsideAnyUnitOfWork() {
+    available(ACME, "Ada");
+    aShift(ACME, Set.of());
+    RecordingUnitsOfWork units = new RecordingUnitsOfWork();
+    List<Optional<RecordingUnitsOfWork.Unit>> generatedIn = new ArrayList<>();
+    List<Optional<RecordingUnitsOfWork.Unit>> savedIn = new ArrayList<>();
+    rosters.observeSaves(() -> savedIn.add(units.open()));
+    SchedulingService generating =
+        new SchedulingService(
+            shifts,
+            rosters,
+            constraintSets,
+            objectiveWeights,
+            new FakeSwaps(new CallLog()),
+            workforce,
+            request -> {
+              generatedIn.add(units.open());
+              return new FirstFitGenerator().generate(request);
+            },
+            units,
+            new RecordingNotifier(),
+            audit,
+            Clock.fixed(NOW, ZoneOffset.UTC));
+
+    Roster draft =
+        generating.generateDraft(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+
+    assertThat(draft.assignments()).hasSize(1);
+    assertThat(generatedIn).containsExactly(Optional.empty());
+    assertThat(savedIn).containsExactly(Optional.of(RecordingUnitsOfWork.Unit.WRITING));
+    assertThat(units.begun())
+        .containsExactly(RecordingUnitsOfWork.Unit.READING, RecordingUnitsOfWork.Unit.WRITING);
   }
 
   /**

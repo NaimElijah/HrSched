@@ -18,6 +18,7 @@ import io.github.naimelijah.hrsched.access.domain.model.SessionPolicy;
 import io.github.naimelijah.hrsched.configuration.security.SecurityPolicyProperties;
 import io.github.naimelijah.hrsched.notifications.application.port.out.NotificationRepository;
 import io.github.naimelijah.hrsched.notifications.application.service.NotificationService;
+import io.github.naimelijah.hrsched.scheduling.application.port.in.GenerateRosterCommand;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.PlanRostersUseCase;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditTrail;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
@@ -27,13 +28,16 @@ import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenera
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ShiftRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.SwapRequestRepository;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.UnitsOfWork;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.WorkforceDirectory;
 import io.github.naimelijah.hrsched.scheduling.application.service.SchedulingService;
 import io.github.naimelijah.hrsched.scheduling.application.service.SwapService;
+import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
 import io.github.naimelijah.hrsched.workforce.application.service.EmployeeService;
 import io.github.naimelijah.hrsched.workforce.application.service.QualificationService;
+import java.lang.reflect.Method;
 import java.time.Clock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -60,6 +64,9 @@ import org.springframework.transaction.PlatformTransactionManager;
  * Spring inside the application layer and so {@code @Transactional} cannot go where a reader would
  * look for it. A transaction begins when a driving port method is called and ends when it returns;
  * a nested use case joins its caller's. See ADR-023.
+ *
+ * <p>One method is the exception, and it is named here: generating a draft marks out its own units
+ * of work, reading in one and writing in another, so that its solve holds no connection (ADR-045).
  */
 @Configuration
 public class UseCaseConfiguration {
@@ -180,6 +187,7 @@ public class UseCaseConfiguration {
       SwapRequestRepository swaps,
       WorkforceDirectory workforce,
       RosterGenerator generator,
+      UnitsOfWork units,
       Notifier notifier,
       AuditTrail audit,
       Clock clock,
@@ -193,10 +201,29 @@ public class UseCaseConfiguration {
             swaps,
             workforce,
             generator,
+            units,
             notifier,
             audit,
             clock),
-        transactions);
+        transactions,
+        generatingADraft());
+  }
+
+  /**
+   * The use case left outside any transaction (ADR-045), resolved here rather than named by a
+   * string the proxy compares: if it is renamed, startup fails, instead of the solve quietly
+   * running inside a transaction again.
+   */
+  private static Method generatingADraft() {
+    try {
+      return PlanRostersUseCase.class.getMethod(
+          "generateDraft", Actor.class, GenerateRosterCommand.class);
+    } catch (NoSuchMethodException renamed) {
+      throw new IllegalStateException(
+          "PlanRostersUseCase.generateDraft is the use case ADR-045 leaves outside any"
+              + " transaction, and it no longer exists by that name",
+          renamed);
+    }
   }
 
   /**

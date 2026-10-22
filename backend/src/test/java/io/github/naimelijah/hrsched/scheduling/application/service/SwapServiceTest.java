@@ -125,6 +125,7 @@ class SwapServiceTest {
             swaps,
             workforce,
             new AssignsNobody(),
+            new RecordingUnitsOfWork(),
             notifier,
             audit,
             Clock.fixed(RAISED_AT, ZoneOffset.UTC));
@@ -982,6 +983,7 @@ class SwapServiceTest {
             new RefusesTheSecondLapse(swaps),
             workforce,
             new AssignsNobody(),
+            new RecordingUnitsOfWork(),
             notifier,
             audit,
             Clock.fixed(RAISED_AT, ZoneOffset.UTC));

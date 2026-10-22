@@ -265,9 +265,12 @@ sequenceDiagram
     end
 ```
 
-Everything is persisted, and the whole exchange above is one transaction: the boundary is the use
-case, so a refusal at any point stores nothing ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)).
-An audit entry is a log line, though, and no rollback takes one back. So publication makes every
+Everything is persisted. Publication is one transaction: the boundary is the use case, so a
+refusal at any point stores nothing ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)).
+Generation is the one use case that is not: it reads in one transaction, asks the generator with
+none open, and stores the draft in another, so that a solve holds no pooled connection while it
+runs ([ADR-045](../ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)). An audit entry is
+a log line, though, and no rollback takes one back. So publication makes every
 refusal it can before it supersedes and records anything. The one refusal that can still follow
 those entries is `RosterPublicationConflictException`, which needs a writer that skipped the
 publication lock ([ADR-027](../ADRs/ADR-027-take-turns-publishing-within-an-organisation.md)). A durable
@@ -623,11 +626,17 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   widens who may be assigned and scheduling reads unavailability live through
   `WorkforceDirectoryAdapter`
   ([ADR-040](../ADRs/ADR-040-withdraw-a-declaration-by-what-it-says.md)).
-- **Every use case is one transaction, and no use case says so.** `UseCaseConfiguration` wraps each
-  service in a transactional proxy, because the architecture test forbids Spring inside the
-  application layer and so `@Transactional` cannot go where a reader would look for it
+- **Every use case is one transaction, and no use case says so, but one.** `UseCaseConfiguration`
+  wraps each service in a transactional proxy, because the architecture test forbids Spring inside
+  the application layer and so `@Transactional` cannot go where a reader would look for it
   ([ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md)). A nested use case joins
-  its caller's transaction, which is what makes approving a swap atomic.
+  its caller's transaction, which is what makes approving a swap atomic. The exception is
+  `generateDraft`, which the proxy is told to leave alone: it marks out its own units of work
+  through the `UnitsOfWork` port, reading in one and writing in another, so that the generator runs
+  with no transaction open and no connection held. The generator refuses to run inside a
+  transaction, so nesting generation inside another use case fails loudly rather than holding a
+  connection for the length of a solve
+  ([ADR-045](../ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)).
 - **Changes to one roster take turns on its row.** `assign` and `unassign` read the draft with
   `RosterRepository.findForUpdate`, which holds its row until the use case's transaction ends, so a
   second edit of the same draft waits, then reads the first one's change: both apply. `publish`
