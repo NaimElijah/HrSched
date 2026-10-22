@@ -916,12 +916,11 @@ describe('the board of a draft', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const pending = { id: 'gen-1', status: 'PENDING', roster: null, violations: [] };
-      const answers = {
-        'POST /api/rosters/generations': { status: 202, body: pending },
+      const starting = { 'POST /api/rosters/generations': { status: 202, body: pending } };
+      aDraft({
+        ...starting,
         'GET /api/rosters/generations/gen-1': { status: 502, body: null },
-        '/api/rosters': { status: 200, body: [ROSTER] },
-      };
-      routeTo(answers);
+      });
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderPage();
       await user.click(
@@ -932,8 +931,8 @@ describe('the board of a draft', () => {
       expect(await screen.findByText(/asking again/)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeDisabled();
 
-      routeTo({
-        ...answers,
+      aDraft({
+        ...starting,
         'GET /api/rosters/generations/gen-1': {
           status: 200,
           body: { ...pending, status: 'SUCCEEDED', roster: 'roster-1' },
@@ -941,11 +940,8 @@ describe('the board of a draft', () => {
       });
       await vi.advanceTimersByTimeAsync(1000);
 
-      await waitFor(() =>
-        expect(
-          screen.getByRole('button', { name: 'Generate a draft for this span' }),
-        ).toBeEnabled(),
-      );
+      expect(await screen.findByRole('region', { name: /^Roster/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeEnabled();
       expect(screen.queryByText(/asking again/)).not.toBeInTheDocument();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     } finally {
