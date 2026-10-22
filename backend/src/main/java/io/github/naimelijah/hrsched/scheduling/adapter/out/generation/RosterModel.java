@@ -4,13 +4,13 @@ import com.google.ortools.sat.BoolVar;
 import com.google.ortools.sat.CpModel;
 import com.google.ortools.sat.CpSolver;
 import com.google.ortools.sat.IntVar;
-import com.google.ortools.sat.IntervalVar;
 import com.google.ortools.sat.LinearArgument;
 import com.google.ortools.sat.LinearExpr;
 import com.google.ortools.sat.LinearExprBuilder;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
+import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWorkingDays;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
@@ -62,7 +62,10 @@ final class RosterModel {
   private final Map<EmployeeId, List<Shift>> open = new LinkedHashMap<>();
   private final Map<EmployeeId, List<Shift>> carried = new LinkedHashMap<>();
   private final Map<EmployeeId, Map<LocalDate, BoolVar>> workingOn = new HashMap<>();
+  private final Map<EmployeeId, List<HeldWork>> heldBy = new HashMap<>();
+  private final Set<Assignment> alreadyOn = new HashSet<>();
   private Ticks ticks;
+  private Duration rest = Duration.ZERO;
 
   private RosterModel(GenerationRequest request) {
     this.request = request;
@@ -80,7 +83,23 @@ final class RosterModel {
   private void state() {
     request.shifts().forEach(shift -> shifts.put(shift.id(), shift));
     request.shifts().forEach(shift -> days.put(shift.id(), shift.workingPeriod().timePerDay()));
+    request
+        .heldElsewhere()
+        .forEach(
+            work ->
+                heldBy.computeIfAbsent(work.employee(), employee -> new ArrayList<>()).add(work));
+    alreadyOn.addAll(request.draft().assignments());
     ticks = ticksFor();
+    for (WorkingTimeConstraint rule : request.constraints().constraints()) {
+      // No default: a new kind of rule does not compile until it is stated here.
+      switch (rule) {
+        case MinimumRestBetweenAssignments minimum ->
+            rest = rest.compareTo(minimum.minimumRest()) < 0 ? minimum.minimumRest() : rest;
+        case MaximumDailyWorkingTime daily -> {}
+        case MaximumWeeklyWorkingTime weekly -> {}
+        case MaximumConsecutiveWorkingDays run -> {}
+      }
+    }
     for (Assignment assignment : request.draft().assignments()) {
       carried
           .computeIfAbsent(assignment.employee(), employee -> new ArrayList<>())
@@ -89,21 +108,21 @@ final class RosterModel {
     for (Shift shift : request.shifts()) {
       for (RosterCandidate candidate : request.candidates()) {
         Assignment pair = new Assignment(shift.id(), candidate.id());
-        if (!request.draft().assignments().contains(pair)
+        if (!alreadyOn.contains(pair)
             && candidate.couldCover(shift.period(), shift.requiredQualifications())
-            && !isBusyElsewhere(candidate.id(), shift)) {
+            && !isBusyElsewhere(candidate.id(), shift)
+            && !clashesWithWorkCarried(candidate.id(), shift)) {
           pairs.put(pair, model.newBoolVar("x" + pairs.size()));
           open.computeIfAbsent(candidate.id(), employee -> new ArrayList<>()).add(shift);
         }
       }
     }
     stateHeadcounts();
+    stateOnePlaceAtATime();
     for (EmployeeId employee : open.keySet()) {
-      stateOnePlaceAtATime(employee);
       for (WorkingTimeConstraint rule : request.constraints().constraints()) {
-        // No default: a new kind of rule does not compile until it is stated here.
         switch (rule) {
-          case MinimumRestBetweenAssignments rest -> stateRest(employee, rest.minimumRest());
+          case MinimumRestBetweenAssignments stated -> {} // with one place at a time, above
           case MaximumDailyWorkingTime daily -> stateDailyCap(employee, daily.maximum());
           case MaximumWeeklyWorkingTime weekly -> stateTotalCap(employee, weekly.maximum());
           case MaximumConsecutiveWorkingDays run -> stateLongestRun(employee, run.maximum());
@@ -142,12 +161,29 @@ final class RosterModel {
 
   /** R35: a different shift held on another authoritative roster, running at the same time. */
   private boolean isBusyElsewhere(EmployeeId employee, Shift shift) {
-    return request.heldElsewhere().stream()
+    return heldBy.getOrDefault(employee, List.of()).stream()
         .anyMatch(
-            work ->
-                work.employee().equals(employee)
-                    && !work.shift().equals(shift.id())
-                    && work.period().overlaps(shift.period()));
+            work -> !work.shift().equals(shift.id()) && work.period().overlaps(shift.period()));
+  }
+
+  /**
+   * Whether work the draft already carries for this person rules this shift out: they cannot work
+   * both at once (R3), or without the rest between them. Stated here as an absent choice rather
+   * than as a constraint, because the carried work is fixed and nothing could ever choose it.
+   */
+  private boolean clashesWithWorkCarried(EmployeeId employee, Shift shift) {
+    return carried.getOrDefault(employee, List.of()).stream()
+        .anyMatch(fixed -> stretched(fixed).overlaps(stretched(shift)));
+  }
+
+  /**
+   * The span a shift keeps its worker from any other: its own, and then the longest rest the rules
+   * require after it. Two pieces of work are both possible exactly when their stretched spans do
+   * not overlap: the later must start no earlier than the earlier ends plus that rest, and a gap of
+   * exactly the rest passes, as the rule lets it. Half-open, as every span here is.
+   */
+  private TimeRange stretched(Shift shift) {
+    return new TimeRange(shift.period().start(), shift.period().end().plus(rest));
   }
 
   /** R22 as generation keeps it: up to the headcount, counting whoever was carried over. */
@@ -169,43 +205,63 @@ final class RosterModel {
                     0, shifts.get(shift).requiredHeadcount() - alreadyOn.getOrDefault(shift, 0))));
   }
 
-  /** R3: no two pieces of one person's work on this roster at once. Periods are half-open. */
-  private void stateOnePlaceAtATime(EmployeeId employee) {
-    stateNoOverlap(employee, Duration.ZERO);
-  }
-
   /**
-   * Rest at least {@code minimum} between any two pieces of work: each shift, stretched by the rest
-   * that must follow it, overlaps no other. A gap of exactly the minimum just touches, which
-   * passes, as the rule lets it. With no overlaps, every pair being far enough apart is the same as
-   * every pair of neighbours being, which is what the rule checks.
+   * R3, and the minimum rest: nobody takes two shifts whose stretched spans overlap.
+   *
+   * <p>The shifts' times are fixed, so this is stated over the groups of shifts that all overlap
+   * one another, computed once for every shift rather than once a person: the maximal cliques of an
+   * interval graph, each found where a span closes after others opened. Every overlapping pair lies
+   * in one of them, and a set of shifts is free of overlaps exactly when it holds at most one shift
+   * of each. Each person then takes at most one shift of each group. With no overlaps, every pair
+   * being far enough apart is the same as every pair of neighbours being, which is what the rest
+   * rule checks.
    */
-  private void stateRest(EmployeeId employee, Duration minimum) {
-    stateNoOverlap(employee, minimum);
+  private void stateOnePlaceAtATime() {
+    List<List<ShiftId>> groups = overlappingGroups();
+    for (EmployeeId employee : open.keySet()) {
+      Set<List<BoolVar>> stated = new HashSet<>();
+      for (List<ShiftId> group : groups) {
+        List<BoolVar> theirs = new ArrayList<>();
+        for (ShiftId shift : group) {
+          BoolVar chosen = pairs.get(new Assignment(shift, employee));
+          if (chosen != null) {
+            theirs.add(chosen);
+          }
+        }
+        if (theirs.size() > 1 && stated.add(theirs)) {
+          model.addAtMostOne(theirs.toArray(BoolVar[]::new));
+        }
+      }
+    }
   }
 
-  private void stateNoOverlap(EmployeeId employee, Duration after) {
-    List<IntervalVar> intervals = new ArrayList<>();
-    for (Shift shift : open.get(employee)) {
-      long start = ticks.at(shift.period().start());
-      intervals.add(
-          model.newOptionalFixedSizeIntervalVar(
-              LinearExpr.constant(start),
-              ticks.at(shift.period().end()) + ticks.of(after) - start,
-              pairs.get(new Assignment(shift.id(), employee)),
-              "i" + intervals.size()));
+  /** The maximal groups of shifts whose stretched spans all overlap one another. */
+  private List<List<ShiftId>> overlappingGroups() {
+    record Edge(Instant at, boolean opens, ShiftId shift) {}
+    List<Edge> edges = new ArrayList<>();
+    for (Shift shift : request.shifts()) {
+      TimeRange span = stretched(shift);
+      edges.add(new Edge(span.start(), true, shift.id()));
+      edges.add(new Edge(span.end(), false, shift.id()));
     }
-    for (Shift shift : carried.getOrDefault(employee, List.of())) {
-      long start = ticks.at(shift.period().start());
-      intervals.add(
-          model.newFixedInterval(
-              start,
-              ticks.at(shift.period().end()) + ticks.of(after) - start,
-              "c" + intervals.size()));
+    // A span closing at the instant another opens does not overlap it, so closes come first.
+    edges.sort(Comparator.comparing(Edge::at).thenComparing(Edge::opens));
+    List<List<ShiftId>> groups = new ArrayList<>();
+    List<ShiftId> active = new ArrayList<>();
+    boolean grown = false;
+    for (Edge edge : edges) {
+      if (edge.opens()) {
+        active.add(edge.shift());
+        grown = true;
+      } else {
+        if (grown && active.size() > 1) {
+          groups.add(List.copyOf(active));
+        }
+        grown = false;
+        active.remove(edge.shift());
+      }
     }
-    if (intervals.size() > 1) {
-      model.addNoOverlap(intervals);
-    }
+    return groups;
   }
 
   /** At most {@code maximum} on each calendar day, counted in each shift's own zone (R36). */
@@ -263,8 +319,7 @@ final class RosterModel {
   /**
    * No run of more than {@code maximum} working days, a working day being one with any time on it.
    * A longer run holds {@code maximum + 1} days in a row, so it is enough that every such window
-   * has a day off. A day's literal is only forced on by the shifts touching it; it is never forced
-   * off, which leaves exactly the same rosters allowed as if it were their disjunction.
+   * has a day off.
    */
   private void stateLongestRun(EmployeeId employee, int maximum) {
     Set<LocalDate> carriedDates = new TreeSet<>();
@@ -295,19 +350,27 @@ final class RosterModel {
     }
   }
 
-  /** One literal per day this person might work and is not already working through carried work. */
+  /**
+   * One literal per day this person might work and is not already working through carried work,
+   * equal to whether any shift touching that day is chosen for them.
+   */
   private Map<LocalDate, BoolVar> workingDays(EmployeeId employee, Set<LocalDate> carriedDates) {
-    Map<LocalDate, BoolVar> literals = new LinkedHashMap<>();
+    Map<LocalDate, List<BoolVar>> touching = new LinkedHashMap<>();
     for (Shift shift : open.get(employee)) {
       BoolVar chosen = pairs.get(new Assignment(shift.id(), employee));
       for (LocalDate day : days.get(shift.id()).keySet()) {
         if (!carriedDates.contains(day)) {
-          BoolVar working =
-              literals.computeIfAbsent(day, ignored -> model.newBoolVar("w" + literals.size()));
-          model.addImplication(chosen, working);
+          touching.computeIfAbsent(day, ignored -> new ArrayList<>()).add(chosen);
         }
       }
     }
+    Map<LocalDate, BoolVar> literals = new LinkedHashMap<>();
+    touching.forEach(
+        (day, chosen) -> {
+          BoolVar working = model.newBoolVar("w" + literals.size());
+          model.addMaxEquality(working, chosen.toArray(BoolVar[]::new));
+          literals.put(day, working);
+        });
     return literals;
   }
 
