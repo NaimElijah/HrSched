@@ -33,6 +33,29 @@ let session: Session | null = null;
 const listeners = new Set<() => void>();
 
 /**
+ * Where tabs tell each other a session ended, and what they say.
+ *
+ * The token lives in each tab's memory, so a sign-out in one tab would otherwise leave every other
+ * tab still showing the names, absences and contracted hours it had loaded, for whoever sits down
+ * at the computer next (#250).
+ */
+const SESSION_CHANNEL = 'hrsched.session';
+const ENDED = 'ended';
+
+// BroadcastChannel is absent in older browsers. Without it a sign-out stays in its own tab, which is
+// the behaviour this app had before — degraded, not broken.
+const otherTabs: BroadcastChannel | null =
+  typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(SESSION_CHANNEL);
+
+// A tab that hears the session ended forgets it without announcing it again: two tabs answering
+// each other would never stop.
+otherTabs?.addEventListener('message', (event) => {
+  if (event.data === ENDED) {
+    forget();
+  }
+});
+
+/**
  * @returns the token to present, or null when nobody is signed in
  */
 export function currentAccessToken(): string | null {
@@ -57,13 +80,19 @@ export function holdSession(signedIn: SignedIn): void {
 }
 
 /**
- * Forgets everything, and tells anybody watching.
+ * Forgets everything, and tells anybody watching — in this tab and in every other.
  *
  * Called when a refresh is refused, when signing out, and whenever the backend stops believing us.
  * The notification is what lets the shell fall back to the sign-in screen from anywhere, including
- * from inside a request a page made.
+ * from inside a request a page made. Every other tab of this app hears it too, and ends its own
+ * session the same way.
  */
 export function endSession(): void {
+  forget();
+  otherTabs?.postMessage(ENDED);
+}
+
+function forget(): void {
   accessToken = null;
   session = null;
   for (const listener of [...listeners]) {
