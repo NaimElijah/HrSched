@@ -1,5 +1,5 @@
 import { ApiError, toApiError } from './problem';
-import { currentAccessToken, endSession, holdSession } from './session';
+import { currentAccessToken, currentSession, endSession, holdSession } from './session';
 import type { SignedIn } from './session';
 
 /**
@@ -141,6 +141,9 @@ function interpret<T>(path: string, answered: Answered): T {
  * or the server was down (#139). The renewal carries no access token, so the 401 cannot be the
  * backend refusing a stale one instead of the cookie (#179).
  *
+ * A renewal that answers with an account other than the one held ends the session too, rather
+ * than changing who this tab is acting as.
+ *
  * @returns whether there is a usable token afterwards
  * @throws ApiError when the refresh failed without being refused, or the fetch rejection itself
  */
@@ -148,12 +151,22 @@ async function refreshOnce(): Promise<boolean> {
   refreshing ??= (async () => {
     try {
       return await underRefreshLock(async () => {
+        const held = currentSession();
         const answered = await send('/api/auth/refresh', { method: 'POST' });
         if (answered.status === 401) {
           endSession();
           return false;
         }
-        holdSession(interpret<SignedIn>('/api/auth/refresh', answered));
+        const renewed = interpret<SignedIn>('/api/auth/refresh', answered);
+        // One cookie jar is shared by every tab, so the cookie renews whichever account signed in
+        // last, in any tab. Adopting another account's session here would leave this tab acting as
+        // it while the shell still names the old one (#250). With nothing held this is a restore,
+        // asking whose the cookie is, and any answer is the right one.
+        if (held !== null && renewed.session.userId !== held.userId) {
+          endSession();
+          return false;
+        }
+        holdSession(renewed);
         return true;
       });
     } finally {
