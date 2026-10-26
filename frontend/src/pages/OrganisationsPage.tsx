@@ -59,6 +59,9 @@ export function OrganisationsPage() {
         password the first time they sign in.
       </p>
 
+      {/* Both credentials are the first Admin's, never the operator's: the browser must neither
+          file the temporary password under the operator's sign-in nor autofill the operator's own
+          name or password into a new organisation (#250). */}
       <form className="row" onSubmit={(event) => void onboard(event)}>
         <label>
           Name
@@ -69,6 +72,7 @@ export function OrganisationsPage() {
           <input
             value={adminSignInName}
             onChange={(event) => setAdminSignInName(event.target.value)}
+            autoComplete="off"
             required
           />
         </label>
@@ -78,6 +82,7 @@ export function OrganisationsPage() {
             type="password"
             value={temporaryPassword}
             onChange={(event) => setTemporaryPassword(event.target.value)}
+            autoComplete="new-password"
             required
           />
         </label>

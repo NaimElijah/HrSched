@@ -203,3 +203,30 @@ describe('what is no longer offered', () => {
     expect(screen.queryByRole('button', { name: /Act in/ })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Both credentials typed here are the first Admin's, never the operator's. A browser that offered
+ * to save the password would file it under the operator's own sign-in, and one that autofilled
+ * would onboard an organisation with the operator's own name or password (#250).
+ */
+describe('what the browser’s password manager is offered', () => {
+  it('GivenTheOnboardingForm_WhenShown_ThenTheTemporaryPasswordIsMarkedAsANewPassword', async () => {
+    thePlatform();
+    show();
+
+    expect(await screen.findByLabelText('Temporary password')).toHaveAttribute(
+      'autocomplete',
+      'new-password',
+    );
+  });
+
+  it('GivenTheOnboardingForm_WhenShown_ThenTheFirstAdminsSignInNameIsNotAutofilled', async () => {
+    thePlatform();
+    show();
+
+    expect(await screen.findByLabelText('First admin sign-in name')).toHaveAttribute(
+      'autocomplete',
+      'off',
+    );
+  });
+});

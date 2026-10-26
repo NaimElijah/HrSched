@@ -82,12 +82,16 @@ export function AccountsPage() {
         create their own account.
       </p>
 
+      {/* Every credential here is a colleague's, never the Admin's own: the browser must neither
+          file a temporary password under the Admin's sign-in nor autofill the Admin's own name or
+          password into somebody else's account (#250). */}
       <form className="row" onSubmit={(event) => void create(event)}>
         <label>
           Sign-in name
           <input
             value={signInName}
             onChange={(event) => setSignInName(event.target.value)}
+            autoComplete="off"
             required
           />
         </label>
@@ -107,6 +111,7 @@ export function AccountsPage() {
             type="password"
             value={temporaryPassword}
             onChange={(event) => setTemporaryPassword(event.target.value)}
+            autoComplete="new-password"
             required
           />
         </label>
@@ -261,6 +266,7 @@ function AccountRow({
             type="password"
             value={replacement}
             onChange={(event) => setReplacement(event.target.value)}
+            autoComplete="new-password"
           />
         </label>
         <button type="button" onClick={() => void reset()}>
