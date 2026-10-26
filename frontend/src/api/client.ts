@@ -276,10 +276,17 @@ export const auth = {
   /**
    * Ends the session here and at the backend. Always forgets locally, even if the request fails:
    * somebody who asked to sign out must not be left signed in because the network was down.
+   *
+   * Sent with `keepalive`, so a sign-out clicked just before the tab closes is not aborted as the
+   * page unloads: the backend clears the refresh cookie only when the sign-out reaches it, and a
+   * cookie left behind restores the session on the next load (#250).
+   *
+   * @throws ApiError when the backend did not confirm the sign-out, and the fetch rejection itself
+   *     when it was not reached; either way the refresh cookie may still be live
    */
   signOut: async (): Promise<void> => {
     try {
-      await request<void>('/api/auth/sign-out', { method: 'POST' });
+      await request<void>('/api/auth/sign-out', { method: 'POST', keepalive: true });
     } finally {
       endSession();
     }

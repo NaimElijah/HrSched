@@ -42,12 +42,13 @@ type Tab = (typeof TENANT_TABS)[number] | (typeof OPERATOR_TABS)[number] | 'Orga
 /**
  * The shell: who is signed in, tab navigation, and the planning span the scheduling pages share.
  *
- * What is drawn is decided by the session state, and there are five of them. While the refresh
+ * What is drawn is decided by the session state, and there are six of them. While the refresh
  * cookie is being tried the app says so quietly rather than flashing a sign-in form at somebody who
  * turns out to be signed in. If that attempt cannot finish, it says what went wrong and offers to
  * try again: a backend nobody could reach has said nothing about whether somebody is signed in, and
  * a session that could not be read back after a good refresh is still live. Signed out, there is
- * nothing here but the form. With a temporary
+ * nothing here but the form. A sign-out the backend did not confirm shows no form either, but says
+ * this browser may still be signed in and offers to try again (#250). With a temporary
  * password still pending there is nothing but the password screen — not because the tabs would be
  * empty, but because the backend refuses that account everything else, and offering tabs that all
  * answer 403 would be a lie the UI told.
@@ -61,7 +62,7 @@ type Tab = (typeof TENANT_TABS)[number] | (typeof OPERATOR_TABS)[number] | 'Orga
  * to add one is the first time somebody needs to send a colleague a link to a specific roster.
  */
 export function App() {
-  const { state, session, key, restoreFailure, retryRestore } = useSession();
+  const { state, session, key, restoreFailure, retryRestore, signOut } = useSession();
   const [tab, setTab] = useState<Tab>('People');
   const [span, setSpan] = useState(() => defaultSpan(new Date()));
   // The generation the Rosters page is waiting for, held here because that page is gone whenever
@@ -108,6 +109,23 @@ export function App() {
         <h2>Your session could not be restored</h2>
         <Failure error={restoreFailure} />
         <button type="button" onClick={retryRestore}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (state === 'sign-out-unconfirmed') {
+    return (
+      <div className="app">
+        <header>
+          <h1>HrSched</h1>
+        </header>
+        <p className="failure" role="alert">
+          The sign-out did not reach the server, so this browser may still be signed in. Try again
+          before leaving it.
+        </p>
+        <button type="button" onClick={() => void signOut()}>
           Try again
         </button>
       </div>

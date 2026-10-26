@@ -18,9 +18,19 @@ import type { Session } from '../api/session';
  * not answer, so nobody knows whether the cookie is good, or the cookie was good but the session
  * could not be read back. Neither is `signed-out`, and offering the sign-in form would tell
  * somebody something untrue or something nobody knows (#139).
+ *
+ * `sign-out-unconfirmed` means a sign-out was asked for and the token forgotten here, but the
+ * backend never confirmed it. The backend clears the refresh cookie only when a sign-out succeeds,
+ * so until one does a reload restores the session: on a shared computer, the previous person's.
+ * Offering the sign-in form would tell somebody walking away that they had signed out (#250).
  */
 export type SessionState =
-  'restoring' | 'restore-failed' | 'signed-out' | 'password-change-required' | 'signed-in';
+  | 'restoring'
+  | 'restore-failed'
+  | 'signed-out'
+  | 'sign-out-unconfirmed'
+  | 'password-change-required'
+  | 'signed-in';
 
 interface SessionContextValue {
   readonly state: SessionState;
@@ -32,6 +42,10 @@ interface SessionContextValue {
   /** Changes whenever who is signed in changes, so loaded answers are asked again. */
   readonly key: string;
   readonly signIn: (signInName: string, password: string) => Promise<void>;
+  /**
+   * Signs out, and is also the retry while the state is `sign-out-unconfirmed`. Never rejects: a
+   * sign-out the backend did not confirm becomes that state instead.
+   */
   readonly signOut: () => Promise<void>;
   readonly changePassword: (current: string, replacement: string) => Promise<void>;
 }
@@ -64,6 +78,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [restoring, setRestoring] = useState(true);
   const [restoreFailure, setRestoreFailure] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
+  const [signOutUnconfirmed, setSignOutUnconfirmed] = useState(false);
 
   useEffect(() => {
     let abandoned = false;
@@ -110,7 +125,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await auth.signOut();
+    // Every caller fires this and forgets it, so a failure here would be a rejection nobody hears.
+    // It is handled by becoming a state the shell shows instead: the token is already forgotten,
+    // and what is left to say is that the refresh cookie may not be (#250).
+    try {
+      await auth.signOut();
+      setSignOutUnconfirmed(false);
+    } catch {
+      setSignOutUnconfirmed(true);
+    }
     setSession(null);
   }, []);
 
@@ -122,9 +145,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () => ({
       state: restoring
         ? 'restoring'
-        : restoreFailure === null
-          ? stateOf(session)
-          : 'restore-failed',
+        : restoreFailure !== null
+          ? 'restore-failed'
+          : signOutUnconfirmed
+            ? 'sign-out-unconfirmed'
+            : stateOf(session),
       session,
       restoreFailure,
       retryRestore,
@@ -135,7 +160,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       signOut,
       changePassword,
     }),
-    [restoring, restoreFailure, retryRestore, session, signIn, signOut, changePassword],
+    [
+      restoring,
+      restoreFailure,
+      retryRestore,
+      signOutUnconfirmed,
+      session,
+      signIn,
+      signOut,
+      changePassword,
+    ],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
