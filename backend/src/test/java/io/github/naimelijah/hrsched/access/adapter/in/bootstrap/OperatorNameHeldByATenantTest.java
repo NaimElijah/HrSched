@@ -6,6 +6,7 @@ import io.github.naimelijah.hrsched.access.application.port.in.BootstrapOperator
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
+import io.github.naimelijah.hrsched.access.domain.model.OperatorNameHeldByATenantException;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
 import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -46,7 +47,7 @@ import org.springframework.context.annotation.Import;
 @Import(PostgresBackedApplication.class)
 @SpringBootTest
 @AutoConfigureMockMvc
-class OperatorNameHeldByATenantHttpTest {
+class OperatorNameHeldByATenantTest {
 
   /** Invented: the tenant account's own password. */
   private static final String TENANT_PASSWORD = "an invented password for a test";
@@ -66,7 +67,22 @@ class OperatorNameHeldByATenantHttpTest {
 
     assertThat(thrown)
         .describedAs("no operator exists, so the bootstrap must not report one as present")
-        .isNotNull();
+        .isInstanceOf(OperatorNameHeldByATenantException.class);
+  }
+
+  /**
+   * The identity, not the name, is what lets whoever reads the startup log find the account that is
+   * in the way.
+   */
+  @Test
+  void
+      GivenTheConfiguredNameIsATenantsAccount_WhenTheBootstrapRefuses_ThenTheFailureNamesTheHolderById() {
+    Account tenant = aTenantAccount();
+
+    Throwable thrown = failureOf(configuredWith(tenant.signInName().value()));
+
+    assertThat(thrown).describedAs("precondition: startup fails").isNotNull();
+    assertThat(stackTraceOf(thrown)).contains(tenant.id().value().toString());
   }
 
   @Test
