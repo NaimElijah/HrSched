@@ -25,7 +25,7 @@ flowchart LR
     people -->|browser| spa
     spa -->|"/api, proxied: one origin, no CORS"| api
     api -->|"hand-written SQL, Flyway migrations"| db
-    scraper -.->|"pulls /actuator/prometheus"| api
+    scraper -.->|"/actuator/prometheus, refused until #78"| api
     api -.->|"ECS JSON on stdout, a trace id per request"| logs
 ```
 
@@ -127,7 +127,7 @@ Components, the authentication sequence and the data flow are in
 | Generation | Google OR-Tools, CP-SAT | 9.12.4544 | Every rule is a constraint, so a generated roster is legal by construction ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) |
 | Tests | JUnit Jupiter, Testcontainers | 6.0.3 / 2.0.5 | Every test that touches storage runs on a real PostgreSQL |
 | Architecture | ArchUnit | 1.5.1 | Turns the dependency rules into build failures |
-| Observability | OpenTelemetry starter, Micrometer Prometheus | Boot BOM | A trace id on every response and log line; metrics pulled, not pushed |
+| Observability | OpenTelemetry starter, Micrometer Prometheus | Boot BOM | A trace id on every response and log line; metrics pull-only, and unreadable until [#78](https://github.com/NaimElijah/HrSched/issues/78) |
 | Frontend | React, TypeScript, Vite | 19.2.8 / 6.0.3 / 8.2.2 | Strict types turn API drift into a compile error ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)) |
 | Frontend tests | Vitest, Testing Library | 5.0.5 / 16.3.3 | `fetch` is stubbed at the one module that calls it |
 | Format and lint | Spotless (google-java-format), Prettier, ESLint | 3.10.4 / 3.9.6 / 10.13.0 | Formatting is checked by the same command that builds |
@@ -187,7 +187,7 @@ supplies a throwaway signing key and the local operator. A deployment sets the v
 | `hrsched.generation.time-limit-per-phase` | `5m` | How long each of the solver's two searches may run before it answers with the best roster found: together, the ten minutes the requirements allow ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) |
 | `hrsched.generation.concurrent-runs` | `2` | Generations one instance solves at once; one more is refused with a 503, not queued ([ADR-046](docs/ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)) |
 | `hrsched.generation.lost-after` | `12m` | How long a generation may stay pending before it reads as lost, its instance having stopped. Startup fails unless it exceeds both searches together |
-| `management.endpoints.web.exposure.include` | `health,info,metrics,prometheus` | An allow list: `/actuator/**` needs no token, so `env`, `loggers` and `heapdump` stay shut ([#78](https://github.com/NaimElijah/HrSched/issues/78)) |
+| `management.endpoints.web.exposure.include` | `health,info,metrics,prometheus` | An allow list: `health` and `info` need no token, `metrics` and `prometheus` are refused to everyone, and `env`, `loggers` and `heapdump` stay shut ([ADR-048](docs/ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md), [#78](https://github.com/NaimElijah/HrSched/issues/78)) |
 | `management.endpoint.health.probes.enabled` | `true` | Liveness and readiness probes outside Kubernetes too |
 | `logging.structured.format.console` | `ecs` | Elastic Common Schema JSON, always ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
 | `logging.structured.ecs.service.name` / `.version` | app name / Maven version | Identify the emitting service on every line |
@@ -320,7 +320,7 @@ the application reports ready.
 | Concern | Where |
 | :--- | :--- |
 | Liveness, readiness | `GET /actuator/health/liveness`, `GET /actuator/health/readiness` |
-| Metrics | `GET /actuator/prometheus`, pulled by a scraper; nothing pushes ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md)) |
+| Metrics | Recorded, and readable by nobody over HTTP: `/actuator/prometheus` and `/actuator/metrics` are refused to every caller until [#78](https://github.com/NaimElijah/HrSched/issues/78) is decided, and nothing pushes ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md), [ADR-048](docs/ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)) |
 | Logs | One ECS JSON object per line on stdout; every line a request produces carries `traceId` and `spanId` |
 | Traces | A W3C trace id on every response as `X-Trace-Id`, refusals included, and shown by the UI so a person's report joins the log. Nothing is exported yet (Q19) |
 
@@ -363,7 +363,7 @@ HrSched/
 | Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
 | Generation with CP-SAT behind a port ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md), [ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)) | Timefold, whose search must drive a broken rule's penalty to zero and proves no bound; a MIP solver | About 95 MB of native libraries; no determinism under a time limit; OR-Tools held at 9.12 for the Visual C++ runtime JDK 21 bundles on Windows |
 
-All 44 decisions, and the two still waiting to be recorded, are in the
+All 45 decisions, and the two still waiting to be recorded, are in the
 [ADR index](docs/ADRs/README.md).
 
 ## Status and limitations

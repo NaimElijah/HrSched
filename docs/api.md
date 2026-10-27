@@ -30,8 +30,9 @@ exact role. A resource in another organisation answers `404`, the same as one th
 | Swaps | `POST /api/swaps`, `/{id}/approval`, `/{id}/rejection`; `GET` list and one | Asking: the person, Admin or Scheduler; deciding: Scheduler; reading: the parties |
 | Me | `GET /api/me/schedule?from&to`; `GET /api/notifications`; `POST /api/notifications/{id}/read` | Any member, their own only |
 
-`/actuator/health/**`, `/actuator/info`, `/actuator/metrics` and `/actuator/prometheus` need no
-token.
+`/actuator/health/**` and `/actuator/info` need no token. `/actuator/metrics` and
+`/actuator/prometheus` are refused to every caller
+([ADR-048](ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)).
 
 ## Signing in
 

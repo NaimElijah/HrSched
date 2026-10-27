@@ -163,7 +163,8 @@ about. The rules are the coarse outer line; the use case behind each route is wh
 | Route | Who may reach it |
 | --- | --- |
 | `POST /api/auth/sign-in`, `/refresh`, `/sign-out` | anybody — authentication itself |
-| `/actuator/**` | anybody; what exists there is decided by the exposure list (ADR-017) |
+| `/actuator/metrics`, `/actuator/metrics/**`, `/actuator/prometheus` | nobody — refused to every caller, with or without a token, until the scrape question is decided ([ADR-048](../ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)) |
+| `/actuator/**` | anybody, for what remains: health, liveness, readiness and info. What exists there is decided by the exposure list (ADR-017) |
 | `GET /api/auth/session`, `POST /api/auth/password` | any authenticated account, including one whose password change is still pending |
 | `POST`/`GET /api/organisations` | `OPERATOR` |
 | `GET /api/organisations/{id}` | any role; the use case decides whose |
@@ -302,7 +303,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 | --- | --- | --- |
 | `spring-boot-starter-webmvc` | HTTP boundary, embedded Tomcat | ADR-001. Boot 4.x renamed this from `spring-boot-starter-web`. |
 | `spring-boot-starter-actuator` | Health and readiness probes | Required of every service by the project baseline. A `db` health contributor now appears with the datasource. |
-| `spring-boot-starter-security-oauth2-resource-server` | The security filter chain in front of every request, and signing and verifying the access tokens | [ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md). Pulls in Spring Security and Nimbus JOSE+JWT, both Apache-2.0 and maintained on Boot's release train. Authentication is security-critical code nobody should hand-roll. `SecurityConfiguration` declares the one chain; a bearer token is verified on every request that carries one, and every route requires one except signing in, refreshing, signing out and `/actuator/**`. A route no rule names is refused ([ADR-032](../ADRs/ADR-032-close-the-security-chain-by-default.md)). |
+| `spring-boot-starter-security-oauth2-resource-server` | The security filter chain in front of every request, and signing and verifying the access tokens | [ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md). Pulls in Spring Security and Nimbus JOSE+JWT, both Apache-2.0 and maintained on Boot's release train. Authentication is security-critical code nobody should hand-roll. `SecurityConfiguration` declares the one chain; a bearer token is verified on every request that carries one, and every route requires one except signing in, refreshing, signing out and `/actuator/**` (whose metrics are refused to everyone, [ADR-048](../ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)). A route no rule names is refused ([ADR-032](../ADRs/ADR-032-close-the-security-chain-by-default.md)). |
 | `spring-boot-starter-jdbc` | `JdbcClient`, the connection pool, and the transaction manager | [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md). Chosen over JPA because the domain may not carry `jakarta.persistence` annotations. |
 | `spring-boot-starter-flyway` + `flyway-database-postgresql` | Versioned schema migrations, applied on startup | ADR-004. New in Boot 4.x; 3.x had no Flyway starter. |
 | `postgresql` | The JDBC driver | ADR-004. Runtime scope; nothing compiles against it. |
@@ -310,7 +311,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 | `spring-boot-docker-compose` | Starting the local database on `./mvnw spring-boot:run` | ADR-004, and it keeps `scripts/run.mjs` free of build logic as [ADR-014](../ADRs/ADR-014-root-task-runner.md) requires. Optional scope, so it never reaches a deployed artifact. |
 | `testcontainers-postgresql`, `testcontainers-junit-jupiter`, `spring-boot-testcontainers` | The real database the tests run against | ADR-004. Docker is required to build; there is deliberately no skip-when-absent. Pinned by the Testcontainers BOM, which the Boot BOM does not manage. |
 | `spring-boot-starter-opentelemetry` | A W3C trace id per request, in the MDC and on the response | [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md). Supplies the OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters; export is switched off until Q19 is answered. |
-| `micrometer-registry-prometheus` | Rendering the collected meters for a scraper to pull from `/actuator/prometheus` | [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md). Nothing pushes; the pushgateway is off. |
+| `micrometer-registry-prometheus` | Rendering the collected meters at `/actuator/prometheus`, which the security chain refuses to every caller until a scraper is decided | [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md), [ADR-048](../ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md). Nothing pushes; the pushgateway is off. |
 | `ortools-java` | CP-SAT, which generates every draft | [ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md). Apache-2.0, with native libraries for five platforms reached over JNI, and confined to `scheduling.adapter.out.generation`. Held at 9.12, the newest whose Windows libraries run on the Visual C++ runtime JDK 21 bundles. Its `jna` is pinned to the version Testcontainers' Docker client needs. |
 | `archunit-junit5` | Enforcing the hexagon and the context boundaries | Nothing else can fail a build on a dependency direction. |
 | `spotless-maven-plugin` + `google-java-format` | Format check bound to `validate` | ADR-002. |
@@ -398,12 +399,18 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
   `..domain..` or `..application..`. Anything a use case needs recorded, it records through a driven
   port. The consequence worth knowing: Micrometer's `@Timed` and `@Counted` cannot be put on a use
   case.
-- **Metrics are pulled, and nothing is pushed.** `/actuator/prometheus` publishes the JVM, process
-  and `http.server.requests` meters Micrometer already collected, plus the product's own coverage
-  measure. Exposure is an allow list: `loggers`, `env` and `heapdump` are shut, because there is no
-  authentication and two of those disclose state while the third changes behaviour. Actuator shares
-  port 8080 with the API, which is recorded rather than defended in
-  [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md). No monitoring stack is committed;
+- **Metrics are pulled, nothing is pushed, and nobody can pull them yet.** Micrometer collects the
+  JVM, process and `http.server.requests` meters, plus the product's own coverage measure, and
+  `/actuator/prometheus` would render them. `SecurityConfiguration` refuses that route and
+  `/actuator/metrics` to every caller, because `hrsched.changes{change=ACCOUNT_LOCKED}` counts up
+  only for a real, active account, so reading it tells a caller whether a sign-in name exists. The
+  meters are still recorded and the endpoints still exist; whether and how they reopen to a scraper
+  is open
+  ([ADR-048](../ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md),
+  [#78](https://github.com/NaimElijah/HrSched/issues/78)). Exposure is an allow list: `loggers`,
+  `env` and `heapdump` are shut, because two of those disclose state while the third changes
+  behaviour, and an endpoint that is not exposed answers 404. Actuator shares port 8080 with the API
+  ([ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md)). No monitoring stack is committed;
   there is no environment yet to describe one for.
 - **Coverage is measured and never enforced.** `./mvnw verify` writes `target/site/jacoco/`; the
   frontend reports only under `npm run test:coverage`. No threshold exists, on purpose

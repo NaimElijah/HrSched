@@ -66,13 +66,28 @@ public class SecurityConfiguration {
   };
 
   /**
-   * Health, metrics and the rest of the operational surface.
+   * Health, info and the rest of the operational surface, apart from the metrics.
    *
    * <p>Open, as ADR-017 decided: whatever is actually reachable here is decided by {@code
    * management.endpoints.web.exposure.include}, and an endpoint that is not exposed answers 404
    * rather than 403 — which tells a caller nothing, the same reasoning the tenant 404 rests on.
    */
   private static final String ACTUATOR = "/actuator/**";
+
+  /**
+   * The metrics, which are exposed but refused to every caller, with or without a token.
+   *
+   * <p>They tell anybody who reads them whether a sign-in name exists: {@code
+   * hrsched.changes{change=ACCOUNT_LOCKED}} counts up only when a real, active account locks, so
+   * failing to sign in as a name until the lockout threshold and then reading the counter answers
+   * the question sign-in itself is careful never to answer. Nothing scrapes them yet (Q19, #165),
+   * so refusing them costs nothing today. Whether and how they reopen to a scraper is #78's
+   * decision. They stay in the exposure list meanwhile, so the endpoints exist and only this rule
+   * stands between them and a caller.
+   */
+  private static final String[] METRICS = {
+    "/actuator/metrics", "/actuator/metrics/**", "/actuator/prometheus"
+  };
 
   /**
    * Reading one's own session: the first of the two acts an account with a pending change may do.
@@ -171,6 +186,10 @@ public class SecurityConfiguration {
                     // cross-site use by requiring a header no cross-site request can send.
                     .requestMatchers(HttpMethod.POST, AUTHENTICATING)
                     .permitAll()
+                    // Before the actuator rule, which would otherwise open them: the first rule
+                    // that matches decides. See METRICS for why they are refused.
+                    .requestMatchers(METRICS)
+                    .denyAll()
                     .requestMatchers(ACTUATOR)
                     .permitAll()
                     // Reachable with a temporary password still pending: they are the two things

@@ -53,6 +53,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md) | Generate rosters with CP-SAT from Google OR-Tools | Accepted | 2026-10-22 |
 | [ADR-045](ADR-045-generate-outside-the-use-cases-transaction.md) | Generate outside the use case's transaction, between a read and a write | Accepted | 2026-10-22 |
 | [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) | Generate in the background, and keep each generation in PostgreSQL | Accepted | 2026-10-23 |
+| [ADR-048](ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md) | Refuse the metrics endpoints to every caller until a scraper exists | Accepted | 2026-10-27 |
 
 ## Decisions waiting to be recorded
 

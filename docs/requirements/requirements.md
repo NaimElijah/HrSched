@@ -317,11 +317,14 @@ filled every place it can, it keeps at least that many filled and minimises the 
   produces and on the HTTP response, so a report from a person can be joined to what the process
   recorded. Logs are structured and machine-readable on stdout. Liveness and readiness are exposed
   as probes. Rate, latency, error rate, saturation and the product's own coverage measure are
-  published for a scraper to pull. Instrumentation is vendor-neutral (OpenTelemetry), and nothing is
-  exported until there is somewhere to export to — Q19.
+  collected, but no caller can read them over HTTP: `/actuator/metrics` and `/actuator/prometheus`
+  are refused to everyone until it is decided who may reach them
+  ([#78](https://github.com/NaimElijah/HrSched/issues/78)). Instrumentation is vendor-neutral
+  (OpenTelemetry), and nothing is exported until there is somewhere to export to — Q19.
   *Enforced by `TraceIdResponseFilter`, `TraceIdHttpTest`, `MetricsHttpTest`;
   [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md),
-  [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md).*
+  [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md),
+  [ADR-048](../ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md).*
 - **Auditability** — every state change records who made it, in which organisation, and the
   identifier of what changed; every refusal, including a cross-tenant attempt, is recorded too. The
   record carries identifiers only and never a name, so the trail says who to ask rather than the
