@@ -564,3 +564,42 @@ describe('resetting a colleague’s password', () => {
     expect(field).toHaveValue('');
   });
 });
+
+/**
+ * Every credential on this screen belongs to somebody else, so the browser is told not to autofill
+ * the Admin's own: `new-password` on the passwords, `off` on a name that is not the Admin's. What
+ * a password manager then offers to save is the browser's choice, and jsdom cannot show it; these
+ * tests pin the hints, not the prompt (#250).
+ */
+describe('what the browser’s password manager is offered', () => {
+  it('GivenTheCreateForm_WhenShown_ThenTheTemporaryPasswordIsMarkedAsANewPassword', async () => {
+    theOrganisation();
+    show();
+
+    expect(await screen.findByLabelText('Temporary password')).toHaveAttribute(
+      'autocomplete',
+      'new-password',
+    );
+  });
+
+  it('GivenTheCreateForm_WhenShown_ThenTheSignInNameIsNotAutofilled', async () => {
+    theOrganisation();
+    show();
+
+    expect(await screen.findByLabelText('Sign-in name')).toHaveAttribute('autocomplete', 'off');
+  });
+
+  it('GivenEveryAccountRow_WhenShown_ThenEachResetFieldIsMarkedAsANewPassword', async () => {
+    theOrganisation();
+    show();
+    await screen.findByRole('cell', { name: GRACE.signInName });
+
+    for (const { signInName } of [ADA, GRACE]) {
+      const row = screen.getByRole('cell', { name: signInName }).closest('tr') as HTMLElement;
+      expect(
+        within(row).getByLabelText(`New temporary password for ${signInName}`),
+        `the reset field for ${signInName}`,
+      ).toHaveAttribute('autocomplete', 'new-password');
+    }
+  });
+});

@@ -4,6 +4,7 @@ import { workforce } from './api/workforce';
 import { ChangePasswordPage } from './auth/ChangePasswordPage';
 import { SessionBar } from './auth/SessionBar';
 import { SignInPage } from './auth/SignInPage';
+import { SignOutUnconfirmedPage } from './auth/SignOutUnconfirmedPage';
 import { useSession } from './auth/SessionProvider';
 import { Failure } from './components/Feedback';
 import { defaultSpan, localDate, startOfLocalDay } from './components/localDates';
@@ -42,12 +43,14 @@ type Tab = (typeof TENANT_TABS)[number] | (typeof OPERATOR_TABS)[number] | 'Orga
 /**
  * The shell: who is signed in, tab navigation, and the planning span the scheduling pages share.
  *
- * What is drawn is decided by the session state, and there are five of them. While the refresh
+ * What is drawn is decided by the session state, and there are six of them. While the refresh
  * cookie is being tried the app says so quietly rather than flashing a sign-in form at somebody who
  * turns out to be signed in. If that attempt cannot finish, it says what went wrong and offers to
  * try again: a backend nobody could reach has said nothing about whether somebody is signed in, and
  * a session that could not be read back after a good refresh is still live. Signed out, there is
- * nothing here but the form. With a temporary
+ * nothing here but the form, which says why when a session on screen has just ended. A sign-out the
+ * backend did not confirm shows no form either, but a screen of its own that says this browser may
+ * still be signed in and offers to sign out again (#250). With a temporary
  * password still pending there is nothing but the password screen — not because the tabs would be
  * empty, but because the backend refuses that account everything else, and offering tabs that all
  * answer 403 would be a lie the UI told.
@@ -110,6 +113,19 @@ export function App() {
         <button type="button" onClick={retryRestore}>
           Try again
         </button>
+      </div>
+    );
+  }
+
+  if (state === 'sign-out-unconfirmed') {
+    return (
+      <div className="app">
+        <header>
+          <h1>HrSched</h1>
+        </header>
+        <main>
+          <SignOutUnconfirmedPage />
+        </main>
       </div>
     );
   }
