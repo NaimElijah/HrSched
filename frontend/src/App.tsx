@@ -4,6 +4,7 @@ import { workforce } from './api/workforce';
 import { ChangePasswordPage } from './auth/ChangePasswordPage';
 import { SessionBar } from './auth/SessionBar';
 import { SignInPage } from './auth/SignInPage';
+import { SignOutUnconfirmedPage } from './auth/SignOutUnconfirmedPage';
 import { useSession } from './auth/SessionProvider';
 import { Failure } from './components/Feedback';
 import { defaultSpan, localDate, startOfLocalDay } from './components/localDates';
@@ -47,8 +48,9 @@ type Tab = (typeof TENANT_TABS)[number] | (typeof OPERATOR_TABS)[number] | 'Orga
  * turns out to be signed in. If that attempt cannot finish, it says what went wrong and offers to
  * try again: a backend nobody could reach has said nothing about whether somebody is signed in, and
  * a session that could not be read back after a good refresh is still live. Signed out, there is
- * nothing here but the form. A sign-out the backend did not confirm shows no form either, but says
- * this browser may still be signed in and offers to try again (#250). With a temporary
+ * nothing here but the form, which says why when a session on screen has just ended. A sign-out the
+ * backend did not confirm shows no form either, but a screen of its own that says this browser may
+ * still be signed in and offers to sign out again (#250). With a temporary
  * password still pending there is nothing but the password screen — not because the tabs would be
  * empty, but because the backend refuses that account everything else, and offering tabs that all
  * answer 403 would be a lie the UI told.
@@ -62,7 +64,7 @@ type Tab = (typeof TENANT_TABS)[number] | (typeof OPERATOR_TABS)[number] | 'Orga
  * to add one is the first time somebody needs to send a colleague a link to a specific roster.
  */
 export function App() {
-  const { state, session, key, restoreFailure, retryRestore, signOut } = useSession();
+  const { state, session, key, restoreFailure, retryRestore } = useSession();
   const [tab, setTab] = useState<Tab>('People');
   const [span, setSpan] = useState(() => defaultSpan(new Date()));
   // The generation the Rosters page is waiting for, held here because that page is gone whenever
@@ -121,13 +123,9 @@ export function App() {
         <header>
           <h1>HrSched</h1>
         </header>
-        <p className="failure" role="alert">
-          The sign-out did not reach the server, so this browser may still be signed in. Try again
-          before leaving it.
-        </p>
-        <button type="button" onClick={() => void signOut()}>
-          Try again
-        </button>
+        <main>
+          <SignOutUnconfirmedPage />
+        </main>
       </div>
     );
   }

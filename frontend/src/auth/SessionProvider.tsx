@@ -1,4 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ReactNode } from 'react';
 import { auth } from '../api/client';
 import { onSessionEnded } from '../api/session';
@@ -34,6 +43,21 @@ export type SessionState =
   | 'password-change-required'
   | 'signed-in';
 
+/** Where a sign-out stands, which the `sign-out-unconfirmed` screen reports. */
+export interface SignOutProgress {
+  /** Whether a sign-out request from this tab is in flight. */
+  readonly pending: boolean;
+  /**
+   * How many sign-out attempts from this tab have failed since a session last ended confirmed.
+   * Counted so that a retry failing like the one before still changes what a live region says.
+   */
+  readonly failures: number;
+  /** The last of those failures, kept for its trace reference; null when none failed. */
+  readonly failure: unknown;
+}
+
+const NO_SIGN_OUT: SignOutProgress = { pending: false, failures: 0, failure: null };
+
 interface SessionContextValue {
   readonly state: SessionState;
   readonly session: Session | null;
@@ -50,6 +74,12 @@ interface SessionContextValue {
    * did not confirm stays in that state instead.
    */
   readonly signOut: () => Promise<void>;
+  readonly signOutProgress: SignOutProgress;
+  /**
+   * Whether a session that was on screen — signed in, or waiting on an unconfirmed sign-out — has
+   * ended since anybody last signed in. False on a first load, where there is nothing to explain.
+   */
+  readonly sessionEnded: boolean;
   readonly changePassword: (current: string, replacement: string) => Promise<void>;
 }
 
@@ -82,6 +112,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [restoreFailure, setRestoreFailure] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
   const [signOutUnconfirmed, setSignOutUnconfirmed] = useState(false);
+  const [signOutProgress, setSignOutProgress] = useState<SignOutProgress>(NO_SIGN_OUT);
+  const [sessionEnded, setSessionEnded] = useState(false);
 
   useEffect(() => {
     let abandoned = false;
@@ -114,28 +146,51 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setAttempt((previous) => previous + 1);
   }, []);
 
+  // Read by the listener below, which is registered once: a restore that finds the cookie refused
+  // also ends a session, but nobody was looking at one, so there is nothing to explain. A layout
+  // effect, so it is current from the commit that draws the screen: a passive one can still be
+  // pending when a session ends.
+  const somethingOnScreen = useRef(false);
+  useLayoutEffect(() => {
+    somethingOnScreen.current = session !== null || signOutUnconfirmed;
+  }, [session, signOutUnconfirmed]);
+
   useEffect(
     () =>
       onSessionEnded((how) => {
         setSession(null);
         setRestoring(false);
         setSignOutUnconfirmed(how === 'sign-out-unconfirmed');
+        if (how === 'ended') {
+          setSignOutProgress(NO_SIGN_OUT);
+          if (somethingOnScreen.current) {
+            setSessionEnded(true);
+          }
+        }
       }),
     [],
   );
 
   const signIn = useCallback(async (signInName: string, password: string) => {
-    setSession((await auth.signIn(signInName, password)).session);
+    const signedIn = await auth.signIn(signInName, password);
+    setSessionEnded(false);
+    setSignOutProgress(NO_SIGN_OUT);
+    setSession(signedIn.session);
   }, []);
 
   const signOut = useCallback(async () => {
+    setSignOutProgress((progress) => ({ ...progress, pending: true }));
     try {
       await auth.signOut();
-    } catch {
-      // Every caller fires this and forgets it, so a rejection here would be one nobody hears. The
-      // failure is already handled: the session ended as `sign-out-unconfirmed` before the request
-      // was sent, and the shell says the refresh cookie may still be live (#250). Setting the
-      // state again here would undo a sign-out another tab confirmed meanwhile.
+    } catch (failure) {
+      // Every caller fires this and forgets it, so a rejection here would be one nobody hears. It
+      // is handled by being shown: the session already ended as `sign-out-unconfirmed` before the
+      // request was sent, and that screen reports this failure and its reference (#250).
+      setSignOutProgress((progress) => ({
+        pending: false,
+        failures: progress.failures + 1,
+        failure,
+      }));
     }
   }, []);
 
@@ -160,6 +215,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       key: session === null ? '' : `${session.userId}|${String(session.passwordChangeRequired)}`,
       signIn,
       signOut,
+      signOutProgress,
+      sessionEnded,
       changePassword,
     }),
     [
@@ -170,6 +227,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       session,
       signIn,
       signOut,
+      signOutProgress,
+      sessionEnded,
       changePassword,
     ],
   );
