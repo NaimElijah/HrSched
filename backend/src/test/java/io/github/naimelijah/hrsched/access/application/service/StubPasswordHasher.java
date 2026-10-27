@@ -2,6 +2,7 @@ package io.github.naimelijah.hrsched.access.application.service;
 
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.domain.model.PasswordHash;
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 /**
@@ -15,6 +16,10 @@ import java.util.Objects;
  * faster than a known one. Counting is the honest way to assert it; timing it would be a flaky test
  * about the machine it ran on.
  *
+ * <p>It keeps {@code BCryptPasswordHasher}'s byte limit, as a fake must copy the refusals of the
+ * adapter it stands for: hashing refuses a longer password, and checking one counts the comparison
+ * and then never matches.
+ *
  * <p>Named without a {@code Test} suffix so Surefire does not try to run it.
  */
 final class StubPasswordHasher implements PasswordHasher {
@@ -27,13 +32,21 @@ final class StubPasswordHasher implements PasswordHasher {
   @Override
   public PasswordHash hash(String rawPassword) {
     Objects.requireNonNull(rawPassword, "rawPassword must not be null");
+    if (exceedsTheLimit(rawPassword)) {
+      throw new IllegalArgumentException(
+          "A password must be at most %d bytes long".formatted(BCRYPT_LIMIT));
+    }
     return new PasswordHash(PREFIX + rawPassword);
   }
 
   @Override
   public boolean matches(String rawPassword, PasswordHash hash) {
     comparisons++;
-    return hash.value().equals(PREFIX + rawPassword);
+    return !exceedsTheLimit(rawPassword) && hash.value().equals(PREFIX + rawPassword);
+  }
+
+  private static boolean exceedsTheLimit(String rawPassword) {
+    return rawPassword.getBytes(StandardCharsets.UTF_8).length > BCRYPT_LIMIT;
   }
 
   @Override
