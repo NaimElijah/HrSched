@@ -12,6 +12,7 @@ import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -287,5 +288,55 @@ class JdbcShiftRepositoryTest {
         .get()
         .extracting(Shift::period)
         .isEqualTo(theirs.period());
+  }
+
+  // --- #250: reading past the driver's bind-parameter limit ------------------------------------
+
+  /**
+   * One more shift than pgjdbc can bind parameters in one statement: the wire protocol counts them
+   * in 16 bits, so 65,535 is the most. Shifts are never deleted, so an organisation reaches this by
+   * using the system, and a read binding one parameter per shift then fails for every caller.
+   */
+  private static final int MORE_SHIFTS_THAN_A_STATEMENT_CAN_BIND = 65_536;
+
+  /**
+   * Bulk-inserted in one statement, so the test stays fast; one shift is saved through the adapter
+   * with a required qualification, so the read-back also shows that qualifications still load.
+   */
+  @Test
+  void GivenMoreShiftsThanAStatementCanBind_WhenListingTheDay_ThenEachLoadsWithItsQualifications() {
+    QualificationId forklift = QualificationId.newId();
+    Shift qualified =
+        new Shift(
+            ShiftId.newId(),
+            ACME,
+            between("2026-09-07T08:00:00Z", "2026-09-07T16:00:00Z"),
+            ZoneOffset.UTC,
+            1,
+            Set.of(forklift),
+            false);
+    repository.save(qualified);
+    PostgresDatabase.jdbcClient()
+        .sql(
+            """
+            INSERT INTO shift (id, organisation_id, starts_at, ends_at, zone, required_headcount,
+                               unpopular)
+            SELECT gen_random_uuid(), :organisation, :startsAt, :endsAt, 'UTC', 1, false
+            FROM generate_series(1, :others)
+            """)
+        .param("organisation", ACME.value())
+        .param("startsAt", qualified.period().start().atOffset(ZoneOffset.UTC))
+        .param("endsAt", qualified.period().end().atOffset(ZoneOffset.UTC))
+        .param("others", MORE_SHIFTS_THAN_A_STATEMENT_CAN_BIND - 1)
+        .update();
+
+    List<Shift> listed = repository.findWithin(ACME, theDay());
+
+    assertThat(listed).hasSize(MORE_SHIFTS_THAN_A_STATEMENT_CAN_BIND);
+    assertThat(listed)
+        .filteredOn(shift -> shift.id().equals(qualified.id()))
+        .singleElement()
+        .extracting(Shift::requiredQualifications)
+        .isEqualTo(Set.of(forklift));
   }
 }
