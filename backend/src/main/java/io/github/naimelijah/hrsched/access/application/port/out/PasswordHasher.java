@@ -24,11 +24,16 @@ public interface PasswordHasher {
   PasswordHash hash(String rawPassword);
 
   /**
+   * Checks a submitted password against a stored hash, at the cost of exactly one comparison
+   * whatever was submitted. A password that is empty, or longer than {@link #maximumBytes()}, is
+   * refused only after a comparison of the same cost, so how long a check takes says nothing about
+   * why it failed - and callers such as sign-in rely on that to keep a refusal's timing uniform.
+   *
    * @param rawPassword the password submitted
    * @param hash the stored hash to check it against
    * @return whether they match; false rather than an exception, because a wrong password is an
    *     ordinary outcome and not an error. A password longer than {@link #maximumBytes()} never
-   *     matches, since no hash could have been made of it
+   *     matches, since no hash could have been made of it, and neither does an empty one
    */
   boolean matches(String rawPassword, PasswordHash hash);
 
