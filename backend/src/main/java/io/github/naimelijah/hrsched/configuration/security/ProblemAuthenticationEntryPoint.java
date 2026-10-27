@@ -14,6 +14,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.server.resource.BearerTokenErrorCodes;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
@@ -23,9 +26,16 @@ import tools.jackson.databind.ObjectMapper;
  * Answers an unauthenticated request with a problem detail rather than an empty 401.
  *
  * <p>Delegates the headers to Spring Security's own entry point first, so the {@code
- * WWW-Authenticate} challenge RFC 9110 requires is exactly the one the resource server would have
- * written, and then supplies the body it leaves empty. Every other refusal in this API carries a
- * machine-readable body; this one had no reason to be the exception.
+ * WWW-Authenticate} challenge RFC 9110 requires has the resource server's shape, and then supplies
+ * the body it leaves empty. Every other refusal in this API carries a machine-readable body; this
+ * one had no reason to be the exception.
+ *
+ * <p>A refused token is described by one fixed sentence, whatever refused it. Left alone, the
+ * delegate copies the decoder's own message into {@code error_description} — that the token expired
+ * and when, that its signature did not verify, which claim was missing — and each of those tells
+ * somebody probing the verifier which of its checks a forged token got past. The original refusal
+ * is kept as the cause of the one handed on and is never sent; the caller learns only that the
+ * token was not accepted, as {@code AccessTokenDecoder} promises (issue #250).
  *
  * <p>Logged at INFO with no fields. An expired token is the most ordinary thing that happens here —
  * every client hits this on the way to renewing — so WARN would drown the refusals that matter, and
@@ -45,6 +55,13 @@ public class ProblemAuthenticationEntryPoint implements AuthenticationEntryPoint
    */
   private static final String DENIED = "hrsched.access.denied";
 
+  /**
+   * The only {@code error_description} a refused token gets. The same sentence the token-to-actor
+   * converter refuses with, so a token naming an account that does not exist reads exactly like one
+   * that failed to verify.
+   */
+  private static final String TOKEN_NOT_ACCEPTED = "The access token was not accepted";
+
   private final AuthenticationEntryPoint challenge = new BearerTokenAuthenticationEntryPoint();
   private final ObjectMapper json;
   private final MeterRegistry meters;
@@ -58,7 +75,7 @@ public class ProblemAuthenticationEntryPoint implements AuthenticationEntryPoint
   public void commence(
       HttpServletRequest request, HttpServletResponse response, AuthenticationException refusal)
       throws IOException, ServletException {
-    challenge.commence(request, response, refusal);
+    challenge.commence(request, response, withoutItsReason(refusal));
 
     log.info("Refused: a request arrived without an access token this service accepts");
     Counter.builder(DENIED)
@@ -75,5 +92,19 @@ public class ProblemAuthenticationEntryPoint implements AuthenticationEntryPoint
     response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
     response.setCharacterEncoding(StandardCharsets.UTF_8.name());
     response.getWriter().write(json.writeValueAsString(problem));
+  }
+
+  /**
+   * Replaces a refused token's description with the fixed one, keeping {@code invalid_token} and
+   * the original refusal as the cause. Anything else passes through: no token at all carries no
+   * description, and a request carrying two tokens, or an empty one, is an {@code invalid_request}
+   * with Spring's own fixed sentence, which says nothing about any check.
+   */
+  private static AuthenticationException withoutItsReason(AuthenticationException refusal) {
+    if (refusal instanceof OAuth2AuthenticationException oauth
+        && BearerTokenErrorCodes.INVALID_TOKEN.equals(oauth.getError().getErrorCode())) {
+      return new InvalidBearerTokenException(TOKEN_NOT_ACCEPTED, refusal);
+    }
+    return refusal;
   }
 }
