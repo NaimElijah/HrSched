@@ -258,7 +258,9 @@ public class SessionService
    *
    * <p>The current password is checked even though the caller is authenticated, and a wrong one is
    * counted as a failed attempt: without that, this endpoint would be a way to guess at a password
-   * with no lockout behind it. That count is why the refusal is returned rather than thrown.
+   * with no lockout behind it. That count is why the refusal is returned rather than thrown. A
+   * locked account is refused here as at sign-in, whatever password it is given, and nothing is
+   * counted (R29).
    */
   @Override
   public ChangePasswordOutcome changePassword(Actor actor, ChangePasswordCommand command) {
@@ -276,7 +278,17 @@ public class SessionService
                 () ->
                     new IllegalStateException(
                         "The authenticated account no longer exists: " + actor.id().value()));
-    if (!passwords.matches(command.currentPassword(), account.passwordHash())) {
+    // Compared before the lock is consulted, as sign-in does, so how long a refusal takes does not
+    // say whether the account is locked.
+    boolean currentMatches = passwords.matches(command.currentPassword(), account.passwordHash());
+    // A lock that ignored this route would let a session somebody already holds - stolen, or left
+    // open - guess at the password without limit, and a right guess would replace it and lift the
+    // lock. Refused as a wrong password is, so the answer says nothing about the lock, and nothing
+    // is counted, as with a locked sign-in: counting here would let anyone keep the account shut.
+    if (account.isLockedAt(now)) {
+      return new ChangePasswordOutcome.CurrentPasswordRejected();
+    }
+    if (!currentMatches) {
       Account counted = account.recordFailedSignIn(now, lockout);
       accounts.save(counted);
       if (counted.isLockedAt(now)) {
