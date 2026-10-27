@@ -105,6 +105,29 @@ class EmployeeTest {
         .isInstanceOf(OverlappingUnavailabilityException.class);
   }
 
+  /**
+   * One of the two spans is an absence already stored, and a span says when somebody cannot work; a
+   * message travels further than the record it describes, as {@link UnknownDeclarationException}
+   * says. Both spans fall on the invented day {@code 2026-09-07}, so the day itself is what no
+   * rendering of either may carry.
+   */
+  @Test
+  void GivenAnOverlappingSpan_WhenItIsRefused_ThenTheMessageRepeatsNeitherSpan() {
+    Employee away = ada().unavailableFor(MONDAY_DAY);
+    // Invented: overlaps MONDAY_DAY's afternoon.
+    TimeRange overlapping =
+        new TimeRange(Instant.parse("2026-09-07T12:00:00Z"), Instant.parse("2026-09-07T20:00:00Z"));
+
+    assertThatThrownBy(() -> away.unavailableFor(overlapping))
+        .isInstanceOf(OverlappingUnavailabilityException.class)
+        .message()
+        .doesNotContain(MONDAY_DAY.start().toString())
+        .doesNotContain(MONDAY_DAY.end().toString())
+        .doesNotContain(overlapping.start().toString())
+        .doesNotContain(overlapping.end().toString())
+        .doesNotContain("2026-09-07");
+  }
+
   @Test
   void GivenSeparateSpans_WhenDeclaringUnavailabilityForBoth_ThenBothAreHeld() {
     Employee away = ada().unavailableFor(MONDAY_DAY).unavailableFor(MONDAY_EVENING);
