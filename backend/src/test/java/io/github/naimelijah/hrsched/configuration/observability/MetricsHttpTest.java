@@ -129,6 +129,23 @@ class MetricsHttpTest {
   }
 
   /**
+   * Another spelling of the same endpoint. A refusal that names paths rather than the endpoint lets
+   * this one through to the open actuator rule, and then only the handler decides what it answers.
+   */
+  @Test
+  void GivenNoToken_WhenScrapingPrometheusWithATrailingSlash_ThenItIsUnauthorised()
+      throws Exception {
+    mockMvc.perform(get("/actuator/prometheus/")).andExpect(status().isUnauthorized());
+  }
+
+  /** Another spelling of the same endpoint, as above. */
+  @Test
+  void GivenNoToken_WhenListingTheMetricsWithATrailingSlash_ThenItIsUnauthorised()
+      throws Exception {
+    mockMvc.perform(get("/actuator/metrics/")).andExpect(status().isUnauthorized());
+  }
+
+  /**
    * The meter that gives an account's existence away, read by name. A change is recorded first, so
    * the meter exists and the only thing that can refuse the read is the security chain.
    */

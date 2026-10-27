@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.configuration.security;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.Filter;
 import java.util.List;
+import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -88,10 +89,13 @@ public class SecurityConfiguration {
    * so refusing them costs nothing today. Whether and how they reopen to a scraper is #78's
    * decision. They stay in the exposure list meanwhile, so the endpoints exist and only this rule
    * stands between them and a caller.
+   *
+   * <p>Named by endpoint id rather than by path, so the refusal covers every path actuator maps to
+   * them, everything beneath each one and a trailing slash, wherever the base path is moved to. A
+   * list of paths missed {@code /actuator/prometheus/}, which then fell to the open actuator rule
+   * and was refused only because no handler happened to serve it.
    */
-  private static final String[] METRICS = {
-    "/actuator/metrics", "/actuator/metrics/**", "/actuator/prometheus"
-  };
+  private static final String[] METRICS = {"metrics", "prometheus"};
 
   /**
    * Reading one's own session: the first of the two acts an account with a pending change may do.
@@ -197,7 +201,9 @@ public class SecurityConfiguration {
                         .permitAll()
                         // Before the actuator rule, which would otherwise open them: the first rule
                         // that matches decides. See METRICS for why they are refused.
-                        .requestMatchers(METRICS)
+                        // Built here rather than held in a constant, because the matcher caches the
+                        // application context it first sees.
+                        .requestMatchers(EndpointRequest.to(METRICS))
                         .denyAll()
                         .requestMatchers(ACTUATOR)
                         .permitAll()

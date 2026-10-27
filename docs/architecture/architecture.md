@@ -163,7 +163,7 @@ about. The rules are the coarse outer line; the use case behind each route is wh
 | Route | Who may reach it |
 | --- | --- |
 | `POST /api/auth/sign-in`, `/refresh`, `/sign-out` | anybody — authentication itself |
-| `/actuator/metrics`, `/actuator/metrics/**`, `/actuator/prometheus` | nobody — refused to every caller, with or without a token, until the scrape question is decided ([ADR-048](../ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)) |
+| The `metrics` and `prometheus` endpoints, every path beneath each (matched by endpoint id) | nobody — refused to every caller, with or without a token, until the scrape question is decided ([ADR-048](../ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)) |
 | `/actuator/**` | anybody, for what remains: health, liveness, readiness and info. What exists there is decided by the exposure list (ADR-017) |
 | `GET /api/auth/session`, `POST /api/auth/password` | any authenticated account, including one whose password change is still pending |
 | `POST`/`GET /api/organisations` | `OPERATOR` |

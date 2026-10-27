@@ -32,8 +32,8 @@ The full-system security scan (#250) found that this is more than a description 
 
 ## Decision
 
-**We refuse `/actuator/metrics`, `/actuator/metrics/**` and `/actuator/prometheus` to every caller,
-with or without a token.** This amends ADR-017 and ADR-032 for these routes. Both stay Accepted, and
+**We refuse the `metrics` and `prometheus` endpoints - every path beneath each, matched by endpoint
+id - to every caller, with or without a token.** This amends ADR-017 and ADR-032 for these routes. Both stay Accepted, and
 everything they decide beyond these routes stands.
 
 - **The rule is `denyAll`, placed before the actuator `permitAll`.** `SecurityConfiguration` matches
