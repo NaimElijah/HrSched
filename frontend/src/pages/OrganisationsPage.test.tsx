@@ -203,3 +203,30 @@ describe('what is no longer offered', () => {
     expect(screen.queryByRole('button', { name: /Act in/ })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Both credentials typed here are the first Admin's, never the operator's, so the browser is told
+ * not to autofill the operator's own. What a password manager then offers to save is the browser's
+ * choice, and jsdom cannot show it; these tests pin the hints, not the prompt (#250).
+ */
+describe('what the browser’s password manager is offered', () => {
+  it('GivenTheOnboardingForm_WhenShown_ThenTheTemporaryPasswordIsMarkedAsANewPassword', async () => {
+    thePlatform();
+    show();
+
+    expect(await screen.findByLabelText('Temporary password')).toHaveAttribute(
+      'autocomplete',
+      'new-password',
+    );
+  });
+
+  it('GivenTheOnboardingForm_WhenShown_ThenTheFirstAdminsSignInNameIsNotAutofilled', async () => {
+    thePlatform();
+    show();
+
+    expect(await screen.findByLabelText('First admin sign-in name')).toHaveAttribute(
+      'autocomplete',
+      'off',
+    );
+  });
+});

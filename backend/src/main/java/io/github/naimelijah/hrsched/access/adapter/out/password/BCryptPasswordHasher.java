@@ -5,6 +5,7 @@ import io.github.naimelijah.hrsched.access.domain.model.PasswordHash;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Objects;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -19,11 +20,18 @@ import org.springframework.stereotype.Component;
  * with no migration to run. Without it, the algorithm would be an unwritten assumption about every
  * row in the table.
  *
- * <p>Bcrypt reads no further than {@value #MAXIMUM_PASSWORD_BYTES} bytes. Spring Security 7.1.1
- * refuses a longer password rather than truncating one — verified in the jar, where {@code BCrypt}
- * carries the message "password cannot be more than 72 bytes" — but this adapter checks first
- * anyway, so the refusal is this port's contract rather than a library's, and so that nothing can
- * put the password itself into an exception thrown from somewhere that does not know what it is.
+ * <p>Bcrypt reads no further than {@value #MAXIMUM_PASSWORD_BYTES} bytes, and this adapter holds
+ * that limit on both sides. Hashing refuses a longer password. Spring Security 7.1.1 would too —
+ * verified in the jar, where {@code BCrypt} carries the message "password cannot be more than 72
+ * bytes" — but this adapter checks first anyway, so the refusal is this port's contract rather than
+ * a library's, and so that nothing can put the password itself into an exception thrown from
+ * somewhere that does not know what it is. Verifying is where the library does not hold the limit:
+ * its check skips the length test and compares only the first 72 bytes, so a stored password of
+ * exactly the limit would match every extension of it. Here a longer candidate does not match.
+ *
+ * <p>Every check makes exactly one bcrypt comparison, whatever the candidate. One that is empty, or
+ * longer than the limit, is refused only after a comparison of a fixed stand-in against the same
+ * hash: answering it at once would make it measurably faster than an ordinary wrong password.
  *
  * <p>The limit is counted in bytes, not characters. A passphrase of Han characters costs three
  * bytes each, so a check counting characters would let a password through whose tail bcrypt
@@ -38,22 +46,39 @@ public class BCryptPasswordHasher implements PasswordHasher {
   /** The id written into every hash this produces, and the one it is checked back with. */
   private static final String BCRYPT = "bcrypt";
 
+  /**
+   * Compared in place of a candidate that cannot be compared itself, empty or past the limit. Any
+   * fixed value within the limit costs what a real comparison costs; its result is never used, so
+   * an account whose password this happened to be would not be opened by it.
+   */
+  private static final String STAND_IN = "a stand-in compared only for what the comparison costs";
+
   private final PasswordEncoder encoder;
 
   /**
    * @param properties the bcrypt work factor to hash with
    */
+  @Autowired
   public BCryptPasswordHasher(PasswordHashingProperties properties) {
-    Objects.requireNonNull(properties, "properties must not be null");
-    this.encoder =
-        new DelegatingPasswordEncoder(
-            BCRYPT, Map.of(BCRYPT, new BCryptPasswordEncoder(properties.bcryptStrength())));
+    this(
+        new BCryptPasswordEncoder(
+            Objects.requireNonNull(properties, "properties must not be null").bcryptStrength()));
+  }
+
+  /**
+   * Takes the bcrypt encoder itself, so a test can count the comparisons it makes.
+   *
+   * @param bcrypt the encoder registered under the bcrypt id
+   */
+  BCryptPasswordHasher(PasswordEncoder bcrypt) {
+    Objects.requireNonNull(bcrypt, "bcrypt must not be null");
+    this.encoder = new DelegatingPasswordEncoder(BCRYPT, Map.of(BCRYPT, bcrypt));
   }
 
   @Override
   public PasswordHash hash(String rawPassword) {
     Objects.requireNonNull(rawPassword, "rawPassword must not be null");
-    if (rawPassword.getBytes(StandardCharsets.UTF_8).length > MAXIMUM_PASSWORD_BYTES) {
+    if (exceedsTheLimit(rawPassword)) {
       // Says the limit and nothing about what was submitted: this message reaches a log.
       throw new IllegalArgumentException(
           "A password must be at most %d bytes long".formatted(MAXIMUM_PASSWORD_BYTES));
@@ -65,7 +90,19 @@ public class BCryptPasswordHasher implements PasswordHasher {
   public boolean matches(String rawPassword, PasswordHash hash) {
     Objects.requireNonNull(rawPassword, "rawPassword must not be null");
     Objects.requireNonNull(hash, "hash must not be null");
+    // False, not an exception: the candidate is whatever somebody typed. Still compared - with a
+    // stand-in, since bcrypt cannot read the candidate whole and the encoder answers an empty one
+    // without comparing - so that a refusal it could make at once costs what any other check
+    // does, and how long one takes says nothing about why it was refused.
+    if (rawPassword.isEmpty() || exceedsTheLimit(rawPassword)) {
+      encoder.matches(STAND_IN, hash.value());
+      return false;
+    }
     return encoder.matches(rawPassword, hash.value());
+  }
+
+  private static boolean exceedsTheLimit(String rawPassword) {
+    return rawPassword.getBytes(StandardCharsets.UTF_8).length > MAXIMUM_PASSWORD_BYTES;
   }
 
   @Override

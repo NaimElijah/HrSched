@@ -5,7 +5,7 @@
 **Staff rostering for many organisations at once: it turns shifts that need covering and people
 with constraints into a roster that is legal to work, and refuses to publish one that is not.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/NaimElijah/HrSched/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/NaimElijah/HrSched/actions/workflows/ci.yml) [![Java](https://img.shields.io/badge/Java-21_LTS-blue?style=flat-square)](backend/pom.xml) [![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1.1-blue?style=flat-square)](backend/pom.xml) [![React](https://img.shields.io/badge/React-19-blue?style=flat-square)](frontend/package.json) [![Licence](https://img.shields.io/badge/licence-proprietary-lightgrey?style=flat-square)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/NaimElijah/HrSched/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/NaimElijah/HrSched/actions/workflows/ci.yml) [![Java](https://img.shields.io/badge/Java-21_LTS-blue?style=flat-square)](backend/pom.xml) [![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1.2-blue?style=flat-square)](backend/pom.xml) [![React](https://img.shields.io/badge/React-19-blue?style=flat-square)](frontend/package.json) [![Licence](https://img.shields.io/badge/licence-proprietary-lightgrey?style=flat-square)](LICENSE)
 
 [Requirements](docs/requirements/requirements.md) · [Architecture](docs/architecture/architecture.md) · [Decisions](docs/ADRs/README.md) · [API](docs/api.md) · [Roadmap](https://github.com/NaimElijah/HrSched/milestones)
 
@@ -120,15 +120,15 @@ Components, the authentication sequence and the data flow are in
 | Layer | Technology | Version | Why |
 | :--- | :--- | ---: | :--- |
 | Language | Java | 21 LTS | The LTS that Boot 4 supports ([ADR-001](docs/ADRs/ADR-001-java-spring-boot-maven.md)) |
-| Framework | Spring Boot | 4.1.1 | Supplies the adapters; the hexagon carries no annotation |
-| Security | Spring Security, OAuth2 resource server | 7.1.1 | Verifies the RS256 tokens HrSched signs itself |
+| Framework | Spring Boot | 4.1.2 | Supplies the adapters; the hexagon carries no annotation |
+| Security | Spring Security, OAuth2 resource server | 7.1.2 | Verifies the RS256 tokens HrSched signs itself |
 | Database | PostgreSQL | 18 | Its constraints refuse what the domain must never store |
 | Persistence | Spring JDBC + Flyway | 12.4.0 | Hand-written SQL behind the ports, no ORM ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) |
 | Generation | Google OR-Tools, CP-SAT | 9.12.4544 | Every rule is a constraint, so a generated roster is legal by construction ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) |
 | Tests | JUnit Jupiter, Testcontainers | 6.0.3 / 2.0.5 | Every test that touches storage runs on a real PostgreSQL |
 | Architecture | ArchUnit | 1.5.1 | Turns the dependency rules into build failures |
 | Observability | OpenTelemetry starter, Micrometer Prometheus | Boot BOM | A trace id on every response and log line; metrics pulled, not pushed |
-| Frontend | React, TypeScript, Vite | 19.2.8 / 6.0.3 / 8.2.2 | Strict types turn API drift into a compile error ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)) |
+| Frontend | React, TypeScript, Vite | 19.2.8 / 6.0.3 / 8.3.5 | Strict types turn API drift into a compile error ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)) |
 | Frontend tests | Vitest, Testing Library | 5.0.5 / 16.3.3 | `fetch` is stubbed at the one module that calls it |
 | Format and lint | Spotless (google-java-format), Prettier, ESLint | 3.10.4 / 3.9.6 / 10.13.0 | Formatting is checked by the same command that builds |
 | Build | Maven Wrapper | 3.10.0 | Pinned in the repo, so no global Maven install is needed |
@@ -169,7 +169,7 @@ supplies a throwaway signing key and the local operator. A deployment sets the v
 | `SPRING_DATASOURCE_USERNAME` | Who connects to it | none | In a deployment |
 | `SPRING_DATASOURCE_PASSWORD` | Their password | none | In a deployment |
 | `HRSCHED_SECURITY_TOKEN_PRIVATEKEY` | RSA key that signs access tokens; PKCS#8 PEM, 2048 bits or more | none | Yes; startup fails without it |
-| `HRSCHED_BOOTSTRAP_OPERATOR_SIGNINNAME` | First platform Operator, created once at startup | none | Both or neither |
+| `HRSCHED_BOOTSTRAP_OPERATOR_SIGNINNAME` | First platform Operator, created once at startup; startup fails if a tenant's account holds the name | none | Both or neither |
 | `HRSCHED_BOOTSTRAP_OPERATOR_PASSWORD` | Its temporary password, replaced at first sign-in | none | Both or neither |
 
 <details>
@@ -302,9 +302,14 @@ tests coordinate real threads with barriers and latches.
 | Architecture | The ten dependency rules above | `HexagonalArchitectureTest` |
 | Frontend | The one module that calls `fetch`, error-body validation, session renewal, and one test file per screen | `api/client.test.ts`, `pages/*.test.tsx` |
 
-CI runs both gates on every push, and on every pull request into `main` or `dev`
-([`ci.yml`](.github/workflows/ci.yml)). It has no path filters, because a check filtered out by
-mistake is skipped silently and still reports green. Coverage is reported but never enforced
+CI runs both gates, and a dependency audit, on every push and on every pull request into `main` or
+`dev` ([`ci.yml`](.github/workflows/ci.yml)). It has no path filters, because a check filtered out
+by mistake is skipped silently and still reports green. The audit fails on any known advisory in
+`backend/pom.xml`'s resolved tree or `frontend/package-lock.json`, whatever its severity, and fails
+too when it cannot resolve either file. The only way past an advisory is an entry in
+[`osv-scanner.toml`](osv-scanner.toml) with an expiry and a reason, which CI requires
+([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Coverage is
+reported but never enforced
 ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)). `./mvnw verify` writes
 `backend/target/site/jacoco/index.html`, and `npm run test:coverage` writes
 `frontend/coverage/index.html`.
@@ -329,7 +334,7 @@ the application reports ready.
 | `http_server_requests_seconds` | Request rate, latency and error rate, per route and status |
 | `hrsched_shifts_required_places`, `hrsched_shifts_uncovered_places` | Places generation was asked to fill, and could not fill legally: their ratio is coverage, the product's own success metric |
 | `hrsched_rosters_refused_total{reason}` | Publications refused as `not_compliant`, `not_verifiable` or `concurrent_publication` |
-| `hrsched_access_denied_total{kind}` | Refusals by kind; a rise in `cross_tenant` is a security signal, not a usage one |
+| `hrsched_access_denied_total{kind}` | Refusals by kind; a rise in `cross_tenant`, or in `sign_in_name_taken` from one account, is a security signal, not a usage one |
 | `hrsched_changes_total{context,change}` | Every recorded change, by context and kind |
 | `jvm_*`, `process_*`, `hikaricp_*` | Saturation: heap, threads, the connection pool |
 
@@ -363,7 +368,7 @@ HrSched/
 | Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
 | Generation with CP-SAT behind a port ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md), [ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)) | Timefold, whose search must drive a broken rule's penalty to zero and proves no bound; a MIP solver | About 95 MB of native libraries; no determinism under a time limit; OR-Tools held at 9.12 for the Visual C++ runtime JDK 21 bundles on Windows |
 
-All 44 decisions, and the two still waiting to be recorded, are in the
+All 46 decisions, and the two still waiting to be recorded, are in the
 [ADR index](docs/ADRs/README.md).
 
 ## Status and limitations
@@ -392,8 +397,10 @@ built.
 - **Notifications are pull-only.** A colleague learns of a change when they next open the app (Q21).
 - **Nothing proves the UI and the API agree.** The client is written by hand, and there is no
   contract or browser test ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)).
-- **Nothing blocks a merge on a red build or a vulnerable dependency.** CI is not a required check
-  and runs no dependency audit, though Dependabot alerts are on.
+- **Nothing blocks a merge on a red build or a vulnerable dependency.** CI runs the build gates
+  and a dependency audit, but none of its jobs is a required check yet
+  ([#217](https://github.com/NaimElijah/HrSched/issues/217)), so a red one blocks nothing. The audit
+  has no severity threshold, and does not audit Maven build plugins such as Spotless and JaCoCo.
 
 ## Contributing and licence
 
