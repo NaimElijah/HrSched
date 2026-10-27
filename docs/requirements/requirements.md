@@ -272,7 +272,7 @@ filled every place it can, it keeps at least that many filled and minimises the 
   tenant can be neither invented nor borrowed.
   *Enforced by `Actor.requireTenantMembership` and `Actor.requireAccessTo` (`ActorTest` covers the
   second), and by the helper in each web adapter that takes the organisation from the actor
-  (`actingIn`; `organisationOf` in `AccountController`), covered by `EmployeeHttpTest`, `RosteringHttpTest`, `SwapHttpTest`, `NotificationHttpTest`
+  (`actingIn`; `organisationOf` in `AccountController`), covered by `EmployeeHttpTest`, `CrossTenantEmployeeWriteHttpTest`, `RosteringHttpTest`, `SwapHttpTest`, `NotificationHttpTest`
   and `AccountHttpTest`;
   [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md). On the write side, by the
   guard on every upsert by identity, which refuses to store over another organisation's row:
