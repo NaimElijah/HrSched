@@ -59,9 +59,10 @@ export function OrganisationsPage() {
         password the first time they sign in.
       </p>
 
-      {/* Both credentials are the first Admin's, never the operator's: the browser must neither
-          file the temporary password under the operator's sign-in nor autofill the operator's own
-          name or password into a new organisation (#250). */}
+      {/* Both credentials are the first Admin's, never the operator's. new-password keeps the
+          browser from autofilling the operator's saved password into a new organisation or
+          offering it as an update to the operator's own entry; off asks it not to autofill the
+          name. A browser may still offer to save what is typed, under the new Admin's name (#250). */}
       <form className="row" onSubmit={(event) => void onboard(event)}>
         <label>
           Name

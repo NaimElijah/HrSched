@@ -82,9 +82,11 @@ export function AccountsPage() {
         create their own account.
       </p>
 
-      {/* Every credential here is a colleague's, never the Admin's own: the browser must neither
-          file a temporary password under the Admin's sign-in nor autofill the Admin's own name or
-          password into somebody else's account (#250). */}
+      {/* Every credential here is a colleague's, never the Admin's own. new-password keeps the
+          browser from autofilling the Admin's saved password into a colleague's account or offering
+          it as an update to the Admin's own entry; off asks it not to autofill the name. A browser
+          may still offer to save what is typed, under the colleague's name: these hints do not
+          promise more (#250). */}
       <form className="row" onSubmit={(event) => void create(event)}>
         <label>
           Sign-in name

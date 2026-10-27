@@ -566,10 +566,10 @@ describe('resetting a colleague’s password', () => {
 });
 
 /**
- * Every credential on this screen belongs to somebody else. A browser that offered to save one
- * would file a colleague's temporary password under the Admin's own sign-in, and one that autofilled
- * would put the Admin's own name or password into a colleague's account. `new-password` stops the
- * first, and `off` on a name that is not the Admin's stops the second (#250).
+ * Every credential on this screen belongs to somebody else, so the browser is told not to autofill
+ * the Admin's own: `new-password` on the passwords, `off` on a name that is not the Admin's. What
+ * a password manager then offers to save is the browser's choice, and jsdom cannot show it; these
+ * tests pin the hints, not the prompt (#250).
  */
 describe('what the browser’s password manager is offered', () => {
   it('GivenTheCreateForm_WhenShown_ThenTheTemporaryPasswordIsMarkedAsANewPassword', async () => {

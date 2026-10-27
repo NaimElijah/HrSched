@@ -205,9 +205,9 @@ describe('what is no longer offered', () => {
 });
 
 /**
- * Both credentials typed here are the first Admin's, never the operator's. A browser that offered
- * to save the password would file it under the operator's own sign-in, and one that autofilled
- * would onboard an organisation with the operator's own name or password (#250).
+ * Both credentials typed here are the first Admin's, never the operator's, so the browser is told
+ * not to autofill the operator's own. What a password manager then offers to save is the browser's
+ * choice, and jsdom cannot show it; these tests pin the hints, not the prompt (#250).
  */
 describe('what the browser’s password manager is offered', () => {
   it('GivenTheOnboardingForm_WhenShown_ThenTheTemporaryPasswordIsMarkedAsANewPassword', async () => {
