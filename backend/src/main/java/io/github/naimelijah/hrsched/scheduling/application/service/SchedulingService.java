@@ -495,18 +495,27 @@ public class SchedulingService
             broken.add("shift %s is staffed above %d".formatted(shift.value(), allowed));
           }
         });
-    // Never a violation's detail: it says how long somebody worked on a day, or when they rested,
-    // and this message is logged where the solve ran.
+    // Never a working-time violation's detail: it says how long somebody worked on a day, or when
+    // they rested, and this message is logged where the solve ran.
     judged(draft, request.constraints(), offered, request.heldElsewhere(), request.candidates())
-        .forEach(
-            violation ->
-                broken.add(
-                    "employee %s breaks %s"
-                        .formatted(violation.employee().value(), violation.constraint())));
+        .forEach(violation -> broken.add(brokenPromise(violation)));
     if (!broken.isEmpty()) {
       throw new IllegalStateException("The generator broke its promises: " + broken);
     }
     return draft;
+  }
+
+  /**
+   * A declared absence beside an identity says that this person cannot work then, a fact about
+   * their health or household (#250), so that breach names the shift and the rule and nobody; its
+   * detail is built to name only the shift. Every other breach names the employee by identity, and
+   * never its detail.
+   */
+  private static String brokenPromise(ConstraintViolation violation) {
+    if (ConstraintViolation.DECLARED_UNAVAILABLE.equals(violation.constraint())) {
+      return "somebody breaks %s: %s".formatted(violation.constraint(), violation.detail());
+    }
+    return "employee %s breaks %s".formatted(violation.employee().value(), violation.constraint());
   }
 
   @Override

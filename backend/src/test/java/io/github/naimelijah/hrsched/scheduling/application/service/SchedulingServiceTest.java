@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.in.AssignToShiftCommand;
@@ -579,6 +580,35 @@ class SchedulingServiceTest {
     ShiftId day = aShift(ACME, Set.of());
 
     assertGenerationRefused(request -> List.of(new Assignment(day, ada)));
+  }
+
+  /**
+   * #250. The defect is thrown on to be logged where the solve ran, and beside this rule an
+   * employee's identity says that this person declared an absence over that shift: a fact about
+   * their health or household, tied to them, in a log. The defect may name the shift and the rule,
+   * and never whose schedule broke it.
+   */
+  @Test
+  void
+      GivenAGeneratorRosteringSomebodyThroughTheirDeclaredAbsence_WhenGenerating_ThenTheDefectNamesNobody() {
+    EmployeeId ada = EmployeeId.newId();
+    workforce.add(
+        ACME,
+        new RosterCandidate(ada, "Ada", Set.of(), List.of(MONDAY_DAY), StatedPreferences.none()));
+    ShiftId day = aShift(ACME, Set.of());
+
+    Throwable defect =
+        catchThrowable(
+            () ->
+                generatingWith(request -> List.of(new Assignment(day, ada)))
+                    .startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)));
+
+    assertThat(defect).isInstanceOf(IllegalStateException.class);
+    for (Throwable logged = defect; logged != null; logged = logged.getCause()) {
+      assertThat(String.valueOf(logged.getMessage()))
+          .describedAs("a message logged with the defect")
+          .doesNotContain(ada.value().toString());
+    }
   }
 
   @Test
