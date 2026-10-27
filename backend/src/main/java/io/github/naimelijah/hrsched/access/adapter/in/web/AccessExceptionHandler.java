@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.access.adapter.in.web;
 import io.github.naimelijah.hrsched.access.domain.model.CannotResetOwnPasswordException;
 import io.github.naimelijah.hrsched.access.domain.model.EmployeeAlreadyLinkedException;
 import io.github.naimelijah.hrsched.access.domain.model.InvalidOrganisationNameException;
+import io.github.naimelijah.hrsched.access.domain.model.InvalidSignInNameException;
 import io.github.naimelijah.hrsched.access.domain.model.LastActiveAdminException;
 import io.github.naimelijah.hrsched.access.domain.model.NotAnEmployeeHereException;
 import io.github.naimelijah.hrsched.access.domain.model.NotThePlatformOperatorException;
@@ -70,7 +71,13 @@ public class AccessExceptionHandler {
         .increment();
   }
 
-  @ExceptionHandler({InvalidOrganisationNameException.class, MalformedRequestException.class})
+  // InvalidSignInNameException's message names the rule and never the name, so it can be the
+  // detail. Without it here a blank or over-long name escaped every handler and answered 500.
+  @ExceptionHandler({
+    InvalidOrganisationNameException.class,
+    InvalidSignInNameException.class,
+    MalformedRequestException.class
+  })
   public ProblemDetail handleInvalidInput(RuntimeException exception) {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
