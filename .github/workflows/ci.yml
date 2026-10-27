@@ -42,6 +42,12 @@ jobs:
           # setup-java runs outside the job default, so the cache key needs the real path.
           cache-dependency-path: backend/pom.xml
 
+      # setup-java restores ~/.m2/wrapper/dists from the cache, and the wrapper runs a
+      # distribution it already has without checking it. Removing it makes every run download
+      # Maven and check it against distributionSha256Sum, so a poisoned cache cannot persist.
+      - name: Make the wrapper check Maven
+        run: rm -rf ~/.m2/wrapper/dists
+
       # Deliberately the exact command a developer runs locally. Spotless is bound to the
       # validate phase in pom.xml, so this single invocation is the whole gate: format
       # check, architecture rules, compile, and tests.
