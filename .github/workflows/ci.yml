@@ -13,7 +13,7 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Both jobs run on every push, with no path filters. ADR-007 warned that getting path filters
+# Every job runs on every push, with no path filters. ADR-007 warned that getting path filters
 # wrong silently skips checks, and a check that is skipped still reports green — which is worse
 # than one that is merely slow.
 #
@@ -75,3 +75,23 @@ jobs:
       # backend: format check, lint, types, tests and a production build in one invocation.
       - name: Verify
         run: npm run verify
+
+  # Known vulnerabilities in what both projects depend on, Maven's transitive tree included
+  # (ADR-047). Any advisory fails it; the only way past one is an entry in osv-scanner.toml with a
+  # reason and an expiry, which is reviewed like any other change.
+  dependency-audit:
+    name: Dependency audit
+    # The scan job inside declares these, and a called workflow cannot be granted less than it
+    # declares. Nothing is uploaded to code scanning (upload-sarif below), so security-events:
+    # write is granted and unused.
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+    with:
+      upload-sarif: false
+      scan-args: |-
+        --config=./osv-scanner.toml
+        --recursive
+        ./

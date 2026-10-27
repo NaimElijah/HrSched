@@ -302,9 +302,13 @@ tests coordinate real threads with barriers and latches.
 | Architecture | The ten dependency rules above | `HexagonalArchitectureTest` |
 | Frontend | The one module that calls `fetch`, error-body validation, session renewal, and one test file per screen | `api/client.test.ts`, `pages/*.test.tsx` |
 
-CI runs both gates on every push, and on every pull request into `main` or `dev`
-([`ci.yml`](.github/workflows/ci.yml)). It has no path filters, because a check filtered out by
-mistake is skipped silently and still reports green. Coverage is reported but never enforced
+CI runs both gates, and a dependency audit, on every push and on every pull request into `main` or
+`dev` ([`ci.yml`](.github/workflows/ci.yml)). It has no path filters, because a check filtered out
+by mistake is skipped silently and still reports green. The audit fails on any known advisory in
+`pom.xml`'s resolved tree or `package-lock.json`, whatever its severity; the only way past one is a
+dated entry in [`osv-scanner.toml`](osv-scanner.toml)
+([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Coverage is
+reported but never enforced
 ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)). `./mvnw verify` writes
 `backend/target/site/jacoco/index.html`, and `npm run test:coverage` writes
 `frontend/coverage/index.html`.
@@ -363,7 +367,7 @@ HrSched/
 | Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
 | Generation with CP-SAT behind a port ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md), [ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)) | Timefold, whose search must drive a broken rule's penalty to zero and proves no bound; a MIP solver | About 95 MB of native libraries; no determinism under a time limit; OR-Tools held at 9.12 for the Visual C++ runtime JDK 21 bundles on Windows |
 
-All 44 decisions, and the two still waiting to be recorded, are in the
+All 45 decisions, and the two still waiting to be recorded, are in the
 [ADR index](docs/ADRs/README.md).
 
 ## Status and limitations
@@ -392,8 +396,10 @@ built.
 - **Notifications are pull-only.** A colleague learns of a change when they next open the app (Q21).
 - **Nothing proves the UI and the API agree.** The client is written by hand, and there is no
   contract or browser test ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)).
-- **Nothing blocks a merge on a red build or a vulnerable dependency.** CI is not a required check
-  and runs no dependency audit, though Dependabot alerts are on.
+- **Nothing blocks a merge on a red build or a vulnerable dependency.** CI runs the build gates
+  and a dependency audit, but none of its jobs is a required check yet
+  ([#217](https://github.com/NaimElijah/HrSched/issues/217)), so a red one blocks nothing. The audit
+  has no severity threshold, and does not resolve test-scope Maven dependencies.
 
 ## Contributing and licence
 

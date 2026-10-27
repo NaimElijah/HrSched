@@ -1,0 +1,20 @@
+# Advisories the dependency audit in .github/workflows/ci.yml lets past (ADR-047).
+#
+# The audit fails on any known vulnerability, whatever its severity. An entry here is the only way
+# past one, and every entry needs all three of:
+#
+# - ignoreUntil: a date. Once it has passed, the advisory fails the build again, so an exception
+#   is reconsidered rather than forgotten.
+# - reason: why HrSched is not exposed - for example, the vulnerable code path is never reached,
+#   naming where that was checked.
+# - an issue: the reason ends with the issue that tracks removing the entry.
+#
+# The scanner itself enforces none of the three; review does. An entry without them is a check
+# disabled, not an exception recorded.
+#
+# Example shape (not a real entry):
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2027-01-31
+# reason = "Needs container-managed FORM authentication, which HrSched does not use. #NNN"

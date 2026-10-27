@@ -317,6 +317,15 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 | `jacoco-maven-plugin` | Coverage measurement, reported and never enforced | [ADR-015](../ADRs/ADR-015-report-coverage-without-a-threshold.md). The version is pinned because the Boot 4.1.1 BOM manages none. |
 | `@vitest/coverage-v8` (frontend) | The same, for the SPA | ADR-015. Pinned to the exact Vitest version by peer dependency. |
 
+**In CI, one more integration point.** `.github/workflows/ci.yml` runs three jobs on every push and
+on pull requests into `main` and `dev`: `backend` and `frontend`, each running its own project's
+verify command, and `dependency-audit`. The last calls Google's OSV-Scanner action over the whole
+repository, reading `backend/pom.xml` and `frontend/package-lock.json`. It resolves Maven's
+transitive tree, Boot-managed versions included, through deps.dev, and compares every version
+against OSV's advisory database. Any advisory fails the job unless `osv-scanner.toml` ignores it
+with an expiry ([ADR-047](../ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Nothing
+at runtime depends on it.
+
 ## Structural decisions not visible from the file layout
 
 - **No working-time threshold is hardcoded anywhere.** A minimum rest period is a value in a
