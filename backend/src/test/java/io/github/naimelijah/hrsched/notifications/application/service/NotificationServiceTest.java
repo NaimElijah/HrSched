@@ -13,6 +13,7 @@ import io.github.naimelijah.hrsched.notifications.application.port.out.Notificat
 import io.github.naimelijah.hrsched.notifications.domain.model.NotAddressableException;
 import io.github.naimelijah.hrsched.notifications.domain.model.Notification;
 import io.github.naimelijah.hrsched.notifications.domain.model.NotificationId;
+import io.github.naimelijah.hrsched.notifications.domain.model.NotificationKind;
 import io.github.naimelijah.hrsched.notifications.domain.model.UnknownNotificationException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
@@ -238,13 +239,59 @@ class NotificationServiceTest {
     assertThat(audit.changes()).containsExactly(NotificationChange.NOTIFICATION_RAISED);
   }
 
-  /** Hand-written, like every other double here: the repository is our own port. */
+  /**
+   * #250. The double stands in for {@code JdbcNotificationRepository}, which refuses a save over an
+   * identity another organisation holds. A double that accepted it would let a use case writing
+   * across the tenant boundary pass every test here while the database refused it in production.
+   */
+  @Test
+  void
+      GivenAnIdentityHeldByAnotherOrganisation_WhenTheRepositoryDoubleSavesOverIt_ThenItIsRefused() {
+    Notification theirs =
+        new Notification(
+            NotificationId.newId(),
+            RIVAL,
+            ADA,
+            NotificationKind.SWAP_REQUESTED,
+            UUID.randomUUID(),
+            NOON);
+    notifications.save(theirs);
+
+    assertThatThrownBy(
+            () ->
+                notifications.save(
+                    new Notification(
+                        theirs.id(),
+                        ACME,
+                        GRACE,
+                        NotificationKind.SWAP_APPROVED,
+                        UUID.randomUUID(),
+                        NOON)))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(notifications.findFor(RIVAL, ADA)).containsExactly(theirs);
+    assertThat(notifications.findFor(ACME, GRACE)).isEmpty();
+  }
+
+  /**
+   * Hand-written, like every other double here: the repository is our own port. It copies the real
+   * adapter's refusals, because a double accepting what the database refuses tests nothing.
+   */
   private static final class StubNotificationRepository implements NotificationRepository {
 
     private final Map<NotificationId, Notification> saved = new HashMap<>();
 
+    /**
+     * @throws IllegalStateException if the identity already belongs to another organisation, as
+     *     {@code JdbcNotificationRepository}'s upsert refuses it
+     */
     @Override
     public void save(Notification notification) {
+      Notification held = saved.get(notification.id());
+      if (held != null && !held.organisation().equals(notification.organisation())) {
+        throw new IllegalStateException(
+            "Refused to store %s: that identity already belongs to another organisation"
+                .formatted(notification.id().value()));
+      }
       saved.put(notification.id(), notification);
     }
 
