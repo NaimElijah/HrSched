@@ -1,6 +1,8 @@
 package io.github.naimelijah.hrsched.configuration.security;
 
 import jakarta.servlet.DispatcherType;
+import jakarta.servlet.Filter;
+import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -11,7 +13,9 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.OAuth2ProtectedResourceMetadataFilter;
 import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 
@@ -158,76 +162,113 @@ public class SecurityConfiguration {
       AuthenticationEntryPoint unauthenticated,
       AccessDeniedHandler forbidden)
       throws Exception {
-    return http.sessionManagement(
-            session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-        .csrf(AbstractHttpConfigurer::disable)
-        .formLogin(AbstractHttpConfigurer::disable)
-        .httpBasic(AbstractHttpConfigurer::disable)
-        .logout(AbstractHttpConfigurer::disable)
-        .requestCache(AbstractHttpConfigurer::disable)
-        .oauth2ResourceServer(
-            resource ->
-                resource
-                    .jwt(jwt -> jwt.decoder(decoder).jwtAuthenticationConverter(actors))
-                    .authenticationEntryPoint(unauthenticated)
-                    .accessDeniedHandler(forbidden))
-        .exceptionHandling(
-            refusals ->
-                refusals.authenticationEntryPoint(unauthenticated).accessDeniedHandler(forbidden))
-        .authorizeHttpRequests(
-            requests ->
-                requests
-                    // The container's own dispatches rather than requests anybody made. Without
-                    // this, denyAll below turns every 500 into a 403 and hides the real failure.
-                    .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC)
-                    .permitAll()
-                    // Authentication itself. Signing in has no token by definition; refreshing and
-                    // signing out are carried by the refresh cookie, and are defended against
-                    // cross-site use by requiring a header no cross-site request can send.
-                    .requestMatchers(HttpMethod.POST, AUTHENTICATING)
-                    .permitAll()
-                    // Before the actuator rule, which would otherwise open them: the first rule
-                    // that matches decides. See METRICS for why they are refused.
-                    .requestMatchers(METRICS)
-                    .denyAll()
-                    .requestMatchers(ACTUATOR)
-                    .permitAll()
-                    // Reachable with a temporary password still pending: they are the two things
-                    // somebody in that state has to be able to do.
-                    .requestMatchers(HttpMethod.GET, SESSION)
-                    .authenticated()
-                    .requestMatchers(HttpMethod.POST, PASSWORD)
-                    .authenticated()
-                    // Administering the register of tenants. A role rather than merely being
-                    // authenticated, so an account whose temporary password is still pending -
-                    // which holds no role at all - is refused here like everywhere else.
-                    .requestMatchers(HttpMethod.POST, ORGANISATIONS)
-                    .hasRole(OPERATOR)
-                    .requestMatchers(HttpMethod.GET, ORGANISATIONS)
-                    .hasRole(OPERATOR)
-                    // Any member may ask for an organisation by identity; which ones they get back
-                    // is the use case's decision, and a tenant naming another gets a 404.
-                    .requestMatchers(HttpMethod.GET, ONE_ORGANISATION)
-                    .hasAnyRole(EVERY_ROLE)
-                    // Account administration, in the organisation the token names and no other.
-                    // An Admin only: the operator never holds a tenant role, because it belongs to
-                    // no organisation, so this rule refuses it before the controller has to
-                    // (ADR-030).
-                    .requestMatchers(ACCOUNTS)
-                    .hasRole(ADMIN)
-                    // Everything inside an organisation. A role rather than merely being
-                    // authenticated, which refuses two callers at once: the operator, which never
-                    // holds a tenant role because it belongs to no organisation (ADR-030), and an
-                    // account whose temporary password is still pending, which holds no role until
-                    // it has chosen its own (ADR-029).
-                    .requestMatchers(TENANT_ROUTES)
-                    .hasAnyRole(EVERY_TENANT_ROLE)
-                    // Everything else is refused. A route nobody wrote a rule for is a route
-                    // nobody decided was safe, and the failure mode of the alternative is silent:
-                    // a new controller would be open to the world and no test would say so
-                    // (ADR-032).
-                    .anyRequest()
-                    .denyAll())
-        .build();
+    DefaultSecurityFilterChain chain =
+        http.sessionManagement(
+                session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .csrf(AbstractHttpConfigurer::disable)
+            .formLogin(AbstractHttpConfigurer::disable)
+            .httpBasic(AbstractHttpConfigurer::disable)
+            .logout(AbstractHttpConfigurer::disable)
+            .requestCache(AbstractHttpConfigurer::disable)
+            .oauth2ResourceServer(
+                resource ->
+                    resource
+                        .jwt(jwt -> jwt.decoder(decoder).jwtAuthenticationConverter(actors))
+                        .authenticationEntryPoint(unauthenticated)
+                        .accessDeniedHandler(forbidden))
+            .exceptionHandling(
+                refusals ->
+                    refusals
+                        .authenticationEntryPoint(unauthenticated)
+                        .accessDeniedHandler(forbidden))
+            .authorizeHttpRequests(
+                requests ->
+                    requests
+                        // The container's own dispatches rather than requests anybody made. Without
+                        // this, denyAll below turns every 500 into a 403 and hides the real
+                        // failure.
+                        .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC)
+                        .permitAll()
+                        // Authentication itself. Signing in has no token by definition; refreshing
+                        // and
+                        // signing out are carried by the refresh cookie, and are defended against
+                        // cross-site use by requiring a header no cross-site request can send.
+                        .requestMatchers(HttpMethod.POST, AUTHENTICATING)
+                        .permitAll()
+                        // Before the actuator rule, which would otherwise open them: the first rule
+                        // that matches decides. See METRICS for why they are refused.
+                        .requestMatchers(METRICS)
+                        .denyAll()
+                        .requestMatchers(ACTUATOR)
+                        .permitAll()
+                        // Reachable with a temporary password still pending: they are the two
+                        // things
+                        // somebody in that state has to be able to do.
+                        .requestMatchers(HttpMethod.GET, SESSION)
+                        .authenticated()
+                        .requestMatchers(HttpMethod.POST, PASSWORD)
+                        .authenticated()
+                        // Administering the register of tenants. A role rather than merely being
+                        // authenticated, so an account whose temporary password is still pending -
+                        // which holds no role at all - is refused here like everywhere else.
+                        .requestMatchers(HttpMethod.POST, ORGANISATIONS)
+                        .hasRole(OPERATOR)
+                        .requestMatchers(HttpMethod.GET, ORGANISATIONS)
+                        .hasRole(OPERATOR)
+                        // Any member may ask for an organisation by identity; which ones they get
+                        // back
+                        // is the use case's decision, and a tenant naming another gets a 404.
+                        .requestMatchers(HttpMethod.GET, ONE_ORGANISATION)
+                        .hasAnyRole(EVERY_ROLE)
+                        // Account administration, in the organisation the token names and no other.
+                        // An Admin only: the operator never holds a tenant role, because it belongs
+                        // to
+                        // no organisation, so this rule refuses it before the controller has to
+                        // (ADR-030).
+                        .requestMatchers(ACCOUNTS)
+                        .hasRole(ADMIN)
+                        // Everything inside an organisation. A role rather than merely being
+                        // authenticated, which refuses two callers at once: the operator, which
+                        // never
+                        // holds a tenant role because it belongs to no organisation (ADR-030), and
+                        // an
+                        // account whose temporary password is still pending, which holds no role
+                        // until
+                        // it has chosen its own (ADR-029).
+                        .requestMatchers(TENANT_ROUTES)
+                        .hasAnyRole(EVERY_TENANT_ROLE)
+                        // Everything else is refused. A route nobody wrote a rule for is a route
+                        // nobody decided was safe, and the failure mode of the alternative is
+                        // silent:
+                        // a new controller would be open to the world and no test would say so
+                        // (ADR-032).
+                        .anyRequest()
+                        .denyAll())
+            .build();
+    return withoutProtectedResourceMetadata(chain);
+  }
+
+  /**
+   * The chain as built, less the filter that serves RFC 9728's protected resource metadata.
+   *
+   * <p>Spring Security 7.1.1's resource-server configurer always adds that filter, with no switch
+   * to leave it out, and it answers {@code GET /.well-known/oauth-protected-resource/**} itself,
+   * ahead of every rule above. So it was a route nobody named, open to anybody, which is exactly
+   * what ending in {@code denyAll} exists to prevent (ADR-032). What it served was false besides:
+   * it claimed certificate-bound access tokens, which this service does not issue, and built the
+   * resource's identifier from whatever {@code Host} header the request carried. No client of this
+   * API reads it. Without the filter the path falls to {@code denyAll} like any other unnamed one
+   * (issue #250).
+   *
+   * <p>Removed from the finished chain because the filter is final and its matcher fixed, so no
+   * post-processor can make it inert, and the chain's own constructor is public API.
+   */
+  private static SecurityFilterChain withoutProtectedResourceMetadata(
+      DefaultSecurityFilterChain chain) {
+    List<Filter> filters =
+        chain.getFilters().stream()
+            .filter(filter -> !(filter instanceof OAuth2ProtectedResourceMetadataFilter))
+            .toList();
+    return new DefaultSecurityFilterChain(chain.getRequestMatcher(), filters);
   }
 }
