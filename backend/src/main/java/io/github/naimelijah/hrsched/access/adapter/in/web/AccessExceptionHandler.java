@@ -11,6 +11,7 @@ import io.github.naimelijah.hrsched.access.domain.model.UnacceptablePasswordExce
 import io.github.naimelijah.hrsched.access.domain.model.UnknownAccountException;
 import io.github.naimelijah.hrsched.access.domain.model.UnknownOrganisationException;
 import io.github.naimelijah.hrsched.access.domain.model.UnlinkedEmployeeAccountException;
+import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.micrometer.core.instrument.Counter;
@@ -20,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -98,9 +100,23 @@ public class AccessExceptionHandler {
    * <p>The detail never repeats the name. Uniqueness is platform-wide, so this can be raised by a
    * collision with an account in an organisation the caller cannot see, and echoing it would tell
    * them a particular person has an account here.
+   *
+   * <p>Logged and counted for the same reason. This is the one refusal where a request collides
+   * with data the caller cannot see, so trying name after name is a way to learn who holds an
+   * account on the platform. The line names who asked, never the name asked for, which is a
+   * person's.
+   *
+   * @param actor the acting account, taken from the access token as the controllers take it; the
+   *     exception cannot carry it, because the repository that raises it does not know who is
+   *     acting
    */
   @ExceptionHandler(SignInNameTakenException.class)
-  public ProblemDetail handleSignInNameTaken(SignInNameTakenException exception) {
+  public ProblemDetail handleSignInNameTaken(
+      SignInNameTakenException exception, @AuthenticationPrincipal Actor actor) {
+    log.atWarn()
+        .addKeyValue("actor", actor.id().value())
+        .log("Refused: an account was asked for under a sign-in name already in use");
+    denied("sign_in_name_taken");
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.CONFLICT, "That sign-in name is already in use.");
