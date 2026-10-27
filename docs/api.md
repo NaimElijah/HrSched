@@ -190,6 +190,10 @@ rules`, as publishing it would. With invented identifiers and weights:
 - **A roster whose status forbids the change.** Editing or publishing a roster that is no longer a
   draft, or asking for a swap against one that is not the published roster, answers `409` titled
   `Roster status forbids this`. Reload it: somebody most likely published it first.
+- **A value the store cannot hold.** Declaring unavailability or stating a preference with an
+  instant outside what PostgreSQL stores, or a span that is no longer positive once stored at the
+  microsecond, or setting contracted minutes too large for a duration, answers `400` titled
+  `Invalid request`. Nothing is stored, and the detail repeats no value sent.
 - **A sign-in name that cannot be one, or is taken.** Creating an account, or onboarding an
   organisation with its first Admin, under a blank sign-in name or one over the permitted length
   answers `400` titled `Invalid request`; under a name any account already holds, on any

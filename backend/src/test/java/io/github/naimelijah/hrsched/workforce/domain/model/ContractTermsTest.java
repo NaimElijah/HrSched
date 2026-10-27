@@ -29,6 +29,23 @@ class ContractTermsTest {
         .isInstanceOf(InvalidContractTermsException.class);
   }
 
+  /**
+   * Contracted hours say things about a person's household and health, and a message travels
+   * further than the record it describes. The invented -1234 minutes is -20 hours 34 minutes, so
+   * neither the minutes, the hours nor the duration's own rendering may appear.
+   */
+  @Test
+  void GivenInvalidHours_WhenTheyAreRefused_ThenTheMessageDoesNotRepeatThem() {
+    Duration invalid = Duration.ofMinutes(-1234);
+
+    assertThatThrownBy(() -> new ContractTerms(invalid))
+        .isInstanceOf(InvalidContractTermsException.class)
+        .message()
+        .doesNotContain(invalid.toString())
+        .doesNotContain("1234")
+        .doesNotContain("20");
+  }
+
   @Test
   void GivenANullDuration_WhenConstructingTerms_ThenItIsRejected() {
     assertThatThrownBy(() -> new ContractTerms(null)).isInstanceOf(NullPointerException.class);

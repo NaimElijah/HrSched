@@ -328,6 +328,27 @@ class EmployeeHttpTest {
         .andExpect(jsonPath("$.detail").value(containsString("positive")));
   }
 
+  /**
+   * Contracted hours say things about a household, and a problem detail is copied wherever the
+   * caller logs it. The invented -1234 minutes is -20 hours 34 minutes; neither figure comes back.
+   */
+  @Test
+  void GivenNegativeContractedMinutes_WhenSettingContractTerms_ThenTheRefusalRepeatsNoHours()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+
+    mockMvc
+        .perform(
+            as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
+                .content("{\"weeklyContractedMinutes\":-1234}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+        .andExpect(jsonPath("$.detail").isNotEmpty())
+        .andExpect(jsonPath("$.detail").value(not(containsString("1234"))))
+        .andExpect(jsonPath("$.detail").value(not(containsString("20"))));
+  }
+
   @Test
   void GivenTheEmployeeThemself_WhenDeclaringUnavailability_ThenItIsAccepted() throws Exception {
     String organisation = anOrganisation(mockMvc);
@@ -371,6 +392,28 @@ class EmployeeHttpTest {
             as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-11-07T00:00:00Z\",\"end\":\"2026-11-09T00:00:00Z\"}"))
         .andExpect(status().isBadRequest());
+  }
+
+  /**
+   * One of the two spans is an absence already stored, and the detail would hand it to whoever sent
+   * the second. Every invented instant here falls on 2026-11-20 to 2026-11-23, so no day of that
+   * month's twenties may appear.
+   */
+  @Test
+  void GivenAnOverlappingSpan_WhenDeclaringUnavailability_ThenTheRefusalRepeatsNeitherSpan()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    declareUnavailability(organisation, ada, "2026-11-20T00:00:00Z", "2026-11-22T00:00:00Z");
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+                .content("{\"start\":\"2026-11-21T00:00:00Z\",\"end\":\"2026-11-23T00:00:00Z\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+        .andExpect(jsonPath("$.detail").isNotEmpty())
+        .andExpect(jsonPath("$.detail").value(not(containsString("2026-11-2"))));
   }
 
   @Test
