@@ -319,12 +319,14 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 
 **In CI, one more integration point.** `.github/workflows/ci.yml` runs three jobs on every push and
 on pull requests into `main` and `dev`: `backend` and `frontend`, each running its own project's
-verify command, and `dependency-audit`. The last calls Google's OSV-Scanner action over the whole
-repository, reading `backend/pom.xml` and `frontend/package-lock.json`. It resolves Maven's
-transitive tree, Boot-managed versions included, through deps.dev, and compares every version
-against OSV's advisory database. Any advisory fails the job unless `osv-scanner.toml` ignores it
-with an expiry ([ADR-047](../ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Nothing
-at runtime depends on it.
+verify command, and `dependency-audit`. The last runs Google's OSV-Scanner image, pinned by digest,
+over the two named manifests `backend/pom.xml` and `frontend/package-lock.json`. It resolves
+Maven's transitive tree, Boot-managed versions included, through deps.dev, and compares every
+version against advisory data fetched live from osv.dev. Any advisory fails the job, and so does
+any scan error, unless `osv-scanner.toml` ignores the advisory with an expiry and a reason. The
+job's first step enforces that and rejects `[[PackageOverrides]]`
+([ADR-047](../ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Maven build plugins
+are not audited. Nothing at runtime depends on any of it.
 
 ## Structural decisions not visible from the file layout
 

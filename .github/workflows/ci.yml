@@ -17,9 +17,10 @@ concurrency:
 # wrong silently skips checks, and a check that is skipped still reports green — which is worse
 # than one that is merely slow.
 #
-# Every action is pinned to a full commit SHA, with its version in a trailing comment. A tag can
-# be moved to different code after it was trusted; a SHA cannot. Dependabot's github-actions
-# entry keeps the pins and their comments current.
+# Every action is pinned to a full commit SHA, and the one container image by its digest, each
+# with its version in a trailing comment. A tag can be moved to different code after it was
+# trusted; a SHA or a digest cannot. Dependabot's github-actions entry keeps the action pins
+# current; the image digest is bumped by hand (ADR-047).
 jobs:
   backend:
     name: Build, test, format check
@@ -83,21 +84,37 @@ jobs:
         run: npm run verify
 
   # Known vulnerabilities in what both projects depend on, Maven's transitive tree included
-  # (ADR-047). Any advisory fails it; the only way past one is an entry in osv-scanner.toml with a
-  # reason and an expiry, which is reviewed like any other change.
+  # (ADR-047). Any advisory fails it, and so does any error: a scan that could not resolve what it
+  # was given must never read as a clean one.
   dependency-audit:
     name: Dependency audit
-    # The scan job inside declares these, and a called workflow cannot be granted less than it
-    # declares. Nothing is uploaded to code scanning (upload-sarif below), so security-events:
-    # write is granted and unused.
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
-    with:
-      upload-sarif: false
-      scan-args: |-
-        --config=./osv-scanner.toml
-        --recursive
-        ./
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The scanner honours an ignore without a date for ever, and a [[PackageOverrides]] entry
+      # can silence whole packages. Neither is allowed (ADR-047), and nothing else enforces it.
+      - name: Check the ignores
+        run: |
+          if grep -Eq '^[[:space:]]*\[\[PackageOverrides\]\]' osv-scanner.toml; then
+            echo "::error file=osv-scanner.toml::[[PackageOverrides]] is not allowed (ADR-047)"
+            exit 1
+          fi
+          entries=$(grep -Ec '^[[:space:]]*\[\[IgnoredVulns\]\]' osv-scanner.toml || true)
+          dated=$(grep -Ec '^[[:space:]]*ignoreUntil[[:space:]]*=' osv-scanner.toml || true)
+          reasoned=$(grep -Ec '^[[:space:]]*reason[[:space:]]*=' osv-scanner.toml || true)
+          if [ "$entries" -ne "$dated" ] || [ "$entries" -ne "$reasoned" ]; then
+            echo "::error file=osv-scanner.toml::every [[IgnoredVulns]] needs ignoreUntil and reason (ADR-047)"
+            exit 1
+          fi
+
+      # The image by digest rather than the action that names it by tag, so what runs is what was
+      # reviewed. A plain step, so any non-zero exit fails the job. Both manifests are named
+      # rather than found by walking the tree: a named manifest that cannot be read or resolved is
+      # an error, where a walked one is only logged.
+      - name: Scan
+        uses: docker://ghcr.io/google/osv-scanner-action@sha256:d54770fe0b09493894e76a02aaed9f51a0513fa57c5186452a755d257b0068a6 # v2.7.0
+        with:
+          args: --config=./osv-scanner.toml --lockfile=./backend/pom.xml --lockfile=./frontend/package-lock.json

@@ -305,8 +305,9 @@ tests coordinate real threads with barriers and latches.
 CI runs both gates, and a dependency audit, on every push and on every pull request into `main` or
 `dev` ([`ci.yml`](.github/workflows/ci.yml)). It has no path filters, because a check filtered out
 by mistake is skipped silently and still reports green. The audit fails on any known advisory in
-`pom.xml`'s resolved tree or `package-lock.json`, whatever its severity; the only way past one is a
-dated entry in [`osv-scanner.toml`](osv-scanner.toml)
+`backend/pom.xml`'s resolved tree or `frontend/package-lock.json`, whatever its severity, and fails
+too when it cannot resolve either file. The only way past an advisory is an entry in
+[`osv-scanner.toml`](osv-scanner.toml) with an expiry and a reason, which CI requires
 ([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Coverage is
 reported but never enforced
 ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)). `./mvnw verify` writes
@@ -399,7 +400,7 @@ built.
 - **Nothing blocks a merge on a red build or a vulnerable dependency.** CI runs the build gates
   and a dependency audit, but none of its jobs is a required check yet
   ([#217](https://github.com/NaimElijah/HrSched/issues/217)), so a red one blocks nothing. The audit
-  has no severity threshold, and does not resolve test-scope Maven dependencies.
+  has no severity threshold, and does not audit Maven build plugins such as Spotless and JaCoCo.
 
 ## Contributing and licence
 

@@ -121,8 +121,9 @@ database keeps its data between runs, so from then on only the changed password 
 ## Layout
 
 Repository root: `backend/`, `frontend/`, `docs/`, `scripts/`, `package.json`, `LICENSE`,
-`README.md`. The two projects build independently (ADR-007); `scripts/run.mjs` only orchestrates
-and must never accumulate build logic (ADR-014).
+`README.md`, `osv-scanner.toml` (the dependency audit's ignores, ADR-047). The two projects build
+independently (ADR-007); `scripts/run.mjs` only orchestrates and must never accumulate build logic
+(ADR-014).
 
 Outside `backend/`:
 
