@@ -2,6 +2,7 @@ package io.github.naimelijah.hrsched.access.adapter.in.bootstrap;
 
 import io.github.naimelijah.hrsched.access.application.port.in.BootstrapOperatorCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.BootstrapOperatorUseCase;
+import io.github.naimelijah.hrsched.access.domain.model.OperatorNameHeldByATenantException;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +46,9 @@ public class OperatorBootstrap implements ApplicationRunner {
    * @param arguments the application's own arguments, which this ignores
    * @throws IllegalStateException if exactly one half of the configuration is set, which fails
    *     startup; the message names the missing property and never a value
+   * @throws OperatorNameHeldByATenantException if the configured name belongs to a tenant account,
+   *     which fails startup too: no operator exists then, and starting as though one did would
+   *     leave nobody able to onboard
    */
   @Override
   public void run(ApplicationArguments arguments) {

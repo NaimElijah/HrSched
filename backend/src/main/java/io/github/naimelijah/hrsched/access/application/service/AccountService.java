@@ -21,6 +21,7 @@ import io.github.naimelijah.hrsched.access.domain.model.LastActiveAdminException
 import io.github.naimelijah.hrsched.access.domain.model.NotAnEmployeeHereException;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorBelongsToNoOrganisationException;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
+import io.github.naimelijah.hrsched.access.domain.model.OperatorNameHeldByATenantException;
 import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.PasswordRejection;
 import io.github.naimelijah.hrsched.access.domain.model.SessionRevocation;
@@ -89,6 +90,10 @@ public class AccountService implements BootstrapOperatorUseCase, ManageAccountsU
    * <p>The configured password is deliberately not checked against any password policy. It is
    * chosen by whoever runs the deployment rather than submitted by a user, and it must be changed
    * at first sign-in, which is where the policy applies (ADR-029).
+   *
+   * <p>A name the operator already holds is left alone. A name a tenant holds is refused: then no
+   * operator exists and none can be created, and reporting one as present would start a platform
+   * nobody can administer.
    */
   @Override
   public boolean ensureOperator(BootstrapOperatorCommand command) {
@@ -102,6 +107,7 @@ public class AccountService implements BootstrapOperatorUseCase, ManageAccountsU
             true,
             clock.instant());
     if (!accounts.saveIfAbsent(operator)) {
+      requireHeldByTheOperator(operator.signInName());
       return false;
     }
     // The operator is recorded as its own actor: nobody is signed in at startup, and attributing
@@ -233,6 +239,26 @@ public class AccountService implements BootstrapOperatorUseCase, ManageAccountsU
     Optional<PasswordRejection> broken = passwordPolicy.assess(candidate);
     if (broken.isPresent()) {
       throw new UnacceptablePasswordException(broken.get());
+    }
+  }
+
+  /**
+   * Read only after the insert was refused, so a holder that is then not found was removed in
+   * between. That is a fault rather than an operator present, and it fails loudly.
+   *
+   * @throws OperatorNameHeldByATenantException if the account holding the name is not the operator
+   */
+  private void requireHeldByTheOperator(SignInName name) {
+    Account holder =
+        accounts
+            .findBySignInName(name)
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "The operator's sign-in name was held a moment ago and is held by no"
+                            + " account now"));
+    if (!(holder.membership() instanceof OperatorMembership)) {
+      throw new OperatorNameHeldByATenantException(holder.id());
     }
   }
 
