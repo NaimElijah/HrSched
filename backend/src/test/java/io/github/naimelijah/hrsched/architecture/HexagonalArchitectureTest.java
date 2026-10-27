@@ -6,8 +6,10 @@ import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
+import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaConstructorCall;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -15,7 +17,10 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import io.github.naimelijah.hrsched.shared.domain.model.Operator;
+import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Executable specification of the hexagon.
@@ -249,6 +254,38 @@ class HexagonalArchitectureTest {
           .haveFullyQualifiedName(
               "org.springframework.security.core.context.ReactiveSecurityContextHolder")
           .because("who is acting is an argument, not an ambient fact about the current thread");
+
+  /**
+   * Only an account makes an actor.
+   *
+   * <p>Who is acting comes from the access token and nothing else (ADR-031): a verified token names
+   * an account, and {@code Account.actor()} is the one place that account becomes a {@code
+   * TenantActor} or the {@code Operator}. The kernel's records have public constructors, because a
+   * record's canonical constructor is as public as the record, so without this rule an adapter or a
+   * service could build whoever it liked to act as and every use case would believe it.
+   *
+   * <p>Tests are not analysed, so a test may still build any actor it needs. A record's own
+   * delegating constructor is not a second author, which is why a call from the actor class itself
+   * is exempt. The types are named by class literal rather than by string, so moving or renaming
+   * one fails compilation instead of leaving a rule that matches nothing.
+   */
+  @ArchTest
+  static final ArchRule only_an_account_makes_an_actor =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("..access.domain.model..")
+          .should()
+          .callConstructorWhere(anActorBuiltOutsideItsOwnClass())
+          .because("who is acting comes from the account a verified token names (ADR-031)");
+
+  private static DescribedPredicate<JavaConstructorCall> anActorBuiltOutsideItsOwnClass() {
+    Set<String> actors = Set.of(TenantActor.class.getName(), Operator.class.getName());
+    return DescribedPredicate.describe(
+        "a constructor of TenantActor or Operator, called from outside that class",
+        call ->
+            actors.contains(call.getTargetOwner().getName())
+                && !call.getOriginOwner().equals(call.getTargetOwner()));
+  }
 
   /**
    * Cycles are checked one level below the context, between a context's own layers.

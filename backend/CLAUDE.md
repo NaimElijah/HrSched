@@ -44,7 +44,7 @@ A context may reference another context's `application.port.in` package and **no
   touches an adapter, a context reaches past another's published ports, the kernel depends on a
   context, or a context's layers form a cycle. Never weaken or delete a rule to make code pass —
   the rule is the point. Deleting one that provably cannot fail is different, and needs the proof.
-- **When adding an architecture rule, watch it fail first.** All eleven rules here have been
+- **When adding an architecture rule, watch it fail first.** All twelve rules here have been
   observed failing on a deliberately introduced violation, then reverted; a rule that has only
   ever been green proves nothing. The same applies to a test: a fix whose test was never seen
   failing has not been shown to fix anything.
