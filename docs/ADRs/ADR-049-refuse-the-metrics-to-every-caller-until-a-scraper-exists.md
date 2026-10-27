@@ -1,4 +1,4 @@
-# ADR-048: Refuse the metrics endpoints to every caller until a scraper exists
+# ADR-049: Refuse the metrics endpoints to every caller until a scraper exists
 
 - **Status:** Accepted
 - **Date:** 2026-10-27

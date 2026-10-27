@@ -187,7 +187,7 @@ supplies a throwaway signing key and the local operator. A deployment sets the v
 | `hrsched.generation.time-limit-per-phase` | `5m` | How long each of the solver's two searches may run before it answers with the best roster found: together, the ten minutes the requirements allow ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) |
 | `hrsched.generation.concurrent-runs` | `2` | Generations one instance solves at once; one more is refused with a 503, not queued ([ADR-046](docs/ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)) |
 | `hrsched.generation.lost-after` | `12m` | How long a generation may stay pending before it reads as lost, its instance having stopped. Startup fails unless it exceeds both searches together |
-| `management.endpoints.web.exposure.include` | `health,info,metrics,prometheus` | An allow list: `health` and `info` need no token, `metrics` and `prometheus` are refused to everyone, and `env`, `loggers` and `heapdump` stay shut ([ADR-048](docs/ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md), [#78](https://github.com/NaimElijah/HrSched/issues/78)) |
+| `management.endpoints.web.exposure.include` | `health,info,metrics,prometheus` | An allow list: `health` and `info` need no token, `metrics` and `prometheus` are refused to everyone, and `env`, `loggers` and `heapdump` stay shut ([ADR-049](docs/ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md), [#78](https://github.com/NaimElijah/HrSched/issues/78)) |
 | `management.endpoint.health.probes.enabled` | `true` | Liveness and readiness probes outside Kubernetes too |
 | `logging.structured.format.console` | `ecs` | Elastic Common Schema JSON, always ([ADR-016](docs/ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
 | `logging.structured.ecs.service.name` / `.version` | app name / Maven version | Identify the emitting service on every line |
@@ -325,7 +325,7 @@ the application reports ready.
 | Concern | Where |
 | :--- | :--- |
 | Liveness, readiness | `GET /actuator/health/liveness`, `GET /actuator/health/readiness` |
-| Metrics | Recorded, and readable by nobody over HTTP: `/actuator/prometheus` and `/actuator/metrics` are refused to every caller until [#78](https://github.com/NaimElijah/HrSched/issues/78) is decided, and nothing pushes ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md), [ADR-048](docs/ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)) |
+| Metrics | Recorded, and readable by nobody over HTTP: `/actuator/prometheus` and `/actuator/metrics` are refused to every caller until [#78](https://github.com/NaimElijah/HrSched/issues/78) is decided, and nothing pushes ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md), [ADR-049](docs/ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)) |
 | Logs | One ECS JSON object per line on stdout; every line a request produces carries `traceId` and `spanId` |
 | Traces | A W3C trace id on every response as `X-Trace-Id`, refusals included, and shown by the UI so a person's report joins the log. Nothing is exported yet (Q19) |
 

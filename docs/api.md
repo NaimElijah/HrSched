@@ -32,7 +32,7 @@ exact role. A resource in another organisation answers `404`, the same as one th
 
 `/actuator/health/**` and `/actuator/info` need no token. `/actuator/metrics` and
 `/actuator/prometheus` are refused to every caller
-([ADR-048](ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)).
+([ADR-049](ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)).
 
 ## Signing in
 

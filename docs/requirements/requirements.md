@@ -324,7 +324,7 @@ filled every place it can, it keeps at least that many filled and minimises the 
   *Enforced by `TraceIdResponseFilter`, `TraceIdHttpTest`, `MetricsHttpTest`;
   [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md),
   [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md),
-  [ADR-048](../ADRs/ADR-048-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md).*
+  [ADR-049](../ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md).*
 - **Auditability** — every state change records who made it, in which organisation, and the
   identifier of what changed; every refusal, including a cross-tenant attempt, is recorded too. The
   record carries identifiers only and never a name, so the trail says who to ask rather than the

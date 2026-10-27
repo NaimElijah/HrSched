@@ -1,4 +1,4 @@
-# ADR-049: Reject the OAuth 2.0 protected-resource metadata endpoint
+# ADR-050: Reject the OAuth 2.0 protected-resource metadata endpoint
 
 - **Status:** Accepted
 - **Date:** 2026-10-27
