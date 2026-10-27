@@ -53,13 +53,14 @@ public record DefineShiftRequest(
   /**
    * @return the span the shift covers
    * @throws MalformedRequestException if either instant is absent, which Jackson maps to null
-   *     rather than rejecting
+   *     rather than rejecting, or the span is one the store cannot hold (see {@link
+   *     StorableSpans#toPeriod})
    */
   TimeRange toPeriod() {
     if (start == null || end == null) {
       throw new MalformedRequestException("Both start and end are required");
     }
-    return new TimeRange(start, end);
+    return StorableSpans.toPeriod(start, end);
   }
 
   /**
