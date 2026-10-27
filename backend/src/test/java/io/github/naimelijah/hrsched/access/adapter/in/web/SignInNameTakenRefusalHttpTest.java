@@ -60,6 +60,12 @@ class SignInNameTakenRefusalHttpTest {
   private static final String DENIED = "hrsched.access.denied";
   private static final String KIND = "sign_in_name_taken";
 
+  /**
+   * What the WARN line's message must say, so the line is this refusal's and not merely any warning
+   * that happens to carry the actor.
+   */
+  private static final String NAMES_THE_REFUSAL = "sign-in name already in use";
+
   @Autowired private MockMvc mockMvc;
 
   private Logger root;
@@ -119,10 +125,13 @@ class SignInNameTakenRefusalHttpTest {
     create(admin, taken);
 
     assertThat(captured.list)
-        .describedAs("a WARN line carrying the acting account %s, among: %s", actor, everything())
+        .describedAs(
+            "a WARN line saying \"%s\" and carrying the acting account %s, among: %s",
+            NAMES_THE_REFUSAL, actor, everything())
         .anySatisfy(
             event -> {
               assertThat(event.getLevel()).isEqualTo(Level.WARN);
+              assertThat(event.getFormattedMessage()).contains(NAMES_THE_REFUSAL);
               assertThat(String.valueOf(event.getKeyValuePairs())).contains(actor);
             });
   }
