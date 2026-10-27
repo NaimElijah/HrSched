@@ -20,7 +20,6 @@ import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeExcept
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.InputStream;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -79,8 +78,7 @@ class WorkforceExceptionHandlerTest {
         new InvalidEmployeeNameException(),
         new InvalidQualificationNameException(),
         new InvalidContractTermsException(),
-        new InvalidTimeRangeException(
-            Instant.parse("2026-09-07T16:00:00Z"), Instant.parse("2026-09-07T08:00:00Z")),
+        new InvalidTimeRangeException(),
         new OverlappingUnavailabilityException(),
         new MalformedRequestException("name is required"));
   }

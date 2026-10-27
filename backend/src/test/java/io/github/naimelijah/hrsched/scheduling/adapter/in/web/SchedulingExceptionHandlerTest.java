@@ -29,7 +29,6 @@ import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.InputStream;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -96,8 +95,7 @@ class SchedulingExceptionHandlerTest {
   /** Every failure the handler promises to render as a 400 carrying its own message. */
   private static Stream<RuntimeException> invalidInput() {
     return Stream.of(
-        new InvalidTimeRangeException(
-            Instant.parse("2026-09-07T16:00:00Z"), Instant.parse("2026-09-07T08:00:00Z")),
+        new InvalidTimeRangeException(),
         new InvalidHeadcountException(0),
         new InvalidConstraintException("Minimum rest must be positive"),
         new InvalidObjectiveWeightException(Objective.FAIRNESS),
