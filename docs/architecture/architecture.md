@@ -319,8 +319,19 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 | `ortools-java` | CP-SAT, which generates every draft | [ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md). Apache-2.0, with native libraries for five platforms reached over JNI, and confined to `scheduling.adapter.out.generation`. Held at 9.12, the newest whose Windows libraries run on the Visual C++ runtime JDK 21 bundles. Its `jna` is pinned to the version Testcontainers' Docker client needs. |
 | `archunit-junit5` | Enforcing the hexagon and the context boundaries | Nothing else can fail a build on a dependency direction. |
 | `spotless-maven-plugin` + `google-java-format` | Format check bound to `validate` | ADR-002. |
-| `jacoco-maven-plugin` | Coverage measurement, reported and never enforced | [ADR-015](../ADRs/ADR-015-report-coverage-without-a-threshold.md). The version is pinned because the Boot 4.1.1 BOM manages none. |
+| `jacoco-maven-plugin` | Coverage measurement, reported and never enforced | [ADR-015](../ADRs/ADR-015-report-coverage-without-a-threshold.md). The version is pinned because the Boot BOM manages none. |
 | `@vitest/coverage-v8` (frontend) | The same, for the SPA | ADR-015. Pinned to the exact Vitest version by peer dependency. |
+
+**In CI, one more integration point.** `.github/workflows/ci.yml` runs three jobs on every push and
+on pull requests into `main` and `dev`: `backend` and `frontend`, each running its own project's
+verify command, and `dependency-audit`. The last runs Google's OSV-Scanner image, pinned by digest,
+over the two named manifests `backend/pom.xml` and `frontend/package-lock.json`. It resolves
+Maven's transitive tree, Boot-managed versions included, through deps.dev, and compares every
+version against advisory data fetched live from osv.dev. Any advisory fails the job, and so does
+any scan error, unless `osv-scanner.toml` ignores the advisory with an expiry and a reason. The
+job's first step enforces that and rejects `[[PackageOverrides]]`
+([ADR-047](../ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Maven build plugins
+are not audited. Nothing at runtime depends on any of it.
 
 ## Structural decisions not visible from the file layout
 

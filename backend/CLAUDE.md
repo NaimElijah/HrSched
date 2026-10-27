@@ -190,7 +190,7 @@ convention); `.editorconfig` encodes both, deliberately.
 Training data and most tutorials use the 3.x names, which will not compile here (verified against
 this project's jars):
 
-| 3.x | 4.1.1 |
+| 3.x | 4.1.2 |
 | --- | --- |
 | `spring-boot-starter-web` | `spring-boot-starter-webmvc` |
 | `spring-boot-starter-test` alone | a test starter per technology: `spring-boot-starter-webmvc-test`, `-actuator-test`, each bringing `spring-boot-starter-test` with it |
