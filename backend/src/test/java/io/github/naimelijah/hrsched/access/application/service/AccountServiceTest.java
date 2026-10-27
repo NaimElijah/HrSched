@@ -92,8 +92,8 @@ class AccountServiceTest {
   /**
    * An account already holding the name blocks the bootstrap whatever kind it is, because the name
    * is what sign-in has to resolve to one account. A tenant's holding it is refused rather than
-   * reported as an operator already present: no operator exists then, and none can be created, so a
-   * quiet return would start a platform nobody can administer.
+   * reported as an operator already present: no operator can be created under it, and a quiet
+   * return would report one that the name does not belong to.
    */
   @Test
   void

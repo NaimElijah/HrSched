@@ -28,11 +28,10 @@ import org.springframework.context.annotation.Import;
 /**
  * The configured operator's sign-in name already belongs to an ordinary tenant account.
  *
- * <p>Then no operator exists, and none can be created: the name is platform-unique. Starting up as
- * though the operator were there - "already exists and was left unchanged" - would leave a
- * deployment with nobody able to onboard an organisation, and a startup log saying all is well.
- * Startup must fail instead, loudly, without naming the account, since a sign-in name is a
- * person's.
+ * <p>Then no operator can be created under that name: the name is platform-unique. Starting up as
+ * though the operator were there - "already exists and was left unchanged" - would be false, and a
+ * startup log saying all is well would hide a configuration naming somebody else's account. Startup
+ * must fail instead, loudly, without naming the account, since a sign-in name is a person's.
  *
  * <p>The case where the name is held by the operator itself, which must still start quietly and
  * leave it alone, is {@code OperatorBootstrapHttpTest} and {@code AccountServiceTest}.
@@ -66,7 +65,8 @@ class OperatorNameHeldByATenantTest {
     Throwable thrown = failureOf(configuredWith(tenant.signInName().value()));
 
     assertThat(thrown)
-        .describedAs("no operator exists, so the bootstrap must not report one as present")
+        .describedAs(
+            "the name is a tenant's, so the bootstrap must not report the operator present")
         .isInstanceOf(OperatorNameHeldByATenantException.class);
   }
 

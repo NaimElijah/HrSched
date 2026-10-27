@@ -91,9 +91,8 @@ public class AccountService implements BootstrapOperatorUseCase, ManageAccountsU
    * chosen by whoever runs the deployment rather than submitted by a user, and it must be changed
    * at first sign-in, which is where the policy applies (ADR-029).
    *
-   * <p>A name the operator already holds is left alone. A name a tenant holds is refused: then no
-   * operator exists and none can be created, and reporting one as present would start a platform
-   * nobody can administer.
+   * <p>A name the operator already holds is left alone. A name a tenant holds is refused: no
+   * operator can be created under it, and reporting one as present there would be false.
    */
   @Override
   public boolean ensureOperator(BootstrapOperatorCommand command) {

@@ -47,8 +47,11 @@ public class OperatorBootstrap implements ApplicationRunner {
    * @throws IllegalStateException if exactly one half of the configuration is set, which fails
    *     startup; the message names the missing property and never a value
    * @throws OperatorNameHeldByATenantException if the configured name belongs to a tenant account,
-   *     which fails startup too: no operator exists then, and starting as though one did would
-   *     leave nobody able to onboard
+   *     which fails startup too: no operator can be created under it. Since a tenant exists only
+   *     once an operator has onboarded it, the fix is to set {@code
+   *     hrsched.bootstrap.operator.sign-in-name} to the existing operator's name, or to unset
+   *     {@code hrsched.bootstrap.operator.*} - not to choose a free name, which would create a
+   *     second operator
    */
   @Override
   public void run(ApplicationArguments arguments) {

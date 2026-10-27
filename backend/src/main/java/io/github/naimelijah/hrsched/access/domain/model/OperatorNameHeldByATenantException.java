@@ -6,10 +6,15 @@ import io.github.naimelijah.hrsched.shared.domain.model.UserId;
  * Raised when the sign-in name configured for the platform operator already belongs to a tenant
  * account.
  *
- * <p>No operator exists then, and none can be created, because sign-in names are unique across the
- * platform. Reporting the operator as already present would start a deployment that nobody can use
- * to onboard an organisation, with a startup log saying all is well. So the bootstrap fails
- * instead, and the deployment has to configure another name.
+ * <p>No operator can be created under that name, because sign-in names are unique across the
+ * platform. Reporting the operator as already present would be false, and a startup log saying all
+ * is well would hide a configuration that names somebody else's account. So the bootstrap fails
+ * instead.
+ *
+ * <p>A tenant exists only once an operator has onboarded it, so an operator almost certainly exists
+ * already, under another name. The fix is to configure that operator's sign-in name, or to stop
+ * configuring an operator to bootstrap - not to pick a new free name, which would create a second
+ * operator.
  *
  * <p>Names the holding account by its identity and never by its sign-in name. The sign-in name is a
  * person's, and this message ends up in a startup log.
@@ -24,7 +29,9 @@ public class OperatorNameHeldByATenantException extends RuntimeException {
   public OperatorNameHeldByATenantException(UserId holder) {
     super(
         ("The sign-in name configured for the platform operator belongs to tenant account %s, so"
-                + " no operator was created; configure a name no account holds")
+                + " no operator was created under it. A tenant exists only once an operator has"
+                + " onboarded it, so one most likely exists already: configure that operator's"
+                + " sign-in name, or configure no operator to bootstrap")
             .formatted(holder.value()));
     this.holder = holder;
   }

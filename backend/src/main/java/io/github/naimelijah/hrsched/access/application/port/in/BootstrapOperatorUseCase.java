@@ -22,8 +22,7 @@ public interface BootstrapOperatorUseCase {
    * @return whether this call created the account; false means the operator already held the name,
    *     and nothing was changed
    * @throws OperatorNameHeldByATenantException if a tenant account holds the name, so no operator
-   *     exists and none can be created under it; nothing was changed, and the message never
-   *     contains the name
+   *     can be created under it; nothing was changed, and the message never contains the name
    */
   boolean ensureOperator(BootstrapOperatorCommand command);
 }
