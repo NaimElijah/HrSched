@@ -15,6 +15,9 @@ import java.time.temporal.ChronoUnit;
  * after it starts once stored is refused, because the table would refuse it.
  *
  * <p>No message repeats a value sent (ADR-024): a span says when somebody cannot work.
+ *
+ * <p>Scheduling's web adapter holds its own copy of these bounds, because contexts do not share
+ * adapter code (ADR-008).
  */
 final class StorableSpans {
 
