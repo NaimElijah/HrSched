@@ -1,6 +1,6 @@
 import { ApiError, toApiError } from './problem';
 import { currentAccessToken, currentSession, endSession, holdSession } from './session';
-import type { SignedIn } from './session';
+import type { Session, SignedIn } from './session';
 
 /**
  * The header the backend puts the request's trace id on.
@@ -52,8 +52,11 @@ const NOT_RENEWED: ReadonlySet<string> = new Set(['/api/auth/sign-in', ...COOKIE
  */
 const REFRESH_LOCK = 'hrsched.refresh';
 
-/** One in-flight refresh at a time within this tab, shared by every request waiting on it. */
-let refreshing: Promise<boolean> | null = null;
+/**
+ * One in-flight refresh at a time within this tab, shared by every request waiting on it. Resolves
+ * with what the cookie renewed as, or null when the cookie was refused.
+ */
+let refreshing: Promise<SignedIn | null> | null = null;
 
 /**
  * The only module in the app that calls fetch, and the only one that knows a header exists.
@@ -63,13 +66,17 @@ let refreshing: Promise<boolean> | null = null;
  * of what says who that is.
  */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  // Noted before sending, because by the time a 401 comes back the session may have ended — through
+  // another request's renewal, or another tab — and nothing held would read as a restore, which
+  // adopts whoever the cookie belongs to (#250). A request sent as nobody has no session to renew.
+  const sentAs = currentSession();
   const first = await send(path, init);
-  if (first.status !== 401 || NOT_RENEWED.has(path)) {
+  if (first.status !== 401 || NOT_RENEWED.has(path) || sentAs === null) {
     return interpret<T>(path, first);
   }
   // One renewal, then one retry, and never more. A second 401 means the session is genuinely over,
   // and retrying past that would be a loop that looks like an outage.
-  if (!(await refreshOnce())) {
+  if (!(await refreshOnce(sentAs))) {
     return interpret<T>(path, first);
   }
   return interpret<T>(path, await send(path, init));
@@ -141,33 +148,54 @@ function interpret<T>(path: string, answered: Answered): T {
  * or the server was down (#139). The renewal carries no access token, so the 401 cannot be the
  * backend refusing a stale one instead of the cookie (#179).
  *
- * A renewal that answers with an account other than the one held ends the session too, rather
- * than changing who this tab is acting as.
+ * A renewal that answers with an account other than the expected one ends the session too, rather
+ * than changing who this tab is acting as. Each caller judges the shared answer against its own
+ * expectation, so two requests sent as one account share one renewal and are refused together.
  *
- * @returns whether there is a usable token afterwards
+ * @param expected the account the caller's request was sent as, or null for a restore, which asks
+ *     whose the cookie is and accepts any answer
+ * @returns whether there is a usable token for the expected account afterwards
  * @throws ApiError when the refresh failed without being refused, or the fetch rejection itself
  */
-async function refreshOnce(): Promise<boolean> {
+async function refreshOnce(expected: Session | null): Promise<boolean> {
+  const renewed = await sharedRenewal();
+  if (renewed === null) {
+    return false;
+  }
+  if (expected === null) {
+    holdSession(renewed);
+    return true;
+  }
+  const stillActingAsExpected = currentSession()?.userId === expected.userId;
+  // One cookie jar is shared by every tab, so the cookie renews whichever account signed in last,
+  // in any tab. Adopting another account's session here would leave this tab acting as it while
+  // the shell still names the old one (#250). A session that already ended, or became somebody
+  // else's in this tab, is not this request's to end.
+  if (renewed.session.userId !== expected.userId) {
+    if (stillActingAsExpected) {
+      endSession();
+    }
+    return false;
+  }
+  // The account matches, but a session that ended while the renewal was out stays ended: holding
+  // the renewed token would sign back in a tab that was just signed out.
+  if (!stillActingAsExpected) {
+    return false;
+  }
+  holdSession(renewed);
+  return true;
+}
+
+function sharedRenewal(): Promise<SignedIn | null> {
   refreshing ??= (async () => {
     try {
       return await underRefreshLock(async () => {
-        const held = currentSession();
         const answered = await send('/api/auth/refresh', { method: 'POST' });
         if (answered.status === 401) {
           endSession();
-          return false;
+          return null;
         }
-        const renewed = interpret<SignedIn>('/api/auth/refresh', answered);
-        // One cookie jar is shared by every tab, so the cookie renews whichever account signed in
-        // last, in any tab. Adopting another account's session here would leave this tab acting as
-        // it while the shell still names the old one (#250). With nothing held this is a restore,
-        // asking whose the cookie is, and any answer is the right one.
-        if (held !== null && renewed.session.userId !== held.userId) {
-          endSession();
-          return false;
-        }
-        holdSession(renewed);
-        return true;
+        return interpret<SignedIn>('/api/auth/refresh', answered);
       });
     } finally {
       refreshing = null;
@@ -271,7 +299,7 @@ export const auth = {
    * @throws ApiError when the refresh failed without being refused, such as a gateway's 502
    * @throws TypeError, as `fetch` rejects, when the backend could not be reached at all
    */
-  restore: (): Promise<boolean> => refreshOnce(),
+  restore: (): Promise<boolean> => refreshOnce(null),
 
   /**
    * Ends the session here and at the backend. Always forgets locally, even if the request fails:
