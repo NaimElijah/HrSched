@@ -19,10 +19,12 @@ import type { Session } from '../api/session';
  * could not be read back. Neither is `signed-out`, and offering the sign-in form would tell
  * somebody something untrue or something nobody knows (#139).
  *
- * `sign-out-unconfirmed` means a sign-out was asked for and the token forgotten here, but the
- * backend never confirmed it. The backend clears the refresh cookie only when a sign-out succeeds,
- * so until one does a reload restores the session: on a shared computer, the previous person's.
- * Offering the sign-in form would tell somebody walking away that they had signed out (#250).
+ * `sign-out-unconfirmed` means a sign-out was asked for, in this tab or another, and the token
+ * forgotten here, but the backend has not confirmed it: it is in flight, or it failed. The backend
+ * clears the refresh cookie only when a sign-out succeeds, so until one does a reload restores the
+ * session: on a shared computer, the previous person's. Offering the sign-in form would tell
+ * somebody walking away that they had signed out (#250). A confirmed sign-out, from any tab, ends
+ * it.
  */
 export type SessionState =
   | 'restoring'
@@ -43,8 +45,9 @@ interface SessionContextValue {
   readonly key: string;
   readonly signIn: (signInName: string, password: string) => Promise<void>;
   /**
-   * Signs out, and is also the retry while the state is `sign-out-unconfirmed`. Never rejects: a
-   * sign-out the backend did not confirm becomes that state instead.
+   * Signs out, and is also the retry while the state is `sign-out-unconfirmed`. The state is that
+   * from the moment it is called until the backend confirms. Never rejects: a sign-out the backend
+   * did not confirm stays in that state instead.
    */
   readonly signOut: () => Promise<void>;
   readonly changePassword: (current: string, replacement: string) => Promise<void>;
@@ -113,9 +116,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(
     () =>
-      onSessionEnded(() => {
+      onSessionEnded((how) => {
         setSession(null);
         setRestoring(false);
+        setSignOutUnconfirmed(how === 'sign-out-unconfirmed');
       }),
     [],
   );
@@ -125,16 +129,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    // Every caller fires this and forgets it, so a failure here would be a rejection nobody hears.
-    // It is handled by becoming a state the shell shows instead: the token is already forgotten,
-    // and what is left to say is that the refresh cookie may not be (#250).
     try {
       await auth.signOut();
-      setSignOutUnconfirmed(false);
     } catch {
-      setSignOutUnconfirmed(true);
+      // Every caller fires this and forgets it, so a rejection here would be one nobody hears. The
+      // failure is already handled: the session ended as `sign-out-unconfirmed` before the request
+      // was sent, and the shell says the refresh cookie may still be live (#250). Setting the
+      // state again here would undo a sign-out another tab confirmed meanwhile.
     }
-    setSession(null);
   }, []);
 
   const changePassword = useCallback(async (current: string, replacement: string) => {

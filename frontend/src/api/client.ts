@@ -1,5 +1,12 @@
 import { ApiError, toApiError } from './problem';
-import { currentAccessToken, currentSession, endSession, holdSession } from './session';
+import {
+  beginSignOut,
+  currentAccessToken,
+  currentSession,
+  endSession,
+  forgetSessionHere,
+  holdSession,
+} from './session';
 import type { Session, SignedIn } from './session';
 
 /**
@@ -170,10 +177,11 @@ async function refreshOnce(expected: Session | null): Promise<boolean> {
   // One cookie jar is shared by every tab, so the cookie renews whichever account signed in last,
   // in any tab. Adopting another account's session here would leave this tab acting as it while
   // the shell still names the old one (#250). A session that already ended, or became somebody
-  // else's in this tab, is not this request's to end.
+  // else's in this tab, is not this request's to end. Only this tab forgets: the account the cookie
+  // now belongs to is live, and telling the other tabs would sign it out of every one.
   if (renewed.session.userId !== expected.userId) {
     if (stillActingAsExpected) {
-      endSession();
+      forgetSessionHere();
     }
     return false;
   }
@@ -305,19 +313,22 @@ export const auth = {
    * Ends the session here and at the backend. Always forgets locally, even if the request fails:
    * somebody who asked to sign out must not be left signed in because the network was down.
    *
+   * Every tab forgets its token before the request is sent, as a sign-out not yet confirmed, and
+   * is told the session ended only once the backend answers. The request is credentialed by the
+   * cookie, so nothing needs the token by then.
+   *
    * Sent with `keepalive`, so a sign-out clicked just before the tab closes is not aborted as the
    * page unloads: the backend clears the refresh cookie only when the sign-out reaches it, and a
    * cookie left behind restores the session on the next load (#250).
    *
    * @throws ApiError when the backend did not confirm the sign-out, and the fetch rejection itself
-   *     when it was not reached; either way the refresh cookie may still be live
+   *     when it was not reached; either way the refresh cookie may still be live, and every tab is
+   *     left saying so
    */
   signOut: async (): Promise<void> => {
-    try {
-      await request<void>('/api/auth/sign-out', { method: 'POST', keepalive: true });
-    } finally {
-      endSession();
-    }
+    beginSignOut();
+    await request<void>('/api/auth/sign-out', { method: 'POST', keepalive: true });
+    endSession();
   },
 
   /**

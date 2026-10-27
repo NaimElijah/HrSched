@@ -30,28 +30,41 @@ export interface SignedIn {
 let accessToken: string | null = null;
 let session: Session | null = null;
 
-const listeners = new Set<() => void>();
+/**
+ * How a session ended, which decides what the shell says next.
+ *
+ * `ended` is a session that is over: the sign-in form may be offered. `sign-out-unconfirmed` is a
+ * sign-out asked for but not yet confirmed by the backend, which clears the refresh cookie only
+ * when it is: until then this browser may still be signed in, and the sign-in form would say it was
+ * not (#250).
+ */
+export type SessionEnding = 'ended' | 'sign-out-unconfirmed';
+
+const ENDED: SessionEnding = 'ended';
+const SIGN_OUT_UNCONFIRMED: SessionEnding = 'sign-out-unconfirmed';
+
+const listeners = new Set<(how: SessionEnding) => void>();
 
 /**
- * Where tabs tell each other a session ended, and what they say.
+ * Where tabs tell each other a session ended, and how. Only the two {@link SessionEnding} values
+ * are ever posted: never a token, never who was signed in.
  *
  * The token lives in each tab's memory, so a sign-out in one tab would otherwise leave every other
  * tab still showing the names, absences and contracted hours it had loaded, for whoever sits down
  * at the computer next (#250).
  */
 const SESSION_CHANNEL = 'hrsched.session';
-const ENDED = 'ended';
 
 // BroadcastChannel is absent in older browsers. Without it a sign-out stays in its own tab, which is
 // the behaviour this app had before — degraded, not broken.
 const otherTabs: BroadcastChannel | null =
   typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(SESSION_CHANNEL);
 
-// A tab that hears the session ended forgets it without announcing it again: two tabs answering
-// each other would never stop.
-otherTabs?.addEventListener('message', (event) => {
-  if (event.data === ENDED) {
-    forget();
+// A tab that hears how the session ended forgets it the same way, without announcing it again: two
+// tabs answering each other would never stop.
+otherTabs?.addEventListener('message', (event: MessageEvent<unknown>) => {
+  if (event.data === ENDED || event.data === SIGN_OUT_UNCONFIRMED) {
+    forget(event.data);
   }
 });
 
@@ -82,29 +95,53 @@ export function holdSession(signedIn: SignedIn): void {
 /**
  * Forgets everything, and tells anybody watching — in this tab and in every other.
  *
- * Called when a refresh is refused, when signing out, and whenever the backend stops believing us.
- * The notification is what lets the shell fall back to the sign-in screen from anywhere, including
- * from inside a request a page made. Every other tab of this app hears it too, and ends its own
- * session the same way.
+ * Called when a refresh is refused, when a sign-out is confirmed, and whenever the backend stops
+ * believing us. The notification is what lets the shell fall back to the sign-in screen from
+ * anywhere, including from inside a request a page made. Every other tab of this app hears it too,
+ * and ends its own session the same way.
  */
 export function endSession(): void {
-  forget();
+  forget(ENDED);
   otherTabs?.postMessage(ENDED);
 }
 
-function forget(): void {
+/**
+ * Forgets everything in this tab alone, and tells this tab's listeners it ended.
+ *
+ * For a session this tab may no longer act as, when the session the cookie now belongs to is
+ * somebody else's and live: telling the other tabs would sign that account out of every tab it is
+ * using.
+ */
+export function forgetSessionHere(): void {
+  forget(ENDED);
+}
+
+/**
+ * Forgets everything here and in every other tab, as a sign-out the backend has not yet confirmed.
+ *
+ * Called before the sign-out is sent, not after it is answered: somebody who clicks and walks away
+ * has left the other tabs to whoever comes next, and an answer can take as long as a timeout, or
+ * never come. Every tab says this browser may still be signed in until {@link endSession} says the
+ * sign-out was confirmed (#250).
+ */
+export function beginSignOut(): void {
+  forget(SIGN_OUT_UNCONFIRMED);
+  otherTabs?.postMessage(SIGN_OUT_UNCONFIRMED);
+}
+
+function forget(how: SessionEnding): void {
   accessToken = null;
   session = null;
   for (const listener of [...listeners]) {
-    listener();
+    listener(how);
   }
 }
 
 /**
- * @param listener called whenever a session ends
+ * @param listener called whenever a session ends, with how it ended
  * @returns a function that stops listening
  */
-export function onSessionEnded(listener: () => void): () => void {
+export function onSessionEnded(listener: (how: SessionEnding) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
