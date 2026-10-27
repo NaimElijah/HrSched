@@ -19,11 +19,15 @@ import org.springframework.stereotype.Component;
  * with no migration to run. Without it, the algorithm would be an unwritten assumption about every
  * row in the table.
  *
- * <p>Bcrypt reads no further than {@value #MAXIMUM_PASSWORD_BYTES} bytes. Spring Security 7.1.1
- * refuses a longer password rather than truncating one — verified in the jar, where {@code BCrypt}
- * carries the message "password cannot be more than 72 bytes" — but this adapter checks first
- * anyway, so the refusal is this port's contract rather than a library's, and so that nothing can
- * put the password itself into an exception thrown from somewhere that does not know what it is.
+ * <p>Bcrypt reads no further than {@value #MAXIMUM_PASSWORD_BYTES} bytes, and this adapter holds
+ * that limit on both sides. Hashing refuses a longer password. Spring Security 7.1.1 would too —
+ * verified in the jar, where {@code BCrypt} carries the message "password cannot be more than 72
+ * bytes" — but this adapter checks first anyway, so the refusal is this port's contract rather than
+ * a library's, and so that nothing can put the password itself into an exception thrown from
+ * somewhere that does not know what it is. Verifying is where the library does not hold the limit:
+ * its check skips the length test and compares only the first 72 bytes, so a stored password of
+ * exactly the limit would match every extension of it. Here a longer candidate simply does not
+ * match.
  *
  * <p>The limit is counted in bytes, not characters. A passphrase of Han characters costs three
  * bytes each, so a check counting characters would let a password through whose tail bcrypt
@@ -53,7 +57,7 @@ public class BCryptPasswordHasher implements PasswordHasher {
   @Override
   public PasswordHash hash(String rawPassword) {
     Objects.requireNonNull(rawPassword, "rawPassword must not be null");
-    if (rawPassword.getBytes(StandardCharsets.UTF_8).length > MAXIMUM_PASSWORD_BYTES) {
+    if (exceedsTheLimit(rawPassword)) {
       // Says the limit and nothing about what was submitted: this message reaches a log.
       throw new IllegalArgumentException(
           "A password must be at most %d bytes long".formatted(MAXIMUM_PASSWORD_BYTES));
@@ -65,7 +69,16 @@ public class BCryptPasswordHasher implements PasswordHasher {
   public boolean matches(String rawPassword, PasswordHash hash) {
     Objects.requireNonNull(rawPassword, "rawPassword must not be null");
     Objects.requireNonNull(hash, "hash must not be null");
+    // False, not an exception: the candidate is whatever somebody typed. Answered without a
+    // comparison, which says only that the candidate is too long - nothing about any account.
+    if (exceedsTheLimit(rawPassword)) {
+      return false;
+    }
     return encoder.matches(rawPassword, hash.value());
+  }
+
+  private static boolean exceedsTheLimit(String rawPassword) {
+    return rawPassword.getBytes(StandardCharsets.UTF_8).length > MAXIMUM_PASSWORD_BYTES;
   }
 
   @Override

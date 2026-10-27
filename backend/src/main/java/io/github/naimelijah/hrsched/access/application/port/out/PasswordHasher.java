@@ -27,7 +27,8 @@ public interface PasswordHasher {
    * @param rawPassword the password submitted
    * @param hash the stored hash to check it against
    * @return whether they match; false rather than an exception, because a wrong password is an
-   *     ordinary outcome and not an error
+   *     ordinary outcome and not an error. A password longer than {@link #maximumBytes()} never
+   *     matches, since no hash could have been made of it
    */
   boolean matches(String rawPassword, PasswordHash hash);
 
