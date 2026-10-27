@@ -53,6 +53,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md) | Generate rosters with CP-SAT from Google OR-Tools | Accepted | 2026-10-22 |
 | [ADR-045](ADR-045-generate-outside-the-use-cases-transaction.md) | Generate outside the use case's transaction, between a read and a write | Accepted | 2026-10-22 |
 | [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) | Generate in the background, and keep each generation in PostgreSQL | Accepted | 2026-10-23 |
+| [ADR-047](ADR-047-audit-dependencies-in-ci-with-osv-scanner.md) | Audit dependencies for known vulnerabilities in CI with OSV-Scanner | Accepted | 2026-10-27 |
 
 ## Decisions waiting to be recorded
 
