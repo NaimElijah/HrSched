@@ -17,6 +17,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * comes from the environment as {@code HRSCHED_SECURITY_TOKEN_PRIVATEKEY} and is never written into
  * a properties file, because a committed signing key is a signing key everybody has.
  *
+ * <p>{@link #toString()} never prints the key, nor any part of it: a configuration object gets
+ * printed - by Boot, a debugger, an exception message - without anybody having meant to, and a
+ * signing key in a log is a signing key everybody with the log has. It says only whether one is
+ * configured, which is what diagnosing a startup needs.
+ *
  * @param issuer the value put in, and required of, the {@code iss} claim
  * @param audience the value put in, and required of, the {@code aud} claim
  * @param lifetime how long an issued token remains valid, strictly positive
@@ -27,6 +32,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties("hrsched.security.token")
 public record AccessTokenProperties(
     String issuer, String audience, Duration lifetime, String privateKey, boolean ephemeral) {
+
+  /** Printed in place of a configured private key. */
+  private static final String REDACTED = "[redacted]";
 
   public AccessTokenProperties {
     Objects.requireNonNull(issuer, "issuer must not be null");
@@ -41,5 +49,11 @@ public record AccessTokenProperties(
     if (lifetime.isZero() || lifetime.isNegative()) {
       throw new IllegalArgumentException("hrsched.security.token.lifetime must be positive");
     }
+  }
+
+  @Override
+  public String toString() {
+    return "AccessTokenProperties[issuer=%s, audience=%s, lifetime=%s, privateKey=%s, ephemeral=%s]"
+        .formatted(issuer, audience, lifetime, privateKey == null ? null : REDACTED, ephemeral);
   }
 }

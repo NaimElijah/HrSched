@@ -6,6 +6,7 @@ import io.github.naimelijah.hrsched.access.application.port.in.AuthenticatedActo
 import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordUseCase;
+import io.github.naimelijah.hrsched.access.application.port.in.CurrentPasswordRefusal;
 import io.github.naimelijah.hrsched.access.application.port.in.IssuedSession;
 import io.github.naimelijah.hrsched.access.application.port.in.PublishedSession;
 import io.github.naimelijah.hrsched.access.application.port.in.ReadSessionUseCase;
@@ -229,7 +230,8 @@ public class SessionService
    * somebody is guessing at its password, and the person doing the guessing is not the person
    * holding this session; ending it would turn an attack on somebody into an outage for them, and
    * hand any attacker a way to sign a colleague out by mistyping their password ten times. The lock
-   * stops a <em>sign-in</em>, which is where the guessing happens, and nothing else. Adding the
+   * stops what takes a password - a <em>sign-in</em> and a <em>change of one's own password</em>,
+   * which is where the guessing happens - and a session already held goes on working. Adding the
    * filter here would look like tightening and would be a regression.
    */
   @Override
@@ -258,7 +260,9 @@ public class SessionService
    *
    * <p>The current password is checked even though the caller is authenticated, and a wrong one is
    * counted as a failed attempt: without that, this endpoint would be a way to guess at a password
-   * with no lockout behind it. That count is why the refusal is returned rather than thrown.
+   * with no lockout behind it. That count is why the refusal is returned rather than thrown. A
+   * locked account is refused here as at sign-in, whatever password it is given, and nothing is
+   * counted (R29).
    */
   @Override
   public ChangePasswordOutcome changePassword(Actor actor, ChangePasswordCommand command) {
@@ -276,13 +280,25 @@ public class SessionService
                 () ->
                     new IllegalStateException(
                         "The authenticated account no longer exists: " + actor.id().value()));
-    if (!passwords.matches(command.currentPassword(), account.passwordHash())) {
+    // Compared before the lock is consulted, as sign-in does, so a locked refusal pays for the
+    // comparison too. That hides the comparison's cost and nothing more: a wrong password on an
+    // unlocked account is also counted and saved, a write a locked refusal does not make.
+    boolean currentMatches = passwords.matches(command.currentPassword(), account.passwordHash());
+    // A lock that ignored this route would let a session somebody already holds - stolen, or left
+    // open - guess at the password without limit, and a right guess would replace it and lift the
+    // lock. Refused as a wrong password is, so the answer says nothing about the lock, and nothing
+    // is counted, as with a locked sign-in: counting here would let anyone keep the account shut.
+    if (account.isLockedAt(now)) {
+      return new ChangePasswordOutcome.CurrentPasswordRejected(CurrentPasswordRefusal.LOCKED);
+    }
+    if (!currentMatches) {
       Account counted = account.recordFailedSignIn(now, lockout);
       accounts.save(counted);
       if (counted.isLockedAt(now)) {
         record(counted, AccessChange.ACCOUNT_LOCKED, counted.id().value());
       }
-      return new ChangePasswordOutcome.CurrentPasswordRejected();
+      return new ChangePasswordOutcome.CurrentPasswordRejected(
+          CurrentPasswordRefusal.WRONG_PASSWORD);
     }
     Optional<PasswordRejection> broken = passwordPolicy.assess(command.newPassword());
     if (broken.isPresent()) {

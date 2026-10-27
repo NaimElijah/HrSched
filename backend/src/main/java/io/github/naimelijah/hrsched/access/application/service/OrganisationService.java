@@ -77,7 +77,8 @@ public class OrganisationService implements ManageOrganisationsUseCase {
       throw new UnacceptablePasswordException(broken.get());
     }
     Organisation organisation = new Organisation(OrganisationId.newId(), command.name());
-    organisations.save(organisation);
+    // Built whole before anything is written, so a sign-in name that cannot be one is refused
+    // before the organisation is saved rather than after it.
     Account firstAdmin =
         new Account(
             UserId.newId(),
@@ -86,6 +87,7 @@ public class OrganisationService implements ManageOrganisationsUseCase {
             new TenantMembership(organisation.id(), Role.ADMIN, Optional.empty()),
             true,
             clock.instant());
+    organisations.save(organisation);
     // save rather than saveIfAbsent: a name already taken must refuse the whole onboarding, not
     // quietly leave an organisation with somebody else's Admin attached to it.
     accounts.save(firstAdmin);

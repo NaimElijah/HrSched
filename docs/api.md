@@ -190,6 +190,10 @@ rules`, as publishing it would. With invented identifiers and weights:
 - **A roster whose status forbids the change.** Editing or publishing a roster that is no longer a
   draft, or asking for a swap against one that is not the published roster, answers `409` titled
   `Roster status forbids this`. Reload it: somebody most likely published it first.
+- **A sign-in name that cannot be one, or is taken.** Creating an account, or onboarding an
+  organisation with its first Admin, under a blank sign-in name or one over the permitted length
+  answers `400` titled `Invalid request`; under a name any account already holds, on any
+  organisation, `409`. Neither detail repeats the name.
 - **An Employee account linked to nobody.** Creating one, taking the link away from one, giving
   the Employee role to an account linked to nobody, or restoring one stored unlinked before R34
   answers `422` titled `Employee account not linked`.

@@ -166,7 +166,7 @@ a published roster is superseded rather than edited (R6).
 | R26 | Stated preferences may overlap one another, unlike unavailability (R7). *`Employee`; no test pins it yet — [#99](https://github.com/NaimElijah/HrSched/issues/99)* |
 | R27 | A sign-in name ignores case and surrounding spaces, so two names differing only in those are the same name. *`SignInName`, `SignInNameTest`, `AuthHttpTest`* |
 | R28 | A new password must differ from the current one. *`SessionService`, `SessionHttpTest`* |
-| R29 | Consecutive failed sign-ins lock an account for a while, and a successful sign-in clears the count. A wrong current password given when changing it counts as a failure. How many failures, and for how long, is configuration (Q27). *`Account`, `SessionService`, `AuthHttpTest`, `SessionHttpTest`* |
+| R29 | Consecutive failed sign-ins lock an account for a while, and a successful sign-in clears the count. A wrong current password given when changing it counts as a failure, and a locked account cannot change its password either, whatever password it gives, with nothing counted. How many failures, and for how long, is configuration (Q27). *`Account`, `SessionService`, `AuthHttpTest`, `SessionHttpTest`, `LockedAccountPasswordChangeHttpTest`, `PasswordChangeRefusalLogHttpTest`* |
 | R30 | Presenting a refresh token that was already exchanged ends the whole session it belongs to. *`SessionService`, `SessionServiceTest`, `SessionRefreshHttpTest`* |
 | R31 | The Operator's account never holds a role within an organisation, and is never linked to an employee. *`Account`, `AccountTest`* |
 | R32 | An assignment has at most one pending swap request. *`SwapService`, `SwapServiceTest`, `SwapHttpTest`; the schema's `swap_request_one_pending_per_assignment` for a writer that skips the publication lock, `JdbcSwapRequestRepositoryTest`; duplicates already stored lapsed by V8, `SwapRequestMigrationTest` ([ADR-039](../ADRs/ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md)). The assignment is the roster, the shift and the person on it, so the same shift on a replacement roster is another one, which leaves [#135](https://github.com/NaimElijah/HrSched/issues/135) open* |
@@ -331,7 +331,7 @@ filled every place it can, it keeps at least that many filled and minimises the 
   log stream, and a log line cannot be rolled back. How long it is kept is Q23.
   *Enforced by `SchedulingService`, `EmployeeService`, `QualificationService` and their tests;
   `SchedulingAuditLogTest`, `WorkforceAuditLogTest`, `SchedulingExceptionHandlerTest`,
-  `WorkforceExceptionHandlerTest`;
+  `WorkforceExceptionHandlerTest`, `SignInNameTakenRefusalHttpTest`;
   [ADR-018](../ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md).*
 - **Compliance** — availability, absence, and qualification records are personal data across
   multiple client organisations. HrSched must satisfy both Israel's **Protection of Privacy Law,

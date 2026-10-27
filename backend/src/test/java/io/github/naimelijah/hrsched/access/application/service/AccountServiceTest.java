@@ -1,12 +1,14 @@
 package io.github.naimelijah.hrsched.access.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.access.application.port.in.BootstrapOperatorCommand;
 import io.github.naimelijah.hrsched.access.application.port.out.AccessChange;
 import io.github.naimelijah.hrsched.access.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
+import io.github.naimelijah.hrsched.access.domain.model.OperatorNameHeldByATenantException;
 import io.github.naimelijah.hrsched.access.domain.model.PasswordHash;
 import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
@@ -89,21 +91,30 @@ class AccountServiceTest {
 
   /**
    * An account already holding the name blocks the bootstrap whatever kind it is, because the name
-   * is what sign-in has to resolve to one account.
+   * is what sign-in has to resolve to one account. A tenant's holding it is refused rather than
+   * reported as an operator already present: no operator can be created under it, and a quiet
+   * return would report one that the name does not belong to.
    */
   @Test
-  void GivenATenantAccountHoldsTheName_WhenEnsuringTheOperator_ThenNothingIsCreated() {
-    accounts.given(
+  void
+      GivenATenantAccountHoldsTheName_WhenEnsuringTheOperator_ThenItIsRefusedAndNothingIsCreated() {
+    Account tenant =
         new Account(
             UserId.newId(),
             new SignInName(OPERATOR_NAME),
             new PasswordHash("{bcrypt}$2a$04$invented"),
             new TenantMembership(OrganisationId.newId(), Role.ADMIN, Optional.empty()),
             false,
-            NOW));
+            NOW);
+    accounts.given(tenant);
 
-    assertThat(service.ensureOperator(new BootstrapOperatorCommand(OPERATOR_NAME, A_PASSWORD)))
-        .isFalse();
+    assertThatThrownBy(
+            () -> service.ensureOperator(new BootstrapOperatorCommand(OPERATOR_NAME, A_PASSWORD)))
+        .isInstanceOf(OperatorNameHeldByATenantException.class);
+
+    Account holder = accounts.findBySignInName(new SignInName(OPERATOR_NAME)).orElseThrow();
+    assertThat(holder.id()).isEqualTo(tenant.id());
+    assertThat(audit.of(AccessChange.OPERATOR_BOOTSTRAPPED)).isEmpty();
   }
 
   @Test
