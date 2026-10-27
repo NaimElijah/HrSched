@@ -8,8 +8,10 @@
 # The tests do NOT use this file. They start their own container through Testcontainers, so a
 # stale local database can never make a test pass or fail. See ADR-004.
 #
-# These credentials are local-only and deliberately committed: this database holds nothing, is
-# reachable from nowhere, and a developer should not have to invent a password to run the app.
+# These credentials are local-only and deliberately committed: this database holds nothing but
+# what a developer typed, is published on this machine's loopback interface only, and a developer
+# should not have to invent a password to run the app. The repository is public, so the password
+# is known to anyone; the loopback binding below is what keeps the database to this machine.
 # A deployed instance gets SPRING_DATASOURCE_* from the environment instead — see .env.example.
 services:
   postgres:
@@ -21,9 +23,11 @@ services:
     # Published on a non-default host port on purpose. Postgres's own 5432 is the first port any
     # other project on the machine will have taken, and the failure when it has is a container that
     # will not start rather than anything that names this file. Boot reads the mapping from Docker,
-    # so nothing in the application depends on the number.
+    # so nothing in the application depends on the number. Bound to 127.0.0.1 because a port given
+    # without an address is published on every interface, which would offer a superuser with a
+    # public password to anyone on the same network.
     ports:
-      - '55432:5432'
+      - '127.0.0.1:55432:5432'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U hrsched -d hrsched']
       interval: 2s
