@@ -27,6 +27,10 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
     css: false,
+    // One process per test file, as Vitest 5 already defaults to, pinned because it is load-bearing:
+    // the session's BroadcastChannel is module-level, and Node delivers it across worker threads, so
+    // under 'threads' one file's endSession would end sessions in the files running beside it.
+    pool: 'forks',
     /*
      * Reported, never enforced: no thresholds, and `enabled` defaults to false, so this block
      * only takes effect under --coverage and `npm run verify` is unchanged. See ADR-015.

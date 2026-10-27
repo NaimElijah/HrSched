@@ -72,9 +72,12 @@ public interface AccountRepository {
    * the account has been found. Sign-in names are unique platform-wide precisely so that this
    * question has one answer.
    *
-   * <p>Safe only because of what the caller does with it. Whoever signs in is then the account that
-   * was found, so no caller can reach another tenant's data through it. Do not reuse this to
-   * implement a lookup on behalf of somebody who already has an organisation — use {@link
+   * <p>Safe only because of what each caller does with it, and there are two. Whoever signs in is
+   * then the account that was found, so no caller can reach another tenant's data through it. The
+   * operator bootstrap is the other: it runs at startup with no actor and no request, asks only
+   * after its own insert was refused, and reads only whether the account in the way is the operator
+   * - nothing of it is returned to anybody, and its identity alone reaches the log. Do not reuse
+   * this to implement a lookup on behalf of somebody who already has an organisation — use {@link
    * #find(OrganisationId, UserId)}.
    *
    * @param name the sign-in name submitted

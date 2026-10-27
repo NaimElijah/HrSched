@@ -36,8 +36,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * <p>Every read but two filters on {@code organisation_id}, so the platform operator — whose row
  * carries none — is invisible to a tenant's own administration rather than merely hidden by a use
  * case. The exceptions are {@link #findBySignInName(SignInName)}, which sign-in needs because it
- * has only a name to go on, and {@link #findForAuthentication(UserId)}, which needs only the
- * identity a token names; the port says why each is safe.
+ * has only a name to go on, and which the operator bootstrap needs to tell whether a name it could
+ * not take is the operator's; and {@link #findForAuthentication(UserId)}, which needs only the
+ * identity a token names. The port says why each is safe.
  *
  * <p>Two different collisions arrive as the same SQLState, so this adapter tells them apart by the
  * name of the constraint that failed. The driver is a runtime-only dependency (ADR-004), so

@@ -169,7 +169,7 @@ supplies a throwaway signing key and the local operator. A deployment sets the v
 | `SPRING_DATASOURCE_USERNAME` | Who connects to it | none | In a deployment |
 | `SPRING_DATASOURCE_PASSWORD` | Their password | none | In a deployment |
 | `HRSCHED_SECURITY_TOKEN_PRIVATEKEY` | RSA key that signs access tokens; PKCS#8 PEM, 2048 bits or more | none | Yes; startup fails without it |
-| `HRSCHED_BOOTSTRAP_OPERATOR_SIGNINNAME` | First platform Operator, created once at startup | none | Both or neither |
+| `HRSCHED_BOOTSTRAP_OPERATOR_SIGNINNAME` | First platform Operator, created once at startup; startup fails if a tenant's account holds the name | none | Both or neither |
 | `HRSCHED_BOOTSTRAP_OPERATOR_PASSWORD` | Its temporary password, replaced at first sign-in | none | Both or neither |
 
 <details>
@@ -334,7 +334,7 @@ the application reports ready.
 | `http_server_requests_seconds` | Request rate, latency and error rate, per route and status |
 | `hrsched_shifts_required_places`, `hrsched_shifts_uncovered_places` | Places generation was asked to fill, and could not fill legally: their ratio is coverage, the product's own success metric |
 | `hrsched_rosters_refused_total{reason}` | Publications refused as `not_compliant`, `not_verifiable` or `concurrent_publication` |
-| `hrsched_access_denied_total{kind}` | Refusals by kind; a rise in `cross_tenant` is a security signal, not a usage one |
+| `hrsched_access_denied_total{kind}` | Refusals by kind; a rise in `cross_tenant`, or in `sign_in_name_taken` from one account, is a security signal, not a usage one |
 | `hrsched_changes_total{context,change}` | Every recorded change, by context and kind |
 | `jvm_*`, `process_*`, `hikaricp_*` | Saturation: heap, threads, the connection pool |
 
@@ -368,7 +368,7 @@ HrSched/
 | Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
 | Generation with CP-SAT behind a port ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md), [ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)) | Timefold, whose search must drive a broken rule's penalty to zero and proves no bound; a MIP solver | About 95 MB of native libraries; no determinism under a time limit; OR-Tools held at 9.12 for the Visual C++ runtime JDK 21 bundles on Windows |
 
-All 47 decisions, and the two still waiting to be recorded, are in the
+All 48 decisions, and the two still waiting to be recorded, are in the
 [ADR index](docs/ADRs/README.md).
 
 ## Status and limitations
