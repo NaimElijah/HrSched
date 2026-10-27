@@ -314,7 +314,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 | `ortools-java` | CP-SAT, which generates every draft | [ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md). Apache-2.0, with native libraries for five platforms reached over JNI, and confined to `scheduling.adapter.out.generation`. Held at 9.12, the newest whose Windows libraries run on the Visual C++ runtime JDK 21 bundles. Its `jna` is pinned to the version Testcontainers' Docker client needs. |
 | `archunit-junit5` | Enforcing the hexagon and the context boundaries | Nothing else can fail a build on a dependency direction. |
 | `spotless-maven-plugin` + `google-java-format` | Format check bound to `validate` | ADR-002. |
-| `jacoco-maven-plugin` | Coverage measurement, reported and never enforced | [ADR-015](../ADRs/ADR-015-report-coverage-without-a-threshold.md). The version is pinned because the Boot 4.1.1 BOM manages none. |
+| `jacoco-maven-plugin` | Coverage measurement, reported and never enforced | [ADR-015](../ADRs/ADR-015-report-coverage-without-a-threshold.md). The version is pinned because the Boot BOM manages none. |
 | `@vitest/coverage-v8` (frontend) | The same, for the SPA | ADR-015. Pinned to the exact Vitest version by peer dependency. |
 
 **In CI, one more integration point.** `.github/workflows/ci.yml` runs three jobs on every push and
