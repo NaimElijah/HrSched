@@ -115,13 +115,14 @@ public class AccessExceptionHandler {
    *
    * @param actor the acting account, taken from the access token as the controllers take it; the
    *     exception cannot carry it, because the repository that raises it does not know who is
-   *     acting
+   *     acting. Null if the principal is not an {@code Actor}: the refusal is then still answered
+   *     and recorded, without one, rather than lost to a 500
    */
   @ExceptionHandler(SignInNameTakenException.class)
   public ProblemDetail handleSignInNameTaken(
       SignInNameTakenException exception, @AuthenticationPrincipal Actor actor) {
     log.atWarn()
-        .addKeyValue("actor", actor.id().value())
+        .addKeyValue("actor", actor == null ? null : actor.id().value())
         .log("Refused: an account was asked for under a sign-in name already in use");
     denied("sign_in_name_taken");
     ProblemDetail problem =
