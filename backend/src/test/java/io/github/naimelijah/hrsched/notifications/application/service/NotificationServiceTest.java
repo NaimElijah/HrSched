@@ -281,15 +281,17 @@ class NotificationServiceTest {
     private final Map<NotificationId, Notification> saved = new HashMap<>();
 
     /**
-     * @throws IllegalStateException if the identity already belongs to another organisation, as
-     *     {@code JdbcNotificationRepository}'s upsert refuses it
+     * @throws IllegalStateException if the identity already belongs to another organisation or
+     *     recipient, as {@code JdbcNotificationRepository}'s upsert refuses it
      */
     @Override
     public void save(Notification notification) {
       Notification held = saved.get(notification.id());
-      if (held != null && !held.organisation().equals(notification.organisation())) {
+      if (held != null
+          && !(held.organisation().equals(notification.organisation())
+              && held.recipient().equals(notification.recipient()))) {
         throw new IllegalStateException(
-            "Refused to store %s: that identity already belongs to another organisation"
+            "Refused to store %s: that identity already belongs to another organisation or recipient"
                 .formatted(notification.id().value()));
       }
       saved.put(notification.id(), notification);

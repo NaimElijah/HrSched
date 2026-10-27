@@ -165,6 +165,47 @@ class JdbcNotificationRepositoryTest {
         .isEqualTo(theirs.subject());
   }
 
+  // --- #250: within one organisation, a notification only ever becomes read --------------------
+
+  /**
+   * Being marked read is the one change the domain makes to a notification. A save naming another
+   * recipient would hand it to a colleague: their inbox would show what happened to somebody else,
+   * and the person it was for would never see it. Refused as a save over another organisation's
+   * identity is, so it cannot pass in silence.
+   */
+  @Test
+  void
+      GivenAColleagueAsRecipient_WhenSavingOverANotification_ThenItIsRefusedAndStaysWithItsOwner() {
+    Notification adas = at(ACME, ADA, Instant.parse("2026-10-05T12:00:00Z"));
+    notifications.save(adas);
+    Notification movedToGrace =
+        new Notification(adas.id(), ACME, GRACE, adas.kind(), adas.subject(), adas.occurredAt());
+
+    assertThatThrownBy(() -> notifications.save(movedToGrace))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(notifications.findFor(ACME, ADA)).containsExactly(adas);
+    assertThat(notifications.findFor(ACME, GRACE)).isEmpty();
+  }
+
+  /**
+   * Somebody who has seen a notification has seen it: an unread copy saved afterwards, a stale one
+   * read before the acknowledgement, must not put it back in front of them as new.
+   */
+  @Test
+  void GivenAReadNotification_WhenAnUnreadCopyIsSaved_ThenItIsStillRead() {
+    Notification unread = at(ACME, ADA, Instant.parse("2026-10-05T12:00:00Z"));
+    notifications.save(unread);
+    notifications.save(unread.markedRead());
+
+    notifications.save(unread);
+
+    assertThat(notifications.findFor(ACME, ADA))
+        .singleElement()
+        .extracting(Notification::isRead)
+        .isEqualTo(true);
+  }
+
   private static Notification overwriting(Notification theirs) {
     return new Notification(
         theirs.id(),

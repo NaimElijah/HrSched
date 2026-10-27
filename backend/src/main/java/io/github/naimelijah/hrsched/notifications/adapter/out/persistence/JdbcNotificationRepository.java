@@ -46,12 +46,12 @@ public class JdbcNotificationRepository implements NotificationRepository {
             INSERT INTO notification (id, organisation_id, recipient_id, kind, subject,
                                       occurred_at, read)
             VALUES (:id, :organisation, :recipient, :kind, :subject, :occurredAt, :read)
-            ON CONFLICT (id) DO UPDATE SET recipient_id = EXCLUDED.recipient_id,
-                                           kind = EXCLUDED.kind,
+            ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind,
                                            subject = EXCLUDED.subject,
                                            occurred_at = EXCLUDED.occurred_at,
-                                           read = EXCLUDED.read
+                                           read = notification.read OR EXCLUDED.read
             WHERE notification.organisation_id = EXCLUDED.organisation_id
+              AND notification.recipient_id = EXCLUDED.recipient_id
             """)
             .param("id", notification.id().value())
             .param("organisation", notification.organisation().value())
@@ -113,14 +113,17 @@ public class JdbcNotificationRepository implements NotificationRepository {
 
   /**
    * A save carries no {@code OrganisationId}, so the upsert's {@code WHERE} is the only thing
-   * standing between a re-used identity and another tenant's row. It makes the mismatched case
-   * affect nothing rather than overwrite; this turns that silence into a refusal, because a write
-   * that quietly did nothing is the worse of the two failures.
+   * standing between a re-used identity and another tenant's row, or another person's inbox. It
+   * makes the mismatched case affect nothing rather than overwrite; this turns that silence into a
+   * refusal, because a write that quietly did nothing is the worse of the two failures.
+   *
+   * <p>The same statement only ever sets {@code read}, never clears it: being marked read is the
+   * one change the domain makes, so an unread copy saved later is stale, not a change.
    */
   private static void requireStored(int rows, UUID id) {
     if (rows == 0) {
       throw new IllegalStateException(
-          "Refused to store %s: that identity already belongs to another organisation"
+          "Refused to store %s: that identity already belongs to another organisation or recipient"
               .formatted(id));
     }
   }
