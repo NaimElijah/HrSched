@@ -35,8 +35,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * through it replaces the password and lifts the lock.
  *
  * <p>The lock is reached the way an attacker reaches it, through failed sign-ins on the public
- * route, as many as the configured threshold. The session is opened first, because a lock stops a
- * sign-in and nothing else ({@code SessionHttpTest}), so the token outlives it.
+ * route, as many as the configured threshold. The session is opened first, because a lock does not
+ * end a session already held ({@code SessionHttpTest}), so the token outlives it.
  *
  * <p>Runs on the application's real clock. The configured lock lasts far longer than these requests
  * take, so the lock is still running when each assertion reads it; a lock re-armed by a counted
