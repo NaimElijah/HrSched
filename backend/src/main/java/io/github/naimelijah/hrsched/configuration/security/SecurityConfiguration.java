@@ -19,6 +19,7 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 
 /**
  * Puts Spring Security's filter chain in front of every request.
@@ -150,6 +151,25 @@ public class SecurityConfiguration {
   private static final String[] EVERY_ROLE = {"OPERATOR", "ADMIN", "SCHEDULER", "EMPLOYEE"};
 
   /**
+   * The {@code Content-Security-Policy} on every response: nothing may load and nothing may frame.
+   *
+   * <p>This service answers only with JSON and problem details, so a browser that ever renders one
+   * of its responses as a page, by mistake or because somebody arranged it, should run nothing,
+   * fetch nothing and sit in nobody's frame. {@code frame-ancestors} is stated as well as {@code
+   * default-src} because it is not a fetch directive and does not fall back to it. The SPA's own
+   * policy is not this one; it belongs to whatever serves the SPA at the edge (#162).
+   */
+  private static final String NOTHING_LOADS_AND_NOTHING_FRAMES =
+      "default-src 'none'; frame-ancestors 'none'";
+
+  /**
+   * The {@code Referrer-Policy} on every response. Nothing this service returns links anywhere, so
+   * there is no navigation away from it that needs to say where it came from, and a URL here can
+   * carry an identifier of somebody's record.
+   */
+  private static final ReferrerPolicy NO_REFERRER = ReferrerPolicy.NO_REFERRER;
+
+  /**
    * @param http the builder Spring Security hands every {@code SecurityFilterChain} bean
    * @param decoder the application's only {@code JwtDecoder}, which verifies an access token
    * @param actors turns a verified token into the caller it names, as of now
@@ -174,6 +194,14 @@ public class SecurityConfiguration {
             .httpBasic(AbstractHttpConfigurer::disable)
             .logout(AbstractHttpConfigurer::disable)
             .requestCache(AbstractHttpConfigurer::disable)
+            // Added to Spring Security's default headers, which stay: nosniff, X-Frame-Options and
+            // the cache-control that keeps a token-bearing answer out of shared caches.
+            .headers(
+                headers ->
+                    headers
+                        .contentSecurityPolicy(
+                            policy -> policy.policyDirectives(NOTHING_LOADS_AND_NOTHING_FRAMES))
+                        .referrerPolicy(referrer -> referrer.policy(NO_REFERRER)))
             .oauth2ResourceServer(
                 resource ->
                     resource
