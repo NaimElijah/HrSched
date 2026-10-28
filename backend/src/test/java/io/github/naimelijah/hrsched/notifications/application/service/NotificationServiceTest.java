@@ -314,6 +314,72 @@ class NotificationServiceTest {
     assertThat(notifications.findFor(ACME, GRACE)).isEmpty();
   }
 
+  /** The adapter only ever sets {@code read}; an unread copy saved later is stale, not a change. */
+  @Test
+  void GivenAReadNotification_WhenTheDoubleSavesAnUnreadCopy_ThenItIsStillRead() {
+    Notification unread = adasRequest();
+    notifications.save(unread);
+    notifications.save(unread.markedRead());
+
+    notifications.save(unread);
+
+    assertThat(notifications.findFor(ACME, ADA))
+        .singleElement()
+        .extracting(Notification::isRead)
+        .isEqualTo(true);
+  }
+
+  /** What somebody was told is never rewritten, as finding 3 holds the adapter to. */
+  @Test
+  void GivenAnotherKind_WhenTheDoubleSavesOverANotification_ThenItIsRefusedAndUnchanged() {
+    Notification adas = adasRequest();
+    notifications.save(adas);
+
+    assertDoubleRefusesAndKeeps(
+        adas,
+        new Notification(
+            adas.id(),
+            ACME,
+            ADA,
+            NotificationKind.SWAP_APPROVED,
+            adas.subject(),
+            adas.occurredAt()));
+  }
+
+  @Test
+  void GivenAnotherSubject_WhenTheDoubleSavesOverANotification_ThenItIsRefusedAndUnchanged() {
+    Notification adas = adasRequest();
+    notifications.save(adas);
+
+    assertDoubleRefusesAndKeeps(
+        adas,
+        new Notification(adas.id(), ACME, ADA, adas.kind(), UUID.randomUUID(), adas.occurredAt()));
+  }
+
+  @Test
+  void GivenAnotherMoment_WhenTheDoubleSavesOverANotification_ThenItIsRefusedAndUnchanged() {
+    Notification adas = adasRequest();
+    notifications.save(adas);
+
+    assertDoubleRefusesAndKeeps(
+        adas,
+        new Notification(
+            adas.id(), ACME, ADA, adas.kind(), adas.subject(), NOON.plusSeconds(3600)));
+  }
+
+  /** Equality is by identity alone, so each column is compared. */
+  private void assertDoubleRefusesAndKeeps(Notification stored, Notification changed) {
+    assertThatThrownBy(() -> notifications.save(changed)).isInstanceOf(IllegalStateException.class);
+    assertThat(notifications.findFor(ACME, ADA))
+        .singleElement()
+        .extracting(
+            Notification::kind,
+            Notification::subject,
+            Notification::occurredAt,
+            Notification::isRead)
+        .containsExactly(stored.kind(), stored.subject(), stored.occurredAt(), stored.isRead());
+  }
+
   /**
    * Hand-written, like every other double here: the repository is our own port. It copies the real
    * adapter's refusals, because a double accepting what the database refuses tests nothing.
@@ -323,20 +389,30 @@ class NotificationServiceTest {
     private final Map<NotificationId, Notification> saved = new HashMap<>();
 
     /**
+     * Keeps a held notification read when an unread copy is saved, as {@code
+     * JdbcNotificationRepository}'s upsert only ever sets {@code read}.
+     *
      * @throws IllegalStateException if the identity already belongs to another organisation or
-     *     recipient, as {@code JdbcNotificationRepository}'s upsert refuses it
+     *     recipient, or records another kind, subject or moment, as that upsert refuses it
      */
     @Override
     public void save(Notification notification) {
       Notification held = saved.get(notification.id());
-      if (held != null
-          && !(held.organisation().equals(notification.organisation())
-              && held.recipient().equals(notification.recipient()))) {
+      if (held == null) {
+        saved.put(notification.id(), notification);
+        return;
+      }
+      if (!(held.organisation().equals(notification.organisation())
+          && held.recipient().equals(notification.recipient())
+          && held.kind() == notification.kind()
+          && held.subject().equals(notification.subject())
+          && held.occurredAt().equals(notification.occurredAt()))) {
         throw new IllegalStateException(
-            "Refused to store %s: that identity already belongs to another organisation or recipient"
+            ("Refused to store %s: that identity already belongs to another organisation or"
+                    + " recipient, or records another kind, subject or moment")
                 .formatted(notification.id().value()));
       }
-      saved.put(notification.id(), notification);
+      saved.put(notification.id(), held.isRead() ? notification.markedRead() : notification);
     }
 
     @Override

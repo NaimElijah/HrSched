@@ -46,12 +46,12 @@ public class JdbcNotificationRepository implements NotificationRepository {
             INSERT INTO notification (id, organisation_id, recipient_id, kind, subject,
                                       occurred_at, read)
             VALUES (:id, :organisation, :recipient, :kind, :subject, :occurredAt, :read)
-            ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind,
-                                           subject = EXCLUDED.subject,
-                                           occurred_at = EXCLUDED.occurred_at,
-                                           read = notification.read OR EXCLUDED.read
+            ON CONFLICT (id) DO UPDATE SET read = notification.read OR EXCLUDED.read
             WHERE notification.organisation_id = EXCLUDED.organisation_id
               AND notification.recipient_id = EXCLUDED.recipient_id
+              AND notification.kind = EXCLUDED.kind
+              AND notification.subject = EXCLUDED.subject
+              AND notification.occurred_at = EXCLUDED.occurred_at
             """)
             .param("id", notification.id().value())
             .param("organisation", notification.organisation().value())
@@ -118,12 +118,16 @@ public class JdbcNotificationRepository implements NotificationRepository {
    * refusal, because a write that quietly did nothing is the worse of the two failures.
    *
    * <p>The same statement only ever sets {@code read}, never clears it: being marked read is the
-   * one change the domain makes, so an unread copy saved later is stale, not a change.
+   * one change the domain makes, so an unread copy saved later is stale, not a change. Its {@code
+   * WHERE} also requires the kind, subject and moment to be the stored ones, because they are what
+   * somebody was told: a save changing one touches no row and is refused here, as a change of
+   * recipient is.
    */
   private static void requireStored(int rows, UUID id) {
     if (rows == 0) {
       throw new IllegalStateException(
-          "Refused to store %s: that identity already belongs to another organisation or recipient"
+          ("Refused to store %s: that identity already belongs to another organisation or"
+                  + " recipient, or records another kind, subject or moment")
               .formatted(id));
     }
   }
