@@ -12,8 +12,8 @@ public record PeriodRequest(Instant start, Instant end) {
   /**
    * @return the span this request describes
    * @throws MalformedRequestException if either instant is absent, which Jackson maps to null
-   *     rather than rejecting, or the span is one the store cannot hold (see {@link
-   *     StorableSpans#toPeriod})
+   *     rather than rejecting, or the span is one the store cannot hold or generation cannot count
+   *     (see {@link StorableSpans#toPeriod})
    */
   TimeRange toPeriod() {
     if (start == null || end == null) {
