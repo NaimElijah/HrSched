@@ -34,9 +34,9 @@ import tools.jackson.databind.ObjectMapper;
  * reason to be the exception.
  *
  * <p>The challenge is written here rather than by Spring Security's {@code
- * BearerTokenAuthenticationEntryPoint}, because in 7.1.1 that entry point adds a {@code
- * resource_metadata} parameter to every challenge, unconditionally: its resolver can change the
- * address but not leave it out. The address is the protected resource metadata document, which
+ * BearerTokenAuthenticationEntryPoint}, because in 7.1 (checked on 7.1.2) that entry point adds a
+ * {@code resource_metadata} parameter to every challenge, unconditionally: its resolver can change
+ * the address but not leave it out. The address is the protected resource metadata document, which
  * {@code SecurityConfiguration} removes from the chain (issue #250). A challenge pointing at a
  * document this service refuses to serve would send a client looking for something that is not
  * there.
@@ -109,10 +109,12 @@ public class ProblemAuthenticationEntryPoint implements AuthenticationEntryPoint
   /**
    * The challenge for a refusal: the scheme alone when no token was presented, otherwise the scheme
    * with the error's code, description and URI. A refused token's description is always {@link
-   * #TOKEN_NOT_ACCEPTED}, whatever refused it. Anything else keeps its own: a request carrying two
-   * tokens, or an empty one, is an {@code invalid_request} with Spring's own fixed sentence, which
-   * says nothing about any check. No {@code scope} is written: it belongs to {@code
-   * insufficient_scope}, a 403, which never reaches this class.
+   * #TOKEN_NOT_ACCEPTED}, whatever refused it, and an empty one is among them: the resolver finds
+   * the scheme with nothing after it malformed, an {@code invalid_token}. Any other error keeps its
+   * own description. Spring raises {@code invalid_request} only for a token in a query or form
+   * parameter, both off in this configuration, so none arrives here; one that did would be answered
+   * 401, where RFC 6750 section 3.1 says 400 (ADR-050). No {@code scope} is written: it belongs to
+   * {@code insufficient_scope}, a 403, which never reaches this class.
    */
   private static String challengeFor(AuthenticationException refusal) {
     if (!(refusal instanceof OAuth2AuthenticationException oauth)) {
