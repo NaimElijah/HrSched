@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -211,6 +212,27 @@ class UnstorableInstantHttpTest {
                 .param("to", to))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(0));
+  }
+
+  /**
+   * Lists the organisation's shifts over the span, expects it refused as invalid input in a problem
+   * detail, and returns that detail.
+   */
+  private String refusedListing(String organisation, String from, String to) throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                as(mockMvc, get("/api/shifts"), organisation, "SCHEDULER")
+                    .param("from", from)
+                    .param("to", to))
+            .andExpect(status().isBadRequest())
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.title").value("Invalid request"))
+            .andExpect(jsonPath("$.detail").isNotEmpty())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return JsonPath.read(body, "$.detail");
   }
 
   /** A refused generation must leave no roster behind. */
@@ -446,4 +468,20 @@ class UnstorableInstantHttpTest {
   }
 
   // --- GET /api/shifts (#273, finding 2) --------------------------------------------------------
+
+  @Test
+  void GivenAListingEndingPastWhatTheDatabaseHolds_WhenListed_ThenItIsABadRequestNamingNoBound()
+      throws Exception {
+    String detail = refusedListing(anOrganisation(mockMvc), AN_ORDINARY_FROM, BEYOND_THE_DATABASE);
+
+    assertThat(detail).doesNotContain("300000").doesNotContain("2026");
+  }
+
+  @Test
+  void GivenAListingEndingPastWhatADateTimeHolds_WhenListed_ThenItIsABadRequestNamingNoBound()
+      throws Exception {
+    String detail = refusedListing(anOrganisation(mockMvc), AN_ORDINARY_FROM, BEYOND_A_DATE_TIME);
+
+    assertThat(detail).doesNotContain("1000000000").doesNotContain("2026");
+  }
 }

@@ -62,11 +62,7 @@ final class StorableSpans {
    *     longer, once stored, than a {@code long} counts in nanoseconds
    */
   static TimeRange toPeriod(Instant start, Instant end) {
-    TimeRange period = new TimeRange(start, end);
-    if (!storable(start) || !storable(end)) {
-      throw new MalformedRequestException(
-          "start and end must each lie within the instants that can be stored");
-    }
+    TimeRange period = toBounds(start, end);
     if (!asStored(end).isAfter(asStored(start))) {
       throw new MalformedRequestException(
           "The span must still end after it starts at the microsecond, the precision it is stored"
@@ -78,6 +74,25 @@ final class StorableSpans {
           "The span must last no longer than 2^63 - 1 nanoseconds, the most generation can count");
     }
     return period;
+  }
+
+  /**
+   * The bounds of a span looked inside rather than stored, which need only be instants the store
+   * can compare with.
+   *
+   * @param from when the span begins, never null
+   * @param to when the span ends, never null
+   * @return the span the two instants describe
+   * @throws InvalidTimeRangeException if the span ends at or before it starts, as sent
+   * @throws MalformedRequestException if either instant lies outside what the store holds
+   */
+  static TimeRange toBounds(Instant from, Instant to) {
+    TimeRange span = new TimeRange(from, to);
+    if (!storable(from) || !storable(to)) {
+      throw new MalformedRequestException(
+          "start and end must each lie within the instants that can be stored");
+    }
+    return span;
   }
 
   private static boolean storable(Instant instant) {
