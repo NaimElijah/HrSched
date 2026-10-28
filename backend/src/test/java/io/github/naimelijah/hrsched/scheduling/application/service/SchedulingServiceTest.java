@@ -609,6 +609,18 @@ class SchedulingServiceTest {
           .describedAs("a message logged with the defect")
           .doesNotContain(ada.value().toString());
     }
+    assertThat(messagesOf(defect))
+        .describedAs("the defect states which rule was broken")
+        .contains(ConstraintViolation.DECLARED_UNAVAILABLE);
+  }
+
+  /** Every message in the cause chain, one a line, as they would be logged together. */
+  private static String messagesOf(Throwable defect) {
+    StringBuilder messages = new StringBuilder();
+    for (Throwable logged = defect; logged != null; logged = logged.getCause()) {
+      messages.append(logged.getMessage()).append('\n');
+    }
+    return messages.toString();
   }
 
   @Test
