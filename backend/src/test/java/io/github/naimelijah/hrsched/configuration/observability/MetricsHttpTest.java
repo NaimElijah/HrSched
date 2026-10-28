@@ -21,6 +21,7 @@ import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfig
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -256,6 +257,46 @@ class MetricsHttpTest {
                             .assertThat(scrape)
                             .describedAs("the Prometheus scrape, for %s", meter)
                             .contains(meter)));
+  }
+
+  /**
+   * The index of actuator's endpoints, which lists every exposed one, with links built from the
+   * request's {@code Host} header, to anybody who asks. It names the metrics endpoints a caller is
+   * refused, and the links point wherever the caller said the service lives.
+   */
+  @Test
+  void GivenNoToken_WhenAskingForTheActuatorIndex_ThenItListsNoMetricsEndpoint() throws Exception {
+    MockHttpServletResponse response = mockMvc.perform(get("/actuator")).andReturn().getResponse();
+
+    assertNoMetricsEndpointIsListed(response);
+  }
+
+  @Test
+  void GivenTheOperatorsToken_WhenAskingForTheActuatorIndex_ThenItListsNoMetricsEndpoint()
+      throws Exception {
+    String token = TestTenants.operatorToken(mockMvc);
+
+    MockHttpServletResponse response =
+        mockMvc.perform(TestTenants.with(get("/actuator"), token)).andReturn().getResponse();
+
+    assertNoMetricsEndpointIsListed(response);
+  }
+
+  private static void assertNoMetricsEndpointIsListed(MockHttpServletResponse response)
+      throws Exception {
+    String body = response.getContentAsString();
+    assertSoftly(
+        softly -> {
+          softly
+              .assertThat(response.getStatus())
+              .describedAs("status of the actuator index, which answered: %s", body)
+              .isNotEqualTo(200);
+          softly
+              .assertThat(body)
+              .describedAs("the actuator index")
+              .doesNotContain(PROMETHEUS_ENDPOINT)
+              .doesNotContain(METRICS_ENDPOINT);
+        });
   }
 
   private String onboardAnOrganisation() throws Exception {
