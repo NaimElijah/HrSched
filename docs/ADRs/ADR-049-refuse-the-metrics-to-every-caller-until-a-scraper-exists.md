@@ -33,8 +33,8 @@ The full-system security scan (#250) found that this is more than a description 
 ## Decision
 
 **We refuse the `metrics` and `prometheus` endpoints - every path beneath each, matched by endpoint
-id - to every caller, with or without a token.** This amends ADR-017 and ADR-032 for these routes. Both stay Accepted, and
-everything they decide beyond these routes stands.
+id - to every caller, with or without a token.** This amends ADR-017 and ADR-032 for these routes.
+Both stay Accepted, and everything they decide beyond these routes stands.
 
 - **The rule is `denyAll`, placed before the actuator `permitAll`.** `SecurityConfiguration` matches
   the first rule that fits, so the order is what refuses them.
@@ -57,8 +57,10 @@ everything they decide beyond these routes stands.
 - **The metrics stop depending on a guarantee nobody has written down.** Whether the port is reachable
   from outside no longer decides whether they leak.
 - **`MetricsHttpTest` names the refusal.** `/actuator/prometheus`, `/actuator/metrics` and
-  `/actuator/metrics/hrsched.changes` each answer 401 without a token, and health and info are
-  asserted to answer, so narrowing or widening the rule is a build failure.
+  `/actuator/metrics/hrsched.changes` each answer 401 without a token and 403 with a tenant's token
+  and with the operator's, and health and info are asserted to answer. `denyAll`,
+  `authenticated()` and a role rule all refuse an anonymous request with the same 401, so it is the
+  403 with a token that tells them apart: narrowing or widening the rule is a build failure.
 
 **Harder**
 
@@ -66,12 +68,13 @@ everything they decide beyond these routes stands.
   meters are still recorded, but until #78 is decided nothing outside the process can read one. That
   costs nothing today, because nothing scrapes them (Q19, #165), and it becomes a cost the day
   something should.
-- **`MetricsHttpTest` reads the registry instead of scraping.** That the meters are recorded is
-  asserted against `MeterRegistry`, which is a weaker check than the one the scrape gave: it does not
-  prove that the Prometheus rendering contains them. The test still needs `@AutoConfigureMetrics`, and
-  so a second Spring context, to make the endpoints exist for the refusals to be tested.
-- **A caller with no token is answered 401.** That is the case `MetricsHttpTest` asserts. The
-  status for a caller who does hold a token is not pinned by a test.
+- **`MetricsHttpTest` scrapes the registry instead of the endpoint.** That the meters reach the
+  Prometheus exporter is asserted on `PrometheusMeterRegistry.scrape()`, in the process, rather than
+  over HTTP. The test still needs `@AutoConfigureMetrics`, and so a second Spring context, to make the
+  endpoints exist for the refusals to be tested.
+- **The status depends on whether a token came with the request.** A caller with no token is
+  answered 401, and one with any token, a tenant's or the operator's, 403. `MetricsHttpTest`
+  asserts all three.
 - **Reopening is a code change in `SecurityConfiguration`.** Anyone who wires a scraper has to remove
   or narrow this rule and write down who may reach what, which is the point, but it is not a
   configuration switch.

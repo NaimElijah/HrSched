@@ -19,7 +19,7 @@ security scan (#250) found what that does here:
 - **Every 401 pointed at it.** `BearerTokenAuthenticationEntryPoint` wrote a `resource_metadata`
   parameter into each `WWW-Authenticate` challenge.
 - **No client of this API reads it.**
-- **Spring Security 7.1.1 has no switch to turn it off.** The filter is final and its matcher is
+- **Spring Security 7.1 (checked on 7.1.2) has no switch to turn it off.** The filter is final and its matcher is
   fixed, and the entry point always writes the parameter. Its resolver can change the address but not
   leave it out.
 
@@ -52,6 +52,10 @@ security scan (#250) found what that does here:
 - **The challenge is hand-written.** We now own its formatting (`error`, `error_description`,
   `error_uri`) instead of inheriting Spring's, and a change in Spring's challenge will not reach us.
 - **A client that wants to discover the API through RFC 9728 cannot.**
+- **An `invalid_request` is answered 401, where RFC 6750 §3.1 says 400.** The entry point answers
+  every refusal with a 401, as it did before this branch. Nothing in this configuration produces an
+  `invalid_request`, because query and form tokens are off, so the status is wrong only for a
+  refusal that cannot arise today.
 
 ## Alternatives considered
 

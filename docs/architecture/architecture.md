@@ -121,7 +121,7 @@ Three rules hold this together, and each fails the build when broken:
 | `access.adapter.in.bootstrap` | `OperatorBootstrap` — an `ApplicationRunner` that creates the first platform operator from configuration, and only if no account holds the name ([ADR-029](../ADRs/ADR-029-provision-accounts-from-the-top-down.md)); if a tenant's account holds it, startup fails: no operator can be created under that name, and one most likely exists already under another. |
 | `configuration.security` | `SecurityConfiguration` (the one filter chain), `ProblemAuthenticationEntryPoint` and `ProblemAccessDeniedHandler` (which write the 401 and 403 bodies a filter would otherwise leave empty; the entry point also writes the `WWW-Authenticate` challenge itself, because Spring's always adds a `resource_metadata` parameter), and `SecurityPolicyProperties`. `SecurityConfiguration` also removes Spring's protected-resource metadata filter from the built chain ([ADR-050](../ADRs/ADR-050-reject-the-protected-resource-metadata-endpoint.md)). |
 | `configuration.observability` | Cross-cutting instrumentation that belongs to no context. Today that is `TraceIdResponseFilter`, which puts the request's trace id on the response as `X-Trace-Id`. It depends on nothing about who is calling, so it can run ahead of the security chain, and it is ordered to (see *Structural decisions not visible from the file layout*), which is why a refusal still carries the id. |
-| `configuration.web` | `RequestBindingExceptionHandler` — answers a request Spring could not bind to a controller's parameters (a missing query parameter, an identifier that does not parse) with a 400 problem detail naming what was wrong, whose detail repeats nothing that was sent. It belongs to no context because the failure happens before any controller runs ([ADR-024](../ADRs/ADR-024-answer-unbindable-requests-with-a-problem-detail.md)). |
+| `configuration.web` | `RequestBindingExceptionHandler` — answers a request Spring could not bind to a controller's parameters (a missing query parameter, an identifier that does not parse) with a 400 problem detail naming what was wrong, whose detail repeats nothing that was sent. It belongs to no context because the failure happens before any controller runs ([ADR-024](../ADRs/ADR-024-answer-unbindable-requests-with-a-problem-detail.md)). This package also holds the bound on a request body: `hrsched.web.max-json-document-bytes` (1 MiB by default, counted in bytes) is handed to Jackson, and a JSON body over it is refused with a 413 titled `Request too large`, whose detail repeats nothing that was sent, before any use case runs. `RequestBodyLimitProperties` checks the limit at startup, and a value of 0 or less fails it, where Jackson would read it as no limit. `JsonCharsetFilter`, ordered after the security chain, refuses JSON declared in any charset but UTF-8 with a 415 before it is read, because Jackson counts a body in another charset in decoded characters, which would not hold the byte bound. Multipart is switched off (`spring.servlet.multipart.enabled=false`), so a multipart request is refused with a 415 and never parsed. |
 | `frontend/src/api` | The typed client. `client.ts` is the only module that calls `fetch` or knows a header exists — it attaches the bearer token to every request except renewing and signing out, whose credential is the refresh cookie and which a stale token would get refused (#179), renews the session once on a 401 from anything credentialed by the token, the session read and the password change included and retries the request exactly once (single-flight within the tab, serialised across tabs by a Web Lock) — refusing the request instead if the renewal answers for a different account than the request was sent as, since every tab shares one cookie — and reads back `X-Trace-Id`; `session.ts` holds the access token in a module variable and **nowhere a script can read it back**, and notifies the shell when a session ends — telling every other tab, over the `hrsched.session` BroadcastChannel where the browser has one, how it ended: `'sign-out-unconfirmed'` as a sign-out is sent, `'ended'` once it is confirmed or a renewal is refused. The channel carries only those words, never a token or who was signed in; a renewal that answers for another account forgets the session in this tab only ([ADR-048](../ADRs/ADR-048-keep-a-browsers-tabs-on-one-session.md)). It writes no identity claim of any kind: the bearer token is the whole of what says who is acting, and a request carrying a second, weaker answer would be offering one. `problem.ts` validates the RFC 9457 body into a typed `ApiError`, which carries that trace id as the reference a refusal can be quoted by; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts` mirror the backend DTOs, one module per context. |
 | `frontend/src/auth` | `SessionProvider` (which of six states the app is in, and the handshake every load begins with, including the one that cannot finish, because the backend was not reached or the session could not be read back), `SignInPage`, `ChangePasswordPage` and `SessionBar`. A sign-out that is in flight or was not confirmed — in this tab or announced by another — shows `SignOutUnconfirmedPage` in place of the sign-in form: inside `main`, it focuses its heading, warns that this browser may still be signed in because the backend clears the refresh cookie only on a sign-out that reaches it, shows the failure with its trace reference, and offers "Try signing out again" with a live status region that reports each attempt; the request is sent with `keepalive`, so closing the tab does not abort it. When a session that was on screen ends, the sign-in page focuses its heading and says the user has been signed out; on a first load it does neither. Replaced `frontend/src/identity`, whose bar let anybody claim any role in any organisation because the backend believed whatever headers it was sent. |
 | `frontend/src/pages` | One screen per capability: People, Accounts, Qualifications, Rules, Shifts, Rosters, Swaps, Me, Organisations. Organisations is the platform Operator's: it lists and onboards organisations, and offers no way to act inside one, because the Operator is refused everything inside every tenant ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)). A tenant role reaching it is shown the 403 rather than a hidden tab. Accounts is its mirror for an Admin: it creates accounts, changes what one is, disables and restores one, and resets a colleague's password. Nothing on it names an organisation, because the backend takes that from the token; every temporary password is typed, masked, never defaulted, and cleared once the request it was typed for has succeeded. Swaps is where a Scheduler answers requests; approving publishes a replacement roster, so it is refused exactly as any publication is: with every broken working-time rule named, or, if it would put somebody in two places at once, with that. Me shows an employee their identifier, their published work over the planning span, and a way to hand a shift to a colleague named by that colleague's identifier, because an employee may not list colleagues (Q25). Me also holds the employee's `Inbox`. Opening a roster shows `RosterBoard`, which loads that roster by identifier and changes a draft through a picker and buttons per shift rather than by drag and drop ([ADR-025](../ADRs/ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md)). |
@@ -163,7 +163,7 @@ about. The rules are the coarse outer line; the use case behind each route is wh
 | Route | Who may reach it |
 | --- | --- |
 | `POST /api/auth/sign-in`, `/refresh`, `/sign-out` | anybody — authentication itself |
-| The `metrics` and `prometheus` endpoints, every path beneath each (matched by endpoint id) | nobody — refused to every caller, with or without a token, until the scrape question is decided ([ADR-049](../ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)) |
+| The `metrics` and `prometheus` endpoints, every path beneath each (matched by endpoint id) | nobody — 401 without a token and 403 with any token, until the scrape question is decided ([ADR-049](../ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)) |
 | `/actuator/**` | anybody, for what remains: health, liveness, readiness and info. What exists there is decided by the exposure list (ADR-017) |
 | `GET /api/auth/session`, `POST /api/auth/password` | any authenticated account, including one whose password change is still pending |
 | `POST`/`GET /api/organisations` | `OPERATOR` |
@@ -172,9 +172,11 @@ about. The rules are the coarse outer line; the use case behind each route is wh
 | `/api/employees/**`, `/api/qualifications/**`, `/api/shifts/**`, `/api/constraints/**`, `/api/objectives/**`, `/api/rosters/**`, `/api/me/**`, `/api/swaps/**`, `/api/notifications/**` | any tenant role |
 | anything else | nobody |
 
-Every response carries `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` and
-`Referrer-Policy: no-referrer`, beside Spring Security's own default headers. The SPA's own policy is
-the edge's, not the API's ([#162](https://github.com/NaimElijah/HrSched/issues/162)).
+Every response the security chain writes carries `Content-Security-Policy: default-src 'none';
+frame-ancestors 'none'` and `Referrer-Policy: no-referrer`, beside Spring Security's own default
+headers. The request firewall's own 400, for a malformed path such as `//`, is written before the
+chain and carries neither. The SPA's own policy is the edge's, not the API's
+([#162](https://github.com/NaimElijah/HrSched/issues/162)).
 
 **A verified signature is not enough, and that is the point.** The decoder proves a token is one
 this service signed, for this service, unexpired, of type `at+jwt`, and naming both an account and
@@ -373,6 +375,19 @@ are not audited. Nothing at runtime depends on any of it.
   when the last route stopped sending one, because a check that can never fire reads like
   protection and is not
   ([ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md), superseding ADR-020).
+- **Only an account makes an actor, and only the access service asks it to.** Who is acting is
+  never built by the code that acts on someone's behalf. Only `access.domain.model` constructs a
+  `TenantActor` or the `Operator`, whether by a call or by a constructor reference, and only
+  `access.application.service` calls `Account.actor()`; both are rules in
+  `HexagonalArchitectureTest`, which fails the build on a breach
+  ([ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)). Tests are not analysed, so
+  a test may build any actor it needs.
+- **The security filter chain's filter list is pinned by a test.** `SecurityConfiguration` rebuilds
+  the built chain without Spring's protected-resource metadata filter
+  ([ADR-050](../ADRs/ADR-050-reject-the-protected-resource-metadata-endpoint.md)), and a filter that
+  arrives with an upgrade can answer a request ahead of every rule, which is how that one did.
+  `SecurityFilterChainTest` asserts the chain's exact filters, so an upgrade that adds one fails the build and somebody
+  decides whether it belongs.
 - **The servlet filters are explicitly ordered, and the numbers matter.**
   `TraceIdResponseFilter` must run after Boot's observation filter (registered at
   `HIGHEST_PRECEDENCE + 1`), which opens the span it reads — ordered any earlier, `currentSpan()` is
@@ -424,7 +439,9 @@ are not audited. Nothing at runtime depends on any of it.
   ([ADR-049](../ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md),
   [#78](https://github.com/NaimElijah/HrSched/issues/78)). Exposure is an allow list: `loggers`,
   `env` and `heapdump` are shut, because two of those disclose state while the third changes
-  behaviour, and an endpoint that is not exposed answers 404. Actuator shares port 8080 with the API
+  behaviour, and an endpoint that is not exposed answers 404. `GET /actuator` does not list the
+  exposed endpoints (`management.endpoints.web.discovery.enabled=false`), because it answered anybody
+  with links built from the request's `Host`. Actuator shares port 8080 with the API
   ([ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md)). No monitoring stack is committed;
   there is no environment yet to describe one for.
 - **Coverage is measured and never enforced.** `./mvnw verify` writes `target/site/jacoco/`; the
