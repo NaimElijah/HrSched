@@ -23,6 +23,7 @@ import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.Writer;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -836,6 +837,49 @@ class JdbcRosterRepositoryTest {
   void GivenNoTransaction_WhenLockingAnOrganisationsPublications_ThenItIsRefused() {
     assertThatThrownBy(() -> repository.lockPublicationsOf(ACME))
         .isInstanceOf(IllegalStateException.class);
+  }
+
+  // --- #250: reading past the driver's bind-parameter limit ------------------------------------
+
+  /**
+   * One more roster than pgjdbc can bind parameters in one statement: the wire protocol counts them
+   * in 16 bits, so 65,535 is the most. History is append-only and drafts are never deleted, so an
+   * organisation reaches this by using the system, and a read binding one parameter per roster then
+   * fails for every caller listing them.
+   */
+  private static final int MORE_ROSTERS_THAN_A_STATEMENT_CAN_BIND = 65_536;
+
+  /**
+   * Bulk-inserted in one statement, so the test stays fast; one roster is saved through the adapter
+   * with an assignment, so the read-back also shows that children still load.
+   */
+  @Test
+  void
+      GivenMoreRostersThanAStatementCanBind_WhenListingTheOrganisations_ThenEachLoadsWithItsWork() {
+    Roster assigned =
+        draft(ACME).withAssignments(List.of(new Assignment(ShiftId.newId(), EmployeeId.newId())));
+    repository.save(assigned);
+    PostgresDatabase.jdbcClient()
+        .sql(
+            """
+            INSERT INTO roster (id, organisation_id, starts_at, ends_at)
+            SELECT gen_random_uuid(), :organisation, :startsAt, :endsAt
+            FROM generate_series(1, :others)
+            """)
+        .param("organisation", ACME.value())
+        .param("startsAt", THE_WEEK.start().atOffset(ZoneOffset.UTC))
+        .param("endsAt", THE_WEEK.end().atOffset(ZoneOffset.UTC))
+        .param("others", MORE_ROSTERS_THAN_A_STATEMENT_CAN_BIND - 1)
+        .update();
+
+    List<Roster> listed = repository.findByOrganisation(ACME);
+
+    assertThat(listed).hasSize(MORE_ROSTERS_THAN_A_STATEMENT_CAN_BIND);
+    assertThat(listed)
+        .filteredOn(roster -> roster.id().equals(assigned.id()))
+        .singleElement()
+        .extracting(Roster::assignments)
+        .isEqualTo(assigned.assignments());
   }
 
   /**

@@ -28,7 +28,7 @@ public record TimeRange(Instant start, Instant end) {
     Objects.requireNonNull(start, "start must not be null");
     Objects.requireNonNull(end, "end must not be null");
     if (!end.isAfter(start)) {
-      throw new InvalidTimeRangeException(start, end);
+      throw new InvalidTimeRangeException();
     }
   }
 

@@ -62,6 +62,12 @@ import org.junit.jupiter.api.Test;
 class SessionServiceTest {
 
   private static final Instant NOW = Instant.parse("2026-09-20T09:00:00Z");
+
+  /**
+   * Long enough before {@link #NOW} for any lock {@link #LOCK_AFTER_THREE} sets to have run out.
+   */
+  private static final Instant AN_HOUR_AGO = NOW.minus(Duration.ofHours(1));
+
   private static final OrganisationId ACME = OrganisationId.newId();
   private static final String ADA = "ada@example.com";
   private static final String RIGHT_PASSWORD = "an invented password for a test";
@@ -402,6 +408,82 @@ class SessionServiceTest {
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
     assertThat(accounts.heldForUpdate()).containsExactly(account.id());
+  }
+
+  // --- R29: changing one's own password while locked -------------------------------------------
+  //
+  // Refused as sign-in refuses a locked account: whatever password is given, nothing counted, and
+  // the comparison still made, so how long the refusal takes does not say the account is locked.
+
+  @Test
+  void GivenALockedAccount_WhenChangingItsPassword_ThenAPasswordIsStillComparedAndNothingChanges() {
+    Account locked =
+        accounts.given(
+            tenant(ADA, Role.SCHEDULER, Optional.empty())
+                .recordFailedSignIn(NOW, LOCK_AFTER_THREE)
+                .recordFailedSignIn(NOW, LOCK_AFTER_THREE)
+                .recordFailedSignIn(NOW, LOCK_AFTER_THREE));
+    TenantActor themself = new TenantActor(locked.id(), ACME, Role.SCHEDULER);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(passwords.comparisons())
+        .describedAs("compared before the lock is consulted, as at sign-in")
+        .isEqualTo(1);
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.CurrentPasswordRejected.class);
+    Account after = accounts.findBySignInName(new SignInName(ADA)).orElseThrow();
+    assertThat(after.passwordHash()).isEqualTo(locked.passwordHash());
+    assertThat(after.failedSignIns())
+        .describedAs(
+            "a lock that extended itself on every attempt would be a way to keep somebody out")
+        .isEqualTo(locked.failedSignIns());
+    assertThat(after.lockedUntil()).isEqualTo(locked.lockedUntil());
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /** A lock that has run out bars nothing: it was a pause on guessing, not a disable. */
+  @Test
+  void GivenALockThatHasRunOut_WhenChangingThePasswordWithTheRightCurrentOne_ThenItIsChanged() {
+    Account once =
+        accounts.given(
+            tenant(ADA, Role.SCHEDULER, Optional.empty())
+                .recordFailedSignIn(AN_HOUR_AGO, LOCK_AFTER_THREE)
+                .recordFailedSignIn(AN_HOUR_AGO, LOCK_AFTER_THREE)
+                .recordFailedSignIn(AN_HOUR_AGO, LOCK_AFTER_THREE));
+    assertThat(once.lockedUntil()).describedAs("precondition: it was locked").isPresent();
+    assertThat(once.isLockedAt(NOW)).describedAs("precondition: the lock has run out").isFalse();
+    TenantActor themself = new TenantActor(once.id(), ACME, Role.SCHEDULER);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
+  }
+
+  /** The instant a lock ends is the first instant it no longer holds. */
+  @Test
+  void GivenALockEndingThisInstant_WhenChangingThePasswordWithTheRightCurrentOne_ThenItIsChanged() {
+    Instant lockedAt = NOW.minus(LOCK_AFTER_THREE.duration());
+    Account once =
+        accounts.given(
+            tenant(ADA, Role.SCHEDULER, Optional.empty())
+                .recordFailedSignIn(lockedAt, LOCK_AFTER_THREE)
+                .recordFailedSignIn(lockedAt, LOCK_AFTER_THREE)
+                .recordFailedSignIn(lockedAt, LOCK_AFTER_THREE));
+    assertThat(once.lockedUntil()).describedAs("precondition: it ends now").contains(NOW);
+    TenantActor themself = new TenantActor(once.id(), ACME, Role.SCHEDULER);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
   }
 
   // --- #33: sign-in decides on the account as it is once held (ADR-041)

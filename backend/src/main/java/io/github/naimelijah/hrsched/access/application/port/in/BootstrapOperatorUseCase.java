@@ -1,5 +1,7 @@
 package io.github.naimelijah.hrsched.access.application.port.in;
 
+import io.github.naimelijah.hrsched.access.domain.model.OperatorNameHeldByATenantException;
+
 /**
  * Driving port: making sure the platform has an operator to sign in as.
  *
@@ -17,8 +19,10 @@ public interface BootstrapOperatorUseCase {
    * Creates the platform operator if no account holds that sign-in name.
    *
    * @param command the name and temporary password to create it with, never {@code null}
-   * @return whether this call created the account; false means one already held the name, and
-   *     nothing was changed
+   * @return whether this call created the account; false means the operator already held the name,
+   *     and nothing was changed
+   * @throws OperatorNameHeldByATenantException if a tenant account holds the name, so no operator
+   *     can be created under it; nothing was changed, and the message never contains the name
    */
   boolean ensureOperator(BootstrapOperatorCommand command);
 }

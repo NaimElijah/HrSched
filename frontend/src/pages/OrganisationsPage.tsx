@@ -59,6 +59,10 @@ export function OrganisationsPage() {
         password the first time they sign in.
       </p>
 
+      {/* Both credentials are the first Admin's, never the operator's. new-password keeps the
+          browser from autofilling the operator's saved password into a new organisation or
+          offering it as an update to the operator's own entry; off asks it not to autofill the
+          name. A browser may still offer to save what is typed, under the new Admin's name (#250). */}
       <form className="row" onSubmit={(event) => void onboard(event)}>
         <label>
           Name
@@ -69,6 +73,7 @@ export function OrganisationsPage() {
           <input
             value={adminSignInName}
             onChange={(event) => setAdminSignInName(event.target.value)}
+            autoComplete="off"
             required
           />
         </label>
@@ -78,6 +83,7 @@ export function OrganisationsPage() {
             type="password"
             value={temporaryPassword}
             onChange={(event) => setTemporaryPassword(event.target.value)}
+            autoComplete="new-password"
             required
           />
         </label>

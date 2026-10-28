@@ -6,7 +6,10 @@ roster. The README shows the responses that matter most; this page is the rest.
 Every call except sign-in carries a bearer token HrSched signed itself. The organisation is never
 part of a request: it comes from the account the token names
 ([ADR-031](ADRs/ADR-031-take-the-organisation-from-the-account.md)). Errors are RFC 9457 problem
-details, `application/problem+json`, and every response carries its trace id as `X-Trace-Id`.
+details, `application/problem+json`, and every response carries its trace id as `X-Trace-Id`. Every
+response the security chain writes also carries `Content-Security-Policy: default-src 'none';
+frame-ancestors 'none'` and `Referrer-Policy: no-referrer`. The request firewall's own `400`, for a
+malformed path, is written before the chain and carries neither.
 
 ## Endpoints
 
@@ -30,8 +33,11 @@ exact role. A resource in another organisation answers `404`, the same as one th
 | Swaps | `POST /api/swaps`, `/{id}/approval`, `/{id}/rejection`; `GET` list and one | Asking: the person, Admin or Scheduler; deciding: Scheduler; reading: the parties |
 | Me | `GET /api/me/schedule?from&to`; `GET /api/notifications`; `POST /api/notifications/{id}/read` | Any member, their own only |
 
-`/actuator/health/**`, `/actuator/info`, `/actuator/metrics` and `/actuator/prometheus` need no
-token.
+`/actuator/health/**` and `/actuator/info` need no token. `/actuator/metrics` and
+`/actuator/prometheus`, and every path beneath either, are refused to every caller: `401` without a
+token and `403` with any token, the Operator's included
+([ADR-049](ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)).
+`GET /actuator` no longer lists the endpoints.
 
 ## Signing in
 
@@ -179,6 +185,19 @@ rules`, as publishing it would. With invented identifiers and weights:
 
 ## Other refusals
 
+- **No token, or one that is not accepted.** Answers `401` titled `Unauthenticated`, whose
+  `WWW-Authenticate` challenge has two shapes. With no token it is exactly `Bearer`. With a token,
+  whatever refused it (expired, a signature that does not verify, a missing claim, or an account that
+  does not exist), it is the same sentence, so the response never says which check failed:
+  `Bearer error="invalid_token", error_description="The access token was not accepted",
+  error_uri="https://tools.ietf.org/html/rfc6750#section-3.1"`. The body is the same in both.
+- **A JSON body that is too large.** One over `hrsched.web.max-json-document-bytes` (1048576 bytes
+  by default) answers `413` titled `Request too large`, before any use case runs. Its detail repeats
+  nothing that was sent.
+- **A body that is not read.** JSON declared in any charset but UTF-8, UTF-16 and UTF-32 included,
+  answers `415` titled `Unsupported media type` before it is read; `application/json` with no
+  charset, or with `charset=UTF-8`, is accepted. A multipart request answers `415` and is never
+  parsed; that refusal is Spring's own and carries no problem detail.
 - **Any rule a draft breaks.** Publication answers `422` titled `Roster breaks the rules`, with a
   `violations` list naming every breach: `overlapping work`, `required qualifications`,
   `declared unavailability`, `not of this organisation`, or the working-time rule broken. Each
@@ -190,6 +209,23 @@ rules`, as publishing it would. With invented identifiers and weights:
 - **A roster whose status forbids the change.** Editing or publishing a roster that is no longer a
   draft, or asking for a swap against one that is not the published roster, answers `409` titled
   `Roster status forbids this`. Reload it: somebody most likely published it first.
+- **A value the store cannot hold.** Declaring unavailability or stating a preference with an
+  instant outside what PostgreSQL stores, or a span that is no longer positive once stored at the
+  microsecond, or setting contracted minutes too large for a duration, answers `400` titled
+  `Invalid request`. Nothing is stored, and the detail repeats no value sent.
+- **A shift or generation the store or generation cannot take.** Defining a shift, or starting a
+  generation, with an instant outside what PostgreSQL stores, or a span that is no longer positive
+  once stored at the microsecond; a shift or generation span too long for generation to count in
+  nanoseconds, about 292 years; listing shifts (`GET /api/shifts`) with a `from` or `to` outside
+  what PostgreSQL stores; or setting a working-time value in `PUT /api/constraints` too many
+  minutes to count in nanoseconds. Each answers `400` titled `Invalid request`. Nothing is stored,
+  and the detail repeats no value sent; for a working-time value it names the field.
+- **A span that ends at or before it starts.** On any route that takes a span, the shared time
+  range answers `400` titled `Invalid request`, with a constant detail that names neither instant.
+- **A sign-in name that cannot be one, or is taken.** Creating an account, or onboarding an
+  organisation with its first Admin, under a blank sign-in name or one over the permitted length
+  answers `400` titled `Invalid request`; under a name any account already holds, on any
+  organisation, `409`. Neither detail repeats the name.
 - **An Employee account linked to nobody.** Creating one, taking the link away from one, giving
   the Employee role to an account linked to nobody, or restoring one stored unlinked before R34
   answers `422` titled `Employee account not linked`.

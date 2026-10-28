@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.access.adapter.in.web;
 import io.github.naimelijah.hrsched.access.domain.model.CannotResetOwnPasswordException;
 import io.github.naimelijah.hrsched.access.domain.model.EmployeeAlreadyLinkedException;
 import io.github.naimelijah.hrsched.access.domain.model.InvalidOrganisationNameException;
+import io.github.naimelijah.hrsched.access.domain.model.InvalidSignInNameException;
 import io.github.naimelijah.hrsched.access.domain.model.LastActiveAdminException;
 import io.github.naimelijah.hrsched.access.domain.model.NotAnEmployeeHereException;
 import io.github.naimelijah.hrsched.access.domain.model.NotThePlatformOperatorException;
@@ -11,6 +12,7 @@ import io.github.naimelijah.hrsched.access.domain.model.UnacceptablePasswordExce
 import io.github.naimelijah.hrsched.access.domain.model.UnknownAccountException;
 import io.github.naimelijah.hrsched.access.domain.model.UnknownOrganisationException;
 import io.github.naimelijah.hrsched.access.domain.model.UnlinkedEmployeeAccountException;
+import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.micrometer.core.instrument.Counter;
@@ -20,8 +22,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import tools.jackson.core.exc.StreamConstraintsException;
 
 /**
  * Translates access failures into HTTP problem responses.
@@ -68,7 +72,13 @@ public class AccessExceptionHandler {
         .increment();
   }
 
-  @ExceptionHandler({InvalidOrganisationNameException.class, MalformedRequestException.class})
+  // InvalidSignInNameException's message names the rule and never the name, so it can be the
+  // detail. Without it here a blank or over-long name escaped every handler and answered 500.
+  @ExceptionHandler({
+    InvalidOrganisationNameException.class,
+    InvalidSignInNameException.class,
+    MalformedRequestException.class
+  })
   public ProblemDetail handleInvalidInput(RuntimeException exception) {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
@@ -98,9 +108,24 @@ public class AccessExceptionHandler {
    * <p>The detail never repeats the name. Uniqueness is platform-wide, so this can be raised by a
    * collision with an account in an organisation the caller cannot see, and echoing it would tell
    * them a particular person has an account here.
+   *
+   * <p>Logged and counted for the same reason. This is the one refusal where a request collides
+   * with data the caller cannot see, so trying name after name is a way to learn who holds an
+   * account on the platform. The line names who asked, never the name asked for, which is a
+   * person's.
+   *
+   * @param actor the acting account, taken from the access token as the controllers take it; the
+   *     exception cannot carry it, because the repository that raises it does not know who is
+   *     acting. Null if the principal is not an {@code Actor}: the refusal is then still answered
+   *     and recorded, without one, rather than lost to a 500
    */
   @ExceptionHandler(SignInNameTakenException.class)
-  public ProblemDetail handleSignInNameTaken(SignInNameTakenException exception) {
+  public ProblemDetail handleSignInNameTaken(
+      SignInNameTakenException exception, @AuthenticationPrincipal Actor actor) {
+    log.atWarn()
+        .addKeyValue("actor", actor == null ? null : actor.id().value())
+        .log("Refused: an account was asked for under a sign-in name already in use");
+    denied("sign_in_name_taken");
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.CONFLICT, "That sign-in name is already in use.");
@@ -206,9 +231,23 @@ public class AccessExceptionHandler {
   /**
    * Answers with a fixed sentence and never with {@code exception.getMessage()}. Jackson's message
    * quotes the input it failed on, and on the sign-in endpoint that input contains a password.
+   *
+   * <p>A body Jackson stopped reading because it broke one of its stream constraints - the document
+   * length {@code hrsched.web.max-json-document-bytes} sets, or a nesting or value-length limit -
+   * is a 413 rather than a 400 (RFC 9110 section 15.5.14). Its JSON may be perfectly well formed,
+   * and calling it malformed sends a client looking for a fault that is not there.
    */
   @ExceptionHandler(HttpMessageNotReadableException.class)
   public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException exception) {
+    if (exception.getMostSpecificCause() instanceof StreamConstraintsException) {
+      ProblemDetail problem =
+          ProblemDetail.forStatusAndDetail(
+              HttpStatus.CONTENT_TOO_LARGE,
+              "The request body exceeds a limit on its size, its nesting or the length of a value"
+                  + " in it.");
+      problem.setTitle("Request too large");
+      return problem;
+    }
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.BAD_REQUEST, "The request body is malformed or is missing required fields.");

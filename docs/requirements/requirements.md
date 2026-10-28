@@ -156,7 +156,7 @@ a published roster is superseded rather than edited (R6).
 | R16 | A password chosen by anybody other than the account's owner must be replaced before that account holds a role. *`Account`, `SessionService`, `ActorAuthentication`, `ActorAuthenticationConverterTest`, `SessionHttpTest`, `AccountHttpTest`* |
 | R17 | Disabling an account, and resetting its password, end every session it holds. A reset also clears any lockout. An Admin resets other people's passwords, never their own: changing your own takes the current one, and a way around that would undo what it protects. *`AccountService`, `AccountAdministrationTest`, `AccountHttpTest`* |
 | R18 | An employee may not be assigned across a span they declared unavailable, whether by hand, by generation or through a swap. *`RosterCandidate`, `AssignmentEligibility`, `RosterCandidateTest`; on the manual path `SchedulingServiceTest`; at swap approval `SwapServiceTest`; in generation `RosteringHttpTest`; at publication, for somebody who declared it after being assigned, `RosteringHttpTest.GivenUnavailabilityDeclaredAfterAssignment_WhenPublishing_ThenItIsRefusedWithThatViolation`* |
-| R19 | A member reaching for another organisation's data is answered *not found*, never *forbidden*, because a refusal would confirm that the thing exists. *The exception handler of each web adapter: `AccessExceptionHandler`, `WorkforceExceptionHandler`, `SchedulingExceptionHandler`, `NotificationExceptionHandler`; `RosteringHttpTest`, `OrganisationHttpTest`, `AccountHttpTest`* |
+| R19 | A member reaching for another organisation's data is answered *not found*, never *forbidden*, because a refusal would confirm that the thing exists. *The exception handler of each web adapter: `AccessExceptionHandler`, `WorkforceExceptionHandler`, `SchedulingExceptionHandler`, `NotificationExceptionHandler`; `RosteringHttpTest`, `CrossTenantSchedulingWriteHttpTest`, `OrganisationHttpTest`, `AccountHttpTest`, and in `NotificationHttpTest` `GivenAColleaguesNotification_WhenAcknowledgingIt_ThenItIsNotFoundAndStaysUnread` and `GivenAnotherOrganisationsNotification_WhenOurMemberAcknowledgesIt_ThenItIsNotFoundAndStaysUnread`* |
 | R20 | A swap may be requested only for an assignment the requester holds on the roster currently published. *`SwapService`, `SwapServiceTest`* |
 | R21 | A swap is always with somebody else. *`SwapRequest`, `SwapServiceTest`* |
 | R22 | A shift's headcount is the least it needs, not the most it may have: more people may be assigned to it by hand. A shift that an authoritative roster beside a draft already staffs keeps those people when the draft is generated, and they count toward its headcount there; generation fills only the places left (decided 2026-10-22, [#130](https://github.com/NaimElijah/HrSched/issues/130)). *`Shift`, `SchedulingService`; `RosteringHttpTest.GivenAStraddlingShiftStaffedOnLastWeeksPublishedRoster_WhenNextWeekIsGenerated_ThenTheyStay`, `RosterGeneratorContract`. Overstaffing by hand has no test yet — [#99](https://github.com/NaimElijah/HrSched/issues/99)* |
@@ -166,7 +166,7 @@ a published roster is superseded rather than edited (R6).
 | R26 | Stated preferences may overlap one another, unlike unavailability (R7). *`Employee`; no test pins it yet — [#99](https://github.com/NaimElijah/HrSched/issues/99)* |
 | R27 | A sign-in name ignores case and surrounding spaces, so two names differing only in those are the same name. *`SignInName`, `SignInNameTest`, `AuthHttpTest`* |
 | R28 | A new password must differ from the current one. *`SessionService`, `SessionHttpTest`* |
-| R29 | Consecutive failed sign-ins lock an account for a while, and a successful sign-in clears the count. A wrong current password given when changing it counts as a failure. How many failures, and for how long, is configuration (Q27). *`Account`, `SessionService`, `AuthHttpTest`, `SessionHttpTest`* |
+| R29 | Consecutive failed sign-ins lock an account for a while, and a successful sign-in clears the count. A wrong current password given when changing it counts as a failure, and a locked account cannot change its password either, whatever password it gives, with nothing counted. How many failures, and for how long, is configuration (Q27). *`Account`, `SessionService`, `AuthHttpTest`, `SessionHttpTest`, `LockedAccountPasswordChangeHttpTest`, `PasswordChangeRefusalLogHttpTest`* |
 | R30 | Presenting a refresh token that was already exchanged ends the whole session it belongs to. *`SessionService`, `SessionServiceTest`, `SessionRefreshHttpTest`* |
 | R31 | The Operator's account never holds a role within an organisation, and is never linked to an employee. *`Account`, `AccountTest`* |
 | R32 | An assignment has at most one pending swap request. *`SwapService`, `SwapServiceTest`, `SwapHttpTest`; the schema's `swap_request_one_pending_per_assignment` for a writer that skips the publication lock, `JdbcSwapRequestRepositoryTest`; duplicates already stored lapsed by V8, `SwapRequestMigrationTest` ([ADR-039](../ADRs/ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md)). The assignment is the roster, the shift and the person on it, so the same shift on a replacement roster is another one, which leaves [#135](https://github.com/NaimElijah/HrSched/issues/135) open* |
@@ -272,7 +272,7 @@ filled every place it can, it keeps at least that many filled and minimises the 
   tenant can be neither invented nor borrowed.
   *Enforced by `Actor.requireTenantMembership` and `Actor.requireAccessTo` (`ActorTest` covers the
   second), and by the helper in each web adapter that takes the organisation from the actor
-  (`actingIn`; `organisationOf` in `AccountController`), covered by `EmployeeHttpTest`, `RosteringHttpTest`, `SwapHttpTest`, `NotificationHttpTest`
+  (`actingIn`; `organisationOf` in `AccountController`), covered by `EmployeeHttpTest`, `CrossTenantEmployeeWriteHttpTest`, `CrossTenantSchedulingWriteHttpTest`, `RosteringHttpTest`, `SwapHttpTest`, `NotificationHttpTest`
   and `AccountHttpTest`;
   [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md). On the write side, by the
   guard on every upsert by identity, which refuses to store over another organisation's row:
@@ -321,7 +321,10 @@ filled every place it can, it keeps at least that many filled and minimises the 
   exported until there is somewhere to export to — Q19.
   *Enforced by `TraceIdResponseFilter`, `TraceIdHttpTest`, `MetricsHttpTest`;
   [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md),
-  [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md).*
+  [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md). Publishing to a scraper: not yet —
+  `/actuator/metrics` and `/actuator/prometheus` are refused to every caller meanwhile
+  ([ADR-049](../ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md),
+  [#78](https://github.com/NaimElijah/HrSched/issues/78)).*
 - **Auditability** — every state change records who made it, in which organisation, and the
   identifier of what changed; every refusal, including a cross-tenant attempt, is recorded too. The
   record carries identifiers only and never a name, so the trail says who to ask rather than the
@@ -331,7 +334,7 @@ filled every place it can, it keeps at least that many filled and minimises the 
   log stream, and a log line cannot be rolled back. How long it is kept is Q23.
   *Enforced by `SchedulingService`, `EmployeeService`, `QualificationService` and their tests;
   `SchedulingAuditLogTest`, `WorkforceAuditLogTest`, `SchedulingExceptionHandlerTest`,
-  `WorkforceExceptionHandlerTest`;
+  `WorkforceExceptionHandlerTest`, `SignInNameTakenRefusalHttpTest`;
   [ADR-018](../ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md).*
 - **Compliance** — availability, absence, and qualification records are personal data across
   multiple client organisations. HrSched must satisfy both Israel's **Protection of Privacy Law,

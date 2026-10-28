@@ -29,22 +29,47 @@ public record ConstraintSetRequest(
     Integer maximumConsecutiveDays) {
 
   /**
+   * The most whole minutes, either way, whose nanoseconds a {@code long} still counts. Technical,
+   * not a working-time ceiling: generation computes in nanoseconds ({@code Ticks}), so a duration
+   * it cannot count in them could be stored but never used, failing every generation after it.
+   */
+  private static final long MOST_MINUTES_COUNTABLE_IN_NANOSECONDS =
+      Duration.ofNanos(Long.MAX_VALUE).toMinutes();
+
+  /**
+   * Whether each value is a sensible rule is the domain's to decide; only one too large to compute
+   * with is refused here.
+   *
    * @return the domain constraints these numbers describe, omitting every rule left unset
+   * @throws MalformedRequestException if a minute value's nanoseconds do not fit in a {@code long}
    */
   public List<WorkingTimeConstraint> toConstraints() {
     List<WorkingTimeConstraint> constraints = new ArrayList<>();
     if (minimumRestMinutes != null) {
-      constraints.add(new MinimumRestBetweenAssignments(Duration.ofMinutes(minimumRestMinutes)));
+      constraints.add(
+          new MinimumRestBetweenAssignments(countable("minimumRestMinutes", minimumRestMinutes)));
     }
     if (maximumDailyMinutes != null) {
-      constraints.add(new MaximumDailyWorkingTime(Duration.ofMinutes(maximumDailyMinutes)));
+      constraints.add(
+          new MaximumDailyWorkingTime(countable("maximumDailyMinutes", maximumDailyMinutes)));
     }
     if (maximumWeeklyMinutes != null) {
-      constraints.add(new MaximumWeeklyWorkingTime(Duration.ofMinutes(maximumWeeklyMinutes)));
+      constraints.add(
+          new MaximumWeeklyWorkingTime(countable("maximumWeeklyMinutes", maximumWeeklyMinutes)));
     }
     if (maximumConsecutiveDays != null) {
       constraints.add(new MaximumConsecutiveWorkingDays(maximumConsecutiveDays));
     }
     return List.copyOf(constraints);
+  }
+
+  /** The detail names the field and never repeats the value sent (ADR-024). */
+  private static Duration countable(String field, long minutes) {
+    if (minutes > MOST_MINUTES_COUNTABLE_IN_NANOSECONDS
+        || minutes < -MOST_MINUTES_COUNTABLE_IN_NANOSECONDS) {
+      throw new MalformedRequestException(
+          field + " is beyond what the system can compute with, in nanoseconds");
+    }
+    return Duration.ofMinutes(minutes);
   }
 }

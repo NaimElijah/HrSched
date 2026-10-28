@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.in.AssignToShiftCommand;
@@ -579,6 +580,77 @@ class SchedulingServiceTest {
     ShiftId day = aShift(ACME, Set.of());
 
     assertGenerationRefused(request -> List.of(new Assignment(day, ada)));
+  }
+
+  /**
+   * #250. The defect is thrown on to be logged where the solve ran, and beside this rule an
+   * employee's identity says that this person declared an absence over that shift: a fact about
+   * their health or household, tied to them, in a log. The defect may name the shift and the rule,
+   * and never whose schedule broke it.
+   */
+  @Test
+  void
+      GivenAGeneratorRosteringSomebodyThroughTheirDeclaredAbsence_WhenGenerating_ThenTheDefectNamesNobody() {
+    EmployeeId ada = EmployeeId.newId();
+    workforce.add(
+        ACME,
+        new RosterCandidate(ada, "Ada", Set.of(), List.of(MONDAY_DAY), StatedPreferences.none()));
+    ShiftId day = aShift(ACME, Set.of());
+
+    Throwable defect =
+        catchThrowable(
+            () ->
+                generatingWith(request -> List.of(new Assignment(day, ada)))
+                    .startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)));
+
+    assertThat(defect).isInstanceOf(IllegalStateException.class);
+    for (Throwable logged = defect; logged != null; logged = logged.getCause()) {
+      assertThat(String.valueOf(logged.getMessage()))
+          .describedAs("a message logged with the defect")
+          .doesNotContain(ada.value().toString());
+    }
+    assertThat(messagesOf(defect))
+        .describedAs("the defect states which rule was broken")
+        .contains(ConstraintViolation.DECLARED_UNAVAILABLE);
+  }
+
+  /**
+   * #273, finding 5. A second breach on the same assignment names the person beside the absence,
+   * and the shift then ties the absence to them: the breach of an absence is reported as a count,
+   * naming no shift and no employee, and nothing else in the defect names whoever breached it.
+   */
+  @Test
+  void
+      GivenAGeneratorRosteringSomebodyThroughTheirDeclaredAbsenceAndPastAQualificationTheyLack_WhenGenerating_ThenTheDefectNamesTheRuleAndNeitherThemNorTheShift() {
+    QualificationId forklift = QualificationId.newId();
+    workforce.define(ACME, forklift);
+    EmployeeId ada = EmployeeId.newId();
+    workforce.add(
+        ACME,
+        new RosterCandidate(ada, "Ada", Set.of(), List.of(MONDAY_DAY), StatedPreferences.none()));
+    ShiftId day = aShift(ACME, Set.of(forklift));
+
+    Throwable defect =
+        catchThrowable(
+            () ->
+                generatingWith(request -> List.of(new Assignment(day, ada)))
+                    .startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)));
+
+    assertThat(defect).isInstanceOf(IllegalStateException.class);
+    assertThat(messagesOf(defect))
+        .describedAs("every message logged with the defect")
+        .contains(ConstraintViolation.DECLARED_UNAVAILABLE)
+        .doesNotContain(ada.value().toString())
+        .doesNotContain(day.value().toString());
+  }
+
+  /** Every message in the cause chain, one a line, as they would be logged together. */
+  private static String messagesOf(Throwable defect) {
+    StringBuilder messages = new StringBuilder();
+    for (Throwable logged = defect; logged != null; logged = logged.getCause()) {
+      messages.append(logged.getMessage()).append('\n');
+    }
+    return messages.toString();
   }
 
   @Test

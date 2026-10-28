@@ -62,6 +62,8 @@ export function SignedIn({ session, children }: { session: Session; children: Re
     key: `${session.userId}|${String(session.passwordChangeRequired)}`,
     signIn: () => Promise.resolve(),
     signOut: () => Promise.resolve(),
+    signOutProgress: { pending: false, failures: 0, failure: null },
+    sessionEnded: false,
     changePassword: () => Promise.resolve(),
   };
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

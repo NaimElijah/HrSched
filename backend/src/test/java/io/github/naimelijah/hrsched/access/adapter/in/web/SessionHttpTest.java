@@ -208,7 +208,8 @@ class SessionHttpTest {
   }
 
   /**
-   * A lockout stops a sign-in, and nothing else.
+   * A lockout stops what takes a password - a sign-in, and a change of one's own password - and a
+   * session already held goes on working.
    *
    * <p>An account is locked because somebody is guessing at its password, and the person guessing
    * is not the person holding this session. Ending it would turn an attack on somebody into an
