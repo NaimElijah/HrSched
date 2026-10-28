@@ -1,6 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/problem';
 import { useSession } from './SessionProvider';
+
+/**
+ * Why the sign-in page replaced a screen. One sentence covers every way a session on screen ends —
+ * a sign-out here or in another tab, or the backend refusing to renew it — and it is true of each.
+ */
+const SIGNED_OUT = 'You have been signed out. Sign in to continue.';
 
 /**
  * One refusal for every way signing in can fail.
@@ -12,13 +18,32 @@ import { useSession } from './SessionProvider';
  */
 const REFUSED = 'Those credentials were not accepted.';
 
-/** The way into the application: there is nothing else to do until this succeeds. */
+/**
+ * The way into the application: there is nothing else to do until this succeeds.
+ *
+ * When it replaces a session that was on screen, it says why and takes focus on its heading:
+ * somebody who was using the shell a moment ago would otherwise see the app apparently fail, and a
+ * screen-reader user would hear nothing. On a first load it does neither.
+ */
 export function SignInPage() {
-  const { signIn } = useSession();
+  const { signIn, sessionEnded } = useSession();
   const [signInName, setSignInName] = useState('');
   const [password, setPassword] = useState('');
   const [failure, setFailure] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [reason, setReason] = useState<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    if (!sessionEnded) {
+      return;
+    }
+    heading.current?.focus();
+    // A live region announces a change to what it holds, not what it was inserted holding, so the
+    // reason arrives in a second render, once the empty region is already in the page.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- that second render is the point
+    setReason(SIGNED_OUT);
+  }, [sessionEnded]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -35,7 +60,12 @@ export function SignInPage() {
 
   return (
     <section className="sign-in">
-      <h2>Sign in</h2>
+      <h2 ref={heading} tabIndex={-1}>
+        Sign in
+      </h2>
+      <p className="done" role="status">
+        {reason}
+      </p>
       <form onSubmit={submit}>
         <label>
           Sign-in name

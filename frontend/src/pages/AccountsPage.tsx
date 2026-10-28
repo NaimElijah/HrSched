@@ -82,12 +82,18 @@ export function AccountsPage() {
         create their own account.
       </p>
 
+      {/* Every credential here is a colleague's, never the Admin's own. new-password keeps the
+          browser from autofilling the Admin's saved password into a colleague's account or offering
+          it as an update to the Admin's own entry; off asks it not to autofill the name. A browser
+          may still offer to save what is typed, under the colleague's name: these hints do not
+          promise more (#250). */}
       <form className="row" onSubmit={(event) => void create(event)}>
         <label>
           Sign-in name
           <input
             value={signInName}
             onChange={(event) => setSignInName(event.target.value)}
+            autoComplete="off"
             required
           />
         </label>
@@ -107,6 +113,7 @@ export function AccountsPage() {
             type="password"
             value={temporaryPassword}
             onChange={(event) => setTemporaryPassword(event.target.value)}
+            autoComplete="new-password"
             required
           />
         </label>
@@ -261,6 +268,7 @@ function AccountRow({
             type="password"
             value={replacement}
             onChange={(event) => setReplacement(event.target.value)}
+            autoComplete="new-password"
           />
         </label>
         <button type="button" onClick={() => void reset()}>

@@ -18,7 +18,6 @@ import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownDeclarationException;
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeException;
 import java.net.URI;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -107,9 +106,7 @@ public class EmployeeController {
     manageEmployees.setContractTerms(
         actor,
         new SetContractTermsCommand(
-            actingIn(actor),
-            new EmployeeId(id),
-            Duration.ofMinutes(request.weeklyContractedMinutes())));
+            actingIn(actor), new EmployeeId(id), request.weeklyContractedHours()));
     return ResponseEntity.noContent().build();
   }
 

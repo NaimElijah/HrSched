@@ -10,8 +10,8 @@ import java.util.Objects;
  * password counts as a failed attempt, and a thrown refusal would roll that count back (ADR-023).
  * Without it, this endpoint would be a way to guess at a password with no lockout at all.
  *
- * <p>The two refusals are deliberately different kinds of thing, and answer differently. A wrong
- * current password says nothing about the new one and is nobody's business but the caller's; a
+ * <p>The two refusals are deliberately different kinds of thing, and answer differently. A current
+ * password not accepted says nothing about the new one and is nobody's business but the caller's; a
  * rejected new password names the rule it broke, because somebody choosing a password has to be
  * told what would satisfy it.
  */
@@ -34,10 +34,18 @@ public sealed interface ChangePasswordOutcome {
   }
 
   /**
-   * The current password submitted was not the account's, so nothing changed. Counted as a failed
-   * sign-in, and capable of locking the account like any other.
+   * The current password was not accepted, so nothing changed. A wrong one is counted as a failed
+   * sign-in, and can lock the account like any other. On a locked account no password is accepted
+   * and nothing is counted. The caller is answered alike either way.
+   *
+   * @param reason which of the two it was, for recording rather than for answering
    */
-  record CurrentPasswordRejected() implements ChangePasswordOutcome {}
+  record CurrentPasswordRejected(CurrentPasswordRefusal reason) implements ChangePasswordOutcome {
+
+    public CurrentPasswordRejected {
+      Objects.requireNonNull(reason, "reason must not be null");
+    }
+  }
 
   /**
    * The new password does not satisfy the policy.

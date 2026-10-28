@@ -86,6 +86,26 @@ class BCryptPasswordHasherTest {
     assertThat(hasher.matches(atTheLimit, hasher.hash(atTheLimit))).isTrue();
   }
 
+  /**
+   * Verifying must keep the limit hashing keeps. Bcrypt reads only the first 72 bytes, so a check
+   * that let a longer candidate through would accept any tail after a stored password of exactly
+   * the limit: one password, and every extension of it, would all sign in. False rather than an
+   * exception, because the candidate is whatever somebody typed at sign-in. That the exact password
+   * still matches is {@code GivenAPasswordOfExactlyTheLimit_WhenHashing_ThenItIsAccepted}.
+   */
+  @Test
+  void
+      GivenAHashOfAPasswordOfExactlyTheLimit_WhenCheckingThatPasswordPlusOneByte_ThenItDoesNotMatch() {
+    String atTheLimit = "a".repeat(hasher.maximumBytes());
+    PasswordHash hash = hasher.hash(atTheLimit);
+    String oneBytePast = atTheLimit + "b";
+    assertThat(oneBytePast.getBytes(StandardCharsets.UTF_8)).hasSize(hasher.maximumBytes() + 1);
+
+    assertThat(hasher.matches(oneBytePast, hash))
+        .describedAs("a byte past the limit is a different password, not the same one")
+        .isFalse();
+  }
+
   @Test
   void GivenANullPassword_WhenHashing_ThenItIsRefused() {
     assertThatThrownBy(() -> hasher.hash(null)).isInstanceOf(NullPointerException.class);

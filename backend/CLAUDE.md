@@ -134,7 +134,9 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
   bare `UUID` subject so a name cannot be written, and each context's `*AuditLogTest` asserts that
   nothing it writes is personal data. Attach fields with slf4j `addKeyValue`, never by
   interpolating them: the message is a constant, and everything variable is a field the ECS
-  encoder publishes as JSON.
+  encoder publishes as JSON. A domain exception raised over personal data carries a constant
+  message too: its message becomes a 400's detail and, if it escapes, a log line, so it names
+  neither a span nor hours.
 - **The audit port is per context on purpose.** Each of the four contexts owns an `AuditTrail`,
   an `AuditedChange` with its own change enum, and a `*AuditLog` adapter; access's change carries
   an `Optional<OrganisationId>`, as an operator's act belongs to no organisation. Different types,

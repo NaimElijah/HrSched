@@ -10,7 +10,6 @@ import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
-import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidContractTermsException;
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidEmployeeNameException;
@@ -21,8 +20,6 @@ import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeExcept
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.InputStream;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -57,11 +54,6 @@ class WorkforceExceptionHandlerTest {
     return counter == null ? 0.0 : counter.count();
   }
 
-  private static TimeRange aPeriod() {
-    return new TimeRange(
-        Instant.parse("2026-09-07T08:00:00Z"), Instant.parse("2026-09-07T16:00:00Z"));
-  }
-
   /**
    * Spring 7 dropped the message-only constructors, so an unreadable body needs an input message.
    * Hand-written rather than mocked, like every other double here.
@@ -85,10 +77,9 @@ class WorkforceExceptionHandlerTest {
     return Stream.of(
         new InvalidEmployeeNameException(),
         new InvalidQualificationNameException(),
-        new InvalidContractTermsException(Duration.ZERO),
-        new InvalidTimeRangeException(
-            Instant.parse("2026-09-07T16:00:00Z"), Instant.parse("2026-09-07T08:00:00Z")),
-        new OverlappingUnavailabilityException(aPeriod(), aPeriod()),
+        new InvalidContractTermsException(),
+        new InvalidTimeRangeException(),
+        new OverlappingUnavailabilityException(),
         new MalformedRequestException("name is required"));
   }
 
