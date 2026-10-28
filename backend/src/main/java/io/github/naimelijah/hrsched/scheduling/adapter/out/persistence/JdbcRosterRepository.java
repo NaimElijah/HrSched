@@ -92,6 +92,27 @@ public class JdbcRosterRepository implements RosterRepository {
       FROM roster WHERE organisation_id = :organisation AND id = :id
       """;
 
+  /**
+   * The assignments of the rosters a list holds, chosen by the same scope that chose the rosters
+   * rather than by binding their identities: PostgreSQL's wire protocol counts a statement's
+   * parameters in 16 bits, and an organisation's append-only history passes 65,535 rosters by being
+   * used.
+   */
+  private static final String ASSIGNMENTS_OF_THE_ORGANISATION =
+      """
+      SELECT roster_id, shift_id, employee_id FROM roster_assignment
+      WHERE roster_id IN (SELECT id FROM roster WHERE organisation_id = :organisation)
+      ORDER BY roster_id, shift_id, employee_id
+      """;
+
+  /** The assignments of one roster, by identity and only within its organisation. */
+  private static final String ASSIGNMENTS_OF_ONE_ROSTER =
+      """
+      SELECT roster_id, shift_id, employee_id FROM roster_assignment
+      WHERE roster_id IN (SELECT id FROM roster WHERE organisation_id = :organisation AND id = :id)
+      ORDER BY roster_id, shift_id, employee_id
+      """;
+
   private final JdbcClient jdbc;
 
   public JdbcRosterRepository(JdbcClient jdbc) {
@@ -249,7 +270,14 @@ public class JdbcRosterRepository implements RosterRepository {
         .param("id", id.value())
         .query(JdbcRosterRepository::toBareRoster)
         .optional()
-        .map(bare -> withAssignments(List.of(bare)).getFirst());
+        .map(
+            bare ->
+                withAssignments(
+                        List.of(bare),
+                        jdbc.sql(ASSIGNMENTS_OF_ONE_ROSTER)
+                            .param("organisation", organisation.value())
+                            .param("id", id.value()))
+                    .getFirst());
   }
 
   @Override
@@ -263,7 +291,8 @@ public class JdbcRosterRepository implements RosterRepository {
                 """)
             .param("organisation", organisation.value())
             .query(JdbcRosterRepository::toBareRoster)
-            .list());
+            .list(),
+        jdbc.sql(ASSIGNMENTS_OF_THE_ORGANISATION).param("organisation", organisation.value()));
   }
 
   /** A roster's own row, before its assignments are attached. */
@@ -292,14 +321,18 @@ public class JdbcRosterRepository implements RosterRepository {
     return moment == null ? null : moment.toInstant();
   }
 
-  private List<Roster> withAssignments(List<BareRoster> bare) {
+  /**
+   * @param assignments a statement reading the assignments of at least every roster in {@code
+   *     bare}; one of any other roster is ignored
+   */
+  private List<Roster> withAssignments(
+      List<BareRoster> bare, JdbcClient.StatementSpec assignments) {
     if (bare.isEmpty()) {
       return List.of();
     }
-    Map<UUID, List<Assignment>> assignments =
-        assignmentsOf(bare.stream().map(roster -> roster.id().value()).toList());
+    Map<UUID, List<Assignment>> byRoster = assignmentsOf(assignments);
     return bare.stream()
-        .map(roster -> rebuild(roster, assignments.getOrDefault(roster.id().value(), List.of())))
+        .map(roster -> rebuild(roster, byRoster.getOrDefault(roster.id().value(), List.of())))
         .toList();
   }
 
@@ -319,15 +352,10 @@ public class JdbcRosterRepository implements RosterRepository {
     return bare.supersededAt() == null ? published : published.superseded(bare.supersededAt());
   }
 
-  private Map<UUID, List<Assignment>> assignmentsOf(List<UUID> ids) {
+  private static Map<UUID, List<Assignment>> assignmentsOf(JdbcClient.StatementSpec assignments) {
     record Owned(UUID roster, Assignment assignment) {}
     List<Owned> rows =
-        jdbc.sql(
-                """
-                SELECT roster_id, shift_id, employee_id FROM roster_assignment
-                WHERE roster_id IN (:ids) ORDER BY roster_id, shift_id, employee_id
-                """)
-            .param("ids", ids)
+        assignments
             .query(
                 (row, rowNumber) ->
                     new Owned(

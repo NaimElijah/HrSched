@@ -17,7 +17,7 @@ public record ContractTerms(Duration weeklyContractedHours) {
   public ContractTerms {
     Objects.requireNonNull(weeklyContractedHours, "weeklyContractedHours must not be null");
     if (weeklyContractedHours.isNegative() || weeklyContractedHours.isZero()) {
-      throw new InvalidContractTermsException(weeklyContractedHours);
+      throw new InvalidContractTermsException();
     }
   }
 }

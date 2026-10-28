@@ -89,13 +89,9 @@ public final class Employee {
    */
   public Employee unavailableFor(TimeRange period) {
     Objects.requireNonNull(period, "period must not be null");
-    unavailability.stream()
-        .filter(period::overlaps)
-        .findFirst()
-        .ifPresent(
-            existing -> {
-              throw new OverlappingUnavailabilityException(period, existing);
-            });
+    if (unavailability.stream().anyMatch(period::overlaps)) {
+      throw new OverlappingUnavailabilityException();
+    }
     List<TimeRange> declared = new ArrayList<>(unavailability);
     declared.add(period);
     return new Employee(

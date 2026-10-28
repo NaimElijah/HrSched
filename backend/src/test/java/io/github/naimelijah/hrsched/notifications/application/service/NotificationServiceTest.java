@@ -13,6 +13,7 @@ import io.github.naimelijah.hrsched.notifications.application.port.out.Notificat
 import io.github.naimelijah.hrsched.notifications.domain.model.NotAddressableException;
 import io.github.naimelijah.hrsched.notifications.domain.model.Notification;
 import io.github.naimelijah.hrsched.notifications.domain.model.NotificationId;
+import io.github.naimelijah.hrsched.notifications.domain.model.NotificationKind;
 import io.github.naimelijah.hrsched.notifications.domain.model.UnknownNotificationException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
@@ -238,14 +239,180 @@ class NotificationServiceTest {
     assertThat(audit.changes()).containsExactly(NotificationChange.NOTIFICATION_RAISED);
   }
 
-  /** Hand-written, like every other double here: the repository is our own port. */
+  /**
+   * #250. The double stands in for {@code JdbcNotificationRepository}, which refuses a save over an
+   * identity another organisation holds. A double that accepted it would let a use case writing
+   * across the tenant boundary pass every test here while the database refused it in production.
+   */
+  @Test
+  void
+      GivenAnIdentityHeldByAnotherOrganisation_WhenTheRepositoryDoubleSavesOverIt_ThenItIsRefused() {
+    Notification theirs =
+        new Notification(
+            NotificationId.newId(),
+            RIVAL,
+            ADA,
+            NotificationKind.SWAP_REQUESTED,
+            UUID.randomUUID(),
+            NOON);
+    notifications.save(theirs);
+
+    assertThatThrownBy(
+            () ->
+                notifications.save(
+                    new Notification(
+                        theirs.id(),
+                        ACME,
+                        GRACE,
+                        NotificationKind.SWAP_APPROVED,
+                        UUID.randomUUID(),
+                        NOON)))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(notifications.findFor(RIVAL, ADA)).containsExactly(theirs);
+    assertThat(notifications.findFor(ACME, GRACE)).isEmpty();
+  }
+
+  // --- #273, finding 10: the double refuses each thing the adapter refuses, one at a time -----
+
+  private static Notification adasRequest() {
+    return new Notification(
+        NotificationId.newId(),
+        ACME,
+        ADA,
+        NotificationKind.SWAP_REQUESTED,
+        UUID.randomUUID(),
+        NOON);
+  }
+
+  /** The organisation half of the guard alone: the recipient is the same person's identity. */
+  @Test
+  void
+      GivenAnIdentityHeldByAnotherOrganisationForTheSameRecipient_WhenTheDoubleSavesOverIt_ThenItIsRefused() {
+    Notification adas = adasRequest();
+    notifications.save(adas);
+    Notification movedToRival =
+        new Notification(adas.id(), RIVAL, ADA, adas.kind(), adas.subject(), adas.occurredAt());
+
+    assertThatThrownBy(() -> notifications.save(movedToRival))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(notifications.findFor(ACME, ADA)).containsExactly(adas);
+    assertThat(notifications.findFor(RIVAL, ADA)).isEmpty();
+  }
+
+  /** The recipient half of the guard alone, as {@code JdbcNotificationRepository} refuses it. */
+  @Test
+  void
+      GivenAnIdentityHeldForAColleagueInTheSameOrganisation_WhenTheDoubleSavesOverIt_ThenItIsRefused() {
+    Notification adas = adasRequest();
+    notifications.save(adas);
+    Notification movedToGrace =
+        new Notification(adas.id(), ACME, GRACE, adas.kind(), adas.subject(), adas.occurredAt());
+
+    assertThatThrownBy(() -> notifications.save(movedToGrace))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(notifications.findFor(ACME, ADA)).containsExactly(adas);
+    assertThat(notifications.findFor(ACME, GRACE)).isEmpty();
+  }
+
+  /** The adapter only ever sets {@code read}; an unread copy saved later is stale, not a change. */
+  @Test
+  void GivenAReadNotification_WhenTheDoubleSavesAnUnreadCopy_ThenItIsStillRead() {
+    Notification unread = adasRequest();
+    notifications.save(unread);
+    notifications.save(unread.markedRead());
+
+    notifications.save(unread);
+
+    assertThat(notifications.findFor(ACME, ADA))
+        .singleElement()
+        .extracting(Notification::isRead)
+        .isEqualTo(true);
+  }
+
+  /** What somebody was told is never rewritten, as finding 3 holds the adapter to. */
+  @Test
+  void GivenAnotherKind_WhenTheDoubleSavesOverANotification_ThenItIsRefusedAndUnchanged() {
+    Notification adas = adasRequest();
+    notifications.save(adas);
+
+    assertDoubleRefusesAndKeeps(
+        adas,
+        new Notification(
+            adas.id(),
+            ACME,
+            ADA,
+            NotificationKind.SWAP_APPROVED,
+            adas.subject(),
+            adas.occurredAt()));
+  }
+
+  @Test
+  void GivenAnotherSubject_WhenTheDoubleSavesOverANotification_ThenItIsRefusedAndUnchanged() {
+    Notification adas = adasRequest();
+    notifications.save(adas);
+
+    assertDoubleRefusesAndKeeps(
+        adas,
+        new Notification(adas.id(), ACME, ADA, adas.kind(), UUID.randomUUID(), adas.occurredAt()));
+  }
+
+  @Test
+  void GivenAnotherMoment_WhenTheDoubleSavesOverANotification_ThenItIsRefusedAndUnchanged() {
+    Notification adas = adasRequest();
+    notifications.save(adas);
+
+    assertDoubleRefusesAndKeeps(
+        adas,
+        new Notification(
+            adas.id(), ACME, ADA, adas.kind(), adas.subject(), NOON.plusSeconds(3600)));
+  }
+
+  /** Equality is by identity alone, so each column is compared. */
+  private void assertDoubleRefusesAndKeeps(Notification stored, Notification changed) {
+    assertThatThrownBy(() -> notifications.save(changed)).isInstanceOf(IllegalStateException.class);
+    assertThat(notifications.findFor(ACME, ADA))
+        .singleElement()
+        .extracting(
+            Notification::kind,
+            Notification::subject,
+            Notification::occurredAt,
+            Notification::isRead)
+        .containsExactly(stored.kind(), stored.subject(), stored.occurredAt(), stored.isRead());
+  }
+
+  /**
+   * Hand-written, like every other double here: the repository is our own port. It copies the real
+   * adapter's refusals, because a double accepting what the database refuses tests nothing.
+   */
   private static final class StubNotificationRepository implements NotificationRepository {
 
     private final Map<NotificationId, Notification> saved = new HashMap<>();
 
+    /**
+     * Keeps a held notification read when an unread copy is saved, as {@code
+     * JdbcNotificationRepository}'s upsert only ever sets {@code read}.
+     *
+     * @throws IllegalStateException if the identity already belongs to another organisation or
+     *     recipient, or records another kind, subject or moment, as that upsert refuses it
+     */
     @Override
     public void save(Notification notification) {
-      saved.put(notification.id(), notification);
+      Notification held = saved.get(notification.id());
+      if (held == null) {
+        saved.put(notification.id(), notification);
+        return;
+      }
+      if (!(held.organisation().equals(notification.organisation())
+          && held.recipient().equals(notification.recipient())
+          && held.kind() == notification.kind()
+          && held.subject().equals(notification.subject())
+          && held.occurredAt().equals(notification.occurredAt()))) {
+        throw new IllegalStateException(
+            ("Refused to store %s: that identity already belongs to another organisation or"
+                    + " recipient, or records another kind, subject or moment")
+                .formatted(notification.id().value()));
+      }
+      saved.put(notification.id(), held.isRead() ? notification.markedRead() : notification);
     }
 
     @Override

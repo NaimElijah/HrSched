@@ -336,6 +336,35 @@ class EmployeeServiceTest {
         .isInstanceOf(CrossTenantAccessException.class);
   }
 
+  /**
+   * As for reading (#228): the command names our organisation and one of our people, so the
+   * repository's scoping finds them, and only the check against the actor refuses.
+   */
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenDeclaringSomebodysUnavailability_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+
+    assertThatThrownBy(
+            () ->
+                service.declareUnavailability(
+                    admin(RIVAL), new DeclareUnavailabilityCommand(ACME, ada, MONDAY)))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(service.findUnavailability(admin(ACME), ACME, ada)).isEmpty();
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenStatingSomebodysPreference_ThenItIsRefused() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+
+    assertThatThrownBy(
+            () ->
+                service.statePreference(
+                    admin(RIVAL),
+                    new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS)))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(service.findPreferences(admin(ACME), ACME, ada)).isEmpty();
+  }
+
   @Test
   void GivenAnotherOrganisationsEmployee_WhenReadingTheirUnavailabilityThroughOurs_ThenUnknown() {
     EmployeeId mole = service.addEmployee(admin(RIVAL), new AddEmployeeCommand(RIVAL, "Mole"));
