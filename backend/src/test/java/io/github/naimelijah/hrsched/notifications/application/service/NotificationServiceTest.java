@@ -272,6 +272,48 @@ class NotificationServiceTest {
     assertThat(notifications.findFor(ACME, GRACE)).isEmpty();
   }
 
+  // --- #273, finding 10: the double refuses each thing the adapter refuses, one at a time -----
+
+  private static Notification adasRequest() {
+    return new Notification(
+        NotificationId.newId(),
+        ACME,
+        ADA,
+        NotificationKind.SWAP_REQUESTED,
+        UUID.randomUUID(),
+        NOON);
+  }
+
+  /** The organisation half of the guard alone: the recipient is the same person's identity. */
+  @Test
+  void
+      GivenAnIdentityHeldByAnotherOrganisationForTheSameRecipient_WhenTheDoubleSavesOverIt_ThenItIsRefused() {
+    Notification adas = adasRequest();
+    notifications.save(adas);
+    Notification movedToRival =
+        new Notification(adas.id(), RIVAL, ADA, adas.kind(), adas.subject(), adas.occurredAt());
+
+    assertThatThrownBy(() -> notifications.save(movedToRival))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(notifications.findFor(ACME, ADA)).containsExactly(adas);
+    assertThat(notifications.findFor(RIVAL, ADA)).isEmpty();
+  }
+
+  /** The recipient half of the guard alone, as {@code JdbcNotificationRepository} refuses it. */
+  @Test
+  void
+      GivenAnIdentityHeldForAColleagueInTheSameOrganisation_WhenTheDoubleSavesOverIt_ThenItIsRefused() {
+    Notification adas = adasRequest();
+    notifications.save(adas);
+    Notification movedToGrace =
+        new Notification(adas.id(), ACME, GRACE, adas.kind(), adas.subject(), adas.occurredAt());
+
+    assertThatThrownBy(() -> notifications.save(movedToGrace))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(notifications.findFor(ACME, ADA)).containsExactly(adas);
+    assertThat(notifications.findFor(ACME, GRACE)).isEmpty();
+  }
+
   /**
    * Hand-written, like every other double here: the repository is our own port. It copies the real
    * adapter's refusals, because a double accepting what the database refuses tests nothing.
