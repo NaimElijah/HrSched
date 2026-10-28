@@ -191,6 +191,7 @@ supplies a throwaway signing key and the local operator. A deployment sets the v
 | `spring.jackson.factory.constraints.read.max-document-length` | `${hrsched.web.max-json-document-bytes}` | Only hands the value above to Jackson; change the `hrsched` one |
 | `spring.servlet.multipart.enabled` | `false` | No route takes a file, so a multipart request is refused with a `415` and never parsed |
 | `spring.mvc.formcontent.filter.enabled` | `false` | No route takes form content, so no filter reads a form body ahead of the security chain |
+| `server.tomcat.max-http-form-post-size` | `${hrsched.web.max-json-document-bytes}` | A form posted to a route that takes JSON is parsed before it is refused as the wrong type; held to the JSON limit, a larger one is refused with a `413` |
 | `management.endpoints.web.exposure.include` | `health,info,metrics,prometheus` | An allow list: `health` and `info` need no token, `metrics` and `prometheus` are refused to everyone, and `env`, `loggers` and `heapdump` stay shut ([ADR-049](docs/ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md), [#78](https://github.com/NaimElijah/HrSched/issues/78)) |
 | `management.endpoints.web.discovery.enabled` | `false` | `GET /actuator` no longer lists the exposed endpoints, with links built from the request's `Host` header |
 | `management.endpoint.health.probes.enabled` | `true` | Liveness and readiness probes outside Kubernetes too |
