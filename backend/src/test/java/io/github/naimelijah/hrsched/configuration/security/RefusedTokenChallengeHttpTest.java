@@ -38,10 +38,22 @@ import org.springframework.test.web.servlet.MockMvc;
  * which of its checks a forged token got past. So every refused token gets the same challenge and
  * the same body, whatever refused it; the reason is the server's to know.
  *
- * <p>The three tokens each fail for exactly one reason. The expired one is signed with this
- * context's own key; the one with a bad signature carries another real token's signature; the one
- * missing a claim is signed with this context's own key but names no session. None names an account
- * or session that exists, and none has to: each is refused before anything is looked up.
+ * <p>The tokens each fail for exactly one reason. The expired one is signed with this context's own
+ * key; the one with a bad signature carries another real token's signature; the one missing a claim
+ * is signed with this context's own key but names no session. Those three are refused by the
+ * decoder, before anything is looked up. The fourth is signed with this context's own key, in date
+ * and complete, but names an account and session that do not exist, so the decoder accepts it and
+ * {@code ActorAuthenticationConverter} refuses it. It must read exactly like the other three, or
+ * the difference answers whether a token was genuine.
+ *
+ * <p>The challenge is this application's own string formatting (see {@link
+ * ProblemAuthenticationEntryPoint}), so its value is pinned here rather than only compared with
+ * itself: a formatting that dropped every parameter would make every challenge identical too. The
+ * {@code error_uri} is the one Spring Security's {@code BearerTokenErrors.invalidToken} sets on
+ * every refused token.
+ *
+ * <p>Tokens are minted from the context's own {@link Clock}, the one {@code AccessTokenDecoder}
+ * judges expiry by, so "expired" and "in date" mean what the decoder means.
  *
  * <p>Annotated identically to the other HTTP tests so they all share one Spring context.
  */
@@ -61,10 +73,80 @@ class RefusedTokenChallengeHttpTest {
   /** A route that needs a token and reveals nothing else, so the 401 can only be the token's. */
   private static final String SESSION = "/api/auth/session";
 
+  /** The whole challenge for any refused token, whatever refused it. */
+  private static final String TOKEN_NOT_ACCEPTED_CHALLENGE =
+      "Bearer error=\"invalid_token\", error_description=\"The access token was not accepted\", "
+          + "error_uri=\"https://tools.ietf.org/html/rfc6750#section-3.1\"";
+
+  /** RFC 6750's scheme alone: the challenge when no token was presented at all. */
+  private static final String BARE_CHALLENGE = "Bearer";
+
   @Autowired private MockMvc mockMvc;
   @Autowired private JwtEncoder encoder;
   @Autowired private AccessTokenKey key;
   @Autowired private AccessTokenProperties tokenProperties;
+  @Autowired private Clock clock;
+
+  @Test
+  void GivenAnExpiredToken_WhenItIsPresented_ThenTheChallengeSaysOnlyThatItWasNotAccepted()
+      throws Exception {
+    MockHttpServletResponse expired = present(anExpiredToken());
+
+    assertThat(expired.getStatus()).describedAs("arranged: refused").isEqualTo(401);
+    assertThat(expired.getHeader(HttpHeaders.WWW_AUTHENTICATE))
+        .isEqualTo(TOKEN_NOT_ACCEPTED_CHALLENGE);
+  }
+
+  /** No token is not a refused token: RFC 6750 section 3.1 says such a challenge has no error. */
+  @Test
+  void GivenNoToken_WhenARouteNeedsOne_ThenTheChallengeIsTheBareScheme() throws Exception {
+    MockHttpServletResponse response = mockMvc.perform(get(SESSION)).andReturn().getResponse();
+
+    assertThat(response.getStatus()).describedAs("arranged: refused").isEqualTo(401);
+    assertThat(response.getHeader(HttpHeaders.WWW_AUTHENTICATE)).isEqualTo(BARE_CHALLENGE);
+  }
+
+  /**
+   * The scheme with nothing after it. Spring's resolver calls it a malformed token, an {@code
+   * invalid_token}, so it reads like every other refused token.
+   */
+  @Test
+  void GivenAnEmptyBearerToken_WhenItIsPresented_ThenItIsChallengedLikeAnExpiredOne()
+      throws Exception {
+    MockHttpServletResponse empty =
+        mockMvc
+            .perform(get(SESSION).header(HttpHeaders.AUTHORIZATION, "Bearer "))
+            .andReturn()
+            .getResponse();
+
+    assertThat(empty.getStatus()).describedAs("arranged: refused").isEqualTo(401);
+    assertThat(empty.getHeader(HttpHeaders.WWW_AUTHENTICATE))
+        .isEqualTo(TOKEN_NOT_ACCEPTED_CHALLENGE);
+  }
+
+  @Test
+  void GivenAGenuineTokenNamingNoAccount_WhenItIsPresented_ThenItIsChallengedLikeAnExpiredOne()
+      throws Exception {
+    MockHttpServletResponse noAccount = present(aGenuineTokenNamingNoAccount());
+
+    assertThat(noAccount.getStatus()).describedAs("arranged: refused").isEqualTo(401);
+    assertThat(noAccount.getHeader(HttpHeaders.WWW_AUTHENTICATE))
+        .isEqualTo(TOKEN_NOT_ACCEPTED_CHALLENGE);
+  }
+
+  @Test
+  void GivenAGenuineTokenNamingNoAccount_WhenItIsPresented_ThenItsBodyIsAnExpiredOnes()
+      throws Exception {
+    MockHttpServletResponse expired = present(anExpiredToken());
+    MockHttpServletResponse noAccount = present(aGenuineTokenNamingNoAccount());
+
+    assertThat(List.of(expired.getStatus(), noAccount.getStatus()))
+        .describedAs("arranged: both tokens are refused")
+        .containsOnly(401);
+    assertThat(noAccount.getContentAsString())
+        .describedAs("the body for a token naming no account, beside the expired token's")
+        .isEqualTo(expired.getContentAsString());
+  }
 
   @Test
   void GivenTokensRefusedForDifferentReasons_WhenEachIsPresented_ThenEveryChallengeIsIdentical()
@@ -124,7 +206,7 @@ class RefusedTokenChallengeHttpTest {
 
   /** Validly signed by this context's key, and wrong only in its age. */
   private String anExpiredToken() {
-    Instant issued = Instant.now().minus(tokenProperties.lifetime()).minus(PAST_THE_CLOCK_SKEW);
+    Instant issued = clock.instant().minus(tokenProperties.lifetime()).minus(PAST_THE_CLOCK_SKEW);
     return new JwtAccessTokenIssuer(
             encoder, key, tokenProperties, Clock.fixed(issued, ZoneOffset.UTC))
         .issue(UserId.newId(), SignInSessionId.newId())
@@ -136,16 +218,25 @@ class RefusedTokenChallengeHttpTest {
    * genuine, so the only thing wrong is that the signature does not match what it signs.
    */
   private String aTokenWithAnotherTokensSignature() {
-    JwtAccessTokenIssuer issuer =
-        new JwtAccessTokenIssuer(encoder, key, tokenProperties, Clock.systemUTC());
+    JwtAccessTokenIssuer issuer = new JwtAccessTokenIssuer(encoder, key, tokenProperties, clock);
     String signed = issuer.issue(UserId.newId(), SignInSessionId.newId()).value();
     String other = issuer.issue(UserId.newId(), SignInSessionId.newId()).value();
     return signed.substring(0, signed.lastIndexOf('.')) + other.substring(other.lastIndexOf('.'));
   }
 
+  /**
+   * Signed by this context's key, in date and carrying every claim, but naming a random account and
+   * session, which no row holds.
+   */
+  private String aGenuineTokenNamingNoAccount() {
+    return new JwtAccessTokenIssuer(encoder, key, tokenProperties, clock)
+        .issue(UserId.newId(), SignInSessionId.newId())
+        .value();
+  }
+
   /** Signed by this context's key and in date, but carrying no session claim. */
   private String aTokenNamingNoSession() {
-    Instant now = Instant.now();
+    Instant now = clock.instant();
     JwsHeader header =
         JwsHeader.with(SignatureAlgorithm.RS256).type(ACCESS_TOKEN_TYPE).keyId(key.keyId()).build();
     JwtClaimsSet claims =
