@@ -37,52 +37,41 @@ import org.springframework.stereotype.Repository;
 public class JdbcShiftRepository implements ShiftRepository {
 
   /**
-   * The organisation's shifts overlapping {@code :spanStart} to {@code :spanEnd}: one predicate,
-   * shared by the read of the shifts and the read of their qualifications so the two cannot choose
-   * different shifts.
-   */
-  private static final String WITHIN_THE_SPAN =
-      """
-      organisation_id = :organisation
-        AND starts_at < :spanEnd
-        AND :spanStart < ends_at
-      """;
-
-  /** The shifts a span holds, earliest first. */
-  private static final String SHIFTS_WITHIN_THE_SPAN =
-      """
-      SELECT id, organisation_id, starts_at, ends_at, zone, required_headcount, unpopular
-      FROM shift WHERE
-      """
-          + WITHIN_THE_SPAN
-          + """
-          ORDER BY starts_at
-          """;
-
-  /**
-   * The qualifications of the shifts a span holds, chosen by the predicate that chose the shifts
-   * rather than by binding their identities: PostgreSQL's wire protocol counts a statement's
+   * Each shift with its required qualifications, one row per qualification and one with a null
+   * qualification for a shift requiring none. One statement, so the shifts and their qualifications
+   * come from one snapshot: under READ COMMITTED each statement takes its own, and a save
+   * committing between two reads could pair a shift with another version's requirements. The join
+   * reaches the child table only through the shifts the {@code WHERE} chose, so it is scoped to the
+   * organisation, and binds no parameter per shift: PostgreSQL's wire protocol counts a statement's
    * parameters in 16 bits, and shifts are never deleted, so an organisation passes 65,535 of them
    * by being used.
    */
-  private static final String QUALIFICATIONS_WITHIN_THE_SPAN =
+  private static final String SHIFTS_WITH_QUALIFICATIONS =
       """
-      SELECT shift_id, qualification_id FROM shift_required_qualification
-      WHERE shift_id IN (SELECT id FROM shift WHERE
-      """
-          + WITHIN_THE_SPAN
+      SELECT shift.id, shift.organisation_id, shift.starts_at, shift.ends_at, shift.zone,
+             shift.required_headcount, shift.unpopular, required.qualification_id
+      FROM shift
+      LEFT JOIN shift_required_qualification required ON required.shift_id = shift.id
+      WHERE shift.organisation_id = :organisation AND
+      """;
+
+  /**
+   * The organisation's shifts overlapping {@code :spanStart} to {@code :spanEnd}, earliest first.
+   */
+  private static final String SHIFTS_WITHIN_THE_SPAN =
+      SHIFTS_WITH_QUALIFICATIONS
           + """
-          )
-          ORDER BY shift_id, qualification_id
+            shift.starts_at < :spanEnd AND :spanStart < shift.ends_at
+          ORDER BY shift.starts_at, shift.id, required.qualification_id
           """;
 
-  /** The qualifications of one shift, by identity and only within its organisation. */
-  private static final String QUALIFICATIONS_OF_ONE_SHIFT =
-      """
-      SELECT shift_id, qualification_id FROM shift_required_qualification
-      WHERE shift_id IN (SELECT id FROM shift WHERE organisation_id = :organisation AND id = :id)
-      ORDER BY shift_id, qualification_id
-      """;
+  /** One shift, by identity and only within its organisation. */
+  private static final String ONE_SHIFT =
+      SHIFTS_WITH_QUALIFICATIONS
+          + """
+            shift.id = :id
+          ORDER BY required.qualification_id
+          """;
 
   private final JdbcClient jdbc;
 
@@ -133,74 +122,42 @@ public class JdbcShiftRepository implements ShiftRepository {
 
   @Override
   public Optional<Shift> findById(OrganisationId organisation, ShiftId id) {
-    return jdbc.sql(
-            """
-            SELECT id, organisation_id, starts_at, ends_at, zone, required_headcount, unpopular FROM shift
-            WHERE organisation_id = :organisation AND id = :id
-            """)
-        .param("organisation", organisation.value())
-        .param("id", id.value())
-        .query(JdbcShiftRepository::toBareShift)
-        .optional()
-        .map(
-            bare ->
-                withQualifications(
-                        List.of(bare),
-                        jdbc.sql(QUALIFICATIONS_OF_ONE_SHIFT)
-                            .param("organisation", organisation.value())
-                            .param("id", id.value()))
-                    .getFirst());
+    return shiftsOf(
+            jdbc.sql(ONE_SHIFT).param("organisation", organisation.value()).param("id", id.value()))
+        .stream()
+        .findFirst();
   }
 
   @Override
   public List<Shift> findWithin(OrganisationId organisation, TimeRange within) {
-    return withQualifications(
-        withinTheSpan(SHIFTS_WITHIN_THE_SPAN, organisation, within)
-            .query(JdbcShiftRepository::toBareShift)
-            .list(),
-        withinTheSpan(QUALIFICATIONS_WITHIN_THE_SPAN, organisation, within));
+    return shiftsOf(
+        jdbc.sql(SHIFTS_WITHIN_THE_SPAN)
+            .param("organisation", organisation.value())
+            .param("spanStart", within.start().atOffset(ZoneOffset.UTC))
+            .param("spanEnd", within.end().atOffset(ZoneOffset.UTC)));
   }
 
-  private JdbcClient.StatementSpec withinTheSpan(
-      String sql, OrganisationId organisation, TimeRange within) {
-    return jdbc.sql(sql)
-        .param("organisation", organisation.value())
-        .param("spanStart", within.start().atOffset(ZoneOffset.UTC))
-        .param("spanEnd", within.end().atOffset(ZoneOffset.UTC));
-  }
-
-  /** A shift with none of its required qualifications yet. */
-  private record BareShift(
+  /** One row of {@link #SHIFTS_WITH_QUALIFICATIONS}: a shift, and one qualification it requires. */
+  private record ShiftRow(
       ShiftId id,
       OrganisationId organisation,
       TimeRange period,
       ZoneId zone,
       int requiredHeadcount,
-      boolean unpopular) {}
+      boolean unpopular,
+      Optional<QualificationId> qualification) {}
 
-  private static BareShift toBareShift(ResultSet row, int rowNumber) throws SQLException {
-    return new BareShift(
-        new ShiftId(row.getObject("id", UUID.class)),
-        new OrganisationId(row.getObject("organisation_id", UUID.class)),
-        new TimeRange(
-            row.getObject("starts_at", OffsetDateTime.class).toInstant(),
-            row.getObject("ends_at", OffsetDateTime.class).toInstant()),
-        ZoneId.of(row.getString("zone")),
-        row.getInt("required_headcount"),
-        row.getBoolean("unpopular"));
-  }
-
-  /**
-   * @param qualifications a statement reading the required qualifications of at least every shift
-   *     in {@code bare}; one of any other shift is ignored
-   */
-  private List<Shift> withQualifications(
-      List<BareShift> bare, JdbcClient.StatementSpec qualifications) {
-    if (bare.isEmpty()) {
-      return List.of();
+  /** Folds the rows of each shift into it, keeping the order the statement read them in. */
+  private static List<Shift> shiftsOf(JdbcClient.StatementSpec statement) {
+    Map<ShiftId, ShiftRow> shifts = new LinkedHashMap<>();
+    Map<ShiftId, Set<QualificationId>> required = new LinkedHashMap<>();
+    for (ShiftRow row : statement.query(JdbcShiftRepository::toShiftRow).list()) {
+      shifts.putIfAbsent(row.id(), row);
+      Set<QualificationId> ofShift =
+          required.computeIfAbsent(row.id(), key -> new LinkedHashSet<>());
+      row.qualification().ifPresent(ofShift::add);
     }
-    Map<UUID, Set<QualificationId>> required = requiredQualificationsOf(qualifications);
-    return bare.stream()
+    return shifts.values().stream()
         .map(
             shift ->
                 new Shift(
@@ -209,28 +166,23 @@ public class JdbcShiftRepository implements ShiftRepository {
                     shift.period(),
                     shift.zone(),
                     shift.requiredHeadcount(),
-                    required.getOrDefault(shift.id().value(), Set.of()),
+                    required.get(shift.id()),
                     shift.unpopular()))
         .toList();
   }
 
-  private static Map<UUID, Set<QualificationId>> requiredQualificationsOf(
-      JdbcClient.StatementSpec qualifications) {
-    record Required(UUID shift, QualificationId qualification) {}
-    List<Required> rows =
-        qualifications
-            .query(
-                (row, rowNumber) ->
-                    new Required(
-                        row.getObject("shift_id", UUID.class),
-                        new QualificationId(row.getObject("qualification_id", UUID.class))))
-            .list();
-
-    Map<UUID, Set<QualificationId>> byShift = new LinkedHashMap<>();
-    for (Required row : rows) {
-      byShift.computeIfAbsent(row.shift(), key -> new LinkedHashSet<>()).add(row.qualification());
-    }
-    return byShift;
+  private static ShiftRow toShiftRow(ResultSet row, int rowNumber) throws SQLException {
+    return new ShiftRow(
+        new ShiftId(row.getObject("id", UUID.class)),
+        new OrganisationId(row.getObject("organisation_id", UUID.class)),
+        new TimeRange(
+            row.getObject("starts_at", OffsetDateTime.class).toInstant(),
+            row.getObject("ends_at", OffsetDateTime.class).toInstant()),
+        ZoneId.of(row.getString("zone")),
+        row.getInt("required_headcount"),
+        row.getBoolean("unpopular"),
+        Optional.ofNullable(row.getObject("qualification_id", UUID.class))
+            .map(QualificationId::new));
   }
 
   /**
