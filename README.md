@@ -7,7 +7,7 @@ with constraints into a roster that is legal to work, and refuses to publish one
 
 [![CI](https://img.shields.io/github/actions/workflow/status/NaimElijah/HrSched/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/NaimElijah/HrSched/actions/workflows/ci.yml) [![Java](https://img.shields.io/badge/Java-21_LTS-blue?style=flat-square)](backend/pom.xml) [![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1.2-blue?style=flat-square)](backend/pom.xml) [![React](https://img.shields.io/badge/React-19-blue?style=flat-square)](frontend/package.json) [![Licence](https://img.shields.io/badge/licence-proprietary-lightgrey?style=flat-square)](LICENSE)
 
-[Requirements](docs/requirements/requirements.md) · [Architecture](docs/architecture/architecture.md) · [Decisions](docs/ADRs/README.md) · [API](docs/api.md) · [Roadmap](https://github.com/NaimElijah/HrSched/milestones)
+[Requirements](docs/requirements/requirements.md) · [Architecture](docs/architecture/architecture.md) · [Decisions](docs/ADRs/README.md) · [API](docs/api.md) · [Threat model](docs/security/threat-model.md) · [Roadmap](https://github.com/NaimElijah/HrSched/milestones)
 
 </div>
 
@@ -360,7 +360,7 @@ HrSched/
 │   ├── src/main/resources/db/migration/   Flyway SQL, never edited once applied
 │   └── compose.yaml            local PostgreSQL for spring-boot:run
 ├── frontend/src/               React SPA: api/ · auth/ · components/ · pages/ · test-support/
-├── docs/                       requirements/ (what) · architecture/ (how) · ADRs/ (why) · api.md
+├── docs/                       requirements/ (what) · architecture/ (how) · ADRs/ (why) · security/ · api.md
 ├── scripts/run.mjs             root task runner for setup, dev and verify (ADR-014)
 └── .github/                    CI and Dependabot
 ```
