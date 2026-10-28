@@ -25,6 +25,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import tools.jackson.core.exc.StreamConstraintsException;
 
 /**
  * Translates access failures into HTTP problem responses.
@@ -230,9 +231,23 @@ public class AccessExceptionHandler {
   /**
    * Answers with a fixed sentence and never with {@code exception.getMessage()}. Jackson's message
    * quotes the input it failed on, and on the sign-in endpoint that input contains a password.
+   *
+   * <p>A body Jackson stopped reading because it broke one of its stream constraints - the document
+   * length {@code hrsched.web.max-json-document-bytes} sets, or a nesting or value-length limit -
+   * is a 413 rather than a 400 (RFC 9110 section 15.5.14). Its JSON may be perfectly well formed,
+   * and calling it malformed sends a client looking for a fault that is not there.
    */
   @ExceptionHandler(HttpMessageNotReadableException.class)
   public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException exception) {
+    if (exception.getMostSpecificCause() instanceof StreamConstraintsException) {
+      ProblemDetail problem =
+          ProblemDetail.forStatusAndDetail(
+              HttpStatus.CONTENT_TOO_LARGE,
+              "The request body exceeds a limit on its size, its nesting or the length of a value"
+                  + " in it.");
+      problem.setTitle("Request too large");
+      return problem;
+    }
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.BAD_REQUEST, "The request body is malformed or is missing required fields.");
