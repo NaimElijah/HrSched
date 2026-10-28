@@ -16,6 +16,7 @@ import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication
 import java.time.Duration;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Named;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -219,4 +220,23 @@ class UnrepresentableConstraintHttpTest {
   }
 
   // --- #273, finding 12: a refused minimum rest is not repeated ---------------------------------
+
+  /** The domain, not the boundary, refuses this one, and must not repeat it either (ADR-024). */
+  @Test
+  void GivenANegativeMinimumRest_WhenConfigured_ThenTheDetailRepeatsNeitherTheMinutesNorTheirSpan()
+      throws Exception {
+    String detail =
+        refusedRevision(anOrganisation(mockMvc), "minimumRestMinutes", NEGATIVE_REST_MINUTES);
+
+    assertThat(detail)
+        .doesNotContain(Long.toString(NEGATIVE_REST_MINUTES))
+        .doesNotContain(Duration.ofMinutes(NEGATIVE_REST_MINUTES).toString());
+  }
+
+  @Test
+  void GivenAZeroMinimumRest_WhenConfigured_ThenTheDetailRepeatsNotTheSpanSent() throws Exception {
+    String detail = refusedRevision(anOrganisation(mockMvc), "minimumRestMinutes", 0);
+
+    assertThat(detail).doesNotContain(Duration.ZERO.toString());
+  }
 }

@@ -19,7 +19,7 @@ public record MinimumRestBetweenAssignments(Duration minimumRest) implements Wor
   public MinimumRestBetweenAssignments {
     Objects.requireNonNull(minimumRest, "minimumRest must not be null");
     if (minimumRest.isNegative() || minimumRest.isZero()) {
-      throw new InvalidConstraintException("Minimum rest must be positive, but got " + minimumRest);
+      throw new InvalidConstraintException("Minimum rest must be positive");
     }
   }
 
