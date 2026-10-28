@@ -614,6 +614,36 @@ class SchedulingServiceTest {
         .contains(ConstraintViolation.DECLARED_UNAVAILABLE);
   }
 
+  /**
+   * #273, finding 5. A second breach on the same assignment names the person beside the absence,
+   * and the shift then ties the absence to them: the breach of an absence is reported as a count,
+   * naming no shift and no employee, and nothing else in the defect names whoever breached it.
+   */
+  @Test
+  void
+      GivenAGeneratorRosteringSomebodyThroughTheirDeclaredAbsenceAndPastAQualificationTheyLack_WhenGenerating_ThenTheDefectNamesTheRuleAndNeitherThemNorTheShift() {
+    QualificationId forklift = QualificationId.newId();
+    workforce.define(ACME, forklift);
+    EmployeeId ada = EmployeeId.newId();
+    workforce.add(
+        ACME,
+        new RosterCandidate(ada, "Ada", Set.of(), List.of(MONDAY_DAY), StatedPreferences.none()));
+    ShiftId day = aShift(ACME, Set.of(forklift));
+
+    Throwable defect =
+        catchThrowable(
+            () ->
+                generatingWith(request -> List.of(new Assignment(day, ada)))
+                    .startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)));
+
+    assertThat(defect).isInstanceOf(IllegalStateException.class);
+    assertThat(messagesOf(defect))
+        .describedAs("every message logged with the defect")
+        .contains(ConstraintViolation.DECLARED_UNAVAILABLE)
+        .doesNotContain(ada.value().toString())
+        .doesNotContain(day.value().toString());
+  }
+
   /** Every message in the cause chain, one a line, as they would be logged together. */
   private static String messagesOf(Throwable defect) {
     StringBuilder messages = new StringBuilder();

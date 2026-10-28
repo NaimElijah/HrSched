@@ -452,7 +452,8 @@ public class SchedulingService
    *
    * @param added what the generator answered
    * @return the request's draft with {@code added} on it
-   * @throws IllegalStateException naming, by identity only, every promise the answer breaks
+   * @throws IllegalStateException naming, by identity only, every promise the answer breaks, but
+   *     counting the breaches of a declared absence and naming nobody and no shift involved in one
    */
   private static Roster generated(GenerationRequest request, List<Assignment> added) {
     Map<ShiftId, Shift> offered = new LinkedHashMap<>();
@@ -485,6 +486,15 @@ public class SchedulingService
         .draft()
         .assignments()
         .forEach(assignment -> carried.merge(assignment.shift(), 1, Integer::sum));
+    // A declared absence tied to a person or a shift says that this person cannot work then, a
+    // fact about their health or household (#250), and this message is logged where the solve ran.
+    // So those breaches are only counted, last, and no other line names who or what they were.
+    Set<Assignment> throughAbsence =
+        AssignmentEligibility.throughDeclaredAbsence(draft, offered, request.candidates());
+    Set<EmployeeId> absent =
+        throughAbsence.stream().map(Assignment::employee).collect(Collectors.toSet());
+    Set<ShiftId> throughAnAbsence =
+        throughAbsence.stream().map(Assignment::shift).collect(Collectors.toSet());
     Map<ShiftId, Integer> staffed = new LinkedHashMap<>();
     draft.assignments().forEach(assignment -> staffed.merge(assignment.shift(), 1, Integer::sum));
     staffed.forEach(
@@ -492,13 +502,24 @@ public class SchedulingService
           int allowed =
               Math.max(offered.get(shift).requiredHeadcount(), carried.getOrDefault(shift, 0));
           if (count > allowed) {
-            broken.add("shift %s is staffed above %d".formatted(shift.value(), allowed));
+            broken.add(
+                throughAnAbsence.contains(shift)
+                    ? "a shift is staffed above %d".formatted(allowed)
+                    : "shift %s is staffed above %d".formatted(shift.value(), allowed));
           }
         });
     // Never a working-time violation's detail: it says how long somebody worked on a day, or when
-    // they rested, and this message is logged where the solve ran.
+    // they rested.
     judged(draft, request.constraints(), offered, request.heldElsewhere(), request.candidates())
-        .forEach(violation -> broken.add(brokenPromise(violation)));
+        .stream()
+        .filter(
+            violation -> !ConstraintViolation.DECLARED_UNAVAILABLE.equals(violation.constraint()))
+        .forEach(violation -> broken.add(brokenPromise(violation, absent)));
+    if (!throughAbsence.isEmpty()) {
+      broken.add(
+          "assignments breaking %s: %d"
+              .formatted(ConstraintViolation.DECLARED_UNAVAILABLE, throughAbsence.size()));
+    }
     if (!broken.isEmpty()) {
       throw new IllegalStateException("The generator broke its promises: " + broken);
     }
@@ -506,14 +527,15 @@ public class SchedulingService
   }
 
   /**
-   * A declared absence beside an identity says that this person cannot work then, a fact about
-   * their health or household (#250), so that breach names the shift and the rule and nobody; its
-   * detail is built to name only the shift. Every other breach names the employee by identity, and
-   * never its detail.
+   * A breach other than of a declared absence names the rule, and the employee by identity unless
+   * they are on a shift through their declared absence: named beside the count of those, the
+   * identity would tie the absence to them (#250). Never the violation's detail.
+   *
+   * @param absent everybody on a shift through their declared absence
    */
-  private static String brokenPromise(ConstraintViolation violation) {
-    if (ConstraintViolation.DECLARED_UNAVAILABLE.equals(violation.constraint())) {
-      return "somebody breaks %s: %s".formatted(violation.constraint(), violation.detail());
+  private static String brokenPromise(ConstraintViolation violation, Set<EmployeeId> absent) {
+    if (absent.contains(violation.employee())) {
+      return "somebody breaks %s".formatted(violation.constraint());
     }
     return "employee %s breaks %s".formatted(violation.employee().value(), violation.constraint());
   }

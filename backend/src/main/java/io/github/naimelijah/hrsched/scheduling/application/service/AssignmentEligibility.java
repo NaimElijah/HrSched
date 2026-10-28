@@ -15,7 +15,9 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -79,6 +81,32 @@ final class AssignmentEligibility {
       }
     }
     return List.copyOf(breaches);
+  }
+
+  /**
+   * The assignments whose breach {@link #breachesOn} reports as {@link
+   * ConstraintViolation#DECLARED_UNAVAILABLE}, as assignments: for a caller that must leave both
+   * the person and the shift of each unnamed, which a violation carries only in its detail.
+   *
+   * @param roster whose assignments to judge
+   * @param shifts every shift the roster assigns, by identity
+   * @param candidates this organisation's rosterable people
+   * @return every assignment running through time its person declared they cannot work (R18), in
+   *     the order of the roster's assignments; empty if there is none
+   */
+  static Set<Assignment> throughDeclaredAbsence(
+      Roster roster, Map<ShiftId, Shift> shifts, List<RosterCandidate> candidates) {
+    Map<EmployeeId, RosterCandidate> byId = new HashMap<>();
+    candidates.forEach(candidate -> byId.put(candidate.id(), candidate));
+    Set<Assignment> throughAbsence = new LinkedHashSet<>();
+    for (Assignment assignment : roster.assignments()) {
+      RosterCandidate candidate = byId.get(assignment.employee());
+      if (candidate != null
+          && candidate.isUnavailableDuring(shifts.get(assignment.shift()).period())) {
+        throughAbsence.add(assignment);
+      }
+    }
+    return Collections.unmodifiableSet(throughAbsence);
   }
 
   /**
