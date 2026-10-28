@@ -44,7 +44,7 @@ A context may reference another context's `application.port.in` package and **no
   touches an adapter, a context reaches past another's published ports, the kernel depends on a
   context, or a context's layers form a cycle. Never weaken or delete a rule to make code pass —
   the rule is the point. Deleting one that provably cannot fail is different, and needs the proof.
-- **When adding an architecture rule, watch it fail first.** All eleven rules here have been
+- **When adding an architecture rule, watch it fail first.** All thirteen rules here have been
   observed failing on a deliberately introduced violation, then reverted; a rule that has only
   ever been green proves nothing. The same applies to a test: a fix whose test was never seen
   failing has not been shown to fix anything.
@@ -150,7 +150,9 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
   alone, so same-named adapters in two contexts collide at startup rather than at compile time.
   Hence `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog`, `NotificationAuditLog`.
 - **Boot disables metrics export under test**, so `/actuator/prometheus` answers 404 in a
-  `@SpringBootTest` while working in production; `@AutoConfigureMetrics` opts back in.
+  `@SpringBootTest`; `@AutoConfigureMetrics` opts back in. In production nothing can read it or
+  `/actuator/metrics`: the chain answers every caller 401 without a token and 403 with any token
+  (ADR-049, #78); `MetricsHttpTest` asserts it.
 
 ## Domain modelling
 
@@ -165,10 +167,14 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
 ## Testing
 
 - **One container, one context.** `PostgresDatabase` holds a container started once and never
-  stopped; `PostgresBackedApplication` hands it to Spring with `destroyMethod = ""`, so closing a
-  context cannot stop it. A Spring test shares the suite's context only while its annotations are
-  exactly `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`;
-  `MetricsHttpTest` and the bare smoke test `HrSchedApplicationTests` each start another.
+  stopped; `PostgresBackedApplication` hands it to Spring with `destroyMethod = ""`, meant so that
+  closing a context cannot stop it. Under Boot 4.1.2 closing one does stop it (#252), so a test must
+  never close a context that holds the container. A Spring test shares the suite's context only
+  while its annotations are exactly
+  `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`;
+  `MetricsHttpTest`, `MultipartRequestHttpTest` (on a real port), the bare smoke test
+  `HrSchedApplicationTests` and `JsonDocumentLimitStartupTest` (which passes the datasource as
+  properties, so it holds no container) each start another.
 - **Isolation.** An HTTP test onboards a fresh organisation through `TestTenants`; an adapter
   test, which runs without Spring, calls `PostgresDatabase.empty()` first.
 - **Fakes are hand-written**, package-private beside the service tests that use them, and copy the

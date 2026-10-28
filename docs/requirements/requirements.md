@@ -321,7 +321,10 @@ filled every place it can, it keeps at least that many filled and minimises the 
   exported until there is somewhere to export to — Q19.
   *Enforced by `TraceIdResponseFilter`, `TraceIdHttpTest`, `MetricsHttpTest`;
   [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md),
-  [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md).*
+  [ADR-017](../ADRs/ADR-017-expose-metrics-to-be-scraped.md). Publishing to a scraper: not yet —
+  `/actuator/metrics` and `/actuator/prometheus` are refused to every caller meanwhile
+  ([ADR-049](../ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md),
+  [#78](https://github.com/NaimElijah/HrSched/issues/78)).*
 - **Auditability** — every state change records who made it, in which organisation, and the
   identifier of what changed; every refusal, including a cross-tenant attempt, is recorded too. The
   record carries identifiers only and never a name, so the trail says who to ask rather than the

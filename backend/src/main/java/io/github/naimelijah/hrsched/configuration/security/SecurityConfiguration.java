@@ -1,6 +1,9 @@
 package io.github.naimelijah.hrsched.configuration.security;
 
 import jakarta.servlet.DispatcherType;
+import jakarta.servlet.Filter;
+import java.util.List;
+import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -11,9 +14,12 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.OAuth2ProtectedResourceMetadataFilter;
 import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 
 /**
  * Puts Spring Security's filter chain in front of every request.
@@ -66,13 +72,31 @@ public class SecurityConfiguration {
   };
 
   /**
-   * Health, metrics and the rest of the operational surface.
+   * Health, info and the rest of the operational surface, apart from the metrics.
    *
    * <p>Open, as ADR-017 decided: whatever is actually reachable here is decided by {@code
    * management.endpoints.web.exposure.include}, and an endpoint that is not exposed answers 404
    * rather than 403 — which tells a caller nothing, the same reasoning the tenant 404 rests on.
    */
   private static final String ACTUATOR = "/actuator/**";
+
+  /**
+   * The metrics, which are exposed but refused to every caller, with or without a token.
+   *
+   * <p>They tell anybody who reads them whether a sign-in name exists: {@code
+   * hrsched.changes{change=ACCOUNT_LOCKED}} counts up only when a real, active account locks, so
+   * failing to sign in as a name until the lockout threshold and then reading the counter answers
+   * the question sign-in itself is careful never to answer. Nothing scrapes them yet (Q19, #165),
+   * so refusing them costs nothing today. Whether and how they reopen to a scraper is #78's
+   * decision. They stay in the exposure list meanwhile, so the endpoints exist and only this rule
+   * stands between them and a caller.
+   *
+   * <p>Named by endpoint id rather than by path, so the refusal covers every path actuator maps to
+   * them, everything beneath each one and a trailing slash, wherever the base path is moved to. A
+   * list of paths missed {@code /actuator/prometheus/}, which then fell to the open actuator rule
+   * and was refused only because no handler happened to serve it.
+   */
+  private static final String[] METRICS = {"metrics", "prometheus"};
 
   /**
    * Reading one's own session: the first of the two acts an account with a pending change may do.
@@ -127,6 +151,25 @@ public class SecurityConfiguration {
   private static final String[] EVERY_ROLE = {"OPERATOR", "ADMIN", "SCHEDULER", "EMPLOYEE"};
 
   /**
+   * The {@code Content-Security-Policy} on every response: nothing may load and nothing may frame.
+   *
+   * <p>This service answers only with JSON and problem details, so a browser that ever renders one
+   * of its responses as a page, by mistake or because somebody arranged it, should run nothing,
+   * fetch nothing and sit in nobody's frame. {@code frame-ancestors} is stated as well as {@code
+   * default-src} because it is not a fetch directive and does not fall back to it. The SPA's own
+   * policy is not this one; it belongs to whatever serves the SPA at the edge (#162).
+   */
+  private static final String NOTHING_LOADS_AND_NOTHING_FRAMES =
+      "default-src 'none'; frame-ancestors 'none'";
+
+  /**
+   * The {@code Referrer-Policy} on every response. Nothing this service returns links anywhere, so
+   * there is no navigation away from it that needs to say where it came from, and a URL here can
+   * carry an identifier of somebody's record.
+   */
+  private static final ReferrerPolicy NO_REFERRER = ReferrerPolicy.NO_REFERRER;
+
+  /**
    * @param http the builder Spring Security hands every {@code SecurityFilterChain} bean
    * @param decoder the application's only {@code JwtDecoder}, which verifies an access token
    * @param actors turns a verified token into the caller it names, as of now
@@ -143,72 +186,116 @@ public class SecurityConfiguration {
       AuthenticationEntryPoint unauthenticated,
       AccessDeniedHandler forbidden)
       throws Exception {
-    return http.sessionManagement(
-            session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-        .csrf(AbstractHttpConfigurer::disable)
-        .formLogin(AbstractHttpConfigurer::disable)
-        .httpBasic(AbstractHttpConfigurer::disable)
-        .logout(AbstractHttpConfigurer::disable)
-        .requestCache(AbstractHttpConfigurer::disable)
-        .oauth2ResourceServer(
-            resource ->
-                resource
-                    .jwt(jwt -> jwt.decoder(decoder).jwtAuthenticationConverter(actors))
-                    .authenticationEntryPoint(unauthenticated)
-                    .accessDeniedHandler(forbidden))
-        .exceptionHandling(
-            refusals ->
-                refusals.authenticationEntryPoint(unauthenticated).accessDeniedHandler(forbidden))
-        .authorizeHttpRequests(
-            requests ->
-                requests
-                    // The container's own dispatches rather than requests anybody made. Without
-                    // this, denyAll below turns every 500 into a 403 and hides the real failure.
-                    .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC)
-                    .permitAll()
-                    // Authentication itself. Signing in has no token by definition; refreshing and
-                    // signing out are carried by the refresh cookie, and are defended against
-                    // cross-site use by requiring a header no cross-site request can send.
-                    .requestMatchers(HttpMethod.POST, AUTHENTICATING)
-                    .permitAll()
-                    .requestMatchers(ACTUATOR)
-                    .permitAll()
-                    // Reachable with a temporary password still pending: they are the two things
-                    // somebody in that state has to be able to do.
-                    .requestMatchers(HttpMethod.GET, SESSION)
-                    .authenticated()
-                    .requestMatchers(HttpMethod.POST, PASSWORD)
-                    .authenticated()
-                    // Administering the register of tenants. A role rather than merely being
-                    // authenticated, so an account whose temporary password is still pending -
-                    // which holds no role at all - is refused here like everywhere else.
-                    .requestMatchers(HttpMethod.POST, ORGANISATIONS)
-                    .hasRole(OPERATOR)
-                    .requestMatchers(HttpMethod.GET, ORGANISATIONS)
-                    .hasRole(OPERATOR)
-                    // Any member may ask for an organisation by identity; which ones they get back
-                    // is the use case's decision, and a tenant naming another gets a 404.
-                    .requestMatchers(HttpMethod.GET, ONE_ORGANISATION)
-                    .hasAnyRole(EVERY_ROLE)
-                    // Account administration, in the organisation the token names and no other.
-                    // An Admin only: the operator never holds a tenant role, because it belongs to
-                    // no organisation, so this rule refuses it before the controller has to
-                    // (ADR-030).
-                    .requestMatchers(ACCOUNTS)
-                    .hasRole(ADMIN)
-                    // Everything inside an organisation. A role rather than merely being
-                    // authenticated, which refuses two callers at once: the operator, which never
-                    // holds a tenant role because it belongs to no organisation (ADR-030), and an
-                    // account whose temporary password is still pending, which holds no role until
-                    // it has chosen its own (ADR-029).
-                    .requestMatchers(TENANT_ROUTES)
-                    .hasAnyRole(EVERY_TENANT_ROLE)
-                    // Everything else is refused. A route nobody wrote a rule for is a route
-                    // nobody decided was safe, and the failure mode of the alternative is silent:
-                    // a new controller would be open to the world and no test would say so
-                    // (ADR-032).
-                    .anyRequest()
-                    .denyAll())
-        .build();
+    DefaultSecurityFilterChain chain =
+        http.sessionManagement(
+                session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .csrf(AbstractHttpConfigurer::disable)
+            .formLogin(AbstractHttpConfigurer::disable)
+            .httpBasic(AbstractHttpConfigurer::disable)
+            .logout(AbstractHttpConfigurer::disable)
+            .requestCache(AbstractHttpConfigurer::disable)
+            // Added to Spring Security's default headers, which stay: nosniff, X-Frame-Options and
+            // the cache-control that keeps a token-bearing answer out of shared caches.
+            .headers(
+                headers ->
+                    headers
+                        .contentSecurityPolicy(
+                            policy -> policy.policyDirectives(NOTHING_LOADS_AND_NOTHING_FRAMES))
+                        .referrerPolicy(referrer -> referrer.policy(NO_REFERRER)))
+            .oauth2ResourceServer(
+                resource ->
+                    resource
+                        .jwt(jwt -> jwt.decoder(decoder).jwtAuthenticationConverter(actors))
+                        .authenticationEntryPoint(unauthenticated)
+                        .accessDeniedHandler(forbidden))
+            .exceptionHandling(
+                refusals ->
+                    refusals
+                        .authenticationEntryPoint(unauthenticated)
+                        .accessDeniedHandler(forbidden))
+            .authorizeHttpRequests(
+                requests ->
+                    requests
+                        // The container's own dispatches rather than requests anybody made. Without
+                        // this, denyAll below turns every 500 into a 403 and hides the real
+                        // failure.
+                        .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC)
+                        .permitAll()
+                        // Authentication itself. Signing in has no token by definition; refreshing
+                        // and signing out are carried by the refresh cookie, and are defended
+                        // against cross-site use by requiring a header no cross-site request can
+                        // send.
+                        .requestMatchers(HttpMethod.POST, AUTHENTICATING)
+                        .permitAll()
+                        // Before the actuator rule, which would otherwise open them: the first rule
+                        // that matches decides. See METRICS for why they are refused.
+                        // Built here rather than held in a constant, because the matcher caches the
+                        // application context it first sees.
+                        .requestMatchers(EndpointRequest.to(METRICS))
+                        .denyAll()
+                        .requestMatchers(ACTUATOR)
+                        .permitAll()
+                        // Reachable with a temporary password still pending: they are the two
+                        // things somebody in that state has to be able to do.
+                        .requestMatchers(HttpMethod.GET, SESSION)
+                        .authenticated()
+                        .requestMatchers(HttpMethod.POST, PASSWORD)
+                        .authenticated()
+                        // Administering the register of tenants. A role rather than merely being
+                        // authenticated, so an account whose temporary password is still pending -
+                        // which holds no role at all - is refused here like everywhere else.
+                        .requestMatchers(HttpMethod.POST, ORGANISATIONS)
+                        .hasRole(OPERATOR)
+                        .requestMatchers(HttpMethod.GET, ORGANISATIONS)
+                        .hasRole(OPERATOR)
+                        // Any member may ask for an organisation by identity; which ones they get
+                        // back is the use case's decision, and a tenant naming another gets a 404.
+                        .requestMatchers(HttpMethod.GET, ONE_ORGANISATION)
+                        .hasAnyRole(EVERY_ROLE)
+                        // Account administration, in the organisation the token names and no other.
+                        // An Admin only: the operator never holds a tenant role, because it belongs
+                        // to no organisation, so this rule refuses it before the controller has to
+                        // (ADR-030).
+                        .requestMatchers(ACCOUNTS)
+                        .hasRole(ADMIN)
+                        // Everything inside an organisation. A role rather than merely being
+                        // authenticated, which refuses two callers at once: the operator, which
+                        // never holds a tenant role because it belongs to no organisation
+                        // (ADR-030), and an account whose temporary password is still pending,
+                        // which holds no role until it has chosen its own (ADR-029).
+                        .requestMatchers(TENANT_ROUTES)
+                        .hasAnyRole(EVERY_TENANT_ROLE)
+                        // Everything else is refused. A route nobody wrote a rule for is a route
+                        // nobody decided was safe, and the failure mode of the alternative is
+                        // silent: a new controller would be open to the world and no test would say
+                        // so (ADR-032).
+                        .anyRequest()
+                        .denyAll())
+            .build();
+    return withoutProtectedResourceMetadata(chain);
+  }
+
+  /**
+   * The chain as built, less the filter that serves RFC 9728's protected resource metadata.
+   *
+   * <p>Spring Security's resource-server configurer, in 7.1 (checked on 7.1.2), always adds that
+   * filter, with no switch to leave it out, and it answers {@code GET
+   * /.well-known/oauth-protected-resource/**} itself, ahead of every rule above. So it was a route
+   * nobody named, open to anybody, which is exactly what ending in {@code denyAll} exists to
+   * prevent (ADR-032). What it served was false besides: it claimed certificate-bound access
+   * tokens, which this service does not issue, and built the resource's identifier from whatever
+   * {@code Host} header the request carried. No client of this API reads it. Without the filter the
+   * path falls to {@code denyAll} like any other unnamed one (issue #250).
+   *
+   * <p>Removed from the finished chain because the filter is final and its matcher fixed, so no
+   * post-processor can make it inert, and the chain's own constructor is public API.
+   */
+  private static SecurityFilterChain withoutProtectedResourceMetadata(
+      DefaultSecurityFilterChain chain) {
+    List<Filter> filters =
+        chain.getFilters().stream()
+            .filter(filter -> !(filter instanceof OAuth2ProtectedResourceMetadataFilter))
+            .toList();
+    return new DefaultSecurityFilterChain(chain.getRequestMatcher(), filters);
   }
 }
