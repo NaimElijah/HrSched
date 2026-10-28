@@ -103,11 +103,15 @@ public class SchedulingController {
    * @param from start of the span to look inside, an ISO-8601 instant
    * @param to end of that span
    * @return every shift overlapping it
+   * @throws MalformedRequestException answered as a 400 problem detail when either bound lies
+   *     outside what the store holds, and so cannot be compared with what it holds
    */
   @GetMapping("/shifts")
   public List<ShiftResponse> findShifts(
       @AuthenticationPrincipal Actor actor, @RequestParam Instant from, @RequestParam Instant to) {
-    return manageShifts.findShifts(actor, actingIn(actor), new TimeRange(from, to)).stream()
+    return manageShifts
+        .findShifts(actor, actingIn(actor), StorableSpans.toBounds(from, to))
+        .stream()
         .map(ShiftResponse::from)
         .toList();
   }

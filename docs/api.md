@@ -194,6 +194,15 @@ rules`, as publishing it would. With invented identifiers and weights:
   instant outside what PostgreSQL stores, or a span that is no longer positive once stored at the
   microsecond, or setting contracted minutes too large for a duration, answers `400` titled
   `Invalid request`. Nothing is stored, and the detail repeats no value sent.
+- **A shift or generation the store or generation cannot take.** Defining a shift, or starting a
+  generation, with an instant outside what PostgreSQL stores, or a span that is no longer positive
+  once stored at the microsecond; a shift or generation span too long for generation to count in
+  nanoseconds, about 292 years; listing shifts (`GET /api/shifts`) with a `from` or `to` outside
+  what PostgreSQL stores; or setting a working-time value in `PUT /api/constraints` too many
+  minutes to count in nanoseconds. Each answers `400` titled `Invalid request`. Nothing is stored,
+  and the detail repeats no value sent; for a working-time value it names the field.
+- **A span that ends at or before it starts.** On any route that takes a span, the shared time
+  range answers `400` titled `Invalid request`, with a constant detail that names neither instant.
 - **A sign-in name that cannot be one, or is taken.** Creating an account, or onboarding an
   organisation with its first Admin, under a blank sign-in name or one over the permitted length
   answers `400` titled `Invalid request`; under a name any account already holds, on any
