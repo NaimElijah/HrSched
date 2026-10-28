@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
+import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -25,6 +26,9 @@ import org.springframework.test.web.servlet.MockMvc;
  * identifier from whatever {@code Host} header the request carried. No client of this API discovers
  * it through that document, so the route falls to {@code denyAll} like any other unnamed path, and
  * a 401 challenge stops pointing at it.
+ *
+ * <p>A request with no token is answered 401 by {@code denyAll} and {@code authenticated()} alike,
+ * so the operator's token, refused with a 403, is what tells the two apart.
  *
  * <p>Annotated identically to the other HTTP tests so they all share one Spring context.
  */
@@ -59,6 +63,35 @@ class ProtectedResourceMetadataHttpTest {
     assertThat(response.getStatus())
         .describedAs("body answered: %s", response.getContentAsString())
         .isEqualTo(401);
+  }
+
+  @Test
+  void GivenTheOperatorsToken_WhenAskingForProtectedResourceMetadata_ThenItIsForbidden()
+      throws Exception {
+    String token = TestTenants.operatorToken(mockMvc);
+
+    MockHttpServletResponse response =
+        mockMvc.perform(TestTenants.with(get(METADATA), token)).andReturn().getResponse();
+
+    assertThat(response.getStatus())
+        .describedAs("body answered: %s", response.getContentAsString())
+        .isEqualTo(403);
+  }
+
+  @Test
+  void GivenTheOperatorsToken_WhenAskingForTheMetadataOfAResourcePath_ThenItIsForbidden()
+      throws Exception {
+    String token = TestTenants.operatorToken(mockMvc);
+
+    MockHttpServletResponse response =
+        mockMvc
+            .perform(TestTenants.with(get(METADATA + "/api/rosters"), token))
+            .andReturn()
+            .getResponse();
+
+    assertThat(response.getStatus())
+        .describedAs("body answered: %s", response.getContentAsString())
+        .isEqualTo(403);
   }
 
   @Test

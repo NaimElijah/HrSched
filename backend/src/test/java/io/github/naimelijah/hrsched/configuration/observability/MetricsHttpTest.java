@@ -1,14 +1,19 @@
 package io.github.naimelijah.hrsched.configuration.observability;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,11 +32,15 @@ import org.springframework.test.web.servlet.MockMvc;
  * ability to change log levels or read configuration. Naming the endpoints that must stay shut
  * turns that from a review comment into a build failure.
  *
- * <p>The metrics themselves are refused to an anonymous caller too (issue #250). The {@code
- * hrsched.changes} counter is tagged by change kind, and {@code ACCOUNT_LOCKED} is a kind only a
- * real, active account can produce, so a scrape answered to anybody would tell them which sign-in
- * names exist. That instrumentation is recorded is therefore asserted by reading the application's
- * {@link MeterRegistry}, not by scraping it over HTTP.
+ * <p>The metrics themselves are refused to every caller, with or without a token (issue #250). The
+ * {@code hrsched.changes} counter is tagged by change kind, and {@code ACCOUNT_LOCKED} is a kind
+ * only a real, active account can produce, so a scrape answered to anybody would tell them which
+ * sign-in names exist. A request with no token is answered 401 by {@code denyAll}, {@code
+ * authenticated()} and {@code hasRole(...)} alike, so it is the signed-in callers, a tenant member
+ * and the operator, each refused with a 403, that tell {@code denyAll} from a narrower rule. That
+ * instrumentation is recorded is therefore asserted by reading the application's registries, not by
+ * scraping them over HTTP: the {@link MeterRegistry} for what is recorded, and the {@link
+ * PrometheusMeterRegistry}'s own scrape for what a scraper would be given once #78 lets one in.
  *
  * <p>{@code @AutoConfigureMetrics} is not decoration. Spring Boot switches metrics exporters off
  * under test — it sets {@code management.defaults.metrics.export.enabled} false — so without it
@@ -46,8 +55,15 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMetrics
 class MetricsHttpTest {
 
+  /** The metrics endpoint's id, which the actuator index names while the endpoint is exposed. */
+  private static final String METRICS_ENDPOINT = "metrics";
+
+  /** The Prometheus endpoint's id, as above. */
+  private static final String PROMETHEUS_ENDPOINT = "prometheus";
+
   @Autowired private MockMvc mockMvc;
   @Autowired private MeterRegistry meters;
+  @Autowired private PrometheusMeterRegistry prometheus;
 
   @Test
   void GivenTheProbesAreEnabled_WhenAsked_ThenLivenessAndReadinessBothAnswer() throws Exception {
@@ -162,6 +178,103 @@ class MetricsHttpTest {
         .isNotEmpty();
 
     mockMvc.perform(get("/actuator/metrics/hrsched.changes")).andExpect(status().isUnauthorized());
+  }
+
+  /**
+   * A tenant's Admin, the most a member of an organisation can be. Read across every tenant, the
+   * counters would tell them what happened in organisations not their own.
+   */
+  @Test
+  void GivenATenantAdminsToken_WhenScrapingPrometheus_ThenItIsForbidden() throws Exception {
+    String token = aTenantAdminsToken();
+
+    mockMvc
+        .perform(TestTenants.with(get("/actuator/prometheus"), token))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenATenantAdminsToken_WhenReadingTheChangesCounter_ThenItIsForbidden() throws Exception {
+    String token = aTenantAdminsToken();
+    assertThat(meters.find("hrsched.changes").counters())
+        .describedAs("arranged: onboarding the Admin's organisation records a change")
+        .isNotEmpty();
+
+    mockMvc
+        .perform(TestTenants.with(get("/actuator/metrics/hrsched.changes"), token))
+        .andExpect(status().isForbidden());
+  }
+
+  /** The operator administers tenants, not this service's instrumentation. */
+  @Test
+  void GivenTheOperatorsToken_WhenScrapingPrometheus_ThenItIsForbidden() throws Exception {
+    String token = TestTenants.operatorToken(mockMvc);
+
+    mockMvc
+        .perform(TestTenants.with(get("/actuator/prometheus"), token))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenTheOperatorsToken_WhenReadingTheChangesCounter_ThenItIsForbidden() throws Exception {
+    String token = TestTenants.operatorToken(mockMvc);
+    onboardAnOrganisation();
+    assertThat(meters.find("hrsched.changes").counters())
+        .describedAs("arranged: onboarding records a change")
+        .isNotEmpty();
+
+    mockMvc
+        .perform(TestTenants.with(get("/actuator/metrics/hrsched.changes"), token))
+        .andExpect(status().isForbidden());
+  }
+
+  /**
+   * What a scraper would be given once #78 lets one in. Read from the Prometheus registry itself,
+   * because the meters reaching some registry does not prove they reach this one: a plain in-memory
+   * registry satisfies every other check in this class. A request is served first, so the HTTP
+   * timer has a sample to publish.
+   */
+  @Test
+  void GivenARequestHasBeenServed_WhenThePrometheusRegistryIsScraped_ThenEveryMeterIsInIt()
+      throws Exception {
+    mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+
+    String scrape = prometheus.scrape();
+
+    assertSoftly(
+        softly ->
+            List.of(
+                    "jvm_memory_used_bytes",
+                    "jvm_threads_live_threads",
+                    "process_uptime_seconds",
+                    "hrsched_shifts_required",
+                    "hrsched_shifts_uncovered",
+                    "http_server_requests_seconds")
+                .forEach(
+                    meter ->
+                        softly
+                            .assertThat(scrape)
+                            .describedAs("the Prometheus scrape, for %s", meter)
+                            .contains(meter)));
+  }
+
+  private String onboardAnOrganisation() throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
+                    .content(
+                        TestTenants.onboarding("Organisation %s".formatted(UUID.randomUUID()))))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return JsonPath.read(body, "$.id");
+  }
+
+  private String aTenantAdminsToken() throws Exception {
+    OrganisationId organisation = new OrganisationId(UUID.fromString(onboardAnOrganisation()));
+    return TestTenants.tokenFor(mockMvc, organisation, Role.ADMIN);
   }
 
   @Test
