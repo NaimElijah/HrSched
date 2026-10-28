@@ -8,8 +8,9 @@ import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.sli
 
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.Dependency;
+import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClass;
-import com.tngtech.archunit.core.domain.JavaConstructorCall;
+import com.tngtech.archunit.core.domain.JavaConstructor;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -17,6 +18,7 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import java.util.Optional;
@@ -33,6 +35,9 @@ import java.util.Set;
     packages = "io.github.naimelijah.hrsched",
     importOptions = ImportOption.DoNotIncludeTests.class)
 class HexagonalArchitectureTest {
+
+  /** The name of {@code Account.actor()}, which ArchUnit matches by name rather than by literal. */
+  private static final String ACTOR_METHOD = "actor";
 
   @ArchTest
   static final ArchRule domain_depends_on_nothing_but_the_jdk =
@@ -264,10 +269,15 @@ class HexagonalArchitectureTest {
    * record's canonical constructor is as public as the record, so without this rule an adapter or a
    * service could build whoever it liked to act as and every use case would believe it.
    *
+   * <p>Matched as an access rather than a call, so a constructor reference such as {@code
+   * Operator::new} is caught as well as {@code new Operator(id)}: a reference is not a call, and a
+   * rule on calls alone missed it. Watched failing on both, each from a throwaway class in an
+   * adapter, then deleted.
+   *
    * <p>Tests are not analysed, so a test may still build any actor it needs. A record's own
-   * delegating constructor is not a second author, which is why a call from the actor class itself
-   * is exempt. The types are named by class literal rather than by string, so moving or renaming
-   * one fails compilation instead of leaving a rule that matches nothing.
+   * delegating constructor is not a second author, which is why an access from the actor class
+   * itself is exempt. The types are named by class literal rather than by string, so moving or
+   * renaming one fails compilation instead of leaving a rule that matches nothing.
    */
   @ArchTest
   static final ArchRule only_an_account_makes_an_actor =
@@ -275,16 +285,45 @@ class HexagonalArchitectureTest {
           .that()
           .resideOutsideOfPackage("..access.domain.model..")
           .should()
-          .callConstructorWhere(anActorBuiltOutsideItsOwnClass())
+          .accessTargetWhere(anActorBuiltOutsideItsOwnClass())
           .because("who is acting comes from the account a verified token names (ADR-031)");
 
-  private static DescribedPredicate<JavaConstructorCall> anActorBuiltOutsideItsOwnClass() {
+  private static DescribedPredicate<JavaAccess<?>> anActorBuiltOutsideItsOwnClass() {
     Set<String> actors = Set.of(TenantActor.class.getName(), Operator.class.getName());
     return DescribedPredicate.describe(
-        "a constructor of TenantActor or Operator, called from outside that class",
-        call ->
-            actors.contains(call.getTargetOwner().getName())
-                && !call.getOriginOwner().equals(call.getTargetOwner()));
+        "a constructor of TenantActor or Operator, called or referenced from outside that class",
+        access ->
+            JavaConstructor.CONSTRUCTOR_NAME.equals(access.getName())
+                && actors.contains(access.getTargetOwner().getName())
+                && !access.getOriginOwner().equals(access.getTargetOwner()));
+  }
+
+  /**
+   * Only the access use cases ask an account for its actor.
+   *
+   * <p>{@code Account}, and the memberships it is built from, have public constructors, so the rule
+   * above alone would still let any class that can reach {@code access.domain.model} build an
+   * account with whatever membership it liked and ask it for an actor. The use case that asks
+   * today, {@code SessionService.findActor}, does so only once the account a verified token names
+   * is found active with a live session. It lives in {@code access.application.service}, and only
+   * that package may ask. Matched as an access, so {@code Account::actor} is caught as well as a
+   * call. Watched failing on a throwaway adapter class calling it, then deleted.
+   */
+  @ArchTest
+  static final ArchRule only_the_access_use_cases_ask_an_account_for_its_actor =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("..access.application.service..")
+          .should()
+          .accessTargetWhere(anAccountAskedForItsActor())
+          .because("an account becomes an actor only once a use case has verified it (ADR-031)");
+
+  private static DescribedPredicate<JavaAccess<?>> anAccountAskedForItsActor() {
+    return DescribedPredicate.describe(
+        "Account.actor(), called or referenced",
+        access ->
+            access.getTargetOwner().isEquivalentTo(Account.class)
+                && ACTOR_METHOD.equals(access.getName()));
   }
 
   /**
