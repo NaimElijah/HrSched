@@ -293,7 +293,9 @@ filled every place it can, it keeps at least that many filled and minimises the 
   `SwapHttpTest`; for concurrent changes, `findForUpdate` in `JdbcRosterRepository`,
   `JdbcEmployeeRepository` and `JdbcAccountRepository`, raced on real threads in their adapter
   tests and in `RosteringHttpTest.GivenTwoSchedulersAssigningToOneDraftAtOnce_WhenBothCommit_ThenBothAssignmentsAreKept`,
-  and sign-in in `SessionServiceTest`;
+  and sign-in end to end in
+  `SessionHttpTest.GivenAPasswordResetInFlight_WhenSigningInWithTheOldPassword_ThenNoSessionBegins`,
+  with each of its decisions on a stale read in `SessionServiceTest`;
   [ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md),
   [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md),
   [ADR-023](../ADRs/ADR-023-the-transaction-boundary-is-the-use-case.md),
