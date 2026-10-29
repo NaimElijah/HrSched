@@ -147,6 +147,27 @@ class AccountHttpTest {
   }
 
   /**
+   * Stores, through the repository, a member linked to nobody who has already replaced the password
+   * they were given, so the token they sign in with holds their role from the first request. An
+   * account created over HTTP would hold no role until it had (ADR-029).
+   *
+   * @return its identifier
+   */
+  private String aMemberWhoChoseTheirOwnPassword(
+      OrganisationId organisation, Role role, String signInName) {
+    UserId id = UserId.newId();
+    accounts.save(
+        new Account(
+            id,
+            new SignInName(signInName),
+            passwords.hash(A_PASSWORD),
+            new TenantMembership(organisation, role, Optional.empty()),
+            false,
+            Instant.now()));
+    return id.value().toString();
+  }
+
+  /**
    * @return the identifier of an Employee account this Admin just created, linked to that employee
    */
   private String createLinked(String adminToken, String signInName, String employee)
@@ -504,6 +525,49 @@ class AccountHttpTest {
         .perform(signInAs(signInName, A_PASSWORD))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.session.role").value("ADMIN"));
+  }
+
+  /**
+   * The role is read from the account on every request, never from the token: a demotion takes away
+   * what the role allowed on the next request, without the demoted person signing in again. The
+   * token is used once before the demotion, so a role remembered from that first use would still
+   * let it in.
+   */
+  @Test
+  void GivenAnAdminHoldingAToken_WhenDemotedToScheduler_ThenThatTokenIsRefusedTheAccountList()
+      throws Exception {
+    OrganisationId acme = anOrganisation();
+    String signInName = anInventedSignInName();
+    String demoted = aMemberWhoChoseTheirOwnPassword(acme, Role.ADMIN, signInName);
+    String theirToken = tokenFromSignIn(signInName, A_PASSWORD);
+    mockMvc.perform(with(get("/api/accounts"), theirToken)).andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            with(put("/api/accounts/%s/membership".formatted(demoted)), admin(acme))
+                .content("{\"role\":\"SCHEDULER\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc.perform(with(get("/api/accounts"), theirToken)).andExpect(status().isForbidden());
+  }
+
+  /** The mirror of the demotion: what a new role allows, a token already held is allowed. */
+  @Test
+  void GivenASchedulerHoldingAToken_WhenPromotedToAdmin_ThenThatTokenIsGrantedTheAccountList()
+      throws Exception {
+    OrganisationId acme = anOrganisation();
+    String signInName = anInventedSignInName();
+    String promoted = aMemberWhoChoseTheirOwnPassword(acme, Role.SCHEDULER, signInName);
+    String theirToken = tokenFromSignIn(signInName, A_PASSWORD);
+    mockMvc.perform(with(get("/api/accounts"), theirToken)).andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(
+            with(put("/api/accounts/%s/membership".formatted(promoted)), admin(acme))
+                .content("{\"role\":\"ADMIN\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc.perform(with(get("/api/accounts"), theirToken)).andExpect(status().isOk());
   }
 
   /** There is no way back from an organisation with no Admin: nobody outside it may act inside. */
