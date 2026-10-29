@@ -65,9 +65,12 @@ describe('the objectives page', () => {
   });
 
   it('GivenNothingWeighted_WhenOpened_ThenNoWeightIsSuggested', async () => {
-    const stub = routeTo({ fairness: null, preferences: null, disruption: null });
+    routeTo({ fairness: null, preferences: null, disruption: null });
     show();
-    await waitFor(() => expect(stub).toHaveBeenCalled());
+    // Enabled only once the stored weights have loaded: before that every field is blank anyway.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Weigh objectives' })).toBeEnabled(),
+    );
 
     for (const label of [/Fairness weight/, /Preferences weight/, /Disruption weight/]) {
       expect(screen.getByLabelText(label)).toHaveValue(null);
