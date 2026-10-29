@@ -1914,7 +1914,9 @@ class SchedulingServiceTest {
 
     service.findAssessment(scheduler(ACME), ACME, draft.id());
 
-    assertThat(rosters.byId(draft.id())).isEqualTo(draft);
+    // A roster is equal to another by identity alone, so what is stored is compared field by field.
+    assertThat(rosters.byId(draft.id()).assignments()).isEqualTo(draft.assignments());
+    assertThat(rosters.byId(draft.id()).period()).isEqualTo(draft.period());
     assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
     assertThat(audit.changes()).isEmpty();
   }
