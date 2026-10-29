@@ -323,6 +323,26 @@ class SwapServiceTest {
         .isInstanceOf(RosterNotEditableException.class);
   }
 
+  /**
+   * R20: the roster currently published, not one a newer roster has replaced. Ada still holds the
+   * shift on the superseded one, so only the roster's state refuses the ask.
+   */
+  @Test
+  void GivenASupersededRoster_WhenAskingForASwapAgainstIt_ThenItIsRefusedAndNothingIsStored() {
+    ShiftId shift = aShift(Set.of());
+    Roster replaced = publishedWith(ada, shift);
+    publishedWith(ada, shift);
+
+    assertThatThrownBy(
+            () ->
+                service.requestSwap(
+                    themself(ACME, ada),
+                    new RequestSwapCommand(ACME, replaced.id(), shift, ada, grace)))
+        .isInstanceOf(RosterNotEditableException.class);
+
+    assertThat(swaps.findByOrganisation(ACME)).isEmpty();
+  }
+
   @Test
   void GivenThemselfAsTheColleague_WhenAskingForASwap_ThenItIsRefused() {
     ShiftId shift = aShift(Set.of());
