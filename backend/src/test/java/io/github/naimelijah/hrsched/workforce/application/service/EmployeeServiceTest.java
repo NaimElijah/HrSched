@@ -891,14 +891,61 @@ class EmployeeServiceTest {
     assertThat(employees.heldForUpdate()).isEmpty();
   }
 
-  /** In-memory stand-in for the driven port, scoped by organisation exactly as the real one is. */
+  // --- the doubles refuse what the adapters refuse -------------------------------------------
+  //
+  // JdbcEmployeeRepository and JdbcQualificationRepository refuse a save over an identity another
+  // organisation holds. A double that accepted it would let a use case writing across the tenant
+  // boundary pass every test here while the database refused it in production.
+
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenTheEmployeeDoubleSavesOverIt_ThenItIsRefused() {
+    Employee theirs = new Employee(EmployeeId.newId(), RIVAL, "Their Employee");
+    employees.save(theirs);
+
+    assertThatThrownBy(() -> employees.save(new Employee(theirs.id(), ACME, "Ada")))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(employees.findById(RIVAL, theirs.id()))
+        .map(Employee::name)
+        .contains("Their Employee");
+    assertThat(employees.findById(ACME, theirs.id())).isEmpty();
+  }
+
+  @Test
+  void
+      GivenAnIdentityHeldByAnotherOrganisation_WhenTheQualificationDoubleSavesOverIt_ThenItIsRefused() {
+    Qualification theirs = new Qualification(QualificationId.newId(), RIVAL, "Their Ticket");
+    qualifications.save(theirs);
+
+    assertThatThrownBy(() -> qualifications.save(new Qualification(theirs.id(), ACME, "Forklift")))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(qualifications.findById(RIVAL, theirs.id()))
+        .map(Qualification::name)
+        .contains("Their Ticket");
+    assertThat(qualifications.findById(ACME, theirs.id())).isEmpty();
+  }
+
+  /**
+   * In-memory stand-in for the driven port, scoped by organisation exactly as the real one is. It
+   * copies the real adapter's refusals too, because a double accepting what the database refuses
+   * tests nothing.
+   */
   private static final class StubEmployeeRepository implements EmployeeRepository {
 
     private final Map<EmployeeId, Employee> saved = new HashMap<>();
     private final List<EmployeeId> heldForUpdate = new ArrayList<>();
 
+    /**
+     * @throws IllegalStateException if the identity already belongs to another organisation, as
+     *     {@code JdbcEmployeeRepository}'s upsert refuses it
+     */
     @Override
     public void save(Employee employee) {
+      Employee held = saved.get(employee.id());
+      if (held != null && !held.organisation().equals(employee.organisation())) {
+        throw new IllegalStateException(
+            "Refused to store %s: that identity already belongs to another organisation"
+                .formatted(employee.id().value()));
+      }
       saved.put(employee.id(), employee);
     }
 
@@ -940,8 +987,18 @@ class EmployeeServiceTest {
 
     private final Map<QualificationId, Qualification> saved = new HashMap<>();
 
+    /**
+     * @throws IllegalStateException if the identity already belongs to another organisation, as
+     *     {@code JdbcQualificationRepository}'s upsert refuses it
+     */
     @Override
     public void save(Qualification qualification) {
+      Qualification held = saved.get(qualification.id());
+      if (held != null && !held.organisation().equals(qualification.organisation())) {
+        throw new IllegalStateException(
+            "Refused to store %s: that identity already belongs to another organisation"
+                .formatted(qualification.id().value()));
+      }
       saved.put(qualification.id(), qualification);
     }
 

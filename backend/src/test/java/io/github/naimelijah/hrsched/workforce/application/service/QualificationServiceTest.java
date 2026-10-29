@@ -192,13 +192,44 @@ class QualificationServiceTest {
     assertThat(service.findQualification(admin(ACME), ACME, theirs)).isEmpty();
   }
 
-  /** Hand-written, like every other double here: the repository is our own port. */
+  /**
+   * The double copies {@code JdbcQualificationRepository}'s refusal of a save over an identity
+   * another organisation holds. A double that accepted it would let a use case writing across the
+   * tenant boundary pass every test here while the database refused it in production.
+   */
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenTheDoubleSavesOverIt_ThenItIsRefused() {
+    Qualification theirs = new Qualification(QualificationId.newId(), RIVAL, "Their Ticket");
+    qualifications.save(theirs);
+
+    assertThatThrownBy(() -> qualifications.save(new Qualification(theirs.id(), ACME, "Forklift")))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(qualifications.findById(RIVAL, theirs.id()))
+        .map(Qualification::name)
+        .contains("Their Ticket");
+    assertThat(qualifications.findById(ACME, theirs.id())).isEmpty();
+  }
+
+  /**
+   * Hand-written, like every other double here: the repository is our own port. It copies the real
+   * adapter's refusals, because a double accepting what the database refuses tests nothing.
+   */
   private static final class StubQualificationRepository implements QualificationRepository {
 
     private final Map<QualificationId, Qualification> saved = new HashMap<>();
 
+    /**
+     * @throws IllegalStateException if the identity already belongs to another organisation, as
+     *     {@code JdbcQualificationRepository}'s upsert refuses it
+     */
     @Override
     public void save(Qualification qualification) {
+      Qualification held = saved.get(qualification.id());
+      if (held != null && !held.organisation().equals(qualification.organisation())) {
+        throw new IllegalStateException(
+            "Refused to store %s: that identity already belongs to another organisation"
+                .formatted(qualification.id().value()));
+      }
       saved.put(qualification.id(), qualification);
     }
 
