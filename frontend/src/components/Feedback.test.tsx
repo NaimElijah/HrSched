@@ -11,6 +11,8 @@ import { Busy, Failure } from './Feedback';
  * than 403 so a response never confirms that a resource exists in somebody else's organisation,
  * which means "not found" here genuinely cannot distinguish "no such thing" from "not yours". The
  * copy has to say so, or a scheduler reads it as a bug.
+ *
+ * The durations in each violation's detail are invented, and match no statute.
  */
 
 function ruleBreach(violations: { employee: string; constraint: string; detail: string }[]) {
@@ -30,8 +32,9 @@ describe('a rule breach', () => {
     render(
       <Failure
         error={ruleBreach([
-          { employee: 'ada', constraint: 'maximum daily working time', detail: 'worked PT12H' },
-          { employee: 'grace', constraint: 'minimum rest between assignments', detail: 'PT4H' },
+          // Both durations invented.
+          { employee: 'ada', constraint: 'maximum daily working time', detail: 'worked PT12H7M' },
+          { employee: 'grace', constraint: 'minimum rest between assignments', detail: 'PT4H7M' },
         ])}
       />,
     );
@@ -204,7 +207,8 @@ describe('the trace reference', () => {
           new ApiError(
             422,
             'Refused',
-            [{ employee: 'ada', constraint: 'maximum daily working time', detail: 'PT12H' }],
+            // Invented duration.
+            [{ employee: 'ada', constraint: 'maximum daily working time', detail: 'PT12H7M' }],
             TRACE,
           )
         }

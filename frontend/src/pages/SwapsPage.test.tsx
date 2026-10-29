@@ -236,7 +236,8 @@ describe('deciding', () => {
             {
               employee: 'emp-2',
               constraint: 'maximum daily working time',
-              detail: 'PT16H worked on 2026-10-06 exceeds the maximum of PT10H',
+              // Invented, like every limit in a test: PT10H1M matches no statute.
+              detail: 'PT16H worked on 2026-10-06 exceeds the maximum of PT10H1M',
             },
           ],
         },

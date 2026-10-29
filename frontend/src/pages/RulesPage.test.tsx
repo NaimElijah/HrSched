@@ -10,13 +10,23 @@ import { WITHOUT_PAUSES } from '../test-support/typing';
  * Revising the rules replaces the whole set — the backend does not merge — so the form must be
  * seeded from what is already configured. A blank form that posts on submit silently deletes every
  * rule the admin did not retype, and rosters that should be refused start publishing.
+ *
+ * Every limit here is invented, and odd on purpose so that it matches no statute: a rule's number
+ * is configuration, never something this code base writes down.
  */
+
+/** Invented minutes, the configured minimum rest. */
+const REST = 661;
+/** Invented minutes, the configured daily maximum. */
+const DAILY = 601;
+/** Invented minutes, the daily maximum typed in its place. */
+const REVISED_DAILY = 481;
 
 const CONFIGURED = {
   version: 4,
   constraints: ['minimum rest between assignments', 'maximum daily working time'],
-  minimumRestMinutes: 660,
-  maximumDailyMinutes: 600,
+  minimumRestMinutes: REST,
+  maximumDailyMinutes: DAILY,
   maximumWeeklyMinutes: null,
   maximumConsecutiveDays: null,
 };
@@ -52,8 +62,8 @@ describe('the rules page', () => {
     );
 
     const rest = await screen.findByLabelText(/Minimum rest/);
-    await waitFor(() => expect(rest).toHaveValue(660));
-    expect(screen.getByLabelText(/Maximum daily/)).toHaveValue(600);
+    await waitFor(() => expect(rest).toHaveValue(REST));
+    expect(screen.getByLabelText(/Maximum daily/)).toHaveValue(DAILY);
     // Not configured stays blank; a suggested number here would be a threshold we invented.
     expect(screen.getByLabelText(/Maximum consecutive/)).toHaveValue(null);
   });
@@ -66,15 +76,15 @@ describe('the rules page', () => {
       </SignedIn>,
     );
     const daily = await screen.findByLabelText(/Maximum daily/);
-    await waitFor(() => expect(daily).toHaveValue(600));
+    await waitFor(() => expect(daily).toHaveValue(DAILY));
 
     await userEvent.clear(daily);
-    await userEvent.type(daily, '480', WITHOUT_PAUSES);
+    await userEvent.type(daily, String(REVISED_DAILY), WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
 
-    await waitFor(() => expect(sentBody(stub).maximumDailyMinutes).toBe(480));
+    await waitFor(() => expect(sentBody(stub).maximumDailyMinutes).toBe(REVISED_DAILY));
     // The rule nobody touched must survive: revising replaces the set wholesale.
-    expect(sentBody(stub).minimumRestMinutes).toBe(660);
+    expect(sentBody(stub).minimumRestMinutes).toBe(REST);
   });
 
   it('GivenAClearedField_WhenRevising_ThenThatRuleIsSwitchedOff', async () => {
@@ -85,12 +95,12 @@ describe('the rules page', () => {
       </SignedIn>,
     );
     const rest = await screen.findByLabelText(/Minimum rest/);
-    await waitFor(() => expect(rest).toHaveValue(660));
+    await waitFor(() => expect(rest).toHaveValue(REST));
 
     await userEvent.clear(rest);
     await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
 
     await waitFor(() => expect(sentBody(stub)).not.toHaveProperty('minimumRestMinutes'));
-    expect(sentBody(stub).maximumDailyMinutes).toBe(600);
+    expect(sentBody(stub).maximumDailyMinutes).toBe(DAILY);
   });
 });

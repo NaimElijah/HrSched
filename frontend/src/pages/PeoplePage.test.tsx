@@ -13,7 +13,14 @@ import { WITHOUT_PAUSES } from '../test-support/typing';
  * Listing people returns their unavailability, which is personal data, so the backend gates it
  * behind Admin or Scheduler. An EMPLOYEE sees a 403, and the page has to say so rather than show an
  * empty table — an empty table reads as "nobody works here", which is a different and wrong claim.
+ *
+ * Every contracted number here is invented, and odd on purpose so that it matches no statute.
  */
+
+/** Invented minutes a week, Ada's stored contract. */
+const ADAS_CONTRACT = 2101;
+/** Invented minutes a week, the contract typed in its place. */
+const TYPED_CONTRACT = 2401;
 
 const ABSENCE = { start: '2026-10-07T08:00:00Z', end: '2026-10-07T12:00:00Z' };
 
@@ -24,7 +31,7 @@ const PEOPLE = [
     name: 'Ada',
     qualifications: ['q-1'],
     unavailability: [ABSENCE],
-    weeklyContractedMinutes: 2100,
+    weeklyContractedMinutes: ADAS_CONTRACT,
   },
   {
     id: 'e-2',
@@ -150,7 +157,7 @@ describe('what is already known about each person', () => {
 
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
     expect(within(rowOf('Grace')).getByText('None set')).toBeInTheDocument();
-    expect(within(rowOf('Ada')).getByText('2100 minutes a week')).toBeInTheDocument();
+    expect(within(rowOf('Ada')).getByText(`${ADAS_CONTRACT} minutes a week`)).toBeInTheDocument();
     expect(screen.getByLabelText('Contracted minutes per week for Ada')).toHaveValue(null);
   });
 });
@@ -245,7 +252,7 @@ describe('setting contracted hours', () => {
 
     await userEvent.type(
       screen.getByLabelText('Contracted minutes per week for Ada'),
-      '2400',
+      String(TYPED_CONTRACT),
       WITHOUT_PAUSES,
     );
     await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
@@ -254,7 +261,7 @@ describe('setting contracted hours', () => {
       expect(callsTo(stub, 'PUT', '/api/employees/e-1/contract')).toHaveLength(1),
     );
     const init = callsTo(stub, 'PUT', '/api/employees/e-1/contract')[0]?.[1];
-    expect(JSON.parse(String(init?.body))).toEqual({ weeklyContractedMinutes: 2400 });
+    expect(JSON.parse(String(init?.body))).toEqual({ weeklyContractedMinutes: TYPED_CONTRACT });
   });
 
   it('GivenTheBackendRefusesTheTerms_WhenSet_ThenTheRefusalIsShown', async () => {

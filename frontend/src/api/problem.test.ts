@@ -7,6 +7,8 @@ import { ApiError, toApiError } from './problem';
  * This module validates rather than casts, which only means something if the invalid shapes are
  * actually exercised. Until now it was reached only through `client.test.ts`, and the paths that
  * matter most — a body that is not an object, a detail that is not a string — were never taken.
+ *
+ * The durations in each violation's detail are invented, and match no statute.
  */
 
 describe('a body that is not the shape we expect', () => {
@@ -63,7 +65,8 @@ describe('choosing the message', () => {
 });
 
 describe('violations', () => {
-  const valid = { employee: 'ada', constraint: 'maximum daily working time', detail: 'PT12H' };
+  // Invented duration.
+  const valid = { employee: 'ada', constraint: 'maximum daily working time', detail: 'PT12H7M' };
 
   it('GivenWellFormedViolations_WhenTranslating_ThenTheyAreKept', () => {
     expect(toApiError(422, { violations: [valid] }).violations).toEqual([valid]);
@@ -89,7 +92,8 @@ describe('violations', () => {
 });
 
 describe('what a status means', () => {
-  const broken = { employee: 'ada', constraint: 'maximum daily working time', detail: 'PT12H' };
+  // Invented duration.
+  const broken = { employee: 'ada', constraint: 'maximum daily working time', detail: 'PT12H7M' };
 
   it('GivenARuleBreach_WhenAsked_ThenOnlyThatPredicateIsTrue', () => {
     const error = toApiError(422, { violations: [broken] });
