@@ -88,7 +88,9 @@
 		  Storage. JdbcClient and a DataSource, with no ORM: the domain may not carry
 		  jakarta.persistence annotations (the architecture test fails on them), so an ORM would need
 		  a parallel annotated model anyway and would contribute only behaviour the adapter must not
-		  leak. Apache-2.0, version-managed by the Boot BOM. See ADR-004.
+		  leak. The JDK's own JDBC has no connection pool and no transaction manager for the use
+		  cases to share. Maintained by the Spring team, Apache-2.0, version-managed by the Boot BOM.
+		  See ADR-004.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -96,7 +98,8 @@
 		</dependency>
 		<!--
 		  Versioned schema migrations as plain SQL, applied on startup. Chosen over Liquibase because
-		  the migrations are SQL and Flyway lets them stay SQL. Apache-2.0, BOM-managed. See ADR-004.
+		  the migrations are SQL and Flyway lets them stay SQL. Flyway is maintained by Redgate, the
+		  starter by the Spring team. Apache-2.0, BOM-managed. See ADR-004.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -104,7 +107,7 @@
 		</dependency>
 		<!--
 		  Flyway ships each database's support as a module of its own; without this one it cannot
-		  migrate PostgreSQL. Same project, licence and BOM management as the starter above.
+		  migrate PostgreSQL. Maintained by Redgate with Flyway itself, Apache-2.0, BOM-managed.
 		-->
 		<dependency>
 			<groupId>org.flywaydb</groupId>
@@ -124,7 +127,7 @@
 		  Starts the Postgres in compose.yaml when the application is run locally, and stops it after.
 		  Optional, so it never reaches a deployed artifact; Boot skips it under test, where
 		  Testcontainers supplies the database instead. Keeps scripts/run.mjs free of build logic,
-		  which ADR-014 requires of it. Apache-2.0, BOM-managed.
+		  which ADR-014 requires of it. Maintained by the Spring team, Apache-2.0, BOM-managed.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -183,7 +186,8 @@
 		<!--
 		  Enforces the hexagon. Nothing in the JDK, Maven, or Spring can fail a build when the
 		  domain imports a framework type; without this the dependency rule is only a comment.
-		  Apache-2.0, actively maintained. See ADR-003.
+		  Maintained by TNG Technology Consulting, Apache-2.0, and pinned because no BOM manages it;
+		  Dependabot proposes each release. See ADR-003.
 		-->
 		<dependency>
 			<groupId>com.tngtech.archunit</groupId>
@@ -250,7 +254,8 @@
 			  The same mechanism supplies a throwaway local operator to sign in as, following
 			  compose.yaml's precedent for the local database: local-only credentials that never
 			  reach a packaged jar, and that must be changed at first sign-in anyway. See ADR-011
-			  and ADR-029.
+			  and ADR-029. The plugin itself repackages the jar; maintained by the Spring team,
+			  Apache-2.0, its version set by the parent.
 			-->
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
