@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { QualificationsPage } from './QualificationsPage';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * A qualification is a named ticket scoped to one organisation, and a shift may only require one
@@ -102,7 +103,7 @@ describe('defining one', () => {
     const stub = routeTo({ list: [] });
     show();
 
-    await userEvent.type(screen.getByLabelText('Name'), 'Forklift');
+    await userEvent.type(screen.getByLabelText('Name'), 'Forklift', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define' }));
 
     await waitFor(() => {
@@ -120,7 +121,7 @@ describe('defining one', () => {
     });
     show();
 
-    await userEvent.type(screen.getByLabelText('Name'), 'Forklift');
+    await userEvent.type(screen.getByLabelText('Name'), 'Forklift', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define' }));
 
     await waitFor(() =>
@@ -135,7 +136,7 @@ describe('defining one', () => {
     await waitFor(() => expect(screen.getByText(/Forklift/)).toBeInTheDocument());
     const before = stub.mock.calls.filter((call) => call[1]?.method !== 'POST').length;
 
-    await userEvent.type(screen.getByLabelText('Name'), 'Nursing');
+    await userEvent.type(screen.getByLabelText('Name'), 'Nursing', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define' }));
 
     await waitFor(() => {

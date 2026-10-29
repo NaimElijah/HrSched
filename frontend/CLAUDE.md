@@ -24,7 +24,9 @@ sees the file.
 - `src/components/` — what several pages share: `ErrorBoundary`, `Feedback`, `useAsync`,
   `localDates`.
 - `src/test-support/` — `routeTo` replaces `fetch` with a router that answers anything unmatched
-  with a 404, and `renderSignedIn` renders a screen as somebody already signed in.
+  with a 404, `renderSignedIn` renders a screen as somebody already signed in, and
+  `WITHOUT_PAUSES` types a value without a timer turn between keys, so a form test does not press
+  against the timeout (#286).
 
 ## Conventions
 

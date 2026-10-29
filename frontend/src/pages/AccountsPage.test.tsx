@@ -6,6 +6,7 @@ import { callsTo, routeTo } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import type { Session } from '../api/session';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * The screen an Admin administers colleagues from (requirement F15).
@@ -130,9 +131,9 @@ describe('reading the organisation', () => {
 
 describe('creating an account', () => {
   async function fillIn(signInName: string, role: string, password: string) {
-    await userEvent.type(await screen.findByLabelText('Sign-in name'), signInName);
+    await userEvent.type(await screen.findByLabelText('Sign-in name'), signInName, WITHOUT_PAUSES);
     await userEvent.selectOptions(screen.getByLabelText('Role'), role);
-    await userEvent.type(screen.getByLabelText('Temporary password'), password);
+    await userEvent.type(screen.getByLabelText('Temporary password'), password, WITHOUT_PAUSES);
   }
 
   it('GivenANameARoleAndAPassword_WhenCreating_ThenAllThreeAreSent', async () => {
@@ -193,7 +194,11 @@ describe('creating an account', () => {
     const stub = theOrganisation();
     show();
 
-    await userEvent.type(await screen.findByLabelText('Temporary password'), A_PASSWORD);
+    await userEvent.type(
+      await screen.findByLabelText('Temporary password'),
+      A_PASSWORD,
+      WITHOUT_PAUSES,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     expect(callsTo(stub, 'POST', '/api/accounts')).toHaveLength(0);
@@ -203,7 +208,11 @@ describe('creating an account', () => {
     const stub = theOrganisation();
     show();
 
-    await userEvent.type(await screen.findByLabelText('Sign-in name'), 'grace@example.com');
+    await userEvent.type(
+      await screen.findByLabelText('Sign-in name'),
+      'grace@example.com',
+      WITHOUT_PAUSES,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     expect(callsTo(stub, 'POST', '/api/accounts')).toHaveLength(0);
@@ -500,6 +509,7 @@ describe('resetting a colleague’s password', () => {
     await userEvent.type(
       within(row).getByLabelText('New temporary password for grace@example.com'),
       A_PASSWORD,
+      WITHOUT_PAUSES,
     );
     await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
 
@@ -545,7 +555,7 @@ describe('resetting a colleague’s password', () => {
       .getByRole('cell', { name: 'grace@example.com' })
       .closest('tr') as HTMLElement;
     const field = within(row).getByLabelText('New temporary password for grace@example.com');
-    await userEvent.type(field, A_PASSWORD);
+    await userEvent.type(field, A_PASSWORD, WITHOUT_PAUSES);
     await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
 
     await waitFor(() => expect(field).toHaveValue(''));

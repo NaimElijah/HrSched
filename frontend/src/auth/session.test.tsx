@@ -6,6 +6,7 @@ import { currentAccessToken, endSession } from '../api/session';
 import type { Session } from '../api/session';
 import { SessionProvider } from './SessionProvider';
 import { A_TENANT } from '../test-support/session';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * Signing in, signing out, and what happens when a session ends underneath somebody.
@@ -73,8 +74,12 @@ describe('signing in', () => {
     }));
     show();
 
-    await userEvent.type(await screen.findByLabelText('Sign-in name'), 'ada@example.com');
-    await userEvent.type(screen.getByLabelText('Password'), PASSWORD);
+    await userEvent.type(
+      await screen.findByLabelText('Sign-in name'),
+      'ada@example.com',
+      WITHOUT_PAUSES,
+    );
+    await userEvent.type(screen.getByLabelText('Password'), PASSWORD, WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(await screen.findByRole('button', { name: 'People' })).toBeInTheDocument();
@@ -94,8 +99,12 @@ describe('signing in', () => {
     }));
     show();
 
-    await userEvent.type(await screen.findByLabelText('Sign-in name'), 'nobody@example.com');
-    await userEvent.type(screen.getByLabelText('Password'), PASSWORD);
+    await userEvent.type(
+      await screen.findByLabelText('Sign-in name'),
+      'nobody@example.com',
+      WITHOUT_PAUSES,
+    );
+    await userEvent.type(screen.getByLabelText('Password'), PASSWORD, WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     const refusal = await screen.findByRole('alert');
@@ -134,9 +143,17 @@ describe('changing a password', () => {
     show();
     await screen.findByRole('heading', { name: 'Change your password' });
 
-    await userEvent.type(screen.getByLabelText('Current password'), PASSWORD);
-    await userEvent.type(screen.getByLabelText('New password'), 'another invented password');
-    await userEvent.type(screen.getByLabelText('New password again'), 'another invented password');
+    await userEvent.type(screen.getByLabelText('Current password'), PASSWORD, WITHOUT_PAUSES);
+    await userEvent.type(
+      screen.getByLabelText('New password'),
+      'another invented password',
+      WITHOUT_PAUSES,
+    );
+    await userEvent.type(
+      screen.getByLabelText('New password again'),
+      'another invented password',
+      WITHOUT_PAUSES,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
 
     expect(await screen.findByRole('button', { name: 'People' })).toBeInTheDocument();
@@ -161,9 +178,17 @@ describe('changing a password', () => {
     show();
     await screen.findByRole('heading', { name: 'Change your password' });
 
-    await userEvent.type(screen.getByLabelText('Current password'), PASSWORD);
-    await userEvent.type(screen.getByLabelText('New password'), 'one invented password');
-    await userEvent.type(screen.getByLabelText('New password again'), 'a different one');
+    await userEvent.type(screen.getByLabelText('Current password'), PASSWORD, WITHOUT_PAUSES);
+    await userEvent.type(
+      screen.getByLabelText('New password'),
+      'one invented password',
+      WITHOUT_PAUSES,
+    );
+    await userEvent.type(
+      screen.getByLabelText('New password again'),
+      'a different one',
+      WITHOUT_PAUSES,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('do not match');
@@ -186,9 +211,9 @@ describe('changing a password', () => {
     show();
     await screen.findByRole('heading', { name: 'Change your password' });
 
-    await userEvent.type(screen.getByLabelText('Current password'), PASSWORD);
-    await userEvent.type(screen.getByLabelText('New password'), 'short');
-    await userEvent.type(screen.getByLabelText('New password again'), 'short');
+    await userEvent.type(screen.getByLabelText('Current password'), PASSWORD, WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('New password'), 'short', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('New password again'), 'short', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dayLabel, spanLabel, timeLabel } from '../components/localDates';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { MePage } from './MePage';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * Employee self-service, which is the one place the acting identity has to carry an employee link
@@ -116,10 +117,10 @@ function show() {
 
 async function fillSpan(from: string, to: string) {
   if (from !== '') {
-    await userEvent.type(screen.getByLabelText('From'), from);
+    await userEvent.type(screen.getByLabelText('From'), from, WITHOUT_PAUSES);
   }
   if (to !== '') {
-    await userEvent.type(screen.getByLabelText('To'), to);
+    await userEvent.type(screen.getByLabelText('To'), to, WITHOUT_PAUSES);
   }
 }
 
@@ -242,6 +243,7 @@ describe('handing a shift to a colleague', () => {
     await userEvent.type(
       await screen.findByLabelText(/^Colleague's employee identifier/),
       COLLEAGUE,
+      WITHOUT_PAUSES,
     );
     await userEvent.click(screen.getByRole('button', { name: /^Ask to hand/ }));
 
@@ -267,7 +269,7 @@ describe('handing a shift to a colleague', () => {
     show();
     const field = await screen.findByLabelText(/^Colleague's employee identifier/);
 
-    await userEvent.type(field, COLLEAGUE);
+    await userEvent.type(field, COLLEAGUE, WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: /^Ask to hand/ }));
 
     await screen.findByText(/^Asked\./);
@@ -296,6 +298,7 @@ describe('handing a shift to a colleague', () => {
     await userEvent.type(
       await screen.findByLabelText(/^Colleague's employee identifier/),
       COLLEAGUE,
+      WITHOUT_PAUSES,
     );
     const ask = screen.getByRole('button', { name: /^Ask to hand/ });
 
@@ -330,6 +333,7 @@ describe('handing a shift to a colleague', () => {
     await userEvent.type(
       await screen.findByLabelText(/^Colleague's employee identifier/),
       EMPLOYEE,
+      WITHOUT_PAUSES,
     );
     await userEvent.click(screen.getByRole('button', { name: /^Ask to hand/ }));
 

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { PeoplePage } from './PeoplePage';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * Admin: who works here, what they hold, and what they are contracted to.
@@ -174,7 +175,7 @@ describe('adding an employee', () => {
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Name'), 'Marie');
+    await userEvent.type(screen.getByLabelText('Name'), 'Marie', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Add employee' }));
 
     await waitFor(() => {
@@ -189,7 +190,7 @@ describe('adding an employee', () => {
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Name'), 'Marie');
+    await userEvent.type(screen.getByLabelText('Name'), 'Marie', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Add employee' }));
 
     await waitFor(() =>
@@ -254,7 +255,11 @@ describe('setting contracted hours', () => {
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Contracted minutes per week for Ada'), '2400');
+    await userEvent.type(
+      screen.getByLabelText('Contracted minutes per week for Ada'),
+      '2400',
+      WITHOUT_PAUSES,
+    );
     await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
 
     await waitFor(() => {
@@ -274,7 +279,11 @@ describe('setting contracted hours', () => {
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Contracted minutes per week for Ada'), '5');
+    await userEvent.type(
+      screen.getByLabelText('Contracted minutes per week for Ada'),
+      '5',
+      WITHOUT_PAUSES,
+    );
     await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
 
     await waitFor(() =>

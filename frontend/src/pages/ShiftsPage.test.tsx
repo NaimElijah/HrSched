@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { ShiftsPage } from './ShiftsPage';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * Defining what needs covering.
@@ -168,7 +169,7 @@ describe('validating before anything is sent', () => {
     show();
     await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00');
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
     expect(stub.mock.calls.some((call) => call[1]?.method === 'POST')).toBe(false);
@@ -179,7 +180,7 @@ describe('validating before anything is sent', () => {
     show();
     await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00');
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
     expect(stub.mock.calls.some((call) => call[1]?.method === 'POST')).toBe(false);
@@ -192,10 +193,10 @@ describe('defining a shift', () => {
     show();
     await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00');
-    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00');
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
     await userEvent.clear(screen.getByLabelText('People needed'));
-    await userEvent.type(screen.getByLabelText('People needed'), '3');
+    await userEvent.type(screen.getByLabelText('People needed'), '3', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
     await waitFor(() => expect(postedBody(stub).requiredHeadcount).toBe(3));
@@ -206,8 +207,8 @@ describe('defining a shift', () => {
     show();
     await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00');
-    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00');
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
     await waitFor(() => {
@@ -227,8 +228,8 @@ describe('defining a shift', () => {
     show();
     await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00');
-    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00');
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
     await waitFor(() =>
@@ -241,8 +242,8 @@ describe('defining a shift', () => {
     show();
     await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00');
-    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00');
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
     await userEvent.selectOptions(screen.getByLabelText('Required qualifications'), ['q-1']);
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
@@ -254,8 +255,8 @@ describe('defining a shift', () => {
     show();
     await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00');
-    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00');
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
     await waitFor(() => expect(postedBody(stub).requiredQualifications).toEqual([]));
@@ -266,8 +267,8 @@ describe('defining a shift', () => {
     show();
     await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T22:00');
-    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-06T06:00');
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T22:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-06T06:00', WITHOUT_PAUSES);
     await userEvent.click(screen.getByLabelText('Unpopular'));
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
@@ -280,8 +281,8 @@ describe('defining a shift', () => {
     show();
     await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00');
-    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00');
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
     await waitFor(() => expect(postedBody(stub).unpopular).toBe(false));
@@ -298,8 +299,8 @@ describe('defining a shift', () => {
     show();
     await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00');
-    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00');
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
     await waitFor(() =>

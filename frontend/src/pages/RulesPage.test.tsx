@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { RulesPage } from './RulesPage';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * Revising the rules replaces the whole set — the backend does not merge — so the form must be
@@ -75,7 +76,7 @@ describe('the rules page', () => {
     await waitFor(() => expect(daily).toHaveValue(600));
 
     await userEvent.clear(daily);
-    await userEvent.type(daily, '480');
+    await userEvent.type(daily, '480', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
 
     await waitFor(() => expect(sentBody(stub).maximumDailyMinutes).toBe(480));

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { ObjectivesPage } from './ObjectivesPage';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * Weighing the objectives (F35, ADR-010). Revising replaces the weights whole, so the form is
@@ -79,7 +80,7 @@ describe('the objectives page', () => {
     const preferences = await screen.findByLabelText(/Preferences weight/);
     await waitFor(() => expect(screen.getByLabelText(/Fairness weight/)).toHaveValue(3));
 
-    await userEvent.type(preferences, '2');
+    await userEvent.type(preferences, '2', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
 
     await waitFor(() => expect(sentBody(stub).preferences).toBe(2));
@@ -106,7 +107,7 @@ describe('the objectives page', () => {
     show();
     await screen.findByRole('alert');
 
-    await userEvent.type(screen.getByLabelText(/Fairness weight/), '4');
+    await userEvent.type(screen.getByLabelText(/Fairness weight/), '4', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
 
     expect(stub.mock.calls.some((call) => call[1]?.method === 'PUT')).toBe(false);
