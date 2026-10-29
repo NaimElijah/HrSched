@@ -174,8 +174,8 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
   Spring test shares the suite's context only while its annotations are exactly
   `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`, as the smoke
   test `HrSchedApplicationTests` does. Two more are started: `MetricsHttpTest`'s, and one on a real
-  port that `MultipartRequestHttpTest` and `FormPostLimitHttpTest` share by adding
-  `webEnvironment = RANDOM_PORT`. `JsonDocumentLimitStartupTest` starts the application itself,
+  port that `MultipartRequestHttpTest`, `FormPostLimitHttpTest` and `ErrorDispatchHttpTest` share
+  by adding `webEnvironment = RANDOM_PORT`. `JsonDocumentLimitStartupTest` starts the application itself,
   passing the datasource as properties.
 - **Isolation.** An HTTP test onboards a fresh organisation through `TestTenants`; an adapter
   test, which runs without Spring, calls `PostgresDatabase.empty()` first.
