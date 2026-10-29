@@ -22,7 +22,6 @@
 		<google-java-format.version>1.27.0</google-java-format.version>
 		<archunit.version>1.5.1</archunit.version>
 		<jacoco.version>0.8.15</jacoco.version>
-		<testcontainers.version>2.0.5</testcontainers.version>
 		<!--
 		  Not the newest. From 9.13 on, OR-Tools' Windows libraries need the Visual C++ runtime 14.40
 		  or later, and the JDK 21 a developer runs here bundles 14.36, which Windows loads first:
@@ -155,14 +154,20 @@
 		  The tests run against a real PostgreSQL in a container, so Docker is required to build.
 		  There is deliberately no in-memory fallback and no skip-when-Docker-is-absent: a check that
 		  quietly does not run still reports green, which is what ci.yml already refuses for path
-		  filters. MIT, and pinned here because the Boot BOM does not manage the Testcontainers
-		  modules. See ADR-004.
+		  filters. This one hands the container to Spring through @ServiceConnection, in place of
+		  hand-wired datasource properties. Apache-2.0, maintained by the Spring team, and
+		  version-managed by the Boot BOM. See ADR-004.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-testcontainers</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!--
+		  Runs that PostgreSQL; nothing in the JDK or in Spring starts a container. MIT, maintained
+		  by the Testcontainers project. Version-managed by the Boot BOM, which imports
+		  testcontainers-bom, so it moves when Boot does.
+		-->
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>testcontainers-postgresql</artifactId>
@@ -172,13 +177,6 @@
 
 	<dependencyManagement>
 		<dependencies>
-			<dependency>
-				<groupId>org.testcontainers</groupId>
-				<artifactId>testcontainers-bom</artifactId>
-				<version>${testcontainers.version}</version>
-				<type>pom</type>
-				<scope>import</scope>
-			</dependency>
 			<!--
 			  OR-Tools asks for JNA 5.14.0, and Maven would choose it over the 5.18.1 that
 			  Testcontainers' Docker client was built against, only because it is nearer in the
