@@ -614,6 +614,55 @@ class EmployeeHttpTest {
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
 
+  // --- F6: declaring on somebody's behalf (#100) -------------------------------------------
+
+  @Test
+  void GivenAScheduler_WhenDeclaringSomebodysUnavailability_ThenItIsListed() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+
+    mockMvc
+        .perform(
+            as(
+                    mockMvc,
+                    post("/api/employees/" + ada + "/unavailability"),
+                    organisation,
+                    "SCHEDULER")
+                .content("{\"start\":\"2026-11-25T00:00:00Z\",\"end\":\"2026-11-26T00:00:00Z\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            asThemself(
+                mockMvc, get("/api/employees/" + ada + "/unavailability"), organisation, ada))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].start").value("2026-11-25T00:00:00Z"))
+        .andExpect(jsonPath("$[0].end").value("2026-11-26T00:00:00Z"));
+  }
+
+  @Test
+  void GivenAScheduler_WhenStatingSomebodysPreference_ThenItIsListed() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/employees/" + ada + "/preferences"), organisation, "SCHEDULER")
+                .content(
+                    "{\"start\":\"2026-11-25T08:00:00Z\",\"end\":\"2026-11-25T16:00:00Z\","
+                        + "\"strength\":\"PREFERS\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, get("/api/employees/" + ada + "/preferences"), organisation, ada))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].start").value("2026-11-25T08:00:00Z"))
+        .andExpect(jsonPath("$[0].strength").value("PREFERS"));
+  }
+
   // --- F6: reading back what somebody declared ----------------------------------------------
 
   @Test

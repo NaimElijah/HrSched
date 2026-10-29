@@ -401,6 +401,40 @@ class EmployeeServiceTest {
     assertThat(service.findEmployee(admin(ACME), ACME, mole)).isEmpty();
   }
 
+  // --- F6: declaring on somebody's behalf (#100) -------------------------------------------
+  //
+  // An Admin or a Scheduler may speak for somebody. Each role's permission is its own test.
+
+  @Test
+  void GivenAScheduler_WhenDeclaringSomebodysUnavailability_ThenItIsDeclared() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor scheduler = actor(ACME, Role.SCHEDULER);
+
+    service.declareUnavailability(scheduler, new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+
+    assertThat(service.findUnavailability(admin(ACME), ACME, ada)).containsExactly(MONDAY);
+    assertThat(audit.of(WorkforceChange.UNAVAILABILITY_DECLARED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, scheduler.id(), WorkforceChange.UNAVAILABILITY_DECLARED, ada.value()));
+  }
+
+  @Test
+  void GivenAScheduler_WhenStatingSomebodysPreference_ThenItIsStated() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor scheduler = actor(ACME, Role.SCHEDULER);
+
+    service.statePreference(
+        scheduler, new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS_NOT));
+
+    assertThat(service.findPreferences(admin(ACME), ACME, ada))
+        .containsExactly(new ShiftPreference(TUESDAY, PreferenceStrength.PREFERS_NOT));
+    assertThat(audit.of(WorkforceChange.PREFERENCE_STATED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, scheduler.id(), WorkforceChange.PREFERENCE_STATED, ada.value()));
+  }
+
   // --- F6: reading back what somebody declared ----------------------------------------------
 
   @Test
