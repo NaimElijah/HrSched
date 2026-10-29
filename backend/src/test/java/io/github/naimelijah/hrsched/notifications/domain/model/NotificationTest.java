@@ -78,7 +78,7 @@ class NotificationTest {
   }
 
   @Test
-  void GivenANotification_WhenComparedWithItselfById_ThenItIsTheSameThing() {
+  void GivenTwoNotificationsSharingAnIdentity_WhenCompared_ThenTheyAreTheSameThing() {
     NotificationId id = NotificationId.newId();
 
     assertThat(

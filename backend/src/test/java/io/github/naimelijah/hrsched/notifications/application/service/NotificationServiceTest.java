@@ -129,7 +129,7 @@ class NotificationServiceTest {
    * identity, so a colleague's notifications are not so much refused as unrepresentable.
    */
   @Test
-  void GivenANotificationForSomebodyElse_WhenReadingOursOwn_ThenItIsNotThere() {
+  void GivenANotificationForSomebodyElse_WhenReadingOurOwn_ThenItIsNotThere() {
     notifyAda(UUID.randomUUID());
 
     assertThat(service.findMine(themself(ACME, GRACE), ACME)).isEmpty();
