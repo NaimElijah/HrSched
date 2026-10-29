@@ -432,7 +432,7 @@ are not audited. Nothing at runtime depends on any of it.
   decides both.
 - **Every log line is ECS JSON, in every environment including a laptop.** There is no profile that
   turns it off, because a format only production emits is one nobody reads until it matters. Each
-  line carries the `trace_id` of the request that produced it, and the same value leaves on the
+  line carries the `traceId` of the request that produced it, and the same value leaves on the
   response as `X-Trace-Id`, which the user interface shows on a refusal — so a person's report and
   the log are joinable. Nothing is exported: the OTLP exporters for traces, logs and metrics are all
   switched off until Q19 names somewhere to send them
