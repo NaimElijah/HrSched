@@ -23,7 +23,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * application binds it, and no lighter context can say whether a full start refuses it. That costs
  * a context per case, so there are three: zero, a negative number, and the control. The control
  * starts the same way with a positive limit, so a refusal below is the value's doing and not the
- * harness's.
+ * harness's. A refusal must also be the limit's own: a start that failed for any other reason would
+ * throw too, so the root cause is held to the one {@code RequestBodyLimitProperties} raises.
  *
  * <p>The suite's database is handed over as plain datasource properties. These contexts are closed
  * as soon as they start, which leaves the database running only because nothing in them holds the
@@ -43,14 +44,18 @@ class JsonDocumentLimitStartupTest {
   void GivenALimitOfZero_WhenTheApplicationStarts_ThenStartupFails() {
     assertThatThrownBy(() -> startWithLimit("0"))
         .describedAs("starting with %s=0", LIMIT)
-        .isInstanceOf(RuntimeException.class);
+        .rootCause()
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(LIMIT);
   }
 
   @Test
   void GivenANegativeLimit_WhenTheApplicationStarts_ThenStartupFails() {
     assertThatThrownBy(() -> startWithLimit("-1"))
         .describedAs("starting with %s=-1", LIMIT)
-        .isInstanceOf(RuntimeException.class);
+        .rootCause()
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(LIMIT);
   }
 
   @Test
