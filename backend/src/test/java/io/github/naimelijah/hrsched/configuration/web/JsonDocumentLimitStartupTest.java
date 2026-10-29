@@ -25,11 +25,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * starts the same way with a positive limit, so a refusal below is the value's doing and not the
  * harness's.
  *
- * <p>The suite's database is handed over as plain datasource properties, not through {@code
- * PostgresBackedApplication}'s container bean. These contexts are closed as soon as they start, and
- * closing a context that holds the container as a bean stops it: Boot's Testcontainers lifecycle
- * closes a container bean whose destroy method is {@code ""} itself, and every test after this one
- * would lose the database.
+ * <p>The suite's database is handed over as plain datasource properties. These contexts are closed
+ * as soon as they start, which leaves the database running only because nothing in them holds the
+ * container as a bean: Boot's Testcontainers lifecycle stops a container bean when its context
+ * closes, and every test after this one would lose the database (#252).
  *
  * <p>The limits are invented for the test.
  */

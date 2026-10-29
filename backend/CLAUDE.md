@@ -167,14 +167,15 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
 ## Testing
 
 - **One container, one context.** `PostgresDatabase` holds a container started once and never
-  stopped; `PostgresBackedApplication` hands it to Spring with `destroyMethod = ""`, meant so that
-  closing a context cannot stop it. Under Boot 4.1.2 closing one does stop it (#252), so a test must
-  never close a context that holds the container. A Spring test shares the suite's context only
-  while its annotations are exactly
+  stopped. `PostgresBackedApplication` hands Spring its address as a `JdbcConnectionDetails`,
+  never the container as a bean: Boot's Testcontainers lifecycle stops every container bean when
+  its context closes, `destroyMethod = ""` or not, so a test closing a context it started would take
+  the database from every test after it (#252, pinned by `PostgresBackedApplicationTest`). A
+  Spring test shares the suite's context only while its annotations are exactly
   `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`;
-  `MetricsHttpTest`, `MultipartRequestHttpTest` (on a real port), the bare smoke test
-  `HrSchedApplicationTests` and `JsonDocumentLimitStartupTest` (which passes the datasource as
-  properties, so it holds no container) each start another.
+  `MetricsHttpTest`, `MultipartRequestHttpTest` and `FormPostLimitHttpTest` (on a real port), the
+  bare smoke test `HrSchedApplicationTests` and `JsonDocumentLimitStartupTest` (which passes the
+  datasource as properties) each start another.
 - **Isolation.** An HTTP test onboards a fresh organisation through `TestTenants`; an adapter
   test, which runs without Spring, calls `PostgresDatabase.empty()` first.
 - **Fakes are hand-written**, package-private beside the service tests that use them, and copy the
