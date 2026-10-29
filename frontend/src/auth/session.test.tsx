@@ -85,6 +85,33 @@ describe('signing in', () => {
     expect(await screen.findByRole('button', { name: 'People' })).toBeInTheDocument();
   });
 
+  it('GivenTheTypedCredentials_WhenSigningIn_ThenExactlyThoseAreSent', async () => {
+    const stub = serving(() => ({
+      'POST /api/auth/refresh': NO_COOKIE,
+      'POST /api/auth/sign-in': { status: 200, body: signedInBody() },
+      '/api/auth/session': { status: 200, body: A_TENANT },
+    }));
+    show();
+
+    await userEvent.type(
+      await screen.findByLabelText('Sign-in name'),
+      'ada@example.com',
+      WITHOUT_PAUSES,
+    );
+    await userEvent.type(screen.getByLabelText('Password'), PASSWORD, WITHOUT_PAUSES);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await screen.findByRole('button', { name: 'People' });
+    const sent = stub.mock.calls.filter(
+      ([path, init]) => path === '/api/auth/sign-in' && init?.method === 'POST',
+    );
+    expect(sent, 'the sign-ins sent').toHaveLength(1);
+    expect(JSON.parse(String(sent[0]?.[1]?.body))).toEqual({
+      signInName: 'ada@example.com',
+      password: PASSWORD,
+    });
+  });
+
   /**
    * The backend answers an unknown name, a wrong password, a disabled account and a locked one
    * identically, and this screen must not undo that by guessing at something friendlier.

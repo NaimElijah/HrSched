@@ -979,6 +979,26 @@ describe('the board of a draft', () => {
     }
   });
 
+  /** The span on screen is what is generated for, not a span the page chose itself. */
+  it('GivenASpan_WhenGenerating_ThenItsStartAndEndAreSent', async () => {
+    const stub = routeTo({
+      'POST /api/rosters/generations': {
+        status: 202,
+        body: { id: 'gen-1', status: 'REFUSED', roster: null, violations: [] },
+      },
+      '/api/rosters': { status: 200, body: [] },
+    });
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Generate a draft for this span' }),
+    );
+
+    await waitFor(() => expect(callsTo(stub, 'POST', '/api/rosters/generations')).toHaveLength(1));
+    const init = callsTo(stub, 'POST', '/api/rosters/generations')[0]?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({ start: SPAN.from, end: SPAN.to });
+  });
+
   /**
    * #130: work a published roster carries onto these shifts that can no longer stay there refuses
    * the generation, naming who and why, and says it is that published roster that has to change.
