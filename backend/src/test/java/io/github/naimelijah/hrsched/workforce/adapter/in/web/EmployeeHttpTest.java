@@ -1128,19 +1128,26 @@ class EmployeeHttpTest {
    * Claiming somebody else's personnel record does not become them. The link is carried by the
    * account the token names (ADR-012), so the header is read by nothing and the request is answered
    * for whoever is really signed in.
+   *
+   * <p>Asked of Grace's unavailability, which Grace herself may read, so the refusal is decided by
+   * who the caller is. Reading a person by identity would not do: it refuses every Employee, Grace
+   * included, and so would refuse whether the header were believed or not. The span is invented.
    */
   @Test
   void
-      GivenAnEmployeeTokenAndAnXEmployeeHeaderNamingSomebodyElse_WhenReadingAPerson_ThenItIsStillTheirOwnRefusal()
+      GivenAnEmployeeTokenAndAnXEmployeeHeaderNamingSomebodyElse_WhenReadingTheirAbsence_ThenItIsStillTheirOwnRefusal()
           throws Exception {
     String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada Lovelace");
     String grace = addEmployee(organisation, "Grace Hopper");
+    declareUnavailability(organisation, grace, "2026-12-07T00:00:00Z", "2026-12-08T00:00:00Z");
 
     mockMvc
         .perform(
-            asThemself(mockMvc, get("/api/employees/" + grace), organisation, ada)
+            asThemself(
+                    mockMvc, get("/api/employees/" + grace + "/unavailability"), organisation, ada)
                 .header("X-Employee", grace))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isForbidden())
+        .andExpect(content().string(not(containsString("2026-12-07"))));
   }
 }
