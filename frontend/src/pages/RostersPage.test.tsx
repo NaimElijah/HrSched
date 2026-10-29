@@ -173,6 +173,28 @@ describe('the rosters page', () => {
     expect(alert).toHaveTextContent('There is no override');
   });
 
+  /** F3: a draft that breaks no rule is published, and the list then says so, as the server does. */
+  it('GivenADraftThatBreaksNoRule_WhenPublished_ThenItIsListedAsPublished', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
+    const server: Record<string, Answer> = {
+      '/api/rosters': { status: 200, body: [ROSTER] },
+      '/api/shifts': { status: 200, body: [SHIFT] },
+      'POST /api/rosters/roster-1/publication': { status: 200, body: published },
+    };
+    const stub = routeTo(server);
+    renderPage([ADA]);
+    const publish = await screen.findByRole('button', { name: 'Publish' });
+    // What the server holds once the publication has landed; the page is told only by reading again.
+    server['/api/rosters'] = { status: 200, body: [published] };
+
+    await userEvent.click(publish);
+
+    expect(await screen.findByRole('cell', { name: 'PUBLISHED' })).toBeInTheDocument();
+    expect(callsTo(stub, 'POST', '/api/rosters/roster-1/publication')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('GivenTheRosterTable_WhenRendered_ThenEveryColumnHasAHeader', async () => {
     aDraft();
     renderPage();

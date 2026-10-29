@@ -270,6 +270,23 @@ describe('deciding', () => {
     );
   });
 
+  it('GivenADeclineTheBackendRefuses_WhenDeclining_ThenTheRefusalIsShownRatherThanASuccess', async () => {
+    aQueue({
+      'POST /api/swaps/swap-1/rejection': {
+        status: 409,
+        body: { detail: 'That swap request has already been decided.' },
+      },
+    });
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Decline/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That swap request has already been decided.',
+    );
+    expect(screen.queryByText(/^Declined\./)).not.toBeInTheDocument();
+  });
+
   it('GivenAnEmployeeRole_WhenApproving_ThenTheRoleRefusalIsShown', async () => {
     aQueue({
       'POST /api/swaps/swap-1/approval': {

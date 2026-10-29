@@ -102,6 +102,22 @@ describe('the objectives page', () => {
     expect(callsTo(stub, 'PUT', '/api/objectives')).toHaveLength(0);
   });
 
+  it('GivenARevisionTheBackendRefuses_WhenRevising_ThenItsReasonIsShownAndTheEditKept', async () => {
+    routeTo({
+      '/api/objectives': { status: 200, body: STORED },
+      'PUT /api/objectives': { status: 403, body: { detail: 'Only an Admin may.' } },
+    });
+    show();
+    const preferences = await screen.findByLabelText(/Preferences weight/);
+    await waitFor(() => expect(screen.getByLabelText(/Fairness weight/)).toHaveValue(3));
+
+    await userEvent.type(preferences, '2', WITHOUT_PAUSES);
+    await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Only an Admin may.');
+    expect(preferences).toHaveValue(2);
+  });
+
   it('GivenAClearedWeight_WhenRevising_ThenThatObjectiveIsNoLongerWeighed', async () => {
     const stub = weighing(STORED);
     show();

@@ -87,6 +87,33 @@ describe('the rules page', () => {
     expect(sentBody(stub).minimumRestMinutes).toBe(REST);
   });
 
+  /** The backend's own words, and the value typed stays to be corrected rather than retyped. */
+  it('GivenARevisionTheBackendRefuses_WhenRevising_ThenItsReasonIsShownAndTheEditKept', async () => {
+    routeTo({
+      '/api/constraints': { status: 200, body: CONFIGURED },
+      'PUT /api/constraints': {
+        status: 400,
+        body: { detail: 'maximumDailyMinutes must be positive' },
+      },
+    });
+    render(
+      <SignedIn session={A_TENANT}>
+        <RulesPage />
+      </SignedIn>,
+    );
+    const daily = await screen.findByLabelText(/Maximum daily/);
+    await waitFor(() => expect(daily).toHaveValue(DAILY));
+
+    await userEvent.clear(daily);
+    await userEvent.type(daily, String(REVISED_DAILY), WITHOUT_PAUSES);
+    await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'maximumDailyMinutes must be positive',
+    );
+    expect(daily).toHaveValue(REVISED_DAILY);
+  });
+
   it('GivenAClearedField_WhenRevising_ThenThatRuleIsSwitchedOff', async () => {
     const stub = configured();
     render(

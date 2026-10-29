@@ -180,6 +180,24 @@ describe('onboarding', () => {
     expect(screen.getByLabelText('First admin sign-in name')).toHaveValue('');
   });
 
+  it('GivenAnOnboardingRefused_WhenShown_ThenWhatWasTypedIsKept', async () => {
+    thePlatform({
+      'POST /api/organisations': {
+        status: 409,
+        body: { detail: 'That sign-in name is already in use.' },
+      },
+    });
+    show();
+
+    await fillIn('Beta', AN_ADMIN, A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+
+    await screen.findByRole('alert');
+    expect(screen.getByLabelText('Temporary password')).toHaveValue(A_PASSWORD);
+    expect(screen.getByLabelText('First admin sign-in name')).toHaveValue(AN_ADMIN);
+    expect(screen.getByLabelText('Name')).toHaveValue('Beta');
+  });
+
   it('GivenATakenSignInName_WhenOnboarding_ThenTheRefusalIsShown', async () => {
     thePlatform({
       'POST /api/organisations': {

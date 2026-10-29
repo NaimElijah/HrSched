@@ -248,6 +248,24 @@ describe('creating an account', () => {
     expect(screen.getByLabelText('Sign-in name')).toHaveValue('');
   });
 
+  /** A refused attempt is retyped only when there is something to change, never because it failed. */
+  it('GivenACreationRefused_WhenShown_ThenWhatWasTypedIsKept', async () => {
+    theOrganisation({
+      'POST /api/accounts': {
+        status: 409,
+        body: { detail: 'That sign-in name is already in use.' },
+      },
+    });
+    show();
+
+    await fillIn('ada@example.com', 'EMPLOYEE', A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    await screen.findByRole('alert');
+    expect(screen.getByLabelText('Temporary password')).toHaveValue(A_PASSWORD);
+    expect(screen.getByLabelText('Sign-in name')).toHaveValue('ada@example.com');
+  });
+
   it('GivenATakenSignInName_WhenCreating_ThenTheRefusalIsShown', async () => {
     theOrganisation({
       'POST /api/accounts': {
@@ -568,6 +586,29 @@ describe('resetting a colleague’s password', () => {
     await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
 
     await waitFor(() => expect(field).toHaveValue(''));
+  });
+
+  it('GivenAResetRefused_WhenShown_ThenTheTypedPasswordIsKept', async () => {
+    theOrganisation({
+      'POST /api/accounts/99999999-9999-4999-8999-999999999999/password': {
+        status: 422,
+        body: { detail: 'A password must be at least 15 characters long.' },
+      },
+    });
+    show();
+
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const row = screen
+      .getByRole('cell', { name: 'grace@example.com' })
+      .closest('tr') as HTMLElement;
+    const field = within(row).getByLabelText('New temporary password for grace@example.com');
+    await userEvent.type(field, A_PASSWORD, WITHOUT_PAUSES);
+    await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A password must be at least 15 characters long.',
+    );
+    expect(field).toHaveValue(A_PASSWORD);
   });
 
   it('GivenAResetField_WhenShown_ThenItIsMaskedAndEmpty', async () => {

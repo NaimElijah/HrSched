@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dayLabel, timeLabel } from '../components/localDates';
+import { routeTo } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { Inbox } from './Inbox';
 
@@ -188,6 +189,28 @@ describe('reading', () => {
         ([path, init]) => init?.method === 'POST' && path === '/api/notifications/n-1/read',
       ),
     ).toHaveLength(1);
+  });
+
+  /** A refusal left unshown would read as done, and the notification would come back unread. */
+  it('GivenMarkingReadIsRefused_WhenMarkedRead_ThenTheRefusalIsShownAndItStaysUnread', async () => {
+    routeTo({
+      '/api/notifications': { status: 200, body: [told('SWAP_REQUESTED')] },
+      '/api/swaps': { status: 200, body: [SWAP] },
+      '/api/shifts/shift-1': { status: 200, body: SHIFT },
+      'POST /api/notifications/n-1/read': {
+        status: 404,
+        body: { detail: 'No such resource.' },
+      },
+    });
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Mark as read/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Nothing here for this organisation.',
+    );
+    expect(screen.getByText(/· unread$/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Mark as read/ })).toBeInTheDocument();
   });
 
   it('GivenTheInboxOpens_WhenNothingIsClicked_ThenNothingIsMarkedRead', async () => {
