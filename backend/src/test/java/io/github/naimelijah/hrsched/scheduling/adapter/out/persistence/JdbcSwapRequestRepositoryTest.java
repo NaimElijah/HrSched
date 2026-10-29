@@ -404,7 +404,8 @@ class JdbcSwapRequestRepositoryTest {
     repository.save(pending);
     repository.save(pending.approved());
 
-    assertThatThrownBy(() -> repository.save(pending.rejected()));
+    assertThatThrownBy(() -> repository.save(pending.rejected()))
+        .isInstanceOf(SwapNotPendingException.class);
 
     assertThat(repository.findById(ACME, pending.id()))
         .get()
