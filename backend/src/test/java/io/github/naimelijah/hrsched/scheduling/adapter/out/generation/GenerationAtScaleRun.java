@@ -28,9 +28,10 @@ import org.springframework.boot.convert.DurationStyle;
  *
  * <pre>./mvnw spotless:apply test -Dtest=GenerationAtScaleRun</pre>
  *
- * <p>The generator logs each search's status and the places left empty; the run asserts only that
- * the answer is legal, and reports the score against greedy's through JUnit. The problems are
- * {@link GenerationInstances}', so every value in them is invented.
+ * <p>The generator logs each search's status and the places left empty; the run asserts that the
+ * answer is legal and came within both searches' configured limits, and reports the score against
+ * greedy's through JUnit. The problems are {@link GenerationInstances}', so every value in them is
+ * invented.
  *
  * <p>Run it where memory is free. On the 8-core, 16 GB machine it was written on, a run of both
  * searches at this size took the test JVM to about 7 GB, mostly the solver's native memory, and was
@@ -43,14 +44,18 @@ class GenerationAtScaleRun {
   private static final int SHIFTS = 500;
   private static final long SEED = 1;
 
+  /** The generator's searches, each held to the configured limit: coverage, then objectives. */
+  private static final int SEARCHES = 2;
+
   @Test
   void GivenTheLargestStatedSize_WhenGenerating_ThenALegalRosterIsFoundWithinTheConfiguredLimit(
       TestReporter report) throws IOException {
     GenerationRequest problem = GenerationInstances.instance(SEED, PEOPLE, SHIFTS);
+    Duration perSearch = configured("hrsched.generation.time-limit-per-phase");
     CpSatRosterGenerator solver =
         new CpSatRosterGenerator(
             new SimpleMeterRegistry(),
-            new GenerationProperties(configured("hrsched.generation.time-limit-per-phase"), 1),
+            new GenerationProperties(perSearch, 1),
             new GenerationPolicy(configured("hrsched.generation.lost-after")));
 
     long started = System.nanoTime();
@@ -68,6 +73,9 @@ class GenerationAtScaleRun {
         "%d against %d".formatted(scoreOf(problem, solved), scoreOf(problem, greedily)));
     report.publishEntry("generation took", took.toString());
     assertThat(breachesOf(problem, solved)).isEmpty();
+    assertThat(took)
+        .describedAs("generation at the largest size, against both searches' configured limits")
+        .isLessThanOrEqualTo(perSearch.multipliedBy(SEARCHES));
   }
 
   /** A duration production runs under, read from where the application reads it. */
