@@ -75,8 +75,11 @@ describe('listing what the organisation has defined', () => {
 
     show();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Define' })).toBeEnabled());
+    // The busy region empties only once the listing has answered; until then an empty list proves
+    // nothing about what the page does with an empty answer.
+    await waitFor(() => expect(screen.getByRole('status')).toBeEmptyDOMElement());
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('GivenTheListingIsRefused_WhenOpened_ThenTheRefusalIsShownRatherThanAnEmptyList', async () => {
