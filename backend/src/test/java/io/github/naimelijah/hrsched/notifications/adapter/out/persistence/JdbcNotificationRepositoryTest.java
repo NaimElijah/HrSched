@@ -13,6 +13,8 @@ import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * Specification of what the notification store promises.
@@ -147,6 +149,29 @@ class JdbcNotificationRepositoryTest {
         .singleElement()
         .extracting(Notification::occurredAt, Notification::isRead)
         .containsExactly(nearestMicrosecond, true);
+  }
+
+  /**
+   * Every kind is stored and read back as itself. The column's check constraint lists the kinds by
+   * name, so a kind added to the enum and not to a migration is refused here rather than in
+   * production.
+   */
+  @ParameterizedTest
+  @EnumSource(NotificationKind.class)
+  void GivenAnyKind_WhenSavedAndReadBack_ThenItIsThatKind(NotificationKind kind) {
+    Notification saved =
+        new Notification(
+            NotificationId.newId(),
+            ACME,
+            ADA,
+            kind,
+            UUID.randomUUID(),
+            Instant.parse("2026-10-05T12:00:00Z"));
+    notifications.save(saved);
+
+    assertThat(notifications.findById(ACME, ADA, saved.id()))
+        .map(Notification::kind)
+        .contains(kind);
   }
 
   @Test

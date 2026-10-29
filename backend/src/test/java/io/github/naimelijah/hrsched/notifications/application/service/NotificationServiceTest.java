@@ -33,6 +33,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * Specification of the notification use cases, driven without Spring.
@@ -92,6 +94,23 @@ class NotificationServiceTest {
     assertThat(service.findMine(themself(ACME, ADA), ACME))
         .containsExactly(
             new PublishedNotification(raised, NotifiableEvent.SWAP_LAPSED, subject, NOON, false));
+  }
+
+  /**
+   * Every event a caller may raise comes back out of the inbox as that event: the two enums are
+   * translated into one another (ADR-008), and a translation that crossed two of them would tell
+   * somebody the opposite of what happened.
+   */
+  @ParameterizedTest
+  @EnumSource(NotifiableEvent.class)
+  void GivenAnyEvent_WhenSomebodyIsNotifiedOfIt_ThenTheirInboxCarriesThatEvent(
+      NotifiableEvent event) {
+    service.notify(themself(ACME, GRACE), new NotifyCommand(ACME, ADA, event, UUID.randomUUID()));
+
+    assertThat(service.findMine(themself(ACME, ADA), ACME))
+        .singleElement()
+        .extracting(PublishedNotification::kind)
+        .isEqualTo(event);
   }
 
   /** The clock is injected, so this is a fact the test states rather than one it tolerates. */
