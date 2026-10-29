@@ -133,6 +133,25 @@ describe('what a load begins with', () => {
   });
 });
 
+/**
+ * The refresh answers with a copy of the session, which can be stale: a password reset by an Admin
+ * since the cookie was issued is exactly the case. The read-back is what the shell is drawn from.
+ */
+describe('what a restore believes', () => {
+  it('GivenARefreshWhoseSessionDiffersFromTheReadBack_WhenRestoring_ThenTheReadBackWins', async () => {
+    loadingThrough(A_TENANT, () => ({
+      '/api/auth/session': { status: 200, body: { ...A_TENANT, passwordChangeRequired: true } },
+    }));
+
+    show();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Change your password' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'People' })).not.toBeInTheDocument();
+  });
+});
+
 describe('a restore that cannot finish', () => {
   /**
    * A network that is down says nothing about the refresh cookie, so the sign-in form would be a

@@ -272,6 +272,20 @@ describe('where the token is kept', () => {
     local.mockRestore();
   });
 
+  it('GivenASignIn_WhenItSucceeds_ThenTheTokenIsInNoCookie', async () => {
+    respondWith(200, {
+      accessToken: 'token-1',
+      tokenType: 'Bearer',
+      expiresIn: 600,
+      session: A_SESSION,
+    });
+
+    await auth.signIn('ada@example.com', 'an invented password for a test');
+
+    expect(document.cookie).not.toContain('token-1');
+    expect(currentAccessToken()).toBe('token-1');
+  });
+
   it('GivenASignOut_WhenItAnswers_ThenTheTokenAndSessionAreForgotten', async () => {
     signedIn();
     respondWith(204, null);
