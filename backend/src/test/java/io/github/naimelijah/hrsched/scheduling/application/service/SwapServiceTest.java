@@ -1440,12 +1440,16 @@ class SwapServiceTest {
     SwapRequestId request =
         service.requestSwap(
             themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    log.forget();
 
     assertThatThrownBy(() -> service.approveSwap(scheduler(RIVAL), ACME, request))
         .isInstanceOf(CrossTenantAccessException.class);
 
     assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
     assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(log.calls())
+        .describedAs("refused first, not by the directory read that happens to come later")
+        .isEmpty();
   }
 
   @Test
@@ -1456,11 +1460,13 @@ class SwapServiceTest {
     SwapRequestId request =
         service.requestSwap(
             themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    log.forget();
 
     assertThatThrownBy(() -> service.rejectSwap(scheduler(RIVAL), ACME, request))
         .isInstanceOf(CrossTenantAccessException.class);
 
     assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(log.calls()).describedAs("refused before the request is even read").isEmpty();
   }
 
   private static Operator anOperator() {

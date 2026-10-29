@@ -2791,11 +2791,15 @@ class SchedulingServiceTest {
   void
       GivenASchedulerOfAnotherOrganisation_WhenPublishingOurDraft_ThenItIsRefusedAndItStaysADraft() {
     Roster draft = emptyDraft(ACME);
+    rosters.log().forget();
 
     assertThatThrownBy(() -> service.publish(scheduler(RIVAL), ACME, draft.id()))
         .isInstanceOf(CrossTenantAccessException.class);
 
     assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
+    assertThat(rosters.log().calls())
+        .describedAs("refused first, not by the directory read that happens to come later")
+        .isEmpty();
   }
 
   @Test
