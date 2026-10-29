@@ -15,7 +15,10 @@
 # A deployed instance gets SPRING_DATASOURCE_* from the environment instead — see .env.example.
 services:
   postgres:
-    image: postgres:18
+    # The release the tests run against (PostgresDatabase), not the floating 18, which moves with
+    # every minor release. A bump stays within major 18: a data volume written by one major cannot
+    # be opened by another without a dump and restore.
+    image: postgres:18.6-trixie
     environment:
       POSTGRES_DB: hrsched
       POSTGRES_USER: hrsched
