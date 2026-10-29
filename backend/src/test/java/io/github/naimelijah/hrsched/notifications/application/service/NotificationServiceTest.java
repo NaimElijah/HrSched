@@ -197,6 +197,21 @@ class NotificationServiceTest {
     assertThat(audit.of(NotificationChange.NOTIFICATION_READ)).isEmpty();
   }
 
+  /**
+   * F16 opens an inbox to any member linked to a personnel record, whatever their role: a Scheduler
+   * who also works shifts is told about a swap as anybody else is.
+   */
+  @Test
+  void GivenASchedulerLinkedToTheirRecord_WhenReadingTheirInbox_ThenTheirNotificationsAreThere() {
+    NotificationId raised = notifyAda(UUID.randomUUID());
+    TenantActor adaAsScheduler =
+        new TenantActor(UserId.newId(), ACME, Role.SCHEDULER, Optional.of(ADA));
+
+    assertThat(service.findMine(adaAsScheduler, ACME))
+        .extracting(PublishedNotification::id)
+        .containsExactly(raised);
+  }
+
   @Test
   void GivenAnActorWithNoPersonnelRecord_WhenReadingNotifications_ThenItIsRefused() {
     assertThatThrownBy(

@@ -68,11 +68,18 @@ class NotificationHttpTest {
         .andExpect(jsonPath("$.length()").value(0));
   }
 
+  /**
+   * The chain admits every tenant role to {@code /api/notifications/**}; the refusal is the use
+   * case's, which the detail tells apart from any 403 the chain could give.
+   */
   @Test
   void GivenNoPersonnelRecordIsClaimed_WhenReadingAnInbox_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(TestTenants.as(mockMvc, get("/api/notifications"), anOrganisation(), "ADMIN"))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isForbidden())
+        .andExpect(
+            jsonPath("$.detail")
+                .value("You have no personnel record, so you have no notifications."));
   }
 
   @Test
