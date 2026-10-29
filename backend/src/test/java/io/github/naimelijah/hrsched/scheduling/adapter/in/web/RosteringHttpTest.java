@@ -856,6 +856,7 @@ class RosteringHttpTest {
     String organisation = anOrganisation(mockMvc);
     addEmployee(organisation, "Ada");
     defineShift(organisation, "2026-10-06T08:00:00Z", "2026-10-06T16:00:00Z", 1);
+    // Invented: ten hours a day, which the eight-hour shift satisfies.
     mockMvc
         .perform(
             as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
@@ -933,6 +934,7 @@ class RosteringHttpTest {
   @Test
   void GivenAnotherOrganisationsVersion_WhenReadingIt_ThenTheAnswerIsTheOneForNoVersionAtAll()
       throws Exception {
+    // Invented: any rule at all, so that the other organisation holds a version 2.
     mockMvc
         .perform(
             as(mockMvc, put("/api/constraints"), anOrganisation(mockMvc), "ADMIN")
@@ -1123,6 +1125,7 @@ class RosteringHttpTest {
       throws Exception {
     String organisation = anOrganisation(mockMvc);
     addEmployee(organisation, "Ada");
+    // Invented: one hour a day.
     mockMvc
         .perform(
             as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
@@ -1141,6 +1144,7 @@ class RosteringHttpTest {
 
   @Test
   void GivenAScheduler_WhenConfiguringConstraints_ThenItIsForbidden() throws Exception {
+    // Invented: the role is refused, so the value is never stored.
     mockMvc
         .perform(
             as(mockMvc, put("/api/constraints"), anOrganisation(mockMvc), "SCHEDULER")
@@ -1150,6 +1154,7 @@ class RosteringHttpTest {
 
   @Test
   void GivenAnEmployee_WhenConfiguringConstraints_ThenItIsForbidden() throws Exception {
+    // Invented: the role is refused, so the value is never stored.
     mockMvc
         .perform(
             as(mockMvc, put("/api/constraints"), anOrganisation(mockMvc), "EMPLOYEE")
@@ -1240,6 +1245,7 @@ class RosteringHttpTest {
   void GivenTwoOrganisations_WhenEachConfiguresRules_ThenNeitherSeesTheOther() throws Exception {
     String first = anOrganisation(mockMvc);
     String second = anOrganisation(mockMvc);
+    // Invented: any rule at all, so the first organisation has one to leak.
     mockMvc
         .perform(
             as(mockMvc, put("/api/constraints"), first, "ADMIN")

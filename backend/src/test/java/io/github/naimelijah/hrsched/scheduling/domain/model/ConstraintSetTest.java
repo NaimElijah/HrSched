@@ -56,6 +56,7 @@ class ConstraintSetTest {
 
   @Test
   void GivenAMinimumRest_WhenTwoAssignmentsAreTooClose_ThenItIsViolated() {
+    // Invented: nine hours' rest, which a four-hour gap breaks.
     ConstraintSet rules = setOf(new MinimumRestBetweenAssignments(Duration.ofHours(9)));
     EmployeeSchedule tight =
         new EmployeeSchedule(ADA, List.of(on("07", "08:00", "16:00"), on("07", "20:00", "23:00")));
@@ -67,6 +68,7 @@ class ConstraintSetTest {
 
   @Test
   void GivenAMinimumRest_WhenTheGapIsLongEnough_ThenItIsSatisfied() {
+    // Invented: nine hours' rest, which a sixteen-hour gap keeps.
     ConstraintSet rules = setOf(new MinimumRestBetweenAssignments(Duration.ofHours(9)));
     EmployeeSchedule spaced =
         new EmployeeSchedule(ADA, List.of(on("07", "08:00", "16:00"), on("08", "08:00", "16:00")));
@@ -76,6 +78,7 @@ class ConstraintSetTest {
 
   @Test
   void GivenAMinimumRest_WhenAssignmentsOverlap_ThenItIsViolated() {
+    // Invented: an hour's rest, which overlapping work cannot keep at all.
     ConstraintSet rules = setOf(new MinimumRestBetweenAssignments(Duration.ofHours(1)));
     EmployeeSchedule overlapping =
         new EmployeeSchedule(ADA, List.of(on("07", "08:00", "16:00"), on("07", "12:00", "20:00")));
@@ -87,6 +90,7 @@ class ConstraintSetTest {
 
   @Test
   void GivenADailyMaximum_WhenOneDayExceedsIt_ThenItIsViolated() {
+    // Invented: ten hours a day, which a fourteen-hour day breaks.
     ConstraintSet rules = setOf(new MaximumDailyWorkingTime(Duration.ofHours(10)));
     EmployeeSchedule longDay = new EmployeeSchedule(ADA, List.of(on("07", "06:00", "20:00")));
 
@@ -95,6 +99,7 @@ class ConstraintSetTest {
 
   @Test
   void GivenADailyMaximum_WhenTwoShortShiftsShareADayAndExceedIt_ThenItIsViolated() {
+    // Invented: ten hours a day, which two six-hour shifts on one day break together.
     ConstraintSet rules = setOf(new MaximumDailyWorkingTime(Duration.ofHours(10)));
     EmployeeSchedule split =
         new EmployeeSchedule(ADA, List.of(on("07", "06:00", "12:00"), on("07", "13:00", "19:00")));
@@ -106,6 +111,7 @@ class ConstraintSetTest {
 
   @Test
   void GivenAWeeklyMaximum_WhenTheTotalExceedsIt_ThenItIsViolated() {
+    // Invented: twenty hours a week, which three ten-hour days break.
     ConstraintSet rules = setOf(new MaximumWeeklyWorkingTime(Duration.ofHours(20)));
     EmployeeSchedule busy =
         new EmployeeSchedule(
@@ -120,6 +126,7 @@ class ConstraintSetTest {
 
   @Test
   void GivenAConsecutiveDayLimit_WhenTooManyDaysRunTogether_ThenItIsViolated() {
+    // Invented: three days running, which four break.
     ConstraintSet rules = setOf(new MaximumConsecutiveWorkingDays(3));
     EmployeeSchedule fourInARow =
         new EmployeeSchedule(
@@ -135,6 +142,7 @@ class ConstraintSetTest {
 
   @Test
   void GivenAConsecutiveDayLimit_WhenADayIsSkipped_ThenTheRunResets() {
+    // Invented: two days running, which a day off in between resets.
     ConstraintSet rules = setOf(new MaximumConsecutiveWorkingDays(2));
     EmployeeSchedule withARestDay =
         new EmployeeSchedule(
@@ -149,6 +157,7 @@ class ConstraintSetTest {
 
   @Test
   void GivenSeveralRules_WhenAScheduleBreaksMoreThanOne_ThenEveryBreachIsReported() {
+    // Invented: four hours a day and five a week, which one twelve-hour day breaks both of.
     ConstraintSet rules =
         setOf(
             new MaximumDailyWorkingTime(Duration.ofHours(4)),
@@ -163,6 +172,7 @@ class ConstraintSetTest {
   @Test
   void GivenAConstraintSet_WhenRevised_ThenTheVersionAdvancesAndTheOldOneIsUnchanged() {
     ConstraintSet first = ConstraintSet.initial(ACME);
+    // Invented: five days running; only the revision is under test, not the rule.
     ConstraintSet second = first.revisedTo(List.of(new MaximumConsecutiveWorkingDays(5)));
 
     assertThat(first.version()).isEqualTo(1);
@@ -188,6 +198,7 @@ class ConstraintSetTest {
    */
   @Test
   void GivenADailyMaximum_WhenTwoShiftsShareALocalDayButNotAUtcOne_ThenItIsViolated() {
+    // Invented: ten hours a day, as the javadoc above says.
     ConstraintSet rules = setOf(new MaximumDailyWorkingTime(Duration.ofHours(10)));
     EmployeeSchedule sameLocalDay =
         new EmployeeSchedule(
@@ -206,6 +217,7 @@ class ConstraintSetTest {
    */
   @Test
   void GivenAConsecutiveDayLimit_WhenARunExistsOnlyInLocalDays_ThenItIsViolated() {
+    // Invented: two days running, which three local days break.
     ConstraintSet rules = setOf(new MaximumConsecutiveWorkingDays(2));
     EmployeeSchedule threeLocalDaysRunning =
         new EmployeeSchedule(
