@@ -13,6 +13,7 @@ import io.github.naimelijah.hrsched.access.domain.model.SignInName;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,6 +61,9 @@ class LockedAccountPasswordChangeHttpTest {
   /** Invented: what the caller asks to change it to, long enough to satisfy the policy. */
   private static final String REPLACEMENT = "a different invented password";
 
+  /** Set by the trace filter on every response, and the one header that may legitimately differ. */
+  private static final String TRACE_ID = "X-Trace-Id";
+
   @Autowired private MockMvc mockMvc;
   @Autowired private AccountRepository accounts;
   @Autowired private PasswordHasher passwords;
@@ -82,6 +86,16 @@ class LockedAccountPasswordChangeHttpTest {
         .describedAs("a locked account is refused as a wrong current password is")
         .isEqualTo(wrongCurrent.getStatus());
     assertThat(whenLocked.getContentAsString()).isEqualTo(wrongCurrent.getContentAsString());
+    assertThat(headersOf(whenLocked)).isEqualTo(headersOf(wrongCurrent));
+  }
+
+  /** Every header but the trace id, which differs on every response whatever it answers. */
+  private static List<String> headersOf(MockHttpServletResponse response) {
+    return response.getHeaderNames().stream()
+        .filter(name -> !TRACE_ID.equalsIgnoreCase(name))
+        .sorted()
+        .map(name -> name + "=" + response.getHeaderValues(name))
+        .toList();
   }
 
   @Test
