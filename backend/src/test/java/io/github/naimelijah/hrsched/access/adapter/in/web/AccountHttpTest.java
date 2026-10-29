@@ -333,6 +333,54 @@ class AccountHttpTest {
         .andExpect(status().isConflict());
   }
 
+  // ADR-031: the organisation comes from the acting account, never from what the request says
+
+  /** An organisation named in a header is not believed: the account lands in the Admin's own. */
+  @Test
+  void
+      GivenAnAdminNamingAnotherOrganisationInAnXOrganisationHeader_WhenCreatingAnAccount_ThenItIsCreatedInTheirOwn()
+          throws Exception {
+    OrganisationId acme = anOrganisation();
+    OrganisationId rival = anOrganisation();
+    String signInName = anInventedSignInName();
+
+    mockMvc
+        .perform(
+            with(post("/api/accounts"), admin(acme))
+                .header("X-Organisation", rival.value().toString())
+                .content(creating(signInName, Role.SCHEDULER)))
+        .andExpect(status().isCreated());
+
+    mockMvc
+        .perform(signInAs(signInName, A_PASSWORD))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.session.organisation").value(acme.value().toString()));
+  }
+
+  /** An organisation named in the body is not believed either. */
+  @Test
+  void
+      GivenAnAdminNamingAnotherOrganisationInTheBody_WhenCreatingAnAccount_ThenItIsCreatedInTheirOwn()
+          throws Exception {
+    OrganisationId acme = anOrganisation();
+    OrganisationId rival = anOrganisation();
+    String signInName = anInventedSignInName();
+
+    mockMvc
+        .perform(
+            with(post("/api/accounts"), admin(acme))
+                .content(
+                    ("{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\",\"role\":\"SCHEDULER\","
+                            + "\"organisation\":\"%s\"}")
+                        .formatted(signInName, A_PASSWORD, rival.value())))
+        .andExpect(status().isCreated());
+
+    mockMvc
+        .perform(signInAs(signInName, A_PASSWORD))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.session.organisation").value(acme.value().toString()));
+  }
+
   @Test
   void GivenNoRole_WhenCreatingAnAccount_ThenItIsABadRequest() throws Exception {
     mockMvc
