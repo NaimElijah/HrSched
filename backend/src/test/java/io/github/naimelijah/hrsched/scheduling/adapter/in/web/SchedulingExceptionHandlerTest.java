@@ -64,9 +64,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
  * that has to parse a sentence back apart will eventually parse it wrong.
  *
  * <p>Driven directly rather than over HTTP, because the cross-tenant branch is unreachable from any
- * HTTP test: the acting identity's organisation is built from the same header the operation
- * targets, so a tenant actor can never fail its own access check. See the workforce handler's test
- * for the same note.
+ * HTTP test: the organisation acted in is the acting account's own, taken from its token (ADR-031),
+ * so a tenant actor can never fail its own access check, and reaching for another organisation's
+ * roster over HTTP is answered by the unknown-roster branch instead.
  */
 class SchedulingExceptionHandlerTest {
 
