@@ -697,6 +697,7 @@ describe('validating the span before anything is sent', () => {
 });
 
 describe('declaring unavailability', () => {
+  /** Read in the zone vite.config.ts pins: 08:00 and 16:00 in Los Angeles in October. */
   it('GivenAValidSpan_WhenDeclaring_ThenTheRequestCarriesIsoInstants', async () => {
     actingAsEmployee(EMPLOYEE);
     const stub = stubbed();
@@ -707,8 +708,8 @@ describe('declaring unavailability', () => {
 
     await waitFor(() => expect(writes(stub)).toHaveLength(1));
     const sent = bodyOfFirstWrite(stub);
-    expect(sent.start).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
-    expect(sent.end).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+    expect(sent.start).toBe('2026-10-05T15:00:00.000Z');
+    expect(sent.end).toBe('2026-10-05T23:00:00.000Z');
   });
 
   it('GivenAValidSpan_WhenDeclaring_ThenItIsSentToTheEmployeesOwnRecord', async () => {

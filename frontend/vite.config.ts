@@ -34,6 +34,12 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
     css: false,
+    // Every run reads local time in one zone west of Greenwich, whatever the machine's own zone is.
+    // CI runs in UTC, where local time and UTC agree, so a test guarding the local-date hazard in
+    // localDates.ts would pass there with the hazard reintroduced. A zone that keeps daylight saving
+    // also lets an offset change be tested. Set here rather than as a TZ= prefix on the npm script,
+    // which Windows' cmd does not understand; Node rereads TZ when it is assigned at runtime.
+    env: { TZ: 'America/Los_Angeles' },
     // One process per test file, as Vitest 5 already defaults to, pinned because it is load-bearing:
     // the session's BroadcastChannel is module-level, and Node delivers it across worker threads, so
     // under 'threads' one file's endSession would end sessions in the files running beside it.

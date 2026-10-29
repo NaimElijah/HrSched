@@ -190,6 +190,10 @@ describe('defining a shift', () => {
     await waitFor(() => expect(postedBody(stub).requiredHeadcount).toBe(3));
   });
 
+  /**
+   * The times typed are wall-clock times where the reader is, which for this run is the zone
+   * vite.config.ts pins: 08:00 and 16:00 in Los Angeles in October are 15:00 and 23:00 UTC.
+   */
   it('GivenAValidPeriod_WhenDefining_ThenBothInstantsAreSentAsIso', async () => {
     const stub = theOrganisation();
     show();
@@ -201,15 +205,15 @@ describe('defining a shift', () => {
 
     await waitFor(() => {
       const sent = postedBody(stub);
-      expect(sent.start).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
-      expect(sent.end).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+      expect(sent.start).toBe('2026-10-05T15:00:00.000Z');
+      expect(sent.end).toBe('2026-10-05T23:00:00.000Z');
     });
   });
 
   /**
    * The backend counts a shift's working-time days in its own zone (R36), and the times above
-   * were read in the runner's zone, so that is the one that must travel with them. Compared with
-   * the runner's zone rather than a literal, for the reason localDates.test.ts gives.
+   * were read in the reader's zone, so that is the one that must travel with them. The run pins
+   * that zone (vite.config.ts), and it is not UTC, so a page that sent UTC regardless fails here.
    */
   it('GivenAValidPeriod_WhenDefining_ThenTheZoneItWasEnteredInIsSent', async () => {
     const stub = theOrganisation();
@@ -220,9 +224,7 @@ describe('defining a shift', () => {
     await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
-    await waitFor(() =>
-      expect(postedBody(stub).zone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone),
-    );
+    await waitFor(() => expect(postedBody(stub).zone).toBe('America/Los_Angeles'));
   });
 
   it('GivenAQualificationSelected_WhenDefining_ThenItIsRequiredOnTheShift', async () => {
