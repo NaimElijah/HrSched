@@ -2772,6 +2772,85 @@ class SchedulingServiceTest {
         .isInstanceOf(NotATenantMemberException.class);
   }
 
+  @Test
+  void GivenTheOperator_WhenReadingAGeneration_ThenItIsRefused() {
+    GenerationState started =
+        backgroundThatNeverRuns(Clock.fixed(NOW, ZoneOffset.UTC))
+            .startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+
+    assertThatThrownBy(() -> service.findGeneration(anOperator(), ACME, started.id()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  // --- Another organisation's Scheduler or Admin is refused by every use case naming ours ------
+  //
+  // One test per driving-port method, for the reason the operator's are: each is a tenancy
+  // decision, and a cross-tenant read or write is a security incident.
+
+  @Test
+  void
+      GivenASchedulerOfAnotherOrganisation_WhenPublishingOurDraft_ThenItIsRefusedAndItStaysADraft() {
+    Roster draft = emptyDraft(ACME);
+
+    assertThatThrownBy(() -> service.publish(scheduler(RIVAL), ACME, draft.id()))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
+  }
+
+  @Test
+  void
+      GivenASchedulerOfAnotherOrganisation_WhenRemovingOurAssignment_ThenItIsRefusedAndTheAssignmentIsKept() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+
+    assertThatThrownBy(
+            () ->
+                service.unassign(
+                    scheduler(RIVAL), new RemoveAssignmentCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(rosters.byId(draft.id()).assignments()).containsExactly(new Assignment(shift, ada));
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingOurRules_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.currentConstraints(admin(RIVAL), ACME))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenRevisingOurRules_ThenItIsRefusedAndNothingIsStored() {
+    // Invented: one hour a day.
+    assertThatThrownBy(
+            () ->
+                service.reviseConstraints(
+                    admin(RIVAL),
+                    new ReviseConstraintsCommand(
+                        ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(1))))))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(constraintSets.findCurrent(ACME)).isEmpty();
+  }
+
+  @Test
+  void GivenASchedulerOfAnotherOrganisation_WhenReadingOurRoster_ThenItIsRefused() {
+    Roster draft = emptyDraft(ACME);
+
+    assertThatThrownBy(() -> service.findRoster(scheduler(RIVAL), ACME, draft.id()))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenASchedulerOfAnotherOrganisation_WhenListingOurRosters_ThenItIsRefused() {
+    emptyDraft(ACME);
+
+    assertThatThrownBy(() -> service.findRosters(scheduler(RIVAL), ACME))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
   private static Operator anOperator() {
     return new Operator(UserId.newId());
   }

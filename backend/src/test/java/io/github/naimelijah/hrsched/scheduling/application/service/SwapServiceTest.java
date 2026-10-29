@@ -1428,6 +1428,41 @@ class SwapServiceTest {
         .isInstanceOf(NotATenantMemberException.class);
   }
 
+  // --- Another organisation's Scheduler is refused deciding ours -----------------------------
+  //
+  // One test per decision, for the reason the operator's are.
+
+  @Test
+  void
+      GivenASchedulerOfAnotherOrganisation_WhenApprovingOurSwap_ThenItIsRefusedAndNothingChanges() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+
+    assertThatThrownBy(() -> service.approveSwap(scheduler(RIVAL), ACME, request))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+  }
+
+  @Test
+  void
+      GivenASchedulerOfAnotherOrganisation_WhenRejectingOurSwap_ThenItIsRefusedAndItIsStillRequested() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+
+    assertThatThrownBy(() -> service.rejectSwap(scheduler(RIVAL), ACME, request))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+  }
+
   private static Operator anOperator() {
     return new Operator(UserId.newId());
   }
