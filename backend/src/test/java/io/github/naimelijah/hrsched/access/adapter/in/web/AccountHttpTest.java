@@ -646,13 +646,19 @@ class AccountHttpTest {
   /** A 404 rather than a 403: saying otherwise would confirm that account exists. */
   @Test
   void GivenAnAccountOfAnotherOrganisation_WhenChangingIt_ThenItIsNotFound() throws Exception {
-    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.SCHEDULER);
+    String theirName = anInventedSignInName();
+    String theirs = create(admin(anOrganisation()), theirName, Role.SCHEDULER);
 
     mockMvc
         .perform(
             with(put("/api/accounts/%s/membership".formatted(theirs)), admin(anOrganisation()))
                 .content("{\"role\":\"ADMIN\"}"))
         .andExpect(status().isNotFound());
+
+    mockMvc
+        .perform(signInAs(theirName, A_PASSWORD))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.session.role").value("SCHEDULER"));
   }
 
   @Test
@@ -745,6 +751,22 @@ class AccountHttpTest {
     mockMvc.perform(signInAs(signInName, A_PASSWORD)).andExpect(status().isOk());
   }
 
+  /** A 404 rather than a 403, and the account keeps signing in: nothing reached it. */
+  @Test
+  void GivenAnAccountOfAnotherOrganisation_WhenDisablingIt_ThenItIsNotFoundAndStillSignsIn()
+      throws Exception {
+    String theirName = anInventedSignInName();
+    String theirs = create(admin(anOrganisation()), theirName, Role.SCHEDULER);
+
+    mockMvc
+        .perform(
+            with(put("/api/accounts/%s/activation".formatted(theirs)), admin(anOrganisation()))
+                .content("{\"active\":false}"))
+        .andExpect(status().isNotFound());
+
+    mockMvc.perform(signInAs(theirName, A_PASSWORD)).andExpect(status().isOk());
+  }
+
   @Test
   void GivenTheLastActiveAdmin_WhenDisabled_ThenItIsAConflict() throws Exception {
     String admin = theOnlyAdminOf(anInventedSignInName());
@@ -816,13 +838,18 @@ class AccountHttpTest {
   @Test
   void GivenAnAccountOfAnotherOrganisation_WhenResettingItsPassword_ThenItIsNotFound()
       throws Exception {
-    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.SCHEDULER);
+    String theirName = anInventedSignInName();
+    String theirs = create(admin(anOrganisation()), theirName, Role.SCHEDULER);
+    String replacement = "an invented password the rival would choose";
 
     mockMvc
         .perform(
             with(post("/api/accounts/%s/password".formatted(theirs)), admin(anOrganisation()))
-                .content("{\"temporaryPassword\":\"%s\"}".formatted(A_PASSWORD)))
+                .content("{\"temporaryPassword\":\"%s\"}".formatted(replacement)))
         .andExpect(status().isNotFound());
+
+    mockMvc.perform(signInAs(theirName, A_PASSWORD)).andExpect(status().isOk());
+    mockMvc.perform(signInAs(theirName, replacement)).andExpect(status().isUnauthorized());
   }
 
   /** Onboards an organisation whose first — and for now only — Admin signs in under this name. */
