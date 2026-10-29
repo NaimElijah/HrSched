@@ -33,6 +33,9 @@ import org.springframework.test.web.servlet.MockMvc;
  * half of the API, and the half where self-service makes the acting identity load-bearing rather
  * than decorative.
  *
+ * <p>Every instant, figure and name below is invented; contracted minutes are a term of an
+ * individual agreement, and none is taken from any statute.
+ *
  * <p>Annotated identically to {@code RosteringHttpTest} on purpose. A differing annotation set
  * would give this class its own Spring context cache key and pay a second full startup for nothing.
  */
@@ -94,6 +97,7 @@ class EmployeeHttpTest {
             as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-10-07T00:00:00Z\",\"end\":\"2026-10-08T00:00:00Z\"}"))
         .andExpect(status().isNoContent());
+    // Invented: a contracted week, a term of an individual agreement and never a statute's.
     mockMvc
         .perform(
             as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
@@ -303,6 +307,7 @@ class EmployeeHttpTest {
     String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
 
+    // Invented: a contracted week, a term of an individual agreement and never a statute's.
     mockMvc
         .perform(
             as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")

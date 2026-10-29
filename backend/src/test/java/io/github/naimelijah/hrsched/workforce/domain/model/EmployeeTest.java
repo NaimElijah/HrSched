@@ -12,7 +12,11 @@ import java.time.Instant;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
-/** Specification of the employee aggregate. */
+/**
+ * Specification of the employee aggregate.
+ *
+ * <p>Every instant and figure below is invented. None is taken from any jurisdiction.
+ */
 class EmployeeTest {
 
   private static final OrganisationId ACME = OrganisationId.newId();
@@ -246,6 +250,7 @@ class EmployeeTest {
 
   @Test
   void GivenAnEmployee_WhenContracted_ThenTheTermsAreHeld() {
+    // Invented: contracted hours are a term of an individual agreement, never a statute's.
     Employee parttime = ada().contractedTo(new ContractTerms(Duration.ofHours(20)));
 
     assertThat(parttime.contractTerms())

@@ -53,6 +53,8 @@ import org.junit.jupiter.api.Test;
  * <p>The isolation tests here are the ones whose failure would be a security incident rather than a
  * bug. They assert that an actor of one organisation cannot read, write, or even learn of the
  * existence of another organisation's data.
+ *
+ * <p>Every instant and figure below is invented. None is taken from any jurisdiction.
  */
 class EmployeeServiceTest {
 
@@ -861,6 +863,7 @@ class EmployeeServiceTest {
   void GivenAnEmployee_WhenTheirContractIsSet_ThenTheyAreReadForUpdate() {
     EmployeeId ada = anEmployeeOfAcme();
 
+    // Invented: contracted hours are a term of an individual agreement, never a statute's.
     service.setContractTerms(
         admin(ACME), new SetContractTermsCommand(ACME, ada, Duration.ofHours(30)));
 
@@ -1188,6 +1191,7 @@ class EmployeeServiceTest {
 
   @Test
   void GivenTheOperator_WhenSettingContractTerms_ThenItIsRefused() {
+    // Invented: contracted hours are a term of an individual agreement, never a statute's.
     assertThatThrownBy(
             () ->
                 service.setContractTerms(

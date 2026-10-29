@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -143,7 +144,7 @@ class JdbcEmployeeRepositoryTest {
     assertThat(repository.findById(ACME, casual.id()))
         .get()
         .extracting(Employee::contractTerms)
-        .satisfies(terms -> assertThat(terms).isEqualTo(java.util.Optional.empty()));
+        .satisfies(terms -> assertThat(terms).isEqualTo(Optional.empty()));
   }
 
   @Test
@@ -167,7 +168,7 @@ class JdbcEmployeeRepositoryTest {
     assertThat(repository.findById(ACME, ada.id()))
         .get()
         .extracting(Employee::qualifications)
-        .isEqualTo(java.util.Set.of(forklift, crane));
+        .isEqualTo(Set.of(forklift, crane));
   }
 
   @Test
@@ -178,7 +179,7 @@ class JdbcEmployeeRepositoryTest {
     assertThat(repository.findById(ACME, ada.id()))
         .get()
         .extracting(Employee::unavailability)
-        .isEqualTo(java.util.List.of(A_FORTNIGHT_OFF, A_WEEK_OFF));
+        .isEqualTo(List.of(A_FORTNIGHT_OFF, A_WEEK_OFF));
   }
 
   @Test
@@ -191,7 +192,7 @@ class JdbcEmployeeRepositoryTest {
     assertThat(repository.findById(ACME, ada.id()))
         .get()
         .extracting(Employee::preferences)
-        .isEqualTo(java.util.List.of(wants, wouldRather));
+        .isEqualTo(List.of(wants, wouldRather));
   }
 
   /**
@@ -208,7 +209,7 @@ class JdbcEmployeeRepositoryTest {
     assertThat(repository.findById(ACME, ada.id()))
         .get()
         .extracting(Employee::unavailability)
-        .isEqualTo(java.util.List.of(A_FORTNIGHT_OFF, A_WEEK_OFF));
+        .isEqualTo(List.of(A_FORTNIGHT_OFF, A_WEEK_OFF));
   }
 
   /**
@@ -316,7 +317,7 @@ class JdbcEmployeeRepositoryTest {
 
     assertThat(repository.findByOrganisation(ACME))
         .extracting(Employee::unavailability)
-        .containsExactly(java.util.List.of(A_FORTNIGHT_OFF), java.util.List.of(A_WEEK_OFF));
+        .containsExactly(List.of(A_FORTNIGHT_OFF), List.of(A_WEEK_OFF));
   }
 
   /**

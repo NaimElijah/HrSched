@@ -56,7 +56,11 @@ class WorkforceCommandsTest {
         () -> new StatePreferenceCommand(null, ADA, MONDAY_DAY, PreferenceStrength.PREFERS),
         () -> new StatePreferenceCommand(ACME, null, MONDAY_DAY, PreferenceStrength.PREFERS),
         () -> new StatePreferenceCommand(ACME, ADA, null, PreferenceStrength.PREFERS),
-        () -> new StatePreferenceCommand(ACME, ADA, MONDAY_DAY, null),
+        () -> new StatePreferenceCommand(ACME, ADA, MONDAY_DAY, null));
+  }
+
+  private static Stream<ThrowingCallable> nullFieldsOnQualificationCommands() {
+    return Stream.of(
         () -> new DefineQualificationCommand(null, "Forklift"),
         () -> new DefineQualificationCommand(ACME, null));
   }
@@ -82,6 +86,13 @@ class WorkforceCommandsTest {
   @ParameterizedTest
   @MethodSource("nullFieldsOnAvailabilityCommands")
   void GivenANullField_WhenConstructingAnAvailabilityCommand_ThenItIsRejected(
+      ThrowingCallable constructing) {
+    assertThatThrownBy(constructing).isInstanceOf(NullPointerException.class);
+  }
+
+  @ParameterizedTest
+  @MethodSource("nullFieldsOnQualificationCommands")
+  void GivenANullField_WhenConstructingAQualificationCommand_ThenItIsRejected(
       ThrowingCallable constructing) {
     assertThatThrownBy(constructing).isInstanceOf(NullPointerException.class);
   }
