@@ -170,6 +170,20 @@ class SessionRefreshHttpTest {
     assertThat(refresh(token).getStatus()).isEqualTo(401);
   }
 
+  /**
+   * The idle limit, end to end: the session is still live, but its refresh token sat unused past
+   * its own expiry, so it renews nothing.
+   */
+  @Test
+  void GivenARefreshTokenPastItsIdleLimitInALiveSession_WhenRefreshing_ThenItIsRefused()
+      throws Exception {
+    MockHttpServletResponse signedIn = signIn(anOperator());
+    String token = refreshTokenOf(signedIn);
+    expireRefreshTokensOf(sessionOf(signedIn), Instant.now().minusSeconds(1));
+
+    assertThat(refresh(token).getStatus()).isEqualTo(401);
+  }
+
   @Test
   void GivenADisabledAccount_WhenRefreshing_ThenItIsRefused() throws Exception {
     Account account = anOperator();
@@ -418,6 +432,18 @@ class SessionRefreshHttpTest {
         .param("started", OffsetDateTime.ofInstant(when.minusSeconds(3600), ZoneOffset.UTC))
         .param("ended", OffsetDateTime.ofInstant(when, ZoneOffset.UTC))
         .param("id", session)
+        .update();
+  }
+
+  /**
+   * Moves the expiry of a session's refresh tokens into the past and leaves the session itself
+   * alone, so the token is idle while its session is live.
+   */
+  private static void expireRefreshTokensOf(UUID session, Instant when) {
+    PostgresDatabase.jdbcClient()
+        .sql("UPDATE refresh_token SET expires_at = :expired WHERE session_id = :session")
+        .param("expired", OffsetDateTime.ofInstant(when, ZoneOffset.UTC))
+        .param("session", session)
         .update();
   }
 
