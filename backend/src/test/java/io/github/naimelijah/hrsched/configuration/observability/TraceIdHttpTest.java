@@ -31,6 +31,19 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @AutoConfigureMockMvc
 class TraceIdHttpTest {
 
+  /** Invented: a W3C trace id, 32 lowercase hex digits, that no real trace carries. */
+  private static final String INVENTED_TRACE_ID = "5e1ec7ed5e1ec7ed5e1ec7ed5e1ec7ed";
+
+  /** Invented: a {@code traceparent} carrying {@link #INVENTED_TRACE_ID} and an invented span. */
+  private static final String INVENTED_TRACEPARENT =
+      "00-" + INVENTED_TRACE_ID + "-c0ffee00c0ffee00-01";
+
+  /**
+   * Invented: enough space-and-tab pairs to have the advisory's shape, few enough to parse quickly
+   * on a vulnerable version too, so the test asserts behaviour and never time.
+   */
+  private static final int WHITESPACE_PAIRS = 512;
+
   @Autowired private MockMvc mockMvc;
 
   /**
@@ -97,5 +110,35 @@ class TraceIdHttpTest {
     String second = traceIdOf(as(get("/api/qualifications"), "ADMIN"), 200);
 
     assertThat(first).isNotEqualTo(second);
+  }
+
+  @Test
+  void GivenAnInboundTraceparent_WhenTheRequestIsAnswered_ThenTheResponseCarriesItsTraceId()
+      throws Exception {
+    MockHttpServletRequestBuilder request =
+        as(get("/api/qualifications"), "ADMIN")
+            .header("traceparent", INVENTED_TRACEPARENT)
+            .header("tracestate", "invented=value");
+
+    assertThat(traceIdOf(request, 200)).isEqualTo(INVENTED_TRACE_ID);
+  }
+
+  /**
+   * The input class of GHSA-ccrj-gw8r-854m (#285): a {@code tracestate} with a long run of spaces
+   * and tabs and no comma after it. Sent without a token, because that is the exposure the threat
+   * model records: the header is parsed before the security chain, for anybody. What this pins is
+   * that such a header is extracted ahead of the refusal and loses neither the request nor its
+   * inbound trace. How long parsing it takes is the dependency audit's to catch, not a wall-clock
+   * assertion's.
+   */
+  @Test
+  void GivenAnAnonymousTracestateOfLongWhitespaceRuns_WhenRefused_ThenItKeepsTheInboundTrace()
+      throws Exception {
+    MockHttpServletRequestBuilder request =
+        get("/api/qualifications")
+            .header("traceparent", INVENTED_TRACEPARENT)
+            .header("tracestate", "invented=value" + " \t".repeat(WHITESPACE_PAIRS));
+
+    assertThat(traceIdOf(request, 401)).isEqualTo(INVENTED_TRACE_ID);
   }
 }
