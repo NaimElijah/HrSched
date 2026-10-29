@@ -142,6 +142,59 @@ class NotificationServiceTest {
                     new NotifyCommand(
                         ACME, ADA, NotifiableEvent.SWAP_REQUESTED, UUID.randomUUID())))
         .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(service.findMine(themself(ACME, ADA), ACME)).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The platform operator belongs to no organisation, so has nobody to tell anything to (ADR-030).
+   * Refused before anything is stored, and nothing recorded.
+   */
+  @Test
+  void GivenTheOperator_WhenNotifyingSomebody_ThenItIsRefusedAndNothingIsStored() {
+    assertThatThrownBy(
+            () ->
+                service.notify(
+                    new Operator(UserId.newId()),
+                    new NotifyCommand(
+                        ACME, ADA, NotifiableEvent.SWAP_REQUESTED, UUID.randomUUID())))
+        .isInstanceOf(NotATenantMemberException.class);
+    assertThat(service.findMine(themself(ACME, ADA), ACME)).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The actor is linked to Ada's own record, so the inbox lookup alone would find her notification:
+   * only the check of the actor against the organisation named refuses. Over HTTP the organisation
+   * comes from the token, so only the port can be handed a mismatched one.
+   */
+  @Test
+  void
+      GivenAnActorOfAnotherOrganisation_WhenAcknowledgingOneOfOurs_ThenItIsRefusedAndStaysUnread() {
+    NotificationId adas = notifyAda(UUID.randomUUID());
+
+    assertThatThrownBy(() -> service.markRead(themself(RIVAL, ADA), ACME, adas))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(service.findMine(themself(ACME, ADA), ACME))
+        .singleElement()
+        .extracting(PublishedNotification::read)
+        .isEqualTo(false);
+    assertThat(audit.of(NotificationChange.NOTIFICATION_READ)).isEmpty();
+  }
+
+  /** Nobody without a personnel record has an inbox to acknowledge anything in. */
+  @Test
+  void GivenAnActorWithNoPersonnelRecord_WhenAcknowledging_ThenItIsRefusedAndNothingIsRecorded() {
+    NotificationId adas = notifyAda(UUID.randomUUID());
+
+    assertThatThrownBy(
+            () -> service.markRead(new TenantActor(UserId.newId(), ACME, Role.ADMIN), ACME, adas))
+        .isInstanceOf(NotAddressableException.class);
+    assertThat(service.findMine(themself(ACME, ADA), ACME))
+        .singleElement()
+        .extracting(PublishedNotification::read)
+        .isEqualTo(false);
+    assertThat(audit.of(NotificationChange.NOTIFICATION_READ)).isEmpty();
   }
 
   @Test
