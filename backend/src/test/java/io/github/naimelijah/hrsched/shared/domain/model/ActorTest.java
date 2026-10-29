@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -84,6 +85,49 @@ class ActorTest {
 
     assertThatThrownBy(() -> employee.requireRoleIn(Set.of(Role.SCHEDULER)))
         .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenATenantActor_WhenRequiringTenantMembership_ThenTheyAreReturned() {
+    Actor member = new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE);
+
+    assertThat(member.requireTenantMembership()).isSameAs(member);
+  }
+
+  @Test
+  void GivenTheOperator_WhenRequiringTenantMembership_ThenItIsRefusedAsNotAMember() {
+    Actor operator = new Operator(UserId.newId());
+
+    assertThatThrownBy(operator::requireTenantMembership)
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenAnActorLinkedToAnEmployee_WhenAskedIfTheyAreThatEmployee_ThenTheyAre() {
+    EmployeeId themself = EmployeeId.newId();
+    TenantActor actor = new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(themself));
+
+    assertThat(actor.isThemself(themself)).isTrue();
+  }
+
+  @Test
+  void GivenAnActorLinkedToAnEmployee_WhenAskedIfTheyAreAnotherEmployee_ThenTheyAreNot() {
+    TenantActor actor =
+        new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(EmployeeId.newId()));
+
+    assertThat(actor.isThemself(EmployeeId.newId())).isFalse();
+  }
+
+  /**
+   * An account linked to nobody is nobody's own record, even when its user id and an employee id
+   * carry the same UUID: the two identities are never compared (ADR-012).
+   */
+  @Test
+  void GivenAnActorLinkedToNobody_WhenAskedIfTheyAreAnEmployeeWithTheirOwnUuid_ThenTheyAreNot() {
+    UserId id = UserId.newId();
+    TenantActor actor = new TenantActor(id, ACME, Role.SCHEDULER);
+
+    assertThat(actor.isThemself(new EmployeeId(id.value()))).isFalse();
   }
 
   @Test
