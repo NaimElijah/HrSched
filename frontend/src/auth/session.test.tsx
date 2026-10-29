@@ -123,17 +123,13 @@ describe('signing out', () => {
 
 describe('changing a password', () => {
   it('GivenAChangedPassword_WhenAccepted_ThenTheShellIsShown', async () => {
-    let changed = false;
-    serving(() => ({
+    const stub = serving(() => ({
       'POST /api/auth/refresh': {
         status: 200,
         body: signedInBody({ ...A_TENANT, passwordChangeRequired: true }),
       },
       '/api/auth/session': { status: 200, body: { ...A_TENANT, passwordChangeRequired: true } },
-      'POST /api/auth/password': (() => {
-        changed = true;
-        return { status: 200, body: signedInBody() };
-      })(),
+      'POST /api/auth/password': { status: 200, body: signedInBody() },
     }));
     show();
     await screen.findByRole('heading', { name: 'Change your password' });
@@ -144,7 +140,14 @@ describe('changing a password', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
 
     expect(await screen.findByRole('button', { name: 'People' })).toBeInTheDocument();
-    expect(changed).toBe(true);
+    const sent = stub.mock.calls.filter(
+      ([path, init]) => path === '/api/auth/password' && init?.method === 'POST',
+    );
+    expect(sent, 'the password changes sent').toHaveLength(1);
+    expect(JSON.parse(String(sent[0]?.[1]?.body))).toEqual({
+      currentPassword: PASSWORD,
+      newPassword: 'another invented password',
+    });
   });
 
   it('GivenTwoNewPasswordsThatDiffer_WhenSubmitted_ThenNothingIsSent', async () => {
