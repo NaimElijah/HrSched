@@ -174,7 +174,7 @@ describe('the other refusals', () => {
     (thrown) => {
       render(<Failure error={thrown} />);
 
-      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toHaveTextContent(String(thrown));
     },
   );
 
