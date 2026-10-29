@@ -20,6 +20,9 @@ import io.github.naimelijah.hrsched.architecture.fixtures.actors.ReferencesTheOp
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDomain;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDrivenPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesThroughThePublishedPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainUsingSpring;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainWithAWireFormat;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.FixturePayslip;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.FixtureKernelValue;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoAPublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoAnUnlistedContext;
@@ -128,6 +131,37 @@ class HexagonalArchitectureRulesTest {
     EvaluationResult result =
         evaluate(
             HexagonalArchitectureTest.theSharedKernelDependsOnNoContext(FIXTURES),
+            FixtureKernelValue.class);
+
+    assertHolds(result);
+  }
+
+  @Test
+  void GivenADomainClassUsingALibrary_WhenTheDomainRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.domain_depends_on_nothing_but_the_jdk,
+            DomainWithAWireFormat.class);
+
+    assertViolatedNaming(result, "com.fasterxml.jackson.annotation.JsonProperty");
+  }
+
+  @Test
+  void GivenADomainClassUsingSpring_WhenTheDomainRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.domain_depends_on_nothing_but_the_jdk,
+            DomainUsingSpring.class);
+
+    assertViolatedNaming(result, "org.springframework.util.Assert");
+  }
+
+  @Test
+  void GivenDomainClassesKnowingOnlyTheJdk_WhenTheDomainRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.domain_depends_on_nothing_but_the_jdk,
+            FixturePayslip.class,
             FixtureKernelValue.class);
 
     assertHolds(result);

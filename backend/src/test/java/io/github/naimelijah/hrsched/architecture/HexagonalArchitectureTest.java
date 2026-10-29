@@ -39,19 +39,27 @@ class HexagonalArchitectureTest {
   /** The name of {@code Account.actor()}, which ArchUnit matches by name rather than by literal. */
   private static final String ACTOR_METHOD = "actor";
 
+  /**
+   * The domain depends on the JDK and on HrSched's own domain, and on nothing else.
+   *
+   * <p>An allow-list rather than a list of forbidden frameworks: a list names only the libraries
+   * somebody thought of, so a Jackson annotation on a domain record, or any library added later,
+   * passed it. {@code HexagonalArchitectureRulesTest} watches it reject both a library and Spring.
+   * Within HrSched it still forbids the outer layers by name, which {@link
+   * #dependencies_point_inward} also does.
+   */
   @ArchTest
   static final ArchRule domain_depends_on_nothing_but_the_jdk =
       noClasses()
           .that()
           .resideInAPackage("..domain..")
           .should()
-          .dependOnClassesThat()
-          .resideInAnyPackage(
-              "org.springframework..",
-              "jakarta..",
-              "..application..",
-              "..adapter..",
-              "..configuration..")
+          .dependOnClassesThat(
+              JavaClass.Predicates.resideOutsideOfPackages(
+                      "java..", "io.github.naimelijah.hrsched..")
+                  .or(
+                      JavaClass.Predicates.resideInAnyPackage(
+                          "..application..", "..adapter..", "..configuration..")))
           .because("the domain must be testable and reusable without the framework");
 
   @ArchTest
