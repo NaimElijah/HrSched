@@ -7,7 +7,11 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.stream.Stream;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Invariants a notification owns.
@@ -85,18 +89,22 @@ class NotificationTest {
                 id, ACME, ADA, NotificationKind.SWAP_REJECTED, UUID.randomUUID(), NOON));
   }
 
-  @Test
-  void GivenANullField_WhenCreatingANotification_ThenItIsRejected() {
-    assertThatThrownBy(
-            () ->
-                new Notification(
-                    NotificationId.newId(),
-                    ACME,
-                    ADA,
-                    NotificationKind.SWAP_REQUESTED,
-                    UUID.randomUUID(),
-                    null))
-        .isInstanceOf(NullPointerException.class);
+  /** One constructor argument left null in each row, every other one present. */
+  private static Stream<ThrowingCallable> constructionsMissingOneField() {
+    NotificationKind kind = NotificationKind.SWAP_REQUESTED;
+    return Stream.of(
+        () -> new Notification(null, ACME, ADA, kind, UUID.randomUUID(), NOON),
+        () -> new Notification(NotificationId.newId(), null, ADA, kind, UUID.randomUUID(), NOON),
+        () -> new Notification(NotificationId.newId(), ACME, null, kind, UUID.randomUUID(), NOON),
+        () -> new Notification(NotificationId.newId(), ACME, ADA, null, UUID.randomUUID(), NOON),
+        () -> new Notification(NotificationId.newId(), ACME, ADA, kind, null, NOON),
+        () -> new Notification(NotificationId.newId(), ACME, ADA, kind, UUID.randomUUID(), null));
+  }
+
+  @ParameterizedTest
+  @MethodSource("constructionsMissingOneField")
+  void GivenANullField_WhenCreatingANotification_ThenItIsRejected(ThrowingCallable creating) {
+    assertThatThrownBy(creating).isInstanceOf(NullPointerException.class);
   }
 
   /**
