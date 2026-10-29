@@ -1025,10 +1025,12 @@ class SwapServiceTest {
   }
 
   /**
-   * A lapse that cannot be stored refuses the whole publication, and the transaction takes back
-   * every write before it, but never an audit line or a notification once raised. So every lapse is
-   * stored before anything is recorded or told, and a refusal part-way leaves no account of the
-   * lapses before it, nor of a supersession that never happened.
+   * A lapse that cannot be stored refuses the whole publication. The transaction takes back every
+   * write before it, a notification's row among them, because the notifications use case joins the
+   * publication's transaction (ADR-023). It never takes back an audit line, this context's or the
+   * one the notifications context records for each notification it stores. So every lapse is stored
+   * before anything is recorded or told, and a refusal part-way leaves no account of the lapses
+   * before it, nor of a supersession that never happened.
    */
   @Test
   void GivenALapseThatCannotBeStored_WhenPublishing_ThenNothingIsRecordedOrToldFirst() {
