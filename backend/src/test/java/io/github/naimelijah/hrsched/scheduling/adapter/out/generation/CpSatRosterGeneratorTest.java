@@ -3,6 +3,11 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.generation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.google.ortools.sat.CpSolver;
 import com.google.ortools.sat.CpSolverStatus;
 import com.google.ortools.sat.LinearExpr;
@@ -33,7 +38,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
@@ -471,5 +478,51 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
                     meters, limited, new GenerationPolicy(LIMIT.multipliedBy(2))))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("hrsched.generation.lost-after");
+  }
+
+  /**
+   * The line every generation logs says how it went in counts, statuses and the organisation's
+   * identity, and nothing about anybody: a candidate's name, or when they cannot work, is personal
+   * data, and a log is copied to places a database is not. The name and the absence are invented.
+   */
+  @Test
+  void GivenCandidatesWithNamesAndAbsences_WhenGenerated_ThenTheLogLineCarriesNeitherOfThem() {
+    String name = "Ada Lovelace";
+    TimeRange away =
+        new TimeRange(Instant.parse("2026-10-06T00:00:00Z"), Instant.parse("2026-10-07T00:00:00Z"));
+    RosterCandidate ada =
+        new RosterCandidate(
+            EmployeeId.newId(), name, Set.of(), List.of(away), StatedPreferences.none());
+    Logger logger =
+        ((LoggerContext) LoggerFactory.getILoggerFactory())
+            .getLogger(CpSatRosterGenerator.class.getName());
+    ListAppender<ILoggingEvent> captured = new ListAppender<>();
+    captured.start();
+    logger.addAppender(captured);
+    try {
+      generator.generate(
+          request(
+              List.of(shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1, Set.of())),
+              List.of(ada),
+              ConstraintSet.initial(ACME)));
+    } finally {
+      logger.detachAppender(captured);
+    }
+
+    assertThat(captured.list)
+        .singleElement()
+        .satisfies(
+            logged -> {
+              assertThat(logged.getLevel()).isEqualTo(Level.INFO);
+              assertThat(logged.getFormattedMessage()).isEqualTo("Roster generated");
+              assertThat(logged.getKeyValuePairs())
+                  .extracting(pair -> pair.value)
+                  .allSatisfy(
+                      value ->
+                          assertThat(value)
+                              .describedAs("a count, a status or an identity, never free text")
+                              .isInstanceOfAny(
+                                  UUID.class, Integer.class, Double.class, CpSolverStatus.class));
+            });
   }
 }
