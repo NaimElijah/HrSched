@@ -1368,6 +1368,41 @@ class SchedulingServiceTest {
   }
 
   @Test
+  void GivenAnAdminRole_WhenRemovingAnAssignment_ThenItIsRefusedAndTheAssignmentIsKept() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+
+    assertThatThrownBy(
+            () ->
+                service.unassign(
+                    admin(ACME), new RemoveAssignmentCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(rosters.byId(draft.id()).assignments()).containsExactly(new Assignment(shift, ada));
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.ASSIGNMENT_REMOVED);
+  }
+
+  /** Ada may not take herself off her own shift: changing a draft is the Scheduler's alone. */
+  @Test
+  void GivenAnEmployeeRole_WhenRemovingAnAssignment_ThenItIsRefusedAndTheAssignmentIsKept() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+
+    assertThatThrownBy(
+            () ->
+                service.unassign(
+                    themself(ACME, ada), new RemoveAssignmentCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(rosters.byId(draft.id()).assignments()).containsExactly(new Assignment(shift, ada));
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.ASSIGNMENT_REMOVED);
+  }
+
+  @Test
   void GivenASchedulerOfAnotherOrganisation_WhenAssigning_ThenItIsRefused() {
     EmployeeId ada = available(ACME, "Ada");
     Roster draft = emptyDraft(ACME);
