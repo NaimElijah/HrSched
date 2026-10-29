@@ -96,29 +96,39 @@ class HexagonalArchitectureTest {
    * services, its adapters and its driven ports all stay private. See ADR-008.
    *
    * <p>Loosening a rule is exactly when a rule quietly stops protecting anything, so this one has a
-   * failure test: it must reject a reference into another context's domain while permitting one
+   * failure test: {@code HexagonalArchitectureRulesTest} evaluates it against fixture contexts, and
+   * it must reject a reference into another context's domain or driven ports while permitting one
    * into its published ports.
    */
   @ArchTest
   static final ArchRule contexts_touch_only_published_ports_of_other_contexts =
-      classes()
-          .should(onlyReachOtherContextsThroughTheirPublishedPorts())
-          .because("a context may use another context's published driving ports, and nothing else");
+      contextsTouchOnlyPublishedPortsOfOtherContexts(ContextPackages.HRSCHED);
 
-  private static ArchCondition<JavaClass> onlyReachOtherContextsThroughTheirPublishedPorts() {
+  /**
+   * @param packages where the contexts are; {@link ContextPackages#HRSCHED} for the build's rule
+   * @return the cross-context rule over those contexts
+   */
+  static ArchRule contextsTouchOnlyPublishedPortsOfOtherContexts(ContextPackages packages) {
+    return classes()
+        .should(onlyReachOtherContextsThroughTheirPublishedPorts(packages))
+        .because("a context may use another context's published driving ports, and nothing else");
+  }
+
+  private static ArchCondition<JavaClass> onlyReachOtherContextsThroughTheirPublishedPorts(
+      ContextPackages packages) {
     return new ArchCondition<>("only reach other contexts through their published driving ports") {
       @Override
       public void check(JavaClass origin, ConditionEvents events) {
-        Optional<String> originContext = ContextPackages.contextOf(origin);
+        Optional<String> originContext = packages.contextOf(origin);
         if (originContext.isEmpty()) {
           return;
         }
         for (Dependency dependency : origin.getDirectDependenciesFromSelf()) {
           JavaClass target = dependency.getTargetClass();
-          Optional<String> targetContext = ContextPackages.contextOf(target);
+          Optional<String> targetContext = packages.contextOf(target);
           boolean crossesContexts =
               targetContext.isPresent() && !targetContext.get().equals(originContext.get());
-          if (crossesContexts && !ContextPackages.isPublished(target)) {
+          if (crossesContexts && !packages.isPublished(target)) {
             events.add(SimpleConditionEvent.violated(origin, dependency.getDescription()));
           }
         }
@@ -132,16 +142,40 @@ class HexagonalArchitectureTest {
    * <p>A shared kernel is a coupling every context pays for, so it only stays cheap while it stays
    * small and knows nothing. The moment it reaches into a context, every context transitively
    * depends on that one and the boundaries stop meaning anything. See ADR-008.
+   *
+   * <p>What counts as a context comes from {@link ContextPackages#contextOf}, the definition the
+   * cross-context rule uses, rather than from a list of names: a hand-kept list left out {@code
+   * notifications} when that context arrived (#220), and would leave out the next one too. {@code
+   * HexagonalArchitectureRulesTest} watches it reject a kernel class reaching into {@code
+   * notifications}, into a context no list names, and into configuration.
+   *
+   * <p>In this tree such a reference is also a cycle, as every context depends on the kernel, and
+   * {@link #layers_within_a_context_are_free_of_cycles} reports it too. This rule is the one that
+   * says why, and the one that still holds for a context that does not use the kernel.
    */
   @ArchTest
   static final ArchRule the_shared_kernel_depends_on_no_context =
-      noClasses()
-          .that()
-          .resideInAPackage("..shared..")
-          .should()
-          .dependOnClassesThat()
-          .resideInAnyPackage("..scheduling..", "..workforce..", "..access..", "..configuration..")
-          .because("a kernel that knows about a context couples every context to that context");
+      theSharedKernelDependsOnNoContext(ContextPackages.HRSCHED);
+
+  /**
+   * @param packages where the contexts are; {@link ContextPackages#HRSCHED} for the build's rule
+   * @return the kernel rule over those contexts
+   */
+  static ArchRule theSharedKernelDependsOnNoContext(ContextPackages packages) {
+    return noClasses()
+        .that()
+        .resideInAPackage("..shared..")
+        .should()
+        .dependOnClassesThat(aContextOrTheCompositionRoot(packages))
+        .because("a kernel that knows about a context couples every context to that context");
+  }
+
+  private static DescribedPredicate<JavaClass> aContextOrTheCompositionRoot(
+      ContextPackages packages) {
+    return DescribedPredicate.<JavaClass>describe(
+            "belong to a bounded context", target -> packages.contextOf(target).isPresent())
+        .or(JavaClass.Predicates.resideInAPackage("..configuration.."));
+  }
 
   /**
    * Nothing prints.
