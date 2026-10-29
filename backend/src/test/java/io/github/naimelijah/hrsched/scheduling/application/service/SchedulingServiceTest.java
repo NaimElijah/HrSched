@@ -31,6 +31,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
+import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Objective;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
@@ -263,22 +264,33 @@ class SchedulingServiceTest {
 
   @Test
   void GivenRulesTightenedAfterGeneration_WhenPublishing_ThenItIsRefusedWithEveryViolation() {
-    available(ACME, "Ada");
+    EmployeeId ada = available(ACME, "Ada");
     service.defineShift(
         scheduler(ACME),
         new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster draft =
         Generations.draft(service, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
-    // Invented: one hour a day, which the eight-hour shift already assigned cannot satisfy.
+    // Invented: one hour a day and one a week, which the eight-hour shift already assigned breaks
+    // both of, so a refusal naming only the first would show.
     service.reviseConstraints(
         admin(ACME),
         new ReviseConstraintsCommand(
-            ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(1)))));
+            ACME,
+            List.of(
+                new MaximumDailyWorkingTime(Duration.ofHours(1)),
+                new MaximumWeeklyWorkingTime(Duration.ofHours(1)))));
 
     assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, draft.id()))
         .describedAs("a roster breaking the rules cannot be published, and there is no override")
-        .isInstanceOf(RosterNotCompliantException.class);
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations())
+                    .extracting(ConstraintViolation::employee, ConstraintViolation::constraint)
+                    .containsExactlyInAnyOrder(
+                        tuple(ada, "maximum daily working time"),
+                        tuple(ada, "maximum weekly working time")));
     assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
   }
 
