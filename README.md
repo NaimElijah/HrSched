@@ -127,7 +127,7 @@ Components, the authentication sequence and the data flow are in
 | Generation | Google OR-Tools, CP-SAT | 9.12.4544 | Every rule is a constraint, so a generated roster is legal by construction ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) |
 | Tests | JUnit Jupiter, Testcontainers | 6.0.3 / 2.0.5 | Every test that touches storage runs on a real PostgreSQL |
 | Architecture | ArchUnit | 1.5.1 | Turns the dependency rules into build failures |
-| Observability | OpenTelemetry starter, Micrometer Prometheus | Boot BOM | A trace id on every response and log line; metrics pull-only, and unreadable until [#78](https://github.com/NaimElijah/HrSched/issues/78) |
+| Observability | OpenTelemetry starter, Micrometer Prometheus | Boot BOM; OpenTelemetry 1.67.0 | A trace id on every response and log line; metrics pull-only, and unreadable until [#78](https://github.com/NaimElijah/HrSched/issues/78) |
 | Frontend | React, TypeScript, Vite | 19.2.8 / 6.0.3 / 8.3.5 | Strict types turn API drift into a compile error ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)) |
 | Frontend tests | Vitest, Testing Library | 5.0.5 / 16.3.3 | `fetch` is stubbed at the one module that calls it |
 | Format and lint | Spotless (google-java-format), Prettier, ESLint | 3.10.4 / 3.9.6 / 10.13.0 | Formatting is checked by the same command that builds |
