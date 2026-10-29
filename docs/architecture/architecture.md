@@ -295,10 +295,11 @@ solve, on a thread of its own, reads in another, asks the generator with none op
 draft in a third, so that a solve holds no pooled connection while it runs
 ([ADR-045](../ADRs/ADR-045-generate-outside-the-use-cases-transaction.md), [ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). An audit entry is
 a log line, though, and no rollback takes one back. So publication makes every
-refusal it can before it supersedes and records anything. The one refusal that can still follow
-those entries is `RosterPublicationConflictException`, which needs a writer that skipped the
-publication lock ([ADR-027](../ADRs/ADR-027-take-turns-publishing-within-an-organisation.md)). A durable
-trail is [#31](https://github.com/NaimElijah/HrSched/issues/31).
+refusal it can before it writes anything, and makes every write, the notifications it stores
+included, before it records anything. A refusal that can only come from a write, such as
+`RosterPublicationConflictException` when a writer skipped the publication lock
+([ADR-027](../ADRs/ADR-027-take-turns-publishing-within-an-organisation.md)), therefore leaves no
+scheduling entry behind. A durable trail is [#31](https://github.com/NaimElijah/HrSched/issues/31).
 
 ## External dependencies and integration points
 
@@ -560,8 +561,11 @@ are not audited. Nothing at runtime depends on any of it.
   takes the replacement draft with it, because the use case is one transaction (ADR-023).
 - **A publication lapses the swap requests waiting on what it supersedes (R33).** Before it records
   anything, `SchedulingService.publish` reads `findPendingNaming` for each roster it supersedes and
-  saves each request `LAPSED`. Once the published roster is stored, it records `SWAP_LAPSED` for
-  each and tells both parties - all in the publication's transaction. A swap approval stores its
+  saves each request `LAPSED`. Once the published roster is stored, it tells both parties of each
+  lapse, and of the approval when a swap approval is what publishes, and only then records one
+  `ROSTER_SUPERSEDED` per roster it supersedes, `ROSTER_PUBLISHED`, and one `SWAP_LAPSED` per
+  lapse - all in the publication's
+  transaction; `SwapService` records `SWAP_APPROVED` once it returns. A swap approval stores its
   own request as approved before that read, so it is never lapsed with the others; every other
   request on that roster is. The swap
   upsert only ever changes a request still `REQUESTED`, so no decision is written over another.

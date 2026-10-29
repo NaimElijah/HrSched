@@ -1301,6 +1301,98 @@ class SwapServiceTest {
     assertThat(log.calls()).first().isEqualTo(CallLog.Call.LOCK_PUBLICATIONS);
   }
 
+  // --- Telling is a write that can fail, so nothing is recorded before it ---------------------
+  //
+  // backend/CLAUDE.md: every write that can still fail runs before anything is recorded, because
+  // an audit line outlives the rollback of a failure that came after it. Telling a party stores a
+  // notification in this use case's transaction, so it is one of those writes.
+
+  /**
+   * This service over the same stores, telling through a notifier whose every telling fails. The
+   * publication it approves through is real here, so that tells through the failing one too.
+   */
+  private SwapService tellingNobody() {
+    FailingNotifier failing = new FailingNotifier();
+    SchedulingService publishing =
+        new SchedulingService(
+            shifts,
+            rosters,
+            constraintSets,
+            new FakeObjectiveWeights(),
+            swaps,
+            workforce,
+            new AssignsNobody(),
+            new RecordingUnitsOfWork(),
+            generations,
+            Runnable::run,
+            LOST_AFTER,
+            failing,
+            audit,
+            Clock.fixed(RAISED_AT, ZoneOffset.UTC));
+    return new SwapService(
+        swaps,
+        rosters,
+        shifts,
+        workforce,
+        publishing,
+        failing,
+        audit,
+        Clock.fixed(RAISED_AT, ZoneOffset.UTC));
+  }
+
+  @Test
+  void GivenATellingThatCannotBeStored_WhenRequestingASwap_ThenNothingIsRecorded() {
+    ShiftId shift = aShift(Set.of());
+    Roster published = publishedWith(ada, shift);
+    audit.forget();
+
+    assertThatThrownBy(
+            () ->
+                tellingNobody()
+                    .requestSwap(
+                        themself(ACME, ada),
+                        new RequestSwapCommand(ACME, published.id(), shift, ada, grace)))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * Approving publishes a replacement, which supersedes the roster the request names. The telling
+   * fails after all of that is stored, and takes it back, so none of it is recorded either.
+   */
+  @Test
+  void GivenATellingThatCannotBeStored_WhenApprovingASwap_ThenNothingIsRecorded() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    audit.forget();
+
+    assertThatThrownBy(() -> tellingNobody().approveSwap(scheduler(ACME), ACME, request))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes())
+        .describedAs("neither the approval nor the supersession and publication it rolls back with")
+        .isEmpty();
+  }
+
+  @Test
+  void GivenATellingThatCannotBeStored_WhenRejectingASwap_ThenNothingIsRecorded() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    audit.forget();
+
+    assertThatThrownBy(() -> tellingNobody().rejectSwap(scheduler(ACME), ACME, request))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
   // --- R32: an assignment has at most one pending swap request ------------------------------
 
   @Test

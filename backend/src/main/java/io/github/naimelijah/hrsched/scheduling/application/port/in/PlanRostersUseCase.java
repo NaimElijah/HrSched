@@ -99,6 +99,9 @@ public interface PlanRostersUseCase {
    * <p>Every roster it supersedes takes its pending swap requests with it: each lapses, and both
    * its parties are told, in the same transaction (R33).
    *
+   * <p>It records nothing until every save and every telling has run, so a write that fails leaves
+   * no audit line for a publication its rollback undid (#133).
+   *
    * @param actor whoever is publishing it; must be a Scheduler
    * @param organisation whose roster
    * @param roster which draft
@@ -119,7 +122,7 @@ public interface PlanRostersUseCase {
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException
    *     if a roster overlapping it was published at the same time by a writer that did not take
    *     turns. Publishing through this port always does (ADR-027), so this means some other writer
-   *     skipped the publication lock (ADR-026)
+   *     skipped the publication lock (ADR-026). Refused before anything is recorded
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if a
    *     request it lapses was decided meanwhile, which again needs a writer that skipped the lock.
    *     Refused before anything is recorded
@@ -127,16 +130,17 @@ public interface PlanRostersUseCase {
   Roster publish(Actor actor, OrganisationId organisation, RosterId roster);
 
   /**
-   * Publishes the replacement roster that approving a swap builds (ADR-022), and stores the
-   * approval with it.
+   * Publishes the replacement roster that approving a swap builds (ADR-022), stores the approval
+   * with it, and tells both its parties.
    *
    * <p>Exactly {@link #publish}, with one difference. The roster it supersedes is the one the
    * approved request names, so every other request still pending on that roster lapses (R33) and
    * this one must not. Storing the approval here, with the publication and before the lapse, is
-   * what keeps it from being taken for one of them (ADR-039).
+   * what keeps it from being taken for one of them (ADR-039). Its parties are told here too, before
+   * the publication records anything, because a telling is a write that can still fail (#133).
    *
-   * <p>Only {@code SwapService} has a reason to call this. It records the approval and tells the
-   * parties itself once this returns, after the approval is stored.
+   * <p>Only {@code SwapService} has a reason to call this. It records the approval itself once this
+   * returns, when every write the approval makes has run.
    *
    * @param actor whoever is approving; must be a Scheduler
    * @param organisation whose roster

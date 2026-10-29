@@ -142,7 +142,7 @@ public class SchedulingService
    *     (ADR-046)
    * @param generationPolicy how long a generation may stay pending before it counts as lost
    * @param swaps the requests a publication lapses when it supersedes the roster they name (R33)
-   * @param notifier how the parties to a lapsed request are told
+   * @param notifier how the parties to a request a publication lapses or approves are told
    * @param clock what a publication reads the time from, so that when it happened is an input a
    *     test supplies rather than an ambient fact
    */
@@ -634,8 +634,8 @@ public class SchedulingService
         rosters
             .findForUpdate(organisation, rosterId)
             .orElseThrow(() -> new UnknownRosterException(rosterId));
-    // Before anything else is read or written. Supersession saves and records, and an audit line
-    // outlives the rollback of a refusal that came after it (#133).
+    // Before anything else is read or written. Every check that can refuse runs before the first
+    // write (#133).
     draft.requireDraft();
     ConstraintSet constraints = currentOrInitial(organisation);
     // One read decides both what this publication replaces and what it is judged beside, so the two
@@ -655,23 +655,34 @@ public class SchedulingService
 
     List<Roster> replaced =
         existing.stream().filter(roster -> roster.isSupersededBy(draft)).toList();
-    // Before anything is written, for the reason requireDraft is: a refusal after the supersession
-    // would leave audit lines for a publication that never happened.
+    // Before anything is written, for the reason requireDraft is.
     approving.ifPresent(request -> requireSettledBy(request, organisation, replaced, draft));
 
     // Read under the lock, from the history the lock froze, and once: the rosters this supersedes
     // stop governing at the very moment this one starts to (R37, ADR-037).
     Instant at = Roster.nextMomentOfRecord(clock.instant(), existing);
-    // The swap writes come before anything is recorded. A refusal part-way through takes the
-    // writes back, but never an audit line (ADR-023). The approval is stored first, so the lapse
-    // that follows never takes it for a request still pending.
+    // Every write comes before anything is recorded: the saves, then the tellings, each of which
+    // stores a notification. A failure part-way through takes the writes back, but never an audit
+    // line (ADR-023, #133). The approval is stored first, so the lapse that follows never takes it
+    // for a request still pending.
     approving.ifPresent(swaps::save);
     List<SwapRequest> lapsed = lapsePendingSwapsOn(organisation, replaced);
-    supersede(actor, organisation, replaced, at);
+    supersede(replaced, at);
     Roster published = draft.publishedUnder(constraints.version(), at);
     rosters.save(published);
-    recorded(actor, organisation, SchedulingChange.ROSTER_PUBLISHED, published.id().value());
+    approving.ifPresent(request -> tellOfApproval(actor, organisation, request));
     tellOfLapses(actor, organisation, lapsed);
+
+    // Recorded per roster, not once for the publication that caused it. Nobody asked for these
+    // demotions, so without an entry each a roster appears to demote itself.
+    replaced.forEach(
+        demoted ->
+            recorded(
+                actor, organisation, SchedulingChange.ROSTER_SUPERSEDED, demoted.id().value()));
+    recorded(actor, organisation, SchedulingChange.ROSTER_PUBLISHED, published.id().value());
+    lapsed.forEach(
+        request ->
+            recorded(actor, organisation, SchedulingChange.SWAP_LAPSED, request.id().value()));
     return published;
   }
 
@@ -727,7 +738,7 @@ public class SchedulingService
   /**
    * R33: a request still waiting on a roster this publication supersedes has nothing left to
    * approve, so each lapses, in this publication's transaction. Stores them and nothing else; they
-   * are recorded and told once the publication is stored ({@link #tellOfLapses}).
+   * are told once the publication is stored ({@link #tellOfLapses}), and recorded after that.
    *
    * @return the requests it lapsed
    */
@@ -744,13 +755,26 @@ public class SchedulingService
     return lapsed;
   }
 
-  /** Records each lapse, and tells both its parties (R33). */
+  /**
+   * Tells both parties of each lapse (R33), and records nothing: a telling stores a notification, a
+   * write that can still fail, so {@code publish} records the lapses after every telling.
+   */
   private void tellOfLapses(Actor actor, OrganisationId organisation, List<SwapRequest> lapsed) {
     for (SwapRequest request : lapsed) {
-      recorded(actor, organisation, SchedulingChange.SWAP_LAPSED, request.id().value());
       notifier.swapLapsed(actor, organisation, request.requester(), request.id());
       notifier.swapLapsed(actor, organisation, request.counterparty(), request.id());
     }
+  }
+
+  /**
+   * Tells both parties that the swap this publication settles was approved. Here rather than in
+   * {@code SwapService}, which records the approval once this publication returns, because telling
+   * is a write and this publication records before it returns: told afterwards, a telling that
+   * failed would leave this publication's audit lines behind the rollback it causes (#133).
+   */
+  private void tellOfApproval(Actor actor, OrganisationId organisation, SwapRequest approved) {
+    notifier.swapApproved(actor, organisation, approved.counterparty(), approved.id());
+    notifier.swapApproved(actor, organisation, approved.requester(), approved.id());
   }
 
   @Override
@@ -1019,23 +1043,20 @@ public class SchedulingService
    *
    * <p>This is the mechanism that removes the need for an override — see ADR-005 and requirement
    * R6.
+   *
+   * <p>Stores, and records nothing: the publication's own save can still be refused after these, so
+   * {@code publish} records each supersession once every write has run.
    */
-  private void supersede(
-      Actor actor, OrganisationId organisation, List<Roster> replaced, Instant at) {
-    replaced.forEach(
-        existing -> {
-          rosters.save(existing.superseded(at));
-          // Recorded per roster, not once for the publication that caused it. Nobody asked for
-          // these demotions, so without an entry each a roster appears to demote itself.
-          recorded(actor, organisation, SchedulingChange.ROSTER_SUPERSEDED, existing.id().value());
-        });
+  private void supersede(List<Roster> replaced, Instant at) {
+    replaced.forEach(existing -> rosters.save(existing.superseded(at)));
   }
 
   /**
    * Records a change that has already been saved.
    *
-   * <p>Called after the repository, never before: an entry for something that then failed to store
-   * is worse than no entry, because it is a record of something that did not happen.
+   * <p>Called once every write the use case makes has run, its notifications included, never
+   * before: an audit line outlives the rollback of a write that fails after it, and an entry for
+   * something that then failed to store is a record of something that did not happen (#133).
    */
   private void recorded(
       Actor actor, OrganisationId organisation, SchedulingChange change, UUID subject) {

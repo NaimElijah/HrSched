@@ -43,6 +43,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterMeasures;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterScore;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
@@ -50,6 +51,8 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shortfall;
 import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
@@ -2463,6 +2466,75 @@ class SchedulingServiceTest {
     assertThat(audit.changes())
         .containsExactly(
             SchedulingChange.GENERATION_REQUESTED, SchedulingChange.GENERATION_REFUSED);
+  }
+
+  /**
+   * R33: a publication tells both parties of every request it lapses, and telling stores a
+   * notification in the publication's transaction, a write that can still fail. Its failure takes
+   * the lapse back, and the publication with it, so none of them is recorded before it is told
+   * (backend/CLAUDE.md).
+   */
+  @Test
+  void GivenATellingThatCannotBeStored_WhenAPublicationLapsesASwap_ThenNothingIsRecorded() {
+    EmployeeId ada = available(ACME, "Ada");
+    EmployeeId grace = available(ACME, "Grace");
+    ShiftId shift = publishedWork(ACME, ada, MONDAY_DAY);
+    Roster published = rosters.findByOrganisation(ACME).getFirst();
+    FakeSwaps swaps = new FakeSwaps(new CallLog());
+    swaps.save(
+        new SwapRequest(SwapRequestId.newId(), ACME, published.id(), shift, ada, grace, NOW));
+    SchedulingService tellingNobody =
+        new SchedulingService(
+            shifts,
+            rosters,
+            constraintSets,
+            objectiveWeights,
+            swaps,
+            workforce,
+            new FirstFitGenerator(),
+            new RecordingUnitsOfWork(),
+            generations,
+            Runnable::run,
+            LOST_AFTER,
+            new FailingNotifier(),
+            audit,
+            Clock.fixed(NOW, ZoneOffset.UTC));
+    Roster replacement = emptyDraft(ACME);
+    audit.forget();
+
+    assertThatThrownBy(() -> tellingNobody.publish(scheduler(ACME), ACME, replacement.id()))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes())
+        .describedAs("neither the lapse nor the supersession and publication it rolls back with")
+        .isEmpty();
+  }
+
+  /**
+   * The publication's own save comes after the rosters it replaces are stored as superseded, and
+   * the schema can still refuse it: two publications colliding is a 409 (ADR-026). The refusal
+   * takes the supersessions back, so they are not recorded before it.
+   */
+  @Test
+  void GivenAPublicationThatCannotBeStored_WhenItSupersedesARoster_ThenNothingIsRecorded() {
+    Roster original = publishTheWeek();
+    Roster replacement = emptyDraft(ACME);
+    rosters.observeSaves(
+        () -> {
+          if (rosters.byId(replacement.id()).status() == RosterStatus.PUBLISHED) {
+            throw new RosterPublicationConflictException(
+                replacement.id(), new IllegalStateException("Invented: the schema refused it"));
+          }
+        });
+    audit.forget();
+
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, replacement.id()))
+        .isInstanceOf(RosterPublicationConflictException.class);
+
+    assertThat(rosters.byId(original.id()).status())
+        .describedAs("stored before the refusal; a transaction, unlike this fake, takes it back")
+        .isEqualTo(RosterStatus.SUPERSEDED);
+    assertThat(audit.changes()).isEmpty();
   }
 
   @Test

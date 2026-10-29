@@ -144,8 +144,11 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
   `UseCaseConfiguration`, where they collide, writes three out in full.
 - **Refuse before the first write; record after the save.** An audit line outlives the rollback of
   a refusal that came after it (#133): every check that can refuse runs before anything is written,
-  and every write that can still fail runs before anything is recorded. `publish` records inside
-  the supersede loop too — the rosters it demotes did not demote themselves.
+  and every write that can still fail runs before anything is recorded. Telling somebody is such a
+  write: the notifier stores a row in the use case's transaction, so a use case tells before it
+  records. `publish` saves the supersessions, its own roster and the swap decisions, tells the
+  parties of a lapse or an approval, and only then records — one `ROSTER_SUPERSEDED` per demoted
+  roster, because the rosters it demotes did not demote themselves.
 - **Two `@Component` classes may not share a simple name.** Spring derives a bean name from it
   alone, so same-named adapters in two contexts collide at startup rather than at compile time.
   Hence `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog`, `NotificationAuditLog`.
