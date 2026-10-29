@@ -1157,6 +1157,40 @@ class RosteringHttpTest {
         .andExpect(status().isForbidden());
   }
 
+  /** Publishing builds a roster, which is the Scheduler's alone; an Admin manages the rules. */
+  @Test
+  void GivenAnAdminRole_WhenPublishing_ThenItIsForbiddenAndItStaysADraft() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String roster = generateRoster(organisation, "2026-10-14T00:00:00Z", "2026-10-15T00:00:00Z");
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "ADMIN"))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("DRAFT"));
+  }
+
+  @Test
+  void GivenAnEmployeeRole_WhenPublishing_ThenItIsForbiddenAndItStaysADraft() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String roster = generateRoster(organisation, "2026-10-14T00:00:00Z", "2026-10-15T00:00:00Z");
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, ada))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("DRAFT"));
+  }
+
   /**
    * Nothing about the request is wrong; the roster has moved past the state it asks about, which
    * the caller resolves by reloading. A conflict, then, not a bad request (ADR-041).

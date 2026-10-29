@@ -447,6 +447,33 @@ class SchedulingServiceTest {
         .isInstanceOf(NotPermittedException.class);
   }
 
+  /**
+   * Publishing is building a roster, which belongs to the Scheduler alone: an Admin manages people,
+   * qualifications and the rules. Refused before anything is read or written.
+   */
+  @Test
+  void GivenAnAdmin_WhenPublishingADraft_ThenItIsRefusedAndItStaysADraft() {
+    Roster draft = emptyDraft(ACME);
+
+    assertThatThrownBy(() -> service.publish(admin(ACME), ACME, draft.id()))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.ROSTER_PUBLISHED);
+  }
+
+  @Test
+  void GivenAnEmployee_WhenPublishingADraft_ThenItIsRefusedAndItStaysADraft() {
+    Roster draft = emptyDraft(ACME);
+    TenantActor employee = themself(ACME, available(ACME, "Ada"));
+
+    assertThatThrownBy(() -> service.publish(employee, ACME, draft.id()))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.ROSTER_PUBLISHED);
+  }
+
   @Test
   void GivenAScheduler_WhenConfiguringConstraints_ThenItIsRefused() {
     assertThatThrownBy(
