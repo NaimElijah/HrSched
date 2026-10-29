@@ -982,6 +982,20 @@ class SchedulingServiceTest {
     assertThat(service.findShifts(scheduler(RIVAL), RIVAL, THE_WEEK)).isEmpty();
   }
 
+  /** F1a: any member sees the shifts needing covering, not only whoever defines them. */
+  @Test
+  void GivenDefinedShifts_WhenAnEmployeeListsThemForASpan_ThenTheyAreShown() {
+    ShiftId shift =
+        service.defineShift(
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
+    TenantActor employee = themself(ACME, available(ACME, "Ada"));
+
+    assertThat(service.findShifts(employee, ACME, THE_WEEK))
+        .extracting(Shift::id)
+        .containsExactly(shift);
+  }
+
   @Test
   void GivenADefinedShift_WhenAnEmployeeReadsItByIdentity_ThenItIsReturned() {
     ShiftId id =
