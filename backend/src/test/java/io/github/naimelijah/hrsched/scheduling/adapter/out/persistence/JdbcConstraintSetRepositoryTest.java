@@ -110,9 +110,9 @@ class JdbcConstraintSetRepositoryTest {
   }
 
   /**
-   * {@code ConstraintSet} is a plain list and permits two constraints of one kind, so the store
-   * must too. Keying the rows on the kind would have refused this, which would be a new domain rule
-   * introduced as a storage detail.
+   * R24 says a set holds at most one constraint of each kind, but it is not built yet (#96): today
+   * {@code ConstraintSet} is a plain list and permits two of one kind, so the store keeps whatever
+   * it is handed. This pins today's behaviour, not the requirement, and changes when #96 lands.
    */
   @Test
   void GivenTwoConstraintsOfOneKind_WhenReadBack_ThenBothAreStillThere() {
