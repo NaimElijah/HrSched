@@ -9,6 +9,7 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.access.LoggedText;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
@@ -244,16 +245,8 @@ class PasswordChangeRefusalLogHttpTest {
         .orElse("");
   }
 
-  /** Every message and every attached field, as one string to search. */
+  /** Everything the captured events carry, as one string to search: see {@link LoggedText}. */
   private String everything() {
-    return captured.list.stream()
-        .map(
-            event ->
-                event.getLevel()
-                    + " "
-                    + event.getFormattedMessage()
-                    + " "
-                    + (event.getKeyValuePairs() == null ? "" : event.getKeyValuePairs()))
-        .reduce("", (all, line) -> all + "\n" + line);
+    return LoggedText.of(captured.list);
   }
 }

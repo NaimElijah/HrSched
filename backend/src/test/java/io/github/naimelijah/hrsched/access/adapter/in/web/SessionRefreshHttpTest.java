@@ -8,6 +8,7 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.access.LoggedText;
 import io.github.naimelijah.hrsched.access.adapter.out.token.AccessTokenKey;
 import io.github.naimelijah.hrsched.access.adapter.out.token.AccessTokenProperties;
 import io.github.naimelijah.hrsched.access.adapter.out.token.JwtAccessTokenIssuer;
@@ -479,13 +480,8 @@ class SessionRefreshHttpTest {
         .update();
   }
 
+  /** Everything the captured events carry, as one string to search: see {@link LoggedText}. */
   private String everythingLogged() {
-    return captured.list.stream()
-        .map(
-            event ->
-                event.getFormattedMessage()
-                    + " "
-                    + (event.getKeyValuePairs() == null ? "" : event.getKeyValuePairs()))
-        .reduce("", (all, line) -> all + "\n" + line);
+    return LoggedText.of(captured.list);
   }
 }

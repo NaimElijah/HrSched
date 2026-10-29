@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.github.naimelijah.hrsched.access.LoggedText;
 import io.github.naimelijah.hrsched.access.application.port.in.BootstrapOperatorCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.BootstrapOperatorUseCase;
 import java.util.ArrayList;
@@ -123,15 +124,9 @@ class OperatorBootstrapTest {
     return new BootstrapOperatorProperties(OPERATOR_NAME, A_PASSWORD);
   }
 
-  /** Every message and every attached field, as one string to search. */
+  /** Everything the captured events carry, as one string to search: see {@link LoggedText}. */
   private String everythingLogged() {
-    return captured.list.stream()
-        .map(
-            event ->
-                event.getFormattedMessage()
-                    + " "
-                    + (event.getKeyValuePairs() == null ? "" : event.getKeyValuePairs()))
-        .reduce("", (all, line) -> all + "\n" + line);
+    return LoggedText.of(captured.list);
   }
 
   /** Remembers what it was asked to ensure, and answers whatever the test told it to. */
