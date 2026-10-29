@@ -105,11 +105,11 @@
 
 		<!--
 		  Spring Security's filter chain, plus JWT signing and verification (Nimbus JOSE+JWT) for
-		  the access tokens ADR-011 issues. Added now, ahead of any token, because putting Spring
-		  Security on the classpath locks every request behind authentication by default;
-		  SecurityConfiguration replaces that default with one chain that permits every request, so
-		  the dependency and the tightening it enables can land separately. Apache-2.0,
-		  version-managed by the Boot BOM. See ADR-011.
+		  the access tokens ADR-011 issues. SecurityConfiguration builds one chain that names who
+		  may call each route and ends in denyAll (ADR-032). The JDK has the signature primitives,
+		  but no JWT format and no request filter chain, and neither is something to hand-write.
+		  Maintained by the Spring team (Nimbus by Connect2id), and version-managed by the Boot
+		  BOM. Apache-2.0. See ADR-011.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
