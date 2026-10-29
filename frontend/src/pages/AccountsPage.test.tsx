@@ -119,12 +119,21 @@ describe('reading the organisation', () => {
     );
   });
 
-  it('GivenNoAccountHasAPasswordHere_WhenListed_ThenNothingLooksLikeACredential', async () => {
-    theOrganisation();
+  /**
+   * The backend sends no credential, and this screen must not become the place one leaks if that
+   * ever changes: it shows the fields it names, never whatever else the body carries.
+   */
+  it('GivenAnAccountListedWithAPasswordHash_WhenShown_ThenTheHashIsNotOnScreen', async () => {
+    // Invented, and shaped like nothing a real hash function produces.
+    const leaked = 'an-invented-password-hash';
+    theOrganisation({
+      '/api/accounts': { status: 200, body: [{ ...ADA, passwordHash: leaked }, GRACE] },
+    });
 
     show();
 
     await screen.findByRole('cell', { name: 'ada@example.com' });
+    expect(document.body).not.toHaveTextContent(leaked);
     expect(screen.queryByText(/passwordHash/)).not.toBeInTheDocument();
   });
 });
