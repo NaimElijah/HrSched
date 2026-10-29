@@ -305,6 +305,34 @@ class EmployeeHttpTest {
         .andExpect(status().isNoContent());
   }
 
+  /**
+   * The chain admits every tenant role to {@code /api/employees/**}, so the use case is all that
+   * stops somebody rewriting their own contract. Both figures are invented: contracted minutes are
+   * a term of an individual agreement, never a statute's.
+   */
+  @Test
+  void GivenTheEmployeeThemself_WhenSettingTheirOwnContract_ThenItIsForbiddenAndUnchanged()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    mockMvc
+        .perform(
+            as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
+                .content("{\"weeklyContractedMinutes\":1380}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, ada)
+                .content("{\"weeklyContractedMinutes\":570}"))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + ada), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.weeklyContractedMinutes").value(1380));
+  }
+
   @Test
   void GivenZeroContractedMinutes_WhenSettingContractTerms_ThenItIsRejected() throws Exception {
     String organisation = anOrganisation(mockMvc);

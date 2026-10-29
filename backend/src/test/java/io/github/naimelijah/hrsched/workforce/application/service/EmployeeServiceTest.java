@@ -274,6 +274,73 @@ class EmployeeServiceTest {
     assertThat(audit.of(WorkforceChange.QUALIFICATION_GRANTED)).isEmpty();
   }
 
+  // --- F19: only an Admin sets somebody's contract ------------------------------------------
+  //
+  // One test per refusal, as for granting. Contracted hours are a term of an individual agreement,
+  // never a statutory figure, so both durations below are invented.
+
+  /** Invented: the hours an Admin agreed with Ada. */
+  private static final Duration AGREED_HOURS = Duration.ofHours(23);
+
+  /** Invented: the hours somebody without the right tries to put in their place. */
+  private static final Duration OTHER_HOURS = Duration.ofHours(29);
+
+  private EmployeeId adaContractedByAnAdmin() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.setContractTerms(admin(ACME), new SetContractTermsCommand(ACME, ada, AGREED_HOURS));
+    return ada;
+  }
+
+  private Optional<Duration> contractedHoursOf(EmployeeId employee) {
+    return service.findEmployee(admin(ACME), ACME, employee).orElseThrow().weeklyContractedHours();
+  }
+
+  @Test
+  void GivenAScheduler_WhenSettingSomebodysContract_ThenItIsRefusedAndUnchanged() {
+    EmployeeId ada = adaContractedByAnAdmin();
+
+    assertThatThrownBy(
+            () ->
+                service.setContractTerms(
+                    actor(ACME, Role.SCHEDULER),
+                    new SetContractTermsCommand(ACME, ada, OTHER_HOURS)))
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(contractedHoursOf(ada)).contains(AGREED_HOURS);
+    assertThat(audit.of(WorkforceChange.CONTRACT_SET)).hasSize(1);
+  }
+
+  /** The person a contract binds does not get to rewrite it. */
+  @Test
+  void GivenTheEmployeeThemself_WhenSettingTheirOwnContract_ThenItIsRefusedAndUnchanged() {
+    EmployeeId ada = adaContractedByAnAdmin();
+    TenantActor themself = new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(ada));
+
+    assertThatThrownBy(
+            () ->
+                service.setContractTerms(
+                    themself, new SetContractTermsCommand(ACME, ada, OTHER_HOURS)))
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(contractedHoursOf(ada)).contains(AGREED_HOURS);
+    assertThat(audit.of(WorkforceChange.CONTRACT_SET)).hasSize(1);
+  }
+
+  /**
+   * As for granting: the command names our employee, so only the check against the actor refuses.
+   */
+  @Test
+  void
+      GivenAnAdminOfAnotherOrganisation_WhenSettingSomebodysContract_ThenItIsRefusedAndUnchanged() {
+    EmployeeId ada = adaContractedByAnAdmin();
+
+    assertThatThrownBy(
+            () ->
+                service.setContractTerms(
+                    admin(RIVAL), new SetContractTermsCommand(ACME, ada, OTHER_HOURS)))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(contractedHoursOf(ada)).contains(AGREED_HOURS);
+    assertThat(audit.of(WorkforceChange.CONTRACT_SET)).hasSize(1);
+  }
+
   @Test
   void GivenAnEmployeeWithUnavailability_WhenPublished_ThenItTravelsWithThem() {
     EmployeeId id = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
