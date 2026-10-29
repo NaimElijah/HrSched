@@ -131,7 +131,7 @@ class ActorTest {
   }
 
   @Test
-  void GivenTheSetOfActors_WhenListingThem_ThenOnlyOperatorCrossesOrganisations() {
+  void GivenTheSetOfActors_WhenListingThem_ThenThereAreExactlyTenantActorsAndTheOperator() {
     assertThat(Actor.class.getPermittedSubclasses())
         .containsExactlyInAnyOrder(TenantActor.class, Operator.class);
   }
