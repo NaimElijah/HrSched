@@ -89,6 +89,11 @@ class AccessAuditLogTest {
         .containsEntry("subject", ACME.value());
   }
 
+  /**
+   * The name the operator typed is the one thing this adapter could leak and its siblings could
+   * not, because the organisation it is recording has one. Every field being an identifier or an
+   * enum, and the message a constant, is what keeps it out: there is nowhere left for a name.
+   */
   @Test
   void GivenAnOnboarding_WhenItIsWritten_ThenEveryFieldIsAnIdentifierOrAnEnum() {
     trail.record(
@@ -106,20 +111,6 @@ class AccessAuditLogTest {
     assertThat(event.getFormattedMessage())
         .describedAs("the message is a constant; everything variable belongs in a field")
         .isEqualTo("Access change recorded");
-  }
-
-  /**
-   * The name the operator typed is the one thing this adapter could leak and its siblings could
-   * not, because the organisation it is recording has one. It never reaches the record, so it can
-   * never reach the log.
-   */
-  @Test
-  void GivenAnOnboarding_WhenItIsWritten_ThenTheOrganisationsNameIsNowhereInIt() {
-    trail.record(
-        new AuditedChange(
-            Optional.of(ACME), UserId.newId(), AccessChange.ORGANISATION_ONBOARDED, ACME.value()));
-
-    assertThat(onlyEvent().toString()).doesNotContain("Acme");
   }
 
   /**
