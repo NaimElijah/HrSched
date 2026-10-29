@@ -1,6 +1,8 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { callsTo, routeTo } from '../test-support/routeTo';
+import type { Answer } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { PeoplePage } from './PeoplePage';
 import { WITHOUT_PAUSES } from '../test-support/typing';
@@ -43,41 +45,25 @@ function rowOf(name: string): HTMLElement {
 
 const QUALIFICATIONS = [{ id: 'q-1', name: 'Forklift' }];
 
-function routeTo(
-  options: {
-    people?: { ok: boolean; status: number; body: unknown };
-    onWrite?: () => { ok: boolean; status: number; body: unknown };
-  } = {},
-) {
-  const stub = vi.fn((path: string, init?: RequestInit) => {
-    const method = init?.method ?? 'GET';
-    if (method !== 'GET') {
-      const outcome = options.onWrite?.() ?? { ok: true, status: 204, body: null };
-      return Promise.resolve({
-        ok: outcome.ok,
-        status: outcome.status,
-        headers: new Headers(),
-        text: () => Promise.resolve(outcome.body === null ? '' : JSON.stringify(outcome.body)),
-      });
-    }
-    if (path.startsWith('/api/qualifications')) {
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        headers: new Headers(),
-        text: () => Promise.resolve(JSON.stringify(QUALIFICATIONS)),
-      });
-    }
-    const people = options.people ?? { ok: true, status: 200, body: PEOPLE };
-    return Promise.resolve({
-      ok: people.ok,
-      status: people.status,
-      headers: new Headers(),
-      text: () => Promise.resolve(JSON.stringify(people.body)),
-    });
+/** Answers the two listings, and accepts every change the tests below make, unless overridden. */
+function theOrganisation(overrides: Record<string, Answer> = {}) {
+  return routeTo({
+    '/api/employees': { status: 200, body: PEOPLE },
+    '/api/qualifications': { status: 200, body: QUALIFICATIONS },
+    'POST /api/employees': {
+      status: 201,
+      body: {
+        id: 'e-3',
+        name: 'Marie',
+        qualifications: [],
+        unavailability: [],
+        weeklyContractedMinutes: null,
+      },
+    },
+    'PUT /api/employees/e-1/qualifications/q-1': { status: 204, body: null },
+    'PUT /api/employees/e-1/contract': { status: 204, body: null },
+    ...overrides,
   });
-  vi.stubGlobal('fetch', stub);
-  return stub;
 }
 
 function show() {
@@ -88,7 +74,7 @@ function show() {
   );
 }
 
-function writes(stub: ReturnType<typeof routeTo>) {
+function writes(stub: ReturnType<typeof theOrganisation>) {
   return stub.mock.calls.filter((call) => (call[1]?.method ?? 'GET') !== 'GET');
 }
 
@@ -103,7 +89,7 @@ afterEach(() => {
 
 describe('listing people', () => {
   it('GivenPeople_WhenOpened_ThenEachIsListedWithTheirIdentifier', async () => {
-    routeTo();
+    theOrganisation();
 
     show();
 
@@ -113,8 +99,8 @@ describe('listing people', () => {
   });
 
   it('GivenTheListingIs403_WhenOpened_ThenTheRefusalIsShownRatherThanAnEmptyTable', async () => {
-    routeTo({
-      people: { ok: false, status: 403, body: { detail: 'Your role does not permit this.' } },
+    theOrganisation({
+      '/api/employees': { status: 403, body: { detail: 'Your role does not permit this.' } },
     });
 
     show();
@@ -131,7 +117,7 @@ describe('listing people', () => {
  */
 describe('what is already known about each person', () => {
   it('GivenQualificationsHeld_WhenListed_ThenTheirNamesAreShown', async () => {
-    routeTo();
+    theOrganisation();
 
     show();
 
@@ -140,7 +126,7 @@ describe('what is already known about each person', () => {
   });
 
   it('GivenDeclaredUnavailability_WhenListed_ThenEachSpanIsShown', async () => {
-    routeTo();
+    theOrganisation();
 
     show();
 
@@ -158,7 +144,7 @@ describe('what is already known about each person', () => {
    * having chosen it.
    */
   it('GivenNoContract_WhenListed_ThenItSaysNoneRatherThanZero', async () => {
-    routeTo();
+    theOrganisation();
 
     show();
 
@@ -171,22 +157,21 @@ describe('what is already known about each person', () => {
 
 describe('adding an employee', () => {
   it('GivenAName_WhenAdded_ThenItIsSentAndTheFieldClears', async () => {
-    const stub = routeTo();
+    const stub = theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
     await userEvent.type(screen.getByLabelText('Name'), 'Marie', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Add employee' }));
 
-    await waitFor(() => {
-      const posted = writes(stub).find((call) => call[1]?.method === 'POST');
-      expect(JSON.parse(posted?.[1]?.body as string)).toEqual({ name: 'Marie' });
-    });
+    await waitFor(() => expect(callsTo(stub, 'POST', '/api/employees')).toHaveLength(1));
+    const init = callsTo(stub, 'POST', '/api/employees')[0]?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({ name: 'Marie' });
     await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue(''));
   });
 
   it('GivenTheBackendRefuses_WhenAdding_ThenTheRefusalIsShownAndTheNameSurvives', async () => {
-    routeTo({ onWrite: () => ({ ok: false, status: 403, body: { detail: 'Only an Admin.' } }) });
+    theOrganisation({ 'POST /api/employees': { status: 403, body: { detail: 'Only an Admin.' } } });
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
@@ -202,22 +187,20 @@ describe('adding an employee', () => {
 
 describe('granting a qualification', () => {
   it('GivenAQualificationChosen_WhenGranting_ThenItIsSentForThatEmployee', async () => {
-    const stub = routeTo();
+    const stub = theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
     await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), 'q-1');
 
     await waitFor(() =>
-      expect(writes(stub).map((call) => String(call[0]))).toContain(
-        '/api/employees/e-1/qualifications/q-1',
-      ),
+      expect(callsTo(stub, 'PUT', '/api/employees/e-1/qualifications/q-1')).toHaveLength(1),
     );
   });
 
   /** The placeholder option is not a qualification; selecting it must not send anything. */
   it('GivenTheChoosePlaceholder_WhenSelected_ThenNothingIsSent', async () => {
-    const stub = routeTo();
+    const stub = theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
@@ -227,7 +210,12 @@ describe('granting a qualification', () => {
   });
 
   it('GivenTheBackendRefusesAGrant_WhenGranting_ThenTheRefusalIsShown', async () => {
-    routeTo({ onWrite: () => ({ ok: false, status: 404, body: { detail: 'No such resource.' } }) });
+    theOrganisation({
+      'PUT /api/employees/e-1/qualifications/q-1': {
+        status: 404,
+        body: { detail: 'No such resource.' },
+      },
+    });
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
@@ -242,7 +230,7 @@ describe('granting a qualification', () => {
 describe('setting contracted hours', () => {
   /** One name repeated on every row gave a screen reader no way to tell whose field it was in. */
   it('GivenSeveralPeople_WhenListed_ThenEachContractFieldIsNamedForItsEmployee', async () => {
-    routeTo();
+    theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
@@ -251,7 +239,7 @@ describe('setting contracted hours', () => {
   });
 
   it('GivenTypedMinutes_WhenSet_ThenTheyAreSentAsANumber', async () => {
-    const stub = routeTo();
+    const stub = theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
@@ -262,19 +250,19 @@ describe('setting contracted hours', () => {
     );
     await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
 
-    await waitFor(() => {
-      const put = writes(stub).find((call) => String(call[0]).endsWith('/contract'));
-      expect(JSON.parse(put?.[1]?.body as string)).toEqual({ weeklyContractedMinutes: 2400 });
-    });
+    await waitFor(() =>
+      expect(callsTo(stub, 'PUT', '/api/employees/e-1/contract')).toHaveLength(1),
+    );
+    const init = callsTo(stub, 'PUT', '/api/employees/e-1/contract')[0]?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({ weeklyContractedMinutes: 2400 });
   });
 
   it('GivenTheBackendRefusesTheTerms_WhenSet_ThenTheRefusalIsShown', async () => {
-    routeTo({
-      onWrite: () => ({
-        ok: false,
+    theOrganisation({
+      'PUT /api/employees/e-1/contract': {
         status: 400,
         body: { detail: 'weeklyContractedHours must be positive' },
-      }),
+      },
     });
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());

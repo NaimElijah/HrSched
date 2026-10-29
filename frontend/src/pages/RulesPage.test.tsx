@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { callsTo, routeTo } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { RulesPage } from './RulesPage';
 import { WITHOUT_PAUSES } from '../test-support/typing';
@@ -20,26 +21,18 @@ const CONFIGURED = {
   maximumConsecutiveDays: null,
 };
 
-function routeTo(body: unknown) {
-  const stub = vi.fn((_path: string, init?: RequestInit) => {
-    void _path;
-    void init;
-    return Promise.resolve({
-      ok: true,
-      status: 200,
-      headers: new Headers(),
-      text: () => Promise.resolve(JSON.stringify(body)),
-    });
+/** Answers the current rules with what is configured, and accepts a revision. */
+function configured() {
+  return routeTo({
+    '/api/constraints': { status: 200, body: CONFIGURED },
+    'PUT /api/constraints': { status: 200, body: { ...CONFIGURED, version: 5 } },
   });
-  vi.stubGlobal('fetch', stub);
-  return stub;
 }
 
 function sentBody(stub: ReturnType<typeof routeTo>): Record<string, unknown> {
-  const put = stub.mock.calls.find((call) => call[1]?.method === 'PUT');
-  const body = put?.[1]?.body;
+  const body = callsTo(stub, 'PUT', '/api/constraints')[0]?.[1]?.body;
   if (typeof body !== 'string') {
-    throw new Error('no PUT was sent');
+    throw new Error('no revision was sent to PUT /api/constraints');
   }
   return JSON.parse(body) as Record<string, unknown>;
 }
@@ -51,7 +44,7 @@ afterEach(() => {
 
 describe('the rules page', () => {
   it('GivenConfiguredRules_WhenOpened_ThenTheFormShowsTheirCurrentValues', async () => {
-    routeTo(CONFIGURED);
+    configured();
     render(
       <SignedIn session={A_TENANT}>
         <RulesPage />
@@ -66,7 +59,7 @@ describe('the rules page', () => {
   });
 
   it('GivenOneRuleChanged_WhenRevising_ThenTheOtherConfiguredRulesAreResent', async () => {
-    const stub = routeTo(CONFIGURED);
+    const stub = configured();
     render(
       <SignedIn session={A_TENANT}>
         <RulesPage />
@@ -85,7 +78,7 @@ describe('the rules page', () => {
   });
 
   it('GivenAClearedField_WhenRevising_ThenThatRuleIsSwitchedOff', async () => {
-    const stub = routeTo(CONFIGURED);
+    const stub = configured();
     render(
       <SignedIn session={A_TENANT}>
         <RulesPage />
