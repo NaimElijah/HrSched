@@ -125,18 +125,20 @@ class TraceIdHttpTest {
 
   /**
    * The input class of GHSA-ccrj-gw8r-854m (#285): a {@code tracestate} with a long run of spaces
-   * and tabs and no comma after it. What this pins is that such a header neither fails the request
-   * nor loses the inbound trace. How long parsing it takes is the dependency audit's to catch, not
-   * a wall-clock assertion's.
+   * and tabs and no comma after it. Sent without a token, because that is the exposure the threat
+   * model records: the header is parsed before the security chain, for anybody. What this pins is
+   * that such a header is extracted ahead of the refusal and loses neither the request nor its
+   * inbound trace. How long parsing it takes is the dependency audit's to catch, not a wall-clock
+   * assertion's.
    */
   @Test
-  void GivenATracestateOfLongWhitespaceRuns_WhenTheRequestIsAnswered_ThenItKeepsTheInboundTrace()
+  void GivenAnAnonymousTracestateOfLongWhitespaceRuns_WhenRefused_ThenItKeepsTheInboundTrace()
       throws Exception {
     MockHttpServletRequestBuilder request =
-        as(get("/api/qualifications"), "ADMIN")
+        get("/api/qualifications")
             .header("traceparent", INVENTED_TRACEPARENT)
             .header("tracestate", "invented=value" + " \t".repeat(WHITESPACE_PAIRS));
 
-    assertThat(traceIdOf(request, 200)).isEqualTo(INVENTED_TRACE_ID);
+    assertThat(traceIdOf(request, 401)).isEqualTo(INVENTED_TRACE_ID);
   }
 }
