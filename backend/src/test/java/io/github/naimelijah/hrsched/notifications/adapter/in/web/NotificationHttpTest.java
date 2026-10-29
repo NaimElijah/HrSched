@@ -256,6 +256,14 @@ class NotificationHttpTest {
     assertStillUnreadInGracesInbox(organisation, grace, gracesNotification);
   }
 
+  /**
+   * Their notification, acknowledged by a member of ours: the same 404. It does not prove the
+   * organisation filter, because our member is not Grace and the recipient filter alone would miss.
+   * Over HTTP that cannot be separated, as each personnel record holds one account and so nobody of
+   * ours can be linked to hers. The organisation filter alone is proven against the store, by
+   * {@code
+   * JdbcNotificationRepositoryTest#GivenANotificationInAnotherOrganisation_WhenWeRead_ThenItIsNotReturned}.
+   */
   @Test
   void
       GivenAnotherOrganisationsNotification_WhenOurMemberAcknowledgesIt_ThenItIsNotFoundAndStaysUnread()
