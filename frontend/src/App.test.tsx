@@ -264,8 +264,9 @@ describe('what each kind of account sees', () => {
     expect(screen.queryByRole('button', { name: 'Accounts' })).not.toBeInTheDocument();
   });
 
-  it('GivenATenant_WhenSignedIn_ThenTheTenantTabsAreShown', async () => {
-    loadingAs(A_TENANT);
+  /** The least role there is, so that tabs chosen by role rather than kind would show here. */
+  it('GivenATenantInTheEmployeeRole_WhenSignedIn_ThenTheTenantTabsAreShown', async () => {
+    loadingAs({ ...A_TENANT, role: 'EMPLOYEE', employee: 'emp-1' });
 
     show();
 

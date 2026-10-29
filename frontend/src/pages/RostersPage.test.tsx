@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Session } from '../api/session';
 import type { Employee } from '../api/workforce';
 import { dayLabel, timeLabel } from '../components/localDates';
 import { A_TENANT, SignedIn } from '../test-support/session';
@@ -91,9 +92,9 @@ function aDraft(overrides: Record<string, Answer> = {}) {
 }
 
 /** The people come from the shell, as App passes them, so the page itself never asks. */
-function renderPage(people: readonly Employee[] = [ADA, GRACE]) {
+function renderPage(people: readonly Employee[] = [ADA, GRACE], session: Session = A_TENANT) {
   return render(
-    <SignedIn session={A_TENANT}>
+    <SignedIn session={session}>
       <AsTheShellHoldsIt people={people} />
     </SignedIn>,
   );
@@ -221,7 +222,7 @@ describe('the rosters page', () => {
         body: { detail: 'Your role does not permit this.' },
       },
     });
-    renderPage();
+    renderPage([ADA, GRACE], { ...A_TENANT, role: 'EMPLOYEE', employee: ADA.id });
 
     await userEvent.click(await screen.findByRole('button', { name: /Generate a draft/ }));
 

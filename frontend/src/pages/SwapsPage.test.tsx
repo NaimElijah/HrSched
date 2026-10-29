@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Session } from '../api/session';
 import type { Employee } from '../api/workforce';
 import { dayLabel, timeLabel } from '../components/localDates';
 import { A_TENANT, SignedIn } from '../test-support/session';
@@ -54,9 +55,9 @@ function aQueue(overrides: Record<string, Answer> = {}) {
   });
 }
 
-function show(people: readonly Employee[] = [ADA, GRACE]) {
+function show(people: readonly Employee[] = [ADA, GRACE], session: Session = A_TENANT) {
   render(
-    <SignedIn session={A_TENANT}>
+    <SignedIn session={session}>
       <SwapsPage people={people} />
     </SignedIn>,
   );
@@ -276,7 +277,7 @@ describe('deciding', () => {
         body: { detail: 'Your role does not permit this.' },
       },
     });
-    show();
+    show([ADA, GRACE], { ...A_TENANT, role: 'EMPLOYEE', employee: GRACE.id });
 
     await userEvent.click(await screen.findByRole('button', { name: /^Approve/ }));
 
