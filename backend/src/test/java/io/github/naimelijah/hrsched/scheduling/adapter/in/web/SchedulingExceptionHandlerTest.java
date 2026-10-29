@@ -21,6 +21,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableE
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
@@ -139,6 +140,7 @@ class SchedulingExceptionHandlerTest {
         new InvalidObjectiveWeightException(Objective.FAIRNESS),
         new DuplicateAssignmentException(new Assignment(ShiftId.newId(), EmployeeId.newId())),
         new UnknownRequiredQualificationException(Set.of(QualificationId.newId())),
+        new SwapWithThemselfException(EmployeeId.newId()),
         new MalformedRequestException("shift is required"));
   }
 
@@ -196,6 +198,23 @@ class SchedulingExceptionHandlerTest {
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Invalid request");
     assertThat(problem.getDetail()).isEqualTo(failure.getMessage());
+  }
+
+  /**
+   * Called directly, the method renders whatever it is handed; Spring routes it only the types its
+   * annotation names. So each row is also one of those, or it could pass above and still reach a
+   * client as a 500.
+   */
+  @ParameterizedTest
+  @MethodSource("invalidInput")
+  void GivenAnInvalidInput_WhenSpringRoutesIt_ThenItReachesTheBadRequestHandler(
+      RuntimeException failure) throws NoSuchMethodException {
+    ExceptionHandler routing =
+        SchedulingExceptionHandler.class
+            .getMethod("handleInvalidInput", RuntimeException.class)
+            .getAnnotation(ExceptionHandler.class);
+
+    assertThat(routing.value()).contains(failure.getClass());
   }
 
   @Test
