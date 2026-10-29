@@ -3,6 +3,11 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
+	<!--
+	  Spring Boot's parent, and through it the BOM that sets the version of everything Boot
+	  manages below, so a Boot release moves them together instead of each by hand. Maintained by
+	  the Spring team. Apache-2.0. See ADR-001.
+	-->
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
@@ -18,11 +23,23 @@
 
 	<properties>
 		<java.version>21</java.version>
+		<!--
+		  Ahead of the 1.62.0 the Boot BOM manages, for GHSA-ccrj-gw8r-854m: before 1.67.0, the W3C
+		  propagator parses an inbound tracestate header in quadratic time, and this service
+		  extracts inbound trace headers from unauthenticated requests. Overrides the property the
+		  Boot BOM imports opentelemetry-bom with. Removing it once Boot manages 1.67.0 or later
+		  is #289.
+		-->
+		<opentelemetry.version>1.67.0</opentelemetry.version>
 		<spotless.version>3.10.4</spotless.version>
+		<!--
+		  The formatter Spotless enforces. Maintained by Google, Apache-2.0. Kept current by hand:
+		  it is read only inside the plugin's configuration, where Dependabot does not look. Not the
+		  newest, because the newest fails under this Spotless (#281).
+		-->
 		<google-java-format.version>1.27.0</google-java-format.version>
 		<archunit.version>1.5.1</archunit.version>
 		<jacoco.version>0.8.15</jacoco.version>
-		<testcontainers.version>2.0.5</testcontainers.version>
 		<!--
 		  Not the newest. From 9.13 on, OR-Tools' Windows libraries need the Visual C++ runtime 14.40
 		  or later, and the JDK 21 a developer runs here bundles 14.36, which Windows loads first:
@@ -30,15 +47,24 @@
 		  9.13 and later until that changes. See ADR-044.
 		-->
 		<ortools.version>9.12.4544</ortools.version>
-		<jna.version>5.18.1</jna.version>
+		<jna.version>5.19.1</jna.version>
 	</properties>
 
 	<dependencies>
+		<!--
+		  The HTTP boundary: Spring MVC on an embedded Tomcat, which every web adapter is written
+		  against. The JDK's own HTTP server has no routing, binding or validation. Maintained by
+		  the Spring team, Apache-2.0, version-managed by the Boot BOM. See ADR-001.
+		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
-		<!-- Health and readiness endpoints are a baseline requirement for every service. -->
+		<!--
+		  Health and readiness endpoints are a baseline requirement for every service, and the
+		  metrics endpoints of ADR-017 hang off the same machinery. Nothing in the JDK serves them.
+		  Maintained by the Spring team, Apache-2.0, version-managed by the Boot BOM.
+		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
@@ -46,17 +72,21 @@
 		<!--
 		  Vendor-neutral instrumentation, which ADR-001 names as a baseline demand. Supplies the
 		  OpenTelemetry API, the Micrometer Tracing bridge over it, and the OTLP exporters, so a
-		  W3C trace id exists on every request and reaches the log lines it produces. Apache-2.0, and
-		  version-managed by the Boot BOM. See ADR-016.
+		  W3C trace id exists on every request and reaches the log lines it produces. The JDK has no
+		  tracing API. The exporters stay switched off until Q19 is answered. Maintained by the
+		  Spring team, Apache-2.0, version-managed by the Boot BOM, except OpenTelemetry itself, which
+		  opentelemetry.version above holds ahead of it (#289). See ADR-016.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-opentelemetry</artifactId>
 		</dependency>
 		<!--
-		  Renders the meters Micrometer already collects in the format a scraper reads. Nothing
-		  pushes: metrics are pulled from /actuator/prometheus. Apache-2.0, version managed by the
-		  Boot BOM through micrometer-bom. See ADR-017.
+		  Renders the meters Micrometer already collects in the format a scraper reads, in place of
+		  a hand-written exposition-format encoder. Nothing pushes: metrics are pulled from
+		  /actuator/prometheus, which the chain refuses to every caller until a scraper exists
+		  (ADR-049). Maintained by the Micrometer project, Apache-2.0, version-managed by the Boot
+		  BOM through micrometer-bom. See ADR-017.
 		-->
 		<dependency>
 			<groupId>io.micrometer</groupId>
@@ -67,7 +97,9 @@
 		  Storage. JdbcClient and a DataSource, with no ORM: the domain may not carry
 		  jakarta.persistence annotations (the architecture test fails on them), so an ORM would need
 		  a parallel annotated model anyway and would contribute only behaviour the adapter must not
-		  leak. Apache-2.0, version-managed by the Boot BOM. See ADR-004.
+		  leak. The JDK's own JDBC has no connection pool and no transaction manager for the use
+		  cases to share. Maintained by the Spring team, Apache-2.0, version-managed by the Boot BOM.
+		  See ADR-004.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -75,17 +107,26 @@
 		</dependency>
 		<!--
 		  Versioned schema migrations as plain SQL, applied on startup. Chosen over Liquibase because
-		  the migrations are SQL and Flyway lets them stay SQL. Apache-2.0, BOM-managed. See ADR-004.
+		  the migrations are SQL and Flyway lets them stay SQL. Flyway is maintained by Redgate, the
+		  starter by the Spring team. Apache-2.0, BOM-managed. See ADR-004.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-flyway</artifactId>
 		</dependency>
+		<!--
+		  Flyway ships each database's support as a module of its own; without this one it cannot
+		  migrate PostgreSQL. Maintained by Redgate with Flyway itself, Apache-2.0, BOM-managed.
+		-->
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
-		<!-- The driver. Runtime only: nothing compiles against it. BSD-2-Clause, BOM-managed. -->
+		<!--
+		  The PostgreSQL JDBC driver; the JDK ships none. Runtime only: nothing compiles against
+		  it. Maintained by the pgJDBC project, BSD-2-Clause, version-managed by the Boot BOM. See
+		  ADR-004.
+		-->
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
@@ -95,7 +136,7 @@
 		  Starts the Postgres in compose.yaml when the application is run locally, and stops it after.
 		  Optional, so it never reaches a deployed artifact; Boot skips it under test, where
 		  Testcontainers supplies the database instead. Keeps scripts/run.mjs free of build logic,
-		  which ADR-014 requires of it. Apache-2.0, BOM-managed.
+		  which ADR-014 requires of it. Maintained by the Spring team, Apache-2.0, BOM-managed.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -105,11 +146,11 @@
 
 		<!--
 		  Spring Security's filter chain, plus JWT signing and verification (Nimbus JOSE+JWT) for
-		  the access tokens ADR-011 issues. Added now, ahead of any token, because putting Spring
-		  Security on the classpath locks every request behind authentication by default;
-		  SecurityConfiguration replaces that default with one chain that permits every request, so
-		  the dependency and the tightening it enables can land separately. Apache-2.0,
-		  version-managed by the Boot BOM. See ADR-011.
+		  the access tokens ADR-011 issues. SecurityConfiguration builds one chain that names who
+		  may call each route and ends in denyAll (ADR-032). The JDK has the signature primitives,
+		  but no JWT format and no request filter chain, and neither is something to hand-write.
+		  Maintained by the Spring team (Nimbus by Connect2id), and version-managed by the Boot
+		  BOM. Apache-2.0. See ADR-011.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -122,7 +163,9 @@
 		  this size is not something to write by hand. Brings native libraries for five platforms
 		  and protobuf-java, which the Boot BOM already manages. Confined to
 		  scheduling.adapter.out.generation. Apache-2.0, maintained by Google, and pinned because no
-		  BOM manages it. See ADR-044.
+		  BOM manages it; held at 9.12 on purpose (see ortools.version above). Its native jars also
+		  bundle COIN-OR, HiGHS, Abseil, protobuf, RE2 and zlib libraries under their own licences,
+		  which its POM does not declare (#280). See ADR-044.
 		-->
 		<dependency>
 			<groupId>com.google.ortools</groupId>
@@ -130,11 +173,20 @@
 			<version>${ortools.version}</version>
 		</dependency>
 
+		<!--
+		  Spring's test support for the web layer: MockMvc, plus the test starter with JUnit,
+		  AssertJ and Mockito, which Boot 4 brings in per technology. Maintained by the Spring team,
+		  Apache-2.0, version-managed by the Boot BOM.
+		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!--
+		  The test support behind @AutoConfigureMetrics, which MetricsHttpTest needs because Boot
+		  switches metrics export off under test. Same team, licence and BOM management.
+		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator-test</artifactId>
@@ -143,7 +195,8 @@
 		<!--
 		  Enforces the hexagon. Nothing in the JDK, Maven, or Spring can fail a build when the
 		  domain imports a framework type; without this the dependency rule is only a comment.
-		  Apache-2.0, actively maintained. See ADR-003.
+		  Maintained by TNG Technology Consulting, Apache-2.0, and pinned because no BOM manages it;
+		  Dependabot proposes each release. See ADR-003.
 		-->
 		<dependency>
 			<groupId>com.tngtech.archunit</groupId>
@@ -155,14 +208,20 @@
 		  The tests run against a real PostgreSQL in a container, so Docker is required to build.
 		  There is deliberately no in-memory fallback and no skip-when-Docker-is-absent: a check that
 		  quietly does not run still reports green, which is what ci.yml already refuses for path
-		  filters. MIT, and pinned here because the Boot BOM does not manage the Testcontainers
-		  modules. See ADR-004.
+		  filters. This one hands the container to Spring through @ServiceConnection, in place of
+		  hand-wired datasource properties. Apache-2.0, maintained by the Spring team, and
+		  version-managed by the Boot BOM. See ADR-004.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-testcontainers</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!--
+		  Runs that PostgreSQL; nothing in the JDK or in Spring starts a container. MIT, maintained
+		  by the Testcontainers project. Version-managed by the Boot BOM, which imports
+		  testcontainers-bom, so it moves when Boot does.
+		-->
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>testcontainers-postgresql</artifactId>
@@ -172,18 +231,13 @@
 
 	<dependencyManagement>
 		<dependencies>
-			<dependency>
-				<groupId>org.testcontainers</groupId>
-				<artifactId>testcontainers-bom</artifactId>
-				<version>${testcontainers.version}</version>
-				<type>pom</type>
-				<scope>import</scope>
-			</dependency>
 			<!--
-			  OR-Tools asks for JNA 5.14.0, and Maven would choose it over the 5.18.1 that
-			  Testcontainers' Docker client was built against, only because it is nearer in the
-			  tree. Pinned to the newer, so neither runs on a JNA older than it expects.
-			  LGPL-2.1-or-later or Apache-2.0, at the user's choice. See ADR-044.
+			  Nothing in backend/src uses JNA itself. OR-Tools asks for JNA 5.14.0, and Maven
+			  would choose it over the 5.18.1 that Testcontainers' Docker client was built
+			  against, only because it is nearer in the tree. Pinned at or above the newer, so
+			  neither runs on a JNA older than it expects; Dependabot proposes each release.
+			  Maintained by the java-native-access project. LGPL-2.1-or-later or Apache-2.0, at
+			  the user's choice; which side HrSched relies on is #280. See ADR-044.
 			-->
 			<dependency>
 				<groupId>net.java.dev.jna</groupId>
@@ -209,7 +263,8 @@
 			  The same mechanism supplies a throwaway local operator to sign in as, following
 			  compose.yaml's precedent for the local database: local-only credentials that never
 			  reach a packaged jar, and that must be changed at first sign-in anyway. See ADR-011
-			  and ADR-029.
+			  and ADR-029. The plugin itself repackages the jar; maintained by the Spring team,
+			  Apache-2.0, its version set by the parent.
 			-->
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
@@ -232,6 +287,7 @@
 			  Bound to validate so that a single `./mvnw verify` is the whole gate:
 			  format check, build, and tests. CI runs that exact command, so a
 			  README-only variant cannot drift away from what actually gates a merge.
+			  Maintained by DiffPlug, Apache-2.0, build-time only. See ADR-002.
 			-->
 			<plugin>
 				<groupId>com.diffplug.spotless</groupId>
@@ -261,7 +317,9 @@
 			  where to look next, read by a person. See ADR-015.
 
 			  The version is pinned because neither spring-boot-dependencies nor
-			  spring-boot-starter-parent manages JaCoCo.
+			  spring-boot-starter-parent manages JaCoCo. Maintained by the JaCoCo
+			  project. EPL-2.0; it runs at build time only, as the test agent and the
+			  report goal, and never reaches the jar.
 
 			  prepare-agent sets the `argLine` property, which surefire reads. Nothing
 			  else configures argLine today; anyone adding one must write

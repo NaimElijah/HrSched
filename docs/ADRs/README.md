@@ -57,6 +57,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-048](ADR-048-keep-a-browsers-tabs-on-one-session.md) | Keep one browser's tabs on one session, over a channel that carries two words | Accepted | 2026-10-27 |
 | [ADR-049](ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md) | Refuse the metrics endpoints to every caller until a scraper exists | Accepted | 2026-10-27 |
 | [ADR-050](ADR-050-reject-the-protected-resource-metadata-endpoint.md) | Reject the OAuth 2.0 protected-resource metadata endpoint | Accepted | 2026-10-27 |
+| [ADR-051](ADR-051-record-why-each-frontend-dependency-is-there.md) | Record why each frontend dependency is there | Accepted | 2026-10-29 |
 
 ## Decisions waiting to be recorded
 
