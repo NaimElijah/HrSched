@@ -309,8 +309,8 @@
 
 			  The version is pinned because neither spring-boot-dependencies nor
 			  spring-boot-starter-parent manages JaCoCo. Maintained by the JaCoCo
-			  project. EPL-2.0; it runs only as an agent in the test JVM and never
-			  reaches the jar.
+			  project. EPL-2.0; it runs at build time only, as the test agent and the
+			  report goal, and never reaches the jar.
 
 			  prepare-agent sets the `argLine` property, which surefire reads. Nothing
 			  else configures argLine today; anyone adding one must write
