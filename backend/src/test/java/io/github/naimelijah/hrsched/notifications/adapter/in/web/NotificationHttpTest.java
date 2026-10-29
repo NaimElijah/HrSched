@@ -195,6 +195,38 @@ class NotificationHttpTest {
   }
 
   /**
+   * The acknowledgement that succeeds: Grace's own notification is answered 204 and then reads as
+   * read. Acknowledging it again, as a second open tab does, is a 204 too rather than an error.
+   */
+  @Test
+  void GivenTheirOwnNotification_WhenAcknowledgedTwice_ThenEachIsNoContentAndItReadsAsRead()
+      throws Exception {
+    String organisation = anOrganisation();
+    String ada = addEmployee(organisation, "Ada");
+    String grace = addEmployee(organisation, "Grace");
+    String gracesNotification = notificationForGrace(organisation, ada, grace);
+
+    mockMvc
+        .perform(
+            asThemself(
+                post("/api/notifications/" + gracesNotification + "/read"), organisation, grace))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(asThemself(get("/api/notifications"), organisation, grace))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].id").value(gracesNotification))
+        .andExpect(jsonPath("$[0].read").value(true));
+
+    mockMvc
+        .perform(
+            asThemself(
+                post("/api/notifications/" + gracesNotification + "/read"), organisation, grace))
+        .andExpect(status().isNoContent());
+  }
+
+  /**
    * Ada asked for the swap, so she knows the notification exists; it is still Grace's to
    * acknowledge. A 404, the answer for one that never existed, rather than a 403 that would confirm
    * it does.
