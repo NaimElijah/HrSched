@@ -252,6 +252,9 @@ class SessionRefreshHttpTest {
     assertThat(cookie).isNotNull();
     assertThat(cookie).startsWith("__Secure-hrsched-refresh=;");
     assertThat(cookie).contains("Max-Age=0");
+    assertThat(cookie)
+        .describedAs("a browser ignores a __Secure- cookie set without the attribute")
+        .contains("; Secure");
   }
 
   /**

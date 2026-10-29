@@ -116,12 +116,19 @@ class AuthHttpTest {
     assertThat(cookie).isNotNull();
     assertThat(cookie).startsWith("__Secure-hrsched-refresh=");
     assertThat(cookie).contains("HttpOnly");
-    assertThat(cookie).contains("Secure");
+    assertThat(cookie)
+        .describedAs("the attribute, not the word inside the cookie's own name")
+        .contains("; Secure");
     assertThat(cookie).contains("SameSite=Strict");
     assertThat(cookie).contains("Path=/api/auth");
     assertThat(cookie).contains("Max-Age=");
-    assertThat(cookie)
+    String refreshToken = cookie.substring(cookie.indexOf('=') + 1, cookie.indexOf(';'));
+    assertThat(refreshToken).isNotBlank();
+    assertThat(body)
         .describedAs("the refresh token is never in the body, only in the cookie")
+        .doesNotContain(refreshToken);
+    assertThat(cookie)
+        .describedAs("and the access token is never in the cookie, only in the body")
         .doesNotContain(JsonPath.<String>read(body, "$.accessToken"));
   }
 
