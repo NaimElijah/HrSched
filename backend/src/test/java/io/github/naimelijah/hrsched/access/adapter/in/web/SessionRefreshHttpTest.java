@@ -21,6 +21,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import jakarta.servlet.http.Cookie;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -327,6 +329,24 @@ class SessionRefreshHttpTest {
     assertThat(revocationOf(session)).isNotNull();
   }
 
+  /**
+   * A database that leaks must hand over nothing anybody can present, so the row holds the SHA-256
+   * of the token the cookie carries, and not the token (V4, ADR-028).
+   */
+  @Test
+  void GivenASignIn_WhenItsRefreshTokenIsStored_ThenTheRowHoldsItsDigestAndNotTheToken()
+      throws Exception {
+    MockHttpServletResponse signedIn = signIn(anOperator());
+    byte[] presented = refreshTokenOf(signedIn).getBytes(StandardCharsets.UTF_8);
+
+    byte[] stored = storedDigestOf(sessionOf(signedIn));
+
+    assertThat(stored)
+        .describedAs("never the token itself")
+        .isNotEqualTo(presented)
+        .isEqualTo(MessageDigest.getInstance("SHA-256").digest(presented));
+  }
+
   @Test
   void GivenRefreshesAndSignOuts_WhenAnswered_ThenNoTokenValueIsEverLogged() throws Exception {
     String token = refreshTokenOf(signIn(anOperator()));
@@ -423,6 +443,15 @@ class SessionRefreshHttpTest {
         .query(String.class)
         .optional()
         .orElse(null);
+  }
+
+  /** The one refresh token a session holds before it is first renewed, as the row stores it. */
+  private static byte[] storedDigestOf(UUID session) {
+    return PostgresDatabase.jdbcClient()
+        .sql("SELECT digest FROM refresh_token WHERE session_id = :session")
+        .param("session", session)
+        .query(byte[].class)
+        .single();
   }
 
   /**
