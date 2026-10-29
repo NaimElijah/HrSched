@@ -136,6 +136,43 @@ class JdbcSessionRepositoryTest {
     assertThat(storedSessionRevocation(session.id())).isEqualTo("REFRESH_REUSED");
   }
 
+  /**
+   * The authenticated read asks for the account and the session together, so a token pairing one
+   * account with another's session finds nothing, while each with its own is found.
+   */
+  @Test
+  void GivenASessionOfAnotherAccount_WhenFindingItAsTheAuthenticatedSession_ThenNothingIsFound() {
+    Account mine = anAccount();
+    Account theirs = anAccount();
+    SignInSession theirSession = sessionFor(theirs);
+    repository.start(theirSession, digest("their-refresh-token"), NOW.plus(Duration.ofHours(1)));
+
+    assertThat(repository.findAuthenticatedSession(mine.id(), theirSession.id())).isEmpty();
+    assertThat(repository.findAuthenticatedSession(theirs.id(), theirSession.id()))
+        .describedAs("the same session, with its own account, is found")
+        .isPresent();
+  }
+
+  /** Ending every session of one account ends no session of anybody else's. */
+  @Test
+  void GivenTwoAccountsWithSessions_WhenEverySessionOfOneIsRevoked_ThenTheOthersAreUntouched() {
+    Account ending = anAccount();
+    Account bystander = anAccount();
+    SignInSession laptop = sessionFor(ending);
+    SignInSession phone = sessionFor(ending);
+    SignInSession theirs = sessionFor(bystander);
+    repository.start(laptop, digest("laptop"), NOW.plus(Duration.ofHours(1)));
+    repository.start(phone, digest("phone"), NOW.plus(Duration.ofHours(1)));
+    repository.start(theirs, digest("theirs"), NOW.plus(Duration.ofHours(1)));
+
+    repository.revokeEverySessionOf(
+        ending.id(), SessionRevocation.PASSWORD_CHANGED, NOW.plusSeconds(60));
+
+    assertThat(storedSessionRevocation(laptop.id())).isEqualTo("PASSWORD_CHANGED");
+    assertThat(storedSessionRevocation(phone.id())).isEqualTo("PASSWORD_CHANGED");
+    assertThat(storedSessionRevocation(theirs.id())).isNull();
+  }
+
   @Test
   void GivenNoSuchToken_WhenFindingIt_ThenNothingIsReturned() {
     assertThat(repository.findRefreshToken(digest("a-token-nobody-issued"))).isEmpty();

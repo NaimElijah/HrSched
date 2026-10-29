@@ -403,6 +403,28 @@ class SessionServiceTest {
             refused -> assertThat(refused.reason()).isEqualTo(RefreshRefusal.EXPIRED));
   }
 
+  /**
+   * The session's end bounds every token it issued, so a token still within its own expiry renews
+   * nothing once its session has ended.
+   */
+  @Test
+  void GivenAnUnexpiredRefreshTokenOfAnEndedSession_WhenRefreshing_ThenItIsRefusedAsSessionEnded() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    SignInSession ended =
+        new SignInSession(SignInSessionId.newId(), account.id(), AN_HOUR_AGO, NOW.minusSeconds(1));
+    sessions.given(
+        "a-token-outliving-its-session",
+        new StoredRefreshToken(ended, NOW.plus(Duration.ofMinutes(5)), Optional.empty()));
+
+    RefreshOutcome outcome = service.refresh("a-token-outliving-its-session");
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            RefreshOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(RefreshRefusal.SESSION_ENDED));
+    assertThat(sessions.successorExpiryOf(ended.id())).isEmpty();
+  }
+
   @Test
   void GivenASessionOutlivingTheIdleLimit_WhenRefreshing_ThenTheSuccessorExpiresAtTheIdleLimit() {
     Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
