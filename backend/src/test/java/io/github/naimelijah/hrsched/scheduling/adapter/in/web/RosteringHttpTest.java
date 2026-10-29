@@ -1256,8 +1256,11 @@ class RosteringHttpTest {
         .perform(as(mockMvc, get("/api/constraints"), second, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.constraints.length()").value(0));
-
-    assertThat(first).isNotEqualTo(second);
+    // And the rule was stored, so the empty answer above is isolation rather than a write lost.
+    mockMvc
+        .perform(as(mockMvc, get("/api/constraints"), first, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.maximumConsecutiveDays").value(3));
   }
 
   @Test
