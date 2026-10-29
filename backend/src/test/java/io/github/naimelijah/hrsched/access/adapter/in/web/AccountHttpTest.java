@@ -923,7 +923,7 @@ class AccountHttpTest {
    * way a cross-tenant attempt is.
    */
   @Test
-  void GivenAnAccountThatIsNotTheirs_WhenNamed_ThenTheRefusalIsCounted() throws Exception {
+  void GivenAnAccountIdentifierNobodyHolds_WhenNamed_ThenTheRefusalIsCounted() throws Exception {
     String admin = admin(anOrganisation());
     double before = refusalsOfKind("unknown_account");
 
