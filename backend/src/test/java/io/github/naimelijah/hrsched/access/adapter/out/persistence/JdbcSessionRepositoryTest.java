@@ -13,11 +13,13 @@ import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * What starting a session actually writes.
@@ -32,6 +34,9 @@ class JdbcSessionRepositoryTest {
 
   private static final Instant NOW = Instant.parse("2026-09-20T09:00:00Z");
   private static final PasswordHash HASH = new PasswordHash("{bcrypt}$2a$04$invented.test.value");
+
+  /** PostgreSQL's {@code foreign_key_violation}. */
+  private static final String FOREIGN_KEY_VIOLATION = "23503";
 
   private final JdbcAccountRepository accounts =
       new JdbcAccountRepository(PostgresDatabase.jdbcClient());
@@ -191,7 +196,11 @@ class JdbcSessionRepositoryTest {
     assertThatThrownBy(
             () ->
                 repository.start(orphan, digest("a-refresh-token"), NOW.plus(Duration.ofHours(1))))
-        .isInstanceOf(RuntimeException.class);
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .rootCause()
+        .isInstanceOfSatisfying(
+            SQLException.class,
+            refused -> assertThat(refused.getSQLState()).isEqualTo(FOREIGN_KEY_VIOLATION));
   }
 
   private Account anAccount() {
