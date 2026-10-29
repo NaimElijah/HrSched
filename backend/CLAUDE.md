@@ -172,10 +172,11 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
   its context closes, `destroyMethod = ""` or not, so a test closing a context it started would take
   the database from every test after it (#252, pinned by `PostgresBackedApplicationTest`). A
   Spring test shares the suite's context only while its annotations are exactly
-  `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`;
-  `MetricsHttpTest`, `MultipartRequestHttpTest` and `FormPostLimitHttpTest` (on a real port), the
-  bare smoke test `HrSchedApplicationTests` and `JsonDocumentLimitStartupTest` (which passes the
-  datasource as properties) each start another.
+  `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`, as the smoke
+  test `HrSchedApplicationTests` does. Two more are started: `MetricsHttpTest`'s, and one on a real
+  port that `MultipartRequestHttpTest` and `FormPostLimitHttpTest` share by adding
+  `webEnvironment = RANDOM_PORT`. `JsonDocumentLimitStartupTest` starts the application itself,
+  passing the datasource as properties.
 - **Isolation.** An HTTP test onboards a fresh organisation through `TestTenants`; an adapter
   test, which runs without Spring, calls `PostgresDatabase.empty()` first.
 - **Fakes are hand-written**, package-private beside the service tests that use them, and copy the

@@ -39,8 +39,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * refused for its type.
  *
  * <p>Real HTTP on a random port, not MockMvc, because MockMvc parses form content itself and never
- * reaches the server's parser. The Admin's token comes from MockMvc against the same context. That
- * costs a context of its own.
+ * reaches the server's parser. The Admin's token comes from MockMvc against the same context. The
+ * real-port context is shared with every test annotated as this one is.
  *
  * <p>The body is 1.5 MiB of an invented field: over the 1 MiB default limit, and under the 2 MiB
  * the server reads and discards from a body it answered without reading, so the answer is not a
