@@ -101,7 +101,7 @@ class EmployeeHttpTest {
     mockMvc
         .perform(
             as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
-                .content("{\"weeklyContractedMinutes\":2100}"))
+                .content("{\"weeklyContractedMinutes\":2101}"))
         .andExpect(status().isNoContent());
 
     mockMvc
@@ -110,7 +110,7 @@ class EmployeeHttpTest {
         .andExpect(jsonPath("$[0].unavailability.length()").value(1))
         .andExpect(jsonPath("$[0].unavailability[0].start").value("2026-10-07T00:00:00Z"))
         .andExpect(jsonPath("$[0].unavailability[0].end").value("2026-10-08T00:00:00Z"))
-        .andExpect(jsonPath("$[0].weeklyContractedMinutes").value(2100));
+        .andExpect(jsonPath("$[0].weeklyContractedMinutes").value(2101));
   }
 
   @Test
@@ -311,13 +311,13 @@ class EmployeeHttpTest {
     mockMvc
         .perform(
             as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
-                .content("{\"weeklyContractedMinutes\":2400}"))
+                .content("{\"weeklyContractedMinutes\":2401}"))
         .andExpect(status().isNoContent());
 
     mockMvc
         .perform(as(mockMvc, get("/api/employees/" + ada), organisation, "ADMIN"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.weeklyContractedMinutes").value(2400));
+        .andExpect(jsonPath("$.weeklyContractedMinutes").value(2401));
   }
 
   /**

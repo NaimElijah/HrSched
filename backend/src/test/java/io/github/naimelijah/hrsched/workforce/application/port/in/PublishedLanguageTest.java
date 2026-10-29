@@ -124,11 +124,11 @@ class PublishedLanguageTest {
             "Ada",
             Set.of(),
             List.of(),
-            Optional.of(Duration.ofMinutes(2400)),
+            Optional.of(Duration.ofMinutes(2401)),
             List.of(),
             List.of()); // invented
 
-    assertThat(contracted.weeklyContractedHours()).contains(Duration.ofMinutes(2400));
+    assertThat(contracted.weeklyContractedHours()).contains(Duration.ofMinutes(2401));
   }
 
   @Test

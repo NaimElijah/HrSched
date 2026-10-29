@@ -18,8 +18,8 @@ class ContractTermsTest {
 
   @Test
   void GivenAPositiveDuration_WhenConstructingTerms_ThenItIsAccepted() {
-    assertThat(new ContractTerms(Duration.ofMinutes(2400)).weeklyContractedHours())
-        .isEqualTo(Duration.ofMinutes(2400));
+    assertThat(new ContractTerms(Duration.ofMinutes(2401)).weeklyContractedHours())
+        .isEqualTo(Duration.ofMinutes(2401));
   }
 
   @ParameterizedTest
@@ -53,8 +53,8 @@ class ContractTermsTest {
 
   @Test
   void GivenTwoTermsOfTheSameLength_WhenComparingThem_ThenTheyAreEqual() {
-    assertThat(new ContractTerms(Duration.ofMinutes(2400)))
-        .isEqualTo(new ContractTerms(Duration.ofMinutes(2400)))
-        .hasSameHashCodeAs(new ContractTerms(Duration.ofMinutes(2400)));
+    assertThat(new ContractTerms(Duration.ofMinutes(2401)))
+        .isEqualTo(new ContractTerms(Duration.ofMinutes(2401)))
+        .hasSameHashCodeAs(new ContractTerms(Duration.ofMinutes(2401)));
   }
 }

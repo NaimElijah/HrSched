@@ -42,9 +42,9 @@ class WorkforceCommandsTest {
         () -> new GrantQualificationCommand(null, ADA, QualificationId.newId()),
         () -> new GrantQualificationCommand(ACME, null, QualificationId.newId()),
         () -> new GrantQualificationCommand(ACME, ADA, null),
-        // 2400 minutes is invented; contracted hours are a term of an agreement, not a statute.
-        () -> new SetContractTermsCommand(null, ADA, Duration.ofMinutes(2400)),
-        () -> new SetContractTermsCommand(ACME, null, Duration.ofMinutes(2400)),
+        // 2401 minutes is invented; contracted hours are a term of an agreement, not a statute.
+        () -> new SetContractTermsCommand(null, ADA, Duration.ofMinutes(2401)),
+        () -> new SetContractTermsCommand(ACME, null, Duration.ofMinutes(2401)),
         () -> new SetContractTermsCommand(ACME, ADA, null));
   }
 
