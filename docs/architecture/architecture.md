@@ -133,7 +133,9 @@ by direct method call. There are no events and no queues.
 
 The browser talks to the backend over JSON on `/api`. In development that request goes to the Vite
 dev server, which proxies it; in production the built bundle is served however the deployment
-chooses and the same paths apply. The backend is unaware of either arrangement.
+chooses and the same paths apply. The backend is unaware of either arrangement. The build also
+writes the licence notices of everything it bundles to `dist/.vite/license.md`; nothing serves it
+yet, which is left to the edge ([#162](https://github.com/NaimElijah/HrSched/issues/162)).
 
 ## Authentication
 
