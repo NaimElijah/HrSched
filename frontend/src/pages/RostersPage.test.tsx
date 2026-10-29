@@ -122,7 +122,6 @@ async function assignGrace(board: HTMLElement) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 describe('the rosters page', () => {

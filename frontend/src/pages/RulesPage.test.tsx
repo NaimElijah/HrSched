@@ -49,7 +49,6 @@ function sentBody(stub: ReturnType<typeof routeTo>): Record<string, unknown> {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 describe('the rules page', () => {

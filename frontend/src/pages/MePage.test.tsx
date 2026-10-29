@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dayLabel, spanLabel, timeLabel } from '../components/localDates';
 import { routeTo } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
@@ -115,13 +115,8 @@ async function fillSpan(from: string, to: string) {
   }
 }
 
-beforeEach(() => {
-  window.localStorage.clear();
-});
-
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 describe('without an employee link', () => {

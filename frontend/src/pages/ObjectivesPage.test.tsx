@@ -42,7 +42,6 @@ function show() {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 describe('the objectives page', () => {
