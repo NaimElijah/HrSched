@@ -80,12 +80,17 @@ final class StubAccountRepository implements AccountRepository {
     stored.add(account);
   }
 
+  /**
+   * Gives way on a taken sign-in name and on nothing else, as the adapter's {@code ON CONFLICT
+   * (sign_in_name) DO NOTHING} does: every other refusal {@link #save} makes, the adapter makes
+   * here too.
+   */
   @Override
   public boolean saveIfAbsent(Account account) {
     if (findBySignInName(account.signInName()).isPresent()) {
       return false;
     }
-    stored.add(account);
+    save(account);
     return true;
   }
 
