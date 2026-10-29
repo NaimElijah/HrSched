@@ -38,3 +38,5 @@ sees the file.
   discipline the Spring Boot 4.x renames forced. Already found this way: Vitest 4 moves the `test`
   key off Vite's config type (import `defineConfig` from `vitest/config`), and
   `eslint-plugin-react-hooks` 7 exposes flat config under `configs.flat`.
+- **A frontend dependency's justification lives in ADR-051**, because `package.json` cannot hold a
+  comment. A new dependency gets its own ADR: ADR-051 is append-only and is not edited to add one.
