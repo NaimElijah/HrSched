@@ -15,16 +15,16 @@ import org.junit.jupiter.params.provider.MethodSource;
  * The identity wrappers scheduling owns, tested as a table for the same reason the kernel ones are.
  *
  * <p>They live here rather than in the shared kernel because nothing outside scheduling has any
- * business naming a shift or a roster.
+ * business naming a shift, a roster, a generation or a swap request.
  */
 class IdentityTest {
 
   private static Stream<Function<UUID, Object>> constructors() {
-    return Stream.of(ShiftId::new, RosterId::new);
+    return Stream.of(ShiftId::new, RosterId::new, GenerationId::new, SwapRequestId::new);
   }
 
   private static Stream<Supplier<Object>> factories() {
-    return Stream.of(ShiftId::newId, RosterId::newId);
+    return Stream.of(ShiftId::newId, RosterId::newId, GenerationId::newId, SwapRequestId::newId);
   }
 
   @ParameterizedTest
