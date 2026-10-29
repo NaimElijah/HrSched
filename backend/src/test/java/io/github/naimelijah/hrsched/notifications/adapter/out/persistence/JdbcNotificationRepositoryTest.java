@@ -122,6 +122,33 @@ class JdbcNotificationRepositoryTest {
         .isEqualTo(told);
   }
 
+  /**
+   * PostgreSQL keeps microseconds, and pgjdbc rounds an instant half-up to the microsecond as it
+   * sends it, so a moment finer than that is kept as the nearest microsecond. That is how a span
+   * declared beyond microseconds is kept too ({@code
+   * EmployeeHttpTest#GivenASpanDeclaredBeyondMicroseconds_WhenWithdrawing_ThenTheReadBackInstantsNameIt}).
+   * The copy read back is then the notification as stored, so saving it marked read is accepted
+   * rather than refused as another moment. The invented 600 nanoseconds round up, so a store that
+   * truncated would show.
+   */
+  @Test
+  void
+      GivenAMomentFinerThanAMicrosecond_WhenReadBackAndAcknowledged_ThenTheNearestMicrosecondIsKept() {
+    Instant told = Instant.parse("2026-10-05T12:00:00.000000600Z");
+    Instant nearestMicrosecond = Instant.parse("2026-10-05T12:00:00.000001Z");
+    Notification saved = at(ACME, ADA, told);
+    notifications.save(saved);
+
+    Notification readBack = notifications.findById(ACME, ADA, saved.id()).orElseThrow();
+    assertThat(readBack.occurredAt()).isEqualTo(nearestMicrosecond);
+
+    notifications.save(readBack.markedRead());
+    assertThat(notifications.findFor(ACME, ADA))
+        .singleElement()
+        .extracting(Notification::occurredAt, Notification::isRead)
+        .containsExactly(nearestMicrosecond, true);
+  }
+
   @Test
   void GivenAnUnreadNotification_WhenReadBack_ThenItIsStillUnread() {
     Notification saved = at(ACME, ADA, Instant.parse("2026-10-05T12:00:00Z"));
