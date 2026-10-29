@@ -380,8 +380,8 @@ class SessionHttpTest {
         mockMvc.perform(get("/%61pi/auth/session")).andReturn().getResponse();
 
     assertThat(response.getStatus())
-        .describedAs("whatever refuses it, an encoded path must not reach the endpoint")
-        .isNotEqualTo(200);
+        .describedAs("the firewall's refusal, before any rule or the endpoint is reached")
+        .isEqualTo(400);
   }
 
   /**
