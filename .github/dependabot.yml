@@ -35,6 +35,14 @@ updates:
         patterns:
           - 'vitest'
           - '@vitest/*'
+      # react-dom peers its own React version, and each @types package peers the other, so a pull
+      # request that bumps one alone fails CI, as #241 and #243 did.
+      react:
+        patterns:
+          - 'react'
+          - 'react-dom'
+          - '@types/react'
+          - '@types/react-dom'
     ignore:
       # typescript-eslint does not yet admit TypeScript 7 as a peer. Remove when it does (ADR-043).
       - dependency-name: 'typescript'
