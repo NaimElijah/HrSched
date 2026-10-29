@@ -35,8 +35,8 @@ updates:
         patterns:
           - 'vitest'
           - '@vitest/*'
-      # react-dom peers its own React version, and each @types package peers the other, so a pull
-      # request that bumps one alone fails CI, as #241 and #243 did.
+      # React throws at runtime unless react and react-dom are exactly the same version (#241), and
+      # @types/react-dom peers the matching @types/react, so npm ci refuses one alone (#243).
       react:
         patterns:
           - 'react'
