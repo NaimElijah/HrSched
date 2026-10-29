@@ -454,8 +454,13 @@ describe('renewing a session', () => {
     expect(stub.mock.calls.filter(([called]) => called === '/api/auth/refresh')).toHaveLength(0);
   });
 
-  /** A 401 from signing in is the answer, not a hint to go and renew something. */
+  /**
+   * A 401 from signing in is the answer, not a hint to go and renew something. Somebody is already
+   * signed in here, as in another account's tab, because a request sent as nobody is never renewed
+   * at all and would leave this test unable to fail.
+   */
   it('GivenAnAuthEndpointAnswering401_WhenRequesting_ThenNoRefreshIsAttempted', async () => {
+    signedIn();
     const stub = respondWith(401, { detail: 'Those credentials were not accepted.' });
 
     await expect(auth.signIn('ada@example.com', 'wrong')).rejects.toBeInstanceOf(ApiError);
