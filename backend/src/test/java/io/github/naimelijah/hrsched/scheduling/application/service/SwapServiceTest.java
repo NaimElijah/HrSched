@@ -280,6 +280,20 @@ class SwapServiceTest {
         .doesNotThrowAnyException();
   }
 
+  /** F7: a Scheduler may ask on somebody's behalf, as an Admin may, and the ask is theirs. */
+  @Test
+  void GivenAScheduler_WhenAskingOnSomebodyElsesBehalf_ThenItIsRecordedAsTheirRequest() {
+    ShiftId shift = aShift(Set.of());
+    Roster published = publishedWith(ada, shift);
+
+    SwapRequestId request =
+        service.requestSwap(
+            scheduler(ACME), new RequestSwapCommand(ACME, published.id(), shift, ada, grace));
+
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(swaps.byId(request).requester()).isEqualTo(ada);
+  }
+
   @Test
   void GivenAShiftTheyDoNotCover_WhenAskingForASwap_ThenItIsRefused() {
     ShiftId theirs = aShift(Set.of());

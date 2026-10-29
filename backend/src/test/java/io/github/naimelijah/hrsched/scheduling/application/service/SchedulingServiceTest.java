@@ -2505,6 +2505,35 @@ class SchedulingServiceTest {
   }
 
   /**
+   * F5 is any member linked to an employee, not the Employee role: a Scheduler who also works
+   * shifts sees their own work as anybody rostered does.
+   */
+  @Test
+  void GivenASchedulerLinkedToAnEmployee_WhenReadingTheirOwnSchedule_ThenTheySeeTheirWork() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId shift = publishedWork(ACME, ada, MONDAY_DAY);
+    TenantActor schedulingAda =
+        new TenantActor(UserId.newId(), ACME, Role.SCHEDULER, Optional.of(ada));
+
+    assertThat(service.findOwnSchedule(schedulingAda, ACME, THE_WEEK))
+        .extracting(RosteredShift::shift)
+        .containsExactly(shift);
+  }
+
+  /** As for a Scheduler: an Admin who is also on the rota sees their own work. */
+  @Test
+  void GivenAnAdminLinkedToAnEmployee_WhenReadingTheirOwnSchedule_ThenTheySeeTheirWork() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId shift = publishedWork(ACME, ada, MONDAY_DAY);
+    TenantActor administeringAda =
+        new TenantActor(UserId.newId(), ACME, Role.ADMIN, Optional.of(ada));
+
+    assertThat(service.findOwnSchedule(administeringAda, ACME, THE_WEEK))
+        .extracting(RosteredShift::shift)
+        .containsExactly(shift);
+  }
+
+  /**
    * The disclosure this capability exists to avoid. Reading a whole roster stays an Admin and
    * Scheduler act (R12); this answers only for the person asking.
    */
