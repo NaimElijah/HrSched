@@ -159,6 +159,30 @@ class OrganisationHttpTest {
         .andExpect(jsonPath("$.id").value(id));
   }
 
+  /** Any member reads their own organisation's record (F13), not only an Admin (#100). */
+  @Test
+  void GivenAnOrganisation_WhenItsOwnSchedulerReadsIt_ThenItIsReturned() throws Exception {
+    String id = onboard("Acme %s".formatted(UUID.randomUUID()));
+    String scheduler = TestTenants.tokenFor(mockMvc, organisation(id), Role.SCHEDULER);
+
+    mockMvc
+        .perform(with(get("/api/organisations/" + id), scheduler))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(id));
+  }
+
+  /** Any member reads their own organisation's record (F13), not only an Admin (#100). */
+  @Test
+  void GivenAnOrganisation_WhenItsOwnEmployeeReadsIt_ThenItIsReturned() throws Exception {
+    String id = onboard("Acme %s".formatted(UUID.randomUUID()));
+    String employee = TestTenants.tokenFor(mockMvc, organisation(id), Role.EMPLOYEE);
+
+    mockMvc
+        .perform(with(get("/api/organisations/" + id), employee))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(id));
+  }
+
   /** A 404 rather than a 403: saying otherwise would confirm that organisation exists. */
   @Test
   void GivenAnAdminOfAnotherOrganisation_WhenReadingOurs_ThenItIsNotFound() throws Exception {
