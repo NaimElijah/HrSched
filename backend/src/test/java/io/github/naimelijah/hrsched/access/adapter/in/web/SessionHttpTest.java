@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.access.adapter.out.token.AccessTokenProperties;
 import io.github.naimelijah.hrsched.access.application.port.in.ManageAccountsUseCase;
 import io.github.naimelijah.hrsched.access.application.port.in.ResetPasswordCommand;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
@@ -95,6 +96,7 @@ class SessionHttpTest {
   @Autowired private ManageAccountsUseCase manageAccounts;
   @Autowired private PlatformTransactionManager transactions;
   @Autowired private JdbcClient jdbc;
+  @Autowired private AccessTokenProperties tokenProperties;
 
   /**
    * #33's sign-in race, end to end, through the real use cases, their transactions and the real
@@ -271,6 +273,21 @@ class SessionHttpTest {
     String crafted = craftToken(mine.id().value().toString(), theirSession.toString());
 
     assertThat(readSessionWith("Bearer " + crafted).getStatus()).isEqualTo(401);
+  }
+
+  /**
+   * The positive control for the test above: a token crafted the same way, pairing an account with
+   * its own session, is accepted, so the refusal there is the mismatched pair and nothing else.
+   */
+  @Test
+  void GivenACraftedTokenPairingAnAccountWithItsOwnSession_WhenReadingTheSession_ThenItIsAccepted()
+      throws Exception {
+    Account mine = anOperator(PASSWORD, false);
+    UUID mySession = sessionOf(signIn(mine, PASSWORD));
+
+    String crafted = craftToken(mine.id().value().toString(), mySession.toString());
+
+    assertThat(readSessionWith("Bearer " + crafted).getStatus()).isEqualTo(200);
   }
 
   @Test
@@ -468,8 +485,8 @@ class SessionHttpTest {
             JwtEncoderParameters.from(
                 JwsHeader.with(SignatureAlgorithm.RS256).type("at+jwt").build(),
                 JwtClaimsSet.builder()
-                    .issuer("hrsched")
-                    .audience(List.of("hrsched-api"))
+                    .issuer(tokenProperties.issuer())
+                    .audience(List.of(tokenProperties.audience()))
                     .subject(subject)
                     .issuedAt(now)
                     .expiresAt(now.plus(10, ChronoUnit.MINUTES))
