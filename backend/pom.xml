@@ -34,7 +34,7 @@
 		  9.13 and later until that changes. See ADR-044.
 		-->
 		<ortools.version>9.12.4544</ortools.version>
-		<jna.version>5.18.1</jna.version>
+		<jna.version>5.19.1</jna.version>
 	</properties>
 
 	<dependencies>
@@ -214,10 +214,12 @@
 	<dependencyManagement>
 		<dependencies>
 			<!--
-			  OR-Tools asks for JNA 5.14.0, and Maven would choose it over the 5.18.1 that
-			  Testcontainers' Docker client was built against, only because it is nearer in the
-			  tree. Pinned to the newer, so neither runs on a JNA older than it expects.
-			  LGPL-2.1-or-later or Apache-2.0, at the user's choice. See ADR-044.
+			  Nothing in backend/src uses JNA itself. OR-Tools asks for JNA 5.14.0, and Maven
+			  would choose it over the 5.18.1 that Testcontainers' Docker client was built
+			  against, only because it is nearer in the tree. Pinned at or above the newer, so
+			  neither runs on a JNA older than it expects; Dependabot proposes each release.
+			  Maintained by the java-native-access project. LGPL-2.1-or-later or Apache-2.0, at
+			  the user's choice; which side HrSched relies on is #280. See ADR-044.
 			-->
 			<dependency>
 				<groupId>net.java.dev.jna</groupId>
