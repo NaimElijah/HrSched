@@ -14,11 +14,13 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import io.github.naimelijah.hrsched.workforce.domain.model.ContractTerms;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
+import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
 import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -266,6 +268,43 @@ class JdbcEmployeeRepositoryTest {
         .get()
         .extracting(Employee::name)
         .isEqualTo("Their Employee");
+  }
+
+  /**
+   * The schema does not refuse overlapping rows, so only the rebuild through the aggregate's own
+   * withers stops a row written by hand, a restore or a bug from handing the domain a state R7
+   * forbids. Loading such an employee fails loudly, by one identity and in a listing alike.
+   */
+  @Test
+  void GivenOverlappingUnavailabilityWrittenStraightIntoTheStore_WhenLoaded_ThenItIsRefused() {
+    Employee ada = employee(ACME, "Ada");
+    repository.save(ada);
+    // Invented: a week that overlaps the last day of A_FORTNIGHT_OFF.
+    TimeRange overlapping =
+        new TimeRange(Instant.parse("2026-08-14T00:00:00Z"), Instant.parse("2026-08-21T00:00:00Z"));
+    storeUnavailabilityDirectly(ada, 0, A_FORTNIGHT_OFF);
+    storeUnavailabilityDirectly(ada, 1, overlapping);
+
+    assertThatThrownBy(() -> repository.findById(ACME, ada.id()))
+        .isInstanceOf(OverlappingUnavailabilityException.class);
+    assertThatThrownBy(() -> repository.findByOrganisation(ACME))
+        .isInstanceOf(OverlappingUnavailabilityException.class);
+  }
+
+  /** Writes past the adapter, because no {@code Employee} can carry what this stores. */
+  private static void storeUnavailabilityDirectly(
+      Employee employee, int ordinal, TimeRange period) {
+    PostgresDatabase.jdbcClient()
+        .sql(
+            """
+            INSERT INTO employee_unavailability (employee_id, ordinal, starts_at, ends_at)
+            VALUES (:id, :ordinal, :startsAt, :endsAt)
+            """)
+        .param("id", employee.id().value())
+        .param("ordinal", ordinal)
+        .param("startsAt", period.start().atOffset(ZoneOffset.UTC))
+        .param("endsAt", period.end().atOffset(ZoneOffset.UTC))
+        .update();
   }
 
   @Test
