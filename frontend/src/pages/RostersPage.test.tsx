@@ -76,10 +76,8 @@ const NOTHING_WRONG = {
 };
 
 /**
- * A draft with Ada on its one shift, and Grace free to be assigned.
- *
- * The check has an answer of its own: the router answers by longest prefix, so without one it
- * would answer the check with the roster itself.
+ * A draft with Ada on its one shift, and Grace free to be assigned, and a check that finds nothing
+ * wrong with it.
  */
 function aDraft(overrides: Record<string, Answer> = {}) {
   return routeTo({
@@ -146,7 +144,7 @@ describe('the rosters page', () => {
 
   it('GivenARosterThatBreaksTheRules_WhenPublishing_ThenEveryViolationIsShown', async () => {
     routeTo({
-      '/api/rosters/roster-1/publication': {
+      'POST /api/rosters/roster-1/publication': {
         status: 422,
         body: {
           detail: 'The roster breaks 1 working-time rule(s)',
@@ -218,13 +216,12 @@ describe('the rosters page', () => {
       '/api/rosters': { status: 200, body: [] },
       '/api/shifts': { status: 200, body: [] },
       '/api/employees': { status: 200, body: [] },
+      'POST /api/rosters/generations': {
+        status: 403,
+        body: { detail: 'Your role does not permit this.' },
+      },
     });
     renderPage();
-    routeTo({
-      '/api/rosters': { status: 403, body: { detail: 'Your role does not permit this.' } },
-      '/api/shifts': { status: 200, body: [] },
-      '/api/employees': { status: 200, body: [] },
-    });
 
     await userEvent.click(await screen.findByRole('button', { name: /Generate a draft/ }));
 
