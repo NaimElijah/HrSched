@@ -254,7 +254,7 @@ describe('deciding', () => {
     expect(alert).toHaveTextContent('There is no override');
   });
 
-  it('GivenASwapAlreadyDecided_WhenApproving_ThenItSaysSomebodyAnsweredFirst', async () => {
+  it('GivenASwapAlreadyDecided_WhenApproving_ThenTheBackendsReasonIsShown', async () => {
     aQueue({
       'POST /api/swaps/swap-1/approval': {
         status: 409,

@@ -574,7 +574,8 @@ describe('what a failure carries', () => {
     expect(error.message).toBe('The server returned 502.');
   });
 
-  it('GivenACrossTenantRead_WhenRequesting_ThenItIsNotFoundRatherThanForbidden', async () => {
+  /** A 404 is how the backend answers a cross-tenant read; the client only has to keep it a 404. */
+  it('GivenA404_WhenRequesting_ThenItIsNotFoundRatherThanForbidden', async () => {
     respondWith(404, { title: 'Not found', detail: 'No such resource.' });
 
     const error = (await api.get('/api/rosters/1').catch((e: unknown) => e)) as ApiError;
