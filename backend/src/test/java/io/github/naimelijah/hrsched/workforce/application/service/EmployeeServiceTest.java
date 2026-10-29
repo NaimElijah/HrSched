@@ -29,6 +29,8 @@ import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepos
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChange;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
+import io.github.naimelijah.hrsched.workforce.domain.model.InvalidContractTermsException;
+import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
 import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
@@ -339,6 +341,39 @@ class EmployeeServiceTest {
         .isInstanceOf(CrossTenantAccessException.class);
     assertThat(contractedHoursOf(ada)).contains(AGREED_HOURS);
     assertThat(audit.of(WorkforceChange.CONTRACT_SET)).hasSize(1);
+  }
+
+  // --- a refusal by the aggregate changes and records nothing (#133) ------------------------
+
+  /** Zero hours is not a contract; the agreed hours stay, and only their setting is recorded. */
+  @Test
+  void GivenNoHoursAtAll_WhenSettingSomebodysContract_ThenItIsRefusedAndNothingIsRecorded() {
+    EmployeeId ada = adaContractedByAnAdmin();
+
+    assertThatThrownBy(
+            () ->
+                service.setContractTerms(
+                    admin(ACME), new SetContractTermsCommand(ACME, ada, Duration.ZERO)))
+        .isInstanceOf(InvalidContractTermsException.class);
+    assertThat(contractedHoursOf(ada)).contains(AGREED_HOURS);
+    assertThat(audit.of(WorkforceChange.CONTRACT_SET)).hasSize(1);
+  }
+
+  /** R7. The second span, invented as Monday is, overlaps Monday's afternoon. */
+  @Test
+  void GivenAnOverlappingSpan_WhenDeclaringUnavailability_ThenItIsRefusedAndNothingIsRecorded() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.declareUnavailability(admin(ACME), new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+    TimeRange overlapping =
+        new TimeRange(Instant.parse("2026-09-07T12:00:00Z"), Instant.parse("2026-09-07T20:00:00Z"));
+
+    assertThatThrownBy(
+            () ->
+                service.declareUnavailability(
+                    admin(ACME), new DeclareUnavailabilityCommand(ACME, ada, overlapping)))
+        .isInstanceOf(OverlappingUnavailabilityException.class);
+    assertThat(service.findUnavailability(admin(ACME), ACME, ada)).containsExactly(MONDAY);
+    assertThat(audit.of(WorkforceChange.UNAVAILABILITY_DECLARED)).hasSize(1);
   }
 
   @Test
