@@ -13,6 +13,13 @@ import react from '@vitejs/plugin-react';
  */
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // The bundle is a copy of React, react-dom and scheduler sent to every browser, and their MIT
+    // licence asks that its notice travel with every copy. This writes the notices of everything
+    // bundled to dist/.vite/license.md. Serving it is the edge's job (#162); what else HrSched owes
+    // for what it ships is #280.
+    license: true,
+  },
   server: {
     port: 5173,
     proxy: {
