@@ -122,6 +122,16 @@ describe('what a request carries', () => {
     expect((stub.mock.calls[0]?.[1] as RequestInit).body).toBeUndefined();
   });
 
+  /** The backend reads a body as JSON only when it is told it is JSON. */
+  it('GivenARequestWithABody_WhenRequesting_ThenItIsSentAsJson', async () => {
+    const stub = respondWith(201, { id: 'q-1', name: 'Forklift' });
+
+    await api.post('/api/qualifications', { name: 'Forklift' });
+
+    expect(headersOf(stub.mock.calls[0]).get('Content-Type')).toBe('application/json');
+    expect((stub.mock.calls[0]?.[1] as RequestInit).body).toBe('{"name":"Forklift"}');
+  });
+
   it('GivenARequestWithoutABody_WhenRequesting_ThenNoContentTypeIsClaimed', async () => {
     const stub = respondWith(200, []);
 
