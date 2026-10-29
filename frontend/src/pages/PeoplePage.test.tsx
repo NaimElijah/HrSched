@@ -263,7 +263,7 @@ describe('setting contracted hours', () => {
     theOrganisation({
       'PUT /api/employees/e-1/contract': {
         status: 400,
-        body: { detail: 'weeklyContractedHours must be positive' },
+        body: { detail: 'weeklyContractedMinutes must be positive' },
       },
     });
     show();
@@ -277,7 +277,9 @@ describe('setting contracted hours', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
 
     await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('weeklyContractedHours must be positive'),
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'weeklyContractedMinutes must be positive',
+      ),
     );
   });
 });

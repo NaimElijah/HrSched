@@ -596,6 +596,10 @@ describe('what they declared', () => {
     await screen.findByText(/^Withdrawn:/);
     expect(withdraw).toBeDisabled();
     release();
+    // Waits for the read it released, so its answer lands inside this test rather than after it.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^Withdraw absence/ })).toBeEnabled(),
+    );
   });
 
   /** A refusal may mean the list on screen is stale, withdrawn already by somebody else. */

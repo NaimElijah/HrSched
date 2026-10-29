@@ -200,7 +200,9 @@ describe('the rosters page', () => {
 
     await screen.findByRole('button', { name: 'Open' });
 
-    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+    for (const header of screen.getAllByRole('columnheader')) {
+      expect(header, 'every column header has a name').toHaveAccessibleName();
+    }
   });
 
   /**

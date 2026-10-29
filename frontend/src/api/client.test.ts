@@ -265,11 +265,14 @@ describe('where the token is kept', () => {
     });
     const local = vi.spyOn(Storage.prototype, 'setItem');
 
-    await auth.signIn('ada@example.com', 'an invented password for a test');
+    try {
+      await auth.signIn('ada@example.com', 'an invented password for a test');
 
-    expect(local).not.toHaveBeenCalled();
-    expect(currentAccessToken()).toBe('token-1');
-    local.mockRestore();
+      expect(local).not.toHaveBeenCalled();
+      expect(currentAccessToken()).toBe('token-1');
+    } finally {
+      local.mockRestore();
+    }
   });
 
   it('GivenASignIn_WhenItSucceeds_ThenTheTokenIsInNoCookie', async () => {
@@ -374,11 +377,11 @@ describe('renewing a session', () => {
     });
 
     const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+    stop();
 
     expect(error.isUnauthenticated).toBe(true);
     expect(currentAccessToken()).toBeNull();
     expect(ended).toBe(true);
-    stop();
   });
 
   /**
@@ -396,11 +399,11 @@ describe('renewing a session', () => {
     });
 
     const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+    stop();
 
     expect(error.status).toBe(502);
     expect(currentAccessToken()).not.toBeNull();
     expect(ended).toBe(false);
-    stop();
   });
 
   it('GivenARefreshAnsweredByAGatewayWithNoBackend_WhenRestoring_ThenItIsThrownRatherThanReadAsNoSession', async () => {
