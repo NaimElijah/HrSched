@@ -458,6 +458,27 @@ class EmployeeServiceTest {
   }
 
   /**
+   * A preference is soft, but it is still somebody's say about when they work, and a colleague
+   * stating one for them would put words in their mouth that the generator then weighs.
+   */
+  @Test
+  void GivenAColleague_WhenStatingSomebodyElsesPreference_ThenItIsRefusedAndNothingIsStated() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    EmployeeId grace = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Grace"));
+    TenantActor gracesAccount =
+        new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(grace));
+
+    assertThatThrownBy(
+            () ->
+                service.statePreference(
+                    gracesAccount,
+                    new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS_NOT)))
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(service.findPreferences(admin(ACME), ACME, ada)).isEmpty();
+    assertThat(audit.of(WorkforceChange.PREFERENCE_STATED)).isEmpty();
+  }
+
+  /**
    * The organisation is checked against the actor, not only used to scope the lookup. Over HTTP it
    * always comes from the token, so only the port can be handed a mismatched one.
    */

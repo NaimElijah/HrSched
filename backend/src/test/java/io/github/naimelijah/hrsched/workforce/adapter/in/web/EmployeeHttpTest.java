@@ -432,6 +432,27 @@ class EmployeeHttpTest {
   }
 
   @Test
+  void GivenAColleague_WhenStatingSomebodyElsesPreference_ThenItIsForbiddenAndNothingIsStated()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String grace = addEmployee(organisation, "Grace");
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, post("/api/employees/" + ada + "/preferences"), organisation, grace)
+                .content(
+                    "{\"start\":\"2026-11-04T08:00:00Z\",\"end\":\"2026-11-04T16:00:00Z\","
+                        + "\"strength\":\"PREFERS_NOT\"}"))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + ada + "/preferences"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
+  }
+
+  @Test
   void GivenAnOverlappingSpan_WhenDeclaringUnavailability_ThenItIsRejected() throws Exception {
     String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
