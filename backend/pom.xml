@@ -74,7 +74,8 @@
 		  OpenTelemetry API, the Micrometer Tracing bridge over it, and the OTLP exporters, so a
 		  W3C trace id exists on every request and reaches the log lines it produces. The JDK has no
 		  tracing API. The exporters stay switched off until Q19 is answered. Maintained by the
-		  Spring team, Apache-2.0, version-managed by the Boot BOM. See ADR-016.
+		  Spring team, Apache-2.0, version-managed by the Boot BOM, except OpenTelemetry itself, which
+		  opentelemetry.version above holds ahead of it (#289). See ADR-016.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
