@@ -214,6 +214,7 @@ states its consequence.
 | R | A change cannot later be attributed, or a recorded change never happened | Every change and refusal is recorded after the save, with the actor, the organisation and the trace id. A log line cannot be rolled back and is not durable | `SchedulingAuditLogTest`, `SchedulingServiceTest`; durability: *none*, [#31](https://github.com/NaimElijah/HrSched/issues/31) |
 | T | Input forges a log line | Structured ECS JSON, one object per line, with a constant message and every variable a field (ADR-016, ADR-018) | convention |
 | T | A caller chooses the trace id its request is logged and answered under | An id sent with the request becomes its trace id and returns on `X-Trace-Id`. Its format is constrained, so nothing arbitrary reaches a log line. The edge should strip inbound trace headers ([#162](https://github.com/NaimElijah/HrSched/issues/162)) | none |
+| D | A crafted `tracestate` header makes extracting the trace context hold a request thread | OpenTelemetry is held at 1.67.0 or later, ahead of the Boot BOM, because earlier versions parse `tracestate` in quadratic time ([GHSA-ccrj-gw8r-854m](https://osv.dev/GHSA-ccrj-gw8r-854m), [#285](https://github.com/NaimElijah/HrSched/issues/285)). Tomcat's header size limit bounds each request; the edge stripping inbound trace headers ([#162](https://github.com/NaimElijah/HrSched/issues/162)) would remove the input | `opentelemetry.version` in `backend/pom.xml`, and CI's dependency audit (ADR-047) |
 
 ### B7: the browser
 
