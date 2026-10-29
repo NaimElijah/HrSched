@@ -20,8 +20,8 @@ import org.junit.jupiter.api.Test;
  * <p>Two filters, not one. Every read is scoped by organisation like its siblings, and also by
  * recipient — because an inbox handed to the wrong colleague is a disclosure even inside the right
  * tenant. The tests whose failure would be a security incident are the isolation ones: the two
- * reads that must not cross an organisation or reach a colleague, and the two saves that must not
- * write over another organisation's notification.
+ * reads that must not cross an organisation or reach a colleague, and the saves that must not write
+ * over another organisation's notification.
  */
 class JdbcNotificationRepositoryTest {
 
@@ -163,6 +163,31 @@ class JdbcNotificationRepositoryTest {
         .singleElement()
         .extracting(Notification::subject)
         .isEqualTo(theirs.subject());
+  }
+
+  /**
+   * The organisation half of the guard alone. {@link #overwriting} changes every column at once, so
+   * the recipient, kind, subject or moment would refuse it without the organisation being compared
+   * at all. Here only the organisation differs, and the save marks it read: were the organisation
+   * not compared, the statement would set {@code read} on their row and report success.
+   */
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisationForTheSameRecipient_WhenSavingOverIt_ThenRefused() {
+    Notification theirs = at(RIVAL, ADA, Instant.parse("2026-10-05T12:00:00Z"));
+    notifications.save(theirs);
+    Notification ours =
+        new Notification(
+                theirs.id(), ACME, ADA, theirs.kind(), theirs.subject(), theirs.occurredAt())
+            .markedRead();
+
+    assertThatThrownBy(() -> notifications.save(ours)).isInstanceOf(IllegalStateException.class);
+
+    assertThat(notifications.findFor(RIVAL, ADA))
+        .singleElement()
+        .extracting(Notification::isRead)
+        .describedAs("their notification must not have been marked read by our save")
+        .isEqualTo(false);
+    assertThat(notifications.findFor(ACME, ADA)).isEmpty();
   }
 
   // --- #250: within one organisation, a notification only ever becomes read --------------------
