@@ -3,6 +3,11 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
+	<!--
+	  Spring Boot's parent, and through it the BOM that sets the version of everything Boot
+	  manages below, so a Boot release moves them together instead of each by hand. Maintained by
+	  the Spring team. Apache-2.0. See ADR-001.
+	-->
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
@@ -33,11 +38,20 @@
 	</properties>
 
 	<dependencies>
+		<!--
+		  The HTTP boundary: Spring MVC on an embedded Tomcat, which every web adapter is written
+		  against. The JDK's own HTTP server has no routing, binding or validation. Maintained by
+		  the Spring team, Apache-2.0, version-managed by the Boot BOM. See ADR-001.
+		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
-		<!-- Health and readiness endpoints are a baseline requirement for every service. -->
+		<!--
+		  Health and readiness endpoints are a baseline requirement for every service, and the
+		  metrics endpoints of ADR-017 hang off the same machinery. Nothing in the JDK serves them.
+		  Maintained by the Spring team, Apache-2.0, version-managed by the Boot BOM.
+		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
@@ -45,17 +59,20 @@
 		<!--
 		  Vendor-neutral instrumentation, which ADR-001 names as a baseline demand. Supplies the
 		  OpenTelemetry API, the Micrometer Tracing bridge over it, and the OTLP exporters, so a
-		  W3C trace id exists on every request and reaches the log lines it produces. Apache-2.0, and
-		  version-managed by the Boot BOM. See ADR-016.
+		  W3C trace id exists on every request and reaches the log lines it produces. The JDK has no
+		  tracing API. The exporters stay switched off until Q19 is answered. Maintained by the
+		  Spring team, Apache-2.0, version-managed by the Boot BOM. See ADR-016.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-opentelemetry</artifactId>
 		</dependency>
 		<!--
-		  Renders the meters Micrometer already collects in the format a scraper reads. Nothing
-		  pushes: metrics are pulled from /actuator/prometheus. Apache-2.0, version managed by the
-		  Boot BOM through micrometer-bom. See ADR-017.
+		  Renders the meters Micrometer already collects in the format a scraper reads, in place of
+		  a hand-written exposition-format encoder. Nothing pushes: metrics are pulled from
+		  /actuator/prometheus, which the chain refuses to every caller until a scraper exists
+		  (ADR-049). Maintained by the Micrometer project, Apache-2.0, version-managed by the Boot
+		  BOM through micrometer-bom. See ADR-017.
 		-->
 		<dependency>
 			<groupId>io.micrometer</groupId>
@@ -80,11 +97,19 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-flyway</artifactId>
 		</dependency>
+		<!--
+		  Flyway ships each database's support as a module of its own; without this one it cannot
+		  migrate PostgreSQL. Same project, licence and BOM management as the starter above.
+		-->
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
-		<!-- The driver. Runtime only: nothing compiles against it. BSD-2-Clause, BOM-managed. -->
+		<!--
+		  The PostgreSQL JDBC driver; the JDK ships none. Runtime only: nothing compiles against
+		  it. Maintained by the pgJDBC project, BSD-2-Clause, version-managed by the Boot BOM. See
+		  ADR-004.
+		-->
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
@@ -121,7 +146,9 @@
 		  this size is not something to write by hand. Brings native libraries for five platforms
 		  and protobuf-java, which the Boot BOM already manages. Confined to
 		  scheduling.adapter.out.generation. Apache-2.0, maintained by Google, and pinned because no
-		  BOM manages it. See ADR-044.
+		  BOM manages it; held at 9.12 on purpose (see ortools.version above). Its native jars also
+		  bundle COIN-OR, HiGHS, Abseil, protobuf, RE2 and zlib libraries under their own licences,
+		  which its POM does not declare (#280). See ADR-044.
 		-->
 		<dependency>
 			<groupId>com.google.ortools</groupId>
@@ -129,11 +156,20 @@
 			<version>${ortools.version}</version>
 		</dependency>
 
+		<!--
+		  Spring's test support for the web layer: MockMvc, plus the test starter with JUnit,
+		  AssertJ and Mockito, which Boot 4 brings in per technology. Maintained by the Spring team,
+		  Apache-2.0, version-managed by the Boot BOM.
+		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!--
+		  The test support behind @AutoConfigureMetrics, which MetricsHttpTest needs because Boot
+		  switches metrics export off under test. Same team, licence and BOM management.
+		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator-test</artifactId>
@@ -230,6 +266,7 @@
 			  Bound to validate so that a single `./mvnw verify` is the whole gate:
 			  format check, build, and tests. CI runs that exact command, so a
 			  README-only variant cannot drift away from what actually gates a merge.
+			  Maintained by DiffPlug, Apache-2.0, build-time only. See ADR-002.
 			-->
 			<plugin>
 				<groupId>com.diffplug.spotless</groupId>
@@ -259,7 +296,9 @@
 			  where to look next, read by a person. See ADR-015.
 
 			  The version is pinned because neither spring-boot-dependencies nor
-			  spring-boot-starter-parent manages JaCoCo.
+			  spring-boot-starter-parent manages JaCoCo. Maintained by the JaCoCo
+			  project. EPL-2.0; it runs only as an agent in the test JVM and never
+			  reaches the jar.
 
 			  prepare-agent sets the `argLine` property, which surefire reads. Nothing
 			  else configures argLine today; anyone adding one must write
