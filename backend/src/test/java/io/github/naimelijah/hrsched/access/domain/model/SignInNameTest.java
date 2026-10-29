@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.access.domain.model;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Locale;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -29,11 +30,18 @@ class SignInNameTest {
 
   /**
    * Turkish is the case this pins down: a locale-sensitive lower-casing turns "I" into a dotless
-   * "ı" there, so the same name would normalise differently depending on where the server runs.
+   * "ı" there, so the same name would normalise differently depending on where the server runs. The
+   * machine's locale is therefore set to Turkish for the test, and put back afterwards.
    */
   @Test
   void GivenANameWithAnI_WhenNormalised_ThenTheLocaleOfTheMachineDoesNotChangeIt() {
-    assertThat(new SignInName("ADMIN").value()).isEqualTo("admin");
+    Locale before = Locale.getDefault();
+    Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+    try {
+      assertThat(new SignInName("ADMIN").value()).isEqualTo("admin");
+    } finally {
+      Locale.setDefault(before);
+    }
   }
 
   @Test
