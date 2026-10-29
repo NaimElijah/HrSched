@@ -51,6 +51,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * checks that the domain accepts whatever the model answers, and this checks that the model accepts
  * whatever legal roster the domain does, so it is neither looser nor stricter than the rules.
  *
+ * <p>Two tests reach past the generator into the package-private {@link RosterModel} on purpose:
+ * that every legal roster can be fixed in the model, and that the model scores any roster as the
+ * domain does. Through {@code generate} only the roster the solver chose is visible, so neither
+ * claim can be checked from outside. They are coupled to the model's shape, and change with it.
+ *
  * <p>Every constraint value below is invented to force a specific outcome and says nothing about
  * any jurisdiction.
  */
