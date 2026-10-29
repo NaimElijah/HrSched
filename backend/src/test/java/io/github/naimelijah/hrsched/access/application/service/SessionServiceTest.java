@@ -61,6 +61,7 @@ import org.junit.jupiter.api.Test;
  */
 class SessionServiceTest {
 
+  /** Invented: the instant every test here happens at. */
   private static final Instant NOW = Instant.parse("2026-09-20T09:00:00Z");
 
   /**
@@ -69,13 +70,25 @@ class SessionServiceTest {
   private static final Instant AN_HOUR_AGO = NOW.minus(Duration.ofHours(1));
 
   private static final OrganisationId ACME = OrganisationId.newId();
+
+  /** Invented. */
   private static final String ADA = "ada@example.com";
+
+  /** Invented. */
   private static final String RIGHT_PASSWORD = "an invented password for a test";
+
+  /** Invented. */
   private static final String WRONG_PASSWORD = "not the invented password";
+
+  /** Invented: three failures lock an account for a quarter of an hour. */
   private static final LockoutPolicy LOCK_AFTER_THREE =
       new LockoutPolicy(3, Duration.ofMinutes(15));
-  private static final SessionPolicy A_DAY_AND_AN_HOUR =
+
+  /** Invented: a session lasts twelve hours at most, and an hour without being renewed. */
+  private static final SessionPolicy A_TWELVE_HOUR_SESSION_IDLE_AFTER_AN_HOUR =
       new SessionPolicy(Duration.ofHours(12), Duration.ofHours(1));
+
+  /** Invented. */
   private static final PasswordPolicy A_FIFTEEN_CHARACTER_MINIMUM = new PasswordPolicy(15, 72);
 
   private final StubAccountRepository accounts = new StubAccountRepository();
@@ -85,7 +98,7 @@ class SessionServiceTest {
   private final StubSessionSecrets secrets = new StubSessionSecrets();
   private final RecordingAuditTrail audit = new RecordingAuditTrail();
 
-  private final SessionService service = serviceAt(NOW, A_DAY_AND_AN_HOUR);
+  private final SessionService service = serviceAt(NOW, A_TWELVE_HOUR_SESSION_IDLE_AFTER_AN_HOUR);
 
   private SessionService serviceAt(Instant now, SessionPolicy policy) {
     return new SessionService(
@@ -437,7 +450,7 @@ class SessionServiceTest {
 
     RefreshOutcome outcome = service.refresh("a-current-token");
 
-    Instant anHourFromNow = NOW.plus(A_DAY_AND_AN_HOUR.idleLifetime());
+    Instant anHourFromNow = NOW.plus(A_TWELVE_HOUR_SESSION_IDLE_AFTER_AN_HOUR.idleLifetime());
     assertThat(sessions.successorExpiryOf(session.id())).contains(anHourFromNow);
     assertThat(outcome)
         .isInstanceOfSatisfying(
