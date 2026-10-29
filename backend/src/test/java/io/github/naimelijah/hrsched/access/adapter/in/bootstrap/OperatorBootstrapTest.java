@@ -68,7 +68,11 @@ class OperatorBootstrapTest {
 
     assertThatThrownBy(() -> bootstrap.run(null))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("hrsched.bootstrap.operator.password");
+        .describedAs("names the half that is set first, then the half that is missing")
+        .hasMessageStartingWith(
+            "hrsched.bootstrap.operator.sign-in-name is set but"
+                + " hrsched.bootstrap.operator.password is not");
+    assertThat(useCase.asked()).describedAs("nothing is created half-configured").isEmpty();
   }
 
   @Test
@@ -78,7 +82,11 @@ class OperatorBootstrapTest {
 
     assertThatThrownBy(() -> bootstrap.run(null))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("hrsched.bootstrap.operator.sign-in-name");
+        .describedAs("names the half that is set first, then the half that is missing")
+        .hasMessageStartingWith(
+            "hrsched.bootstrap.operator.password is set but"
+                + " hrsched.bootstrap.operator.sign-in-name is not");
+    assertThat(useCase.asked()).describedAs("nothing is created half-configured").isEmpty();
   }
 
   @Test
@@ -104,7 +112,10 @@ class OperatorBootstrapTest {
 
     new OperatorBootstrap(useCase, configured()).run(null);
 
-    assertThat(captured.list).isNotEmpty();
+    assertThat(captured.list)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .describedAs("says the operator was there already, not that it was created")
+        .containsExactly("The configured platform operator already exists and was left unchanged");
     assertThat(everythingLogged()).doesNotContain(OPERATOR_NAME).doesNotContain(A_PASSWORD);
   }
 
