@@ -2,6 +2,11 @@ package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
@@ -31,12 +36,17 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.assertj.core.api.InstanceOfAssertFactories;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpStatus;
@@ -61,6 +71,34 @@ class SchedulingExceptionHandlerTest {
 
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private final SchedulingExceptionHandler handler = new SchedulingExceptionHandler(meters);
+
+  private Logger logger;
+  private ListAppender<ILoggingEvent> captured;
+
+  @BeforeEach
+  void captureTheLog() {
+    logger =
+        ((LoggerContext) LoggerFactory.getILoggerFactory())
+            .getLogger(SchedulingExceptionHandler.class.getName());
+    captured = new ListAppender<>();
+    captured.start();
+    logger.addAppender(captured);
+  }
+
+  @AfterEach
+  void releaseTheLog() {
+    logger.detachAppender(captured);
+  }
+
+  private ILoggingEvent onlyEvent() {
+    assertThat(captured.list).hasSize(1);
+    return captured.list.getFirst();
+  }
+
+  private static Map<String, Object> fieldsOf(ILoggingEvent event) {
+    return event.getKeyValuePairs().stream()
+        .collect(Collectors.toMap(pair -> pair.key, pair -> pair.value));
+  }
 
   private double denied(String kind) {
     return meters.find("hrsched.access.denied").tag("kind", kind).counter() == null
@@ -302,6 +340,63 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(refused("concurrent_publication")).isEqualTo(1.0);
     assertThat(refused("not_compliant")).isZero();
+  }
+
+  // --- A refusal worth somebody's attention is logged at WARN, by identity only (ADR-018) -------
+  //
+  // The counters say how many; the log line says who, which is what an operator investigating one
+  // needs. Every field is an identity or a role, never a name: a log is copied to places a
+  // database is not.
+
+  @Test
+  void GivenACrossTenantAttempt_WhenTranslated_ThenItIsLoggedAtWarnNamingTheActorAndTheTenant() {
+    UserId actor = UserId.newId();
+    OrganisationId theirs = OrganisationId.newId();
+
+    handler.handleUnknown(new CrossTenantAccessException(actor, theirs));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo("Refused: an actor reached for another organisation's data");
+    assertThat(fieldsOf(logged))
+        .containsOnly(Map.entry("actor", actor.value()), Map.entry("organisation", theirs.value()));
+  }
+
+  @Test
+  void GivenARoleRefusal_WhenTranslated_ThenItIsLoggedAtWarnNamingTheActorAndTheRoleHeld() {
+    UserId actor = UserId.newId();
+
+    handler.handleNotPermitted(
+        new NotPermittedException(actor, Role.ADMIN, Set.of(Role.SCHEDULER)));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo("Refused: the actor's role does not permit this");
+    assertThat(fieldsOf(logged))
+        .containsOnly(Map.entry("actor", actor.value()), Map.entry("role", Role.ADMIN));
+  }
+
+  @Test
+  void GivenTheOperatorActingInsideAnOrganisation_WhenTranslated_ThenItIsLoggedAtWarnNamingThem() {
+    UserId operator = UserId.newId();
+
+    handler.handleOperatorConfined(new NotATenantMemberException(operator));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo("Refused: the platform operator reached inside an organisation");
+    assertThat(fieldsOf(logged)).containsOnly(Map.entry("actor", operator.value()));
+  }
+
+  /** A miss is not an incident: logging every 404 would bury the ones that are. */
+  @Test
+  void GivenAnOrdinaryUnknownRoster_WhenTranslated_ThenNothingIsLogged() {
+    handler.handleUnknown(new UnknownRosterException(RosterId.newId()));
+
+    assertThat(captured.list).isEmpty();
   }
 
   /**
