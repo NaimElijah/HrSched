@@ -43,6 +43,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -198,6 +199,79 @@ class EmployeeServiceTest {
                     admin(ACME), new GrantQualificationCommand(ACME, ours, theirs)))
         .describedAs("a qualification defined by another tenant must not be grantable here")
         .isInstanceOf(UnknownQualificationException.class);
+  }
+
+  // --- F9: only an Admin grants a qualification ---------------------------------------------
+  //
+  // One test per refusal rather than a table: each is a permission or tenancy decision. The
+  // security chain admits every tenant role to /api/employees/**, so the use case is what decides.
+
+  private QualificationId aTicketOfAcme() {
+    QualificationId ticket = QualificationId.newId();
+    qualifications.save(new Qualification(ticket, ACME, "Ticket"));
+    return ticket;
+  }
+
+  private Set<QualificationId> qualificationsHeldBy(EmployeeId employee) {
+    return service.findEmployee(admin(ACME), ACME, employee).orElseThrow().qualifications();
+  }
+
+  @Test
+  void GivenAnAdmin_WhenGrantingAQualification_ThenTheEmployeeHoldsIt() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    QualificationId ticket = aTicketOfAcme();
+
+    service.grantQualification(admin(ACME), new GrantQualificationCommand(ACME, ada, ticket));
+
+    assertThat(qualificationsHeldBy(ada)).containsExactly(ticket);
+  }
+
+  @Test
+  void GivenAScheduler_WhenGrantingAQualification_ThenItIsRefusedAndNotHeld() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    QualificationId ticket = aTicketOfAcme();
+
+    assertThatThrownBy(
+            () ->
+                service.grantQualification(
+                    actor(ACME, Role.SCHEDULER), new GrantQualificationCommand(ACME, ada, ticket)))
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(qualificationsHeldBy(ada)).isEmpty();
+    assertThat(audit.of(WorkforceChange.QUALIFICATION_GRANTED)).isEmpty();
+  }
+
+  /** Being the person a qualification is about does not let somebody vouch for it themself. */
+  @Test
+  void GivenTheEmployeeThemself_WhenGrantingThemselvesAQualification_ThenItIsRefusedAndNotHeld() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor themself = new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(ada));
+    QualificationId ticket = aTicketOfAcme();
+
+    assertThatThrownBy(
+            () ->
+                service.grantQualification(
+                    themself, new GrantQualificationCommand(ACME, ada, ticket)))
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(qualificationsHeldBy(ada)).isEmpty();
+    assertThat(audit.of(WorkforceChange.QUALIFICATION_GRANTED)).isEmpty();
+  }
+
+  /**
+   * The command names our organisation, our employee and our qualification, so the repositories'
+   * scoping finds all three, and only the check against the actor refuses.
+   */
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenGrantingToSomebodyOfOurs_ThenItIsRefusedAndNotHeld() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    QualificationId ticket = aTicketOfAcme();
+
+    assertThatThrownBy(
+            () ->
+                service.grantQualification(
+                    admin(RIVAL), new GrantQualificationCommand(ACME, ada, ticket)))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(qualificationsHeldBy(ada)).isEmpty();
+    assertThat(audit.of(WorkforceChange.QUALIFICATION_GRANTED)).isEmpty();
   }
 
   @Test

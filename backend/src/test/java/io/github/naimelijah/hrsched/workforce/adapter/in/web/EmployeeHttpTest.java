@@ -267,6 +267,32 @@ class EmployeeHttpTest {
         .andExpect(status().isNotFound());
   }
 
+  /**
+   * The security chain admits every tenant role to {@code /api/employees/**}, so the use case is
+   * all that stops somebody granting themself a qualification a shift then requires.
+   */
+  @Test
+  void GivenTheEmployeeThemself_WhenGrantingThemselvesAQualification_ThenItIsForbiddenAndNotHeld()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String forklift = defineQualification(organisation, "Forklift");
+
+    mockMvc
+        .perform(
+            asThemself(
+                mockMvc,
+                put("/api/employees/" + ada + "/qualifications/" + forklift),
+                organisation,
+                ada))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].qualifications.length()").value(0));
+  }
+
   @Test
   void GivenAnAdmin_WhenSettingContractTerms_ThenItIsAccepted() throws Exception {
     String organisation = anOrganisation(mockMvc);
