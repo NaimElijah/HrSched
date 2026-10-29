@@ -303,6 +303,11 @@ class EmployeeHttpTest {
             as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
                 .content("{\"weeklyContractedMinutes\":2400}"))
         .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + ada), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.weeklyContractedMinutes").value(2400));
   }
 
   /**
@@ -414,6 +419,13 @@ class EmployeeHttpTest {
                     mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, ada)
                 .content("{\"start\":\"2026-11-02T00:00:00Z\",\"end\":\"2026-11-03T00:00:00Z\"}"))
         .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            as(mockMvc, get("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].start").value("2026-11-02T00:00:00Z"));
   }
 
   @Test
@@ -527,6 +539,12 @@ class EmployeeHttpTest {
                     "{\"start\":\"2026-11-12T08:00:00Z\",\"end\":\"2026-11-12T16:00:00Z\","
                         + "\"strength\":\"PREFERS\"}"))
         .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + ada + "/preferences"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].strength").value("PREFERS"));
   }
 
   @Test

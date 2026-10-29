@@ -1,7 +1,6 @@
 package io.github.naimelijah.hrsched.workforce.domain.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
@@ -27,7 +26,9 @@ class ShiftPreferenceTest {
   @ParameterizedTest
   @EnumSource(PreferenceStrength.class)
   void GivenAnyStrength_WhenStatingAPreference_ThenItIsAccepted(PreferenceStrength strength) {
-    assertThatCode(() -> new ShiftPreference(MONDAY_DAY, strength)).doesNotThrowAnyException();
+    assertThat(new ShiftPreference(MONDAY_DAY, strength))
+        .extracting(ShiftPreference::period, ShiftPreference::strength)
+        .containsExactly(MONDAY_DAY, strength);
   }
 
   @Test

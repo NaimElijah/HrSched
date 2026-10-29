@@ -1,7 +1,6 @@
 package io.github.naimelijah.hrsched.workforce.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
@@ -145,11 +144,9 @@ class EmployeeServiceTest {
     EmployeeId id = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
     TenantActor themselves = new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(id));
 
-    assertThatCode(
-            () ->
-                service.declareUnavailability(
-                    themselves, new DeclareUnavailabilityCommand(ACME, id, MONDAY)))
-        .doesNotThrowAnyException();
+    service.declareUnavailability(themselves, new DeclareUnavailabilityCommand(ACME, id, MONDAY));
+
+    assertThat(service.findUnavailability(admin(ACME), ACME, id)).containsExactly(MONDAY);
   }
 
   @Test
