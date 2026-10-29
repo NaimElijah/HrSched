@@ -541,6 +541,38 @@ class SwapServiceTest {
     assertThat(audit.of(SchedulingChange.SWAP_REJECTED)).hasSize(1);
   }
 
+  /** Deciding a swap is the Scheduler's (Q11): the colleague asked is informed, never the judge. */
+  @Test
+  void GivenAnEmployeeRole_WhenRejectingASwap_ThenItIsRefusedAndTheSwapIsStillRequested() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+
+    assertThatThrownBy(() -> service.rejectSwap(themself(ACME, grace), ACME, request))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.SWAP_REJECTED);
+  }
+
+  /** An Admin manages people and rules; deciding a swap is building a roster, as approving is. */
+  @Test
+  void GivenAnAdminRole_WhenRejectingASwap_ThenItIsRefusedAndTheSwapIsStillRequested() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+
+    assertThatThrownBy(() -> service.rejectSwap(admin(ACME), ACME, request))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.SWAP_REJECTED);
+  }
+
   /** The same hole as manual assignment, on the path that publishes without anybody re-checking. */
   @Test
   void GivenAColleagueWhoCannotWorkThen_WhenApprovingTheSwap_ThenItIsRefused() {
