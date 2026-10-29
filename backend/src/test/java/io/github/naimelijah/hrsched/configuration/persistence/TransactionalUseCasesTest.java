@@ -2,11 +2,13 @@ package io.github.naimelijah.hrsched.configuration.persistence;
 
 import static io.github.naimelijah.hrsched.configuration.persistence.TransactionalUseCases.transactional;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.lang.reflect.Method;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.NestedExceptionUtils;
@@ -55,6 +57,11 @@ class TransactionalUseCasesTest {
     public Seen generate(String what) {
       return Seen.now();
     }
+
+    /** Shares the left-alone method's name but not its signature, so it is not left alone. */
+    public Seen generate(Integer times) {
+      return Seen.now();
+    }
   }
 
   /** SQLSTATE {@code read_only_sql_transaction}: a write attempted in a read-only transaction. */
@@ -78,6 +85,17 @@ class TransactionalUseCasesTest {
       return transactionReadOnly();
     }
 
+    /** Writes, then refuses, the way a use case refusing after its first write would. */
+    public void changeThenRefuse(UUID organisation) {
+      insertOrganisation(jdbc, organisation);
+      throw new IllegalStateException("an invented refusal after the write");
+    }
+
+    /** The transaction PostgreSQL is running this call in. */
+    public String transactionId() {
+      return currentTransactionId(jdbc);
+    }
+
     /** A writer misnamed as a reader: what #119 asks the convention to be held to. */
     public void findAndWrite(UUID organisation) {
       insertOrganisation(jdbc, organisation);
@@ -86,6 +104,27 @@ class TransactionalUseCasesTest {
     private String transactionReadOnly() {
       return jdbc.sql("SHOW transaction_read_only").query(String.class).single();
     }
+  }
+
+  /** A use case that calls another, as approving a swap calls the ones it is made of. */
+  static class NestingProbe {
+
+    private final JdbcClient jdbc;
+    private final DatabaseProbe inner;
+
+    NestingProbe(JdbcClient jdbc, DatabaseProbe inner) {
+      this.jdbc = jdbc;
+      this.inner = inner;
+    }
+
+    /** The transaction it runs in, then the one the use case it calls runs in. */
+    public List<String> changeThroughAnother() {
+      return List.of(currentTransactionId(jdbc), inner.transactionId());
+    }
+  }
+
+  private static String currentTransactionId(JdbcClient jdbc) {
+    return jdbc.sql("SELECT pg_current_xact_id()::text").query(String.class).single();
   }
 
   private static void insertOrganisation(JdbcClient jdbc, UUID organisation) {
@@ -172,5 +211,40 @@ class TransactionalUseCasesTest {
                     .as("SQLSTATE of %s", cause.getMessage())
                     .isEqualTo(READ_ONLY_SQL_TRANSACTION));
     assertThat(organisationExists(organisation)).as("the refused row was stored").isFalse();
+  }
+
+  @Test
+  void GivenAMethodThatWritesThenThrows_WhenCalled_ThenItsWriteIsRolledBack() {
+    UUID organisation = UUID.randomUUID();
+    DatabaseProbe probe = databaseProbe();
+
+    assertThatThrownBy(() -> probe.changeThenRefuse(organisation))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(organisationExists(organisation))
+        .as("the write made before the refusal survived it")
+        .isFalse();
+  }
+
+  @Test
+  void GivenAUseCaseCallingAnother_WhenCalled_ThenBothRunInOneDatabaseTransaction() {
+    NestingProbe outer =
+        transactional(
+            new NestingProbe(PostgresDatabase.jdbcClient(), databaseProbe()),
+            PostgresDatabase.transactions());
+
+    List<String> transactions = outer.changeThroughAnother();
+
+    assertThat(transactions.get(1))
+        .as("the called use case's transaction id, against its caller's")
+        .isEqualTo(transactions.get(0));
+  }
+
+  @Test
+  void GivenAnOverloadOfAMethodLeftAlone_WhenTheOverloadIsCalled_ThenItRunsInATransaction()
+      throws NoSuchMethodException {
+    Probe probe = transactional(new Probe(), PostgresDatabase.transactions(), generating());
+
+    assertThat(probe.generate(1)).isEqualTo(new Seen(true, true, false));
   }
 }
