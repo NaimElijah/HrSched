@@ -148,7 +148,9 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
   write: the notifier stores a row in the use case's transaction, so a use case tells before it
   records. `publish` saves the supersessions, its own roster and the swap decisions, tells the
   parties of a lapse or an approval, and only then records — one `ROSTER_SUPERSEDED` per demoted
-  roster, because the rosters it demotes did not demote themselves.
+  roster, because the rosters it demotes did not demote themselves. One breach no ordering removes:
+  `NotificationService.notify` records `NOTIFICATION_RAISED` straight after its own save, inside
+  the caller's transaction, so a later telling that fails leaves an earlier one's line behind (#31).
 - **Two `@Component` classes may not share a simple name.** Spring derives a bean name from it
   alone, so same-named adapters in two contexts collide at startup rather than at compile time.
   Hence `SchedulingAuditLog`, `WorkforceAuditLog`, `AccessAuditLog`, `NotificationAuditLog`.
