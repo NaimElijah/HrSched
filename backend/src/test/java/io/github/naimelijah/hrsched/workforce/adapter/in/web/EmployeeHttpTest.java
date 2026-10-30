@@ -16,6 +16,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -198,6 +201,38 @@ class EmployeeHttpTest {
     mockMvc
         .perform(as(mockMvc, get("/api/employees"), theirs, "OPERATOR"))
         .andExpect(status().isForbidden());
+  }
+
+  /**
+   * The qualifications held are a set, which has no order of its own, so the response gives them
+   * one: by identity, as text, the order PostgreSQL sorts a {@code uuid} in. Six, so a set's own
+   * order matching it by chance is one in 720.
+   */
+  @Test
+  void GivenSeveralQualificationsHeld_WhenReadingTheEmployee_ThenTheyComeInIdentityOrder()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    List<String> held = new ArrayList<>();
+    for (String name :
+        List.of("Crane", "Forklift", "Rigging", "Welding", "First Aid", "Scaffold")) {
+      String qualification = defineQualification(organisation, name);
+      held.add(qualification);
+      mockMvc
+          .perform(
+              as(
+                  mockMvc,
+                  put("/api/employees/" + ada + "/qualifications/" + qualification),
+                  organisation,
+                  "ADMIN"))
+          .andExpect(status().isNoContent());
+    }
+    Collections.sort(held);
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + ada), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.qualifications").value(held));
   }
 
   @Test

@@ -182,7 +182,7 @@ public class JdbcEmployeeRepository implements EmployeeRepository {
         jdbc.sql(
                 """
                 SELECT id, organisation_id, name, weekly_contracted_seconds FROM employee
-                WHERE organisation_id = :organisation ORDER BY name
+                WHERE organisation_id = :organisation ORDER BY name, id
                 """)
             .param("organisation", organisation.value())
             .query(JdbcEmployeeRepository::toBareEmployee)

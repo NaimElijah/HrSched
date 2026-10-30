@@ -65,7 +65,7 @@ public class JdbcQualificationRepository implements QualificationRepository {
     return jdbc.sql(
             """
             SELECT id, organisation_id, name FROM qualification
-            WHERE organisation_id = :organisation ORDER BY name
+            WHERE organisation_id = :organisation ORDER BY name, id
             """)
         .param("organisation", organisation.value())
         .query(JdbcQualificationRepository::toQualification)

@@ -23,6 +23,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -117,6 +118,24 @@ class JdbcEmployeeRepositoryTest {
     assertThat(repository.findByOrganisation(ACME))
         .extracting(Employee::name)
         .containsExactly("Ada", "Grace", "Marie");
+  }
+
+  /**
+   * Two people may share a name, and a listing that orders them by name alone leaves their order to
+   * the plan the database picks, so the same request could answer in either. Their identity settles
+   * it. Saved in the opposite order, so insertion order cannot pass for it.
+   */
+  @Test
+  void GivenTwoEmployeesSharingAName_WhenListingThem_ThenTheirIdentityOrdersThem() {
+    // Invented identities, chosen only for which sorts first.
+    EmployeeId first = new EmployeeId(UUID.fromString("00000000-0000-0000-0000-000000000001"));
+    EmployeeId second = new EmployeeId(UUID.fromString("00000000-0000-0000-0000-000000000002"));
+    repository.save(new Employee(second, ACME, "Ada"));
+    repository.save(new Employee(first, ACME, "Ada"));
+
+    assertThat(repository.findByOrganisation(ACME))
+        .extracting(Employee::id)
+        .containsExactly(first, second);
   }
 
   @Test

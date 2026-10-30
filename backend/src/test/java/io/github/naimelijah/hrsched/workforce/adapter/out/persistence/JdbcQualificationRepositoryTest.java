@@ -7,6 +7,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -74,6 +75,26 @@ class JdbcQualificationRepositoryTest {
     assertThat(repository.findByOrganisation(ACME))
         .extracting(Qualification::name)
         .containsExactly("Crane", "Forklift", "Rigging");
+  }
+
+  /**
+   * Two qualifications may share a name until R23 is built, and ordering by name alone leaves
+   * theirs to the plan the database picks. Their identity settles it. Saved in the opposite order,
+   * so insertion order cannot pass for it.
+   */
+  @Test
+  void GivenTwoQualificationsSharingAName_WhenListingThem_ThenTheirIdentityOrdersThem() {
+    // Invented identities, chosen only for which sorts first.
+    QualificationId first =
+        new QualificationId(UUID.fromString("00000000-0000-0000-0000-000000000001"));
+    QualificationId second =
+        new QualificationId(UUID.fromString("00000000-0000-0000-0000-000000000002"));
+    repository.save(new Qualification(second, ACME, "Forklift"));
+    repository.save(new Qualification(first, ACME, "Forklift"));
+
+    assertThat(repository.findByOrganisation(ACME))
+        .extracting(Qualification::id)
+        .containsExactly(first, second);
   }
 
   @Test

@@ -6,7 +6,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -63,7 +63,7 @@ public final class Employee {
       throw new InvalidEmployeeNameException();
     }
     this.name = name;
-    this.qualifications = Set.copyOf(new LinkedHashSet<>(qualifications));
+    this.qualifications = Set.copyOf(qualifications);
     this.unavailability = List.copyOf(unavailability);
     this.preferences = List.copyOf(preferences);
     this.contractTerms = contractTerms;
@@ -75,7 +75,7 @@ public final class Employee {
    */
   public Employee holding(QualificationId qualification) {
     Objects.requireNonNull(qualification, "qualification must not be null");
-    Set<QualificationId> held = new LinkedHashSet<>(qualifications);
+    Set<QualificationId> held = new HashSet<>(qualifications);
     held.add(qualification);
     return new Employee(id, organisation, name, held, unavailability, preferences, contractTerms);
   }
