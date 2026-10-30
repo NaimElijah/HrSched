@@ -273,7 +273,9 @@ filled every place it can, it keeps at least that many filled and minimises the 
   *Enforced by `Actor.requireTenantMembership` and `Actor.requireAccessTo` (`ActorTest` covers the
   second), and by the helper in each web adapter that takes the organisation from the actor
   (`actingIn`; `organisationOf` in `AccountController`), covered by `EmployeeHttpTest`, `CrossTenantEmployeeWriteHttpTest`, `CrossTenantSchedulingWriteHttpTest`, `RosteringHttpTest`, `SwapHttpTest`, `NotificationHttpTest`
-  and `AccountHttpTest`;
+  and `AccountHttpTest`. That a request naming another organisation still acts in its own is
+  `AccountHttpTest.GivenAnAdminNamingAnotherOrganisationInAnXOrganisationHeader_WhenCreatingAnAccount_ThenItIsCreatedInTheirOwn`
+  and `AccountHttpTest.GivenAnAdminNamingAnotherOrganisationInTheBody_WhenCreatingAnAccount_ThenItIsCreatedInTheirOwn`;
   [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md). On the write side, by the
   guard on every upsert by identity, which refuses to store over another organisation's row:
   `JdbcAccountRepository`, `JdbcEmployeeRepository`, `JdbcQualificationRepository`,
