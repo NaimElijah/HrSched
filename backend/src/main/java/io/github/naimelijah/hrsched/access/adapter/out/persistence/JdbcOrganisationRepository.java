@@ -50,9 +50,10 @@ public class JdbcOrganisationRepository implements OrganisationRepository {
         .optional();
   }
 
+  /** By name, then by identity: organisations may share a name, and the order must not change. */
   @Override
   public List<Organisation> findAll() {
-    return jdbc.sql("SELECT id, name FROM organisation ORDER BY name")
+    return jdbc.sql("SELECT id, name FROM organisation ORDER BY name, id")
         .query(JdbcOrganisationRepository::toOrganisation)
         .list();
   }

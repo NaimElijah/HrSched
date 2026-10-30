@@ -46,10 +46,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -80,9 +78,6 @@ public class SessionService
         AuthenticatedActorsUseCase,
         ReadSessionUseCase,
         ChangePasswordUseCase {
-
-  /** Bytes of randomness behind the dummy password, which exists only to be compared against. */
-  private static final int DUMMY_PASSWORD_BYTES = 32;
 
   private final AccountRepository accounts;
   private final SessionRepository sessions;
@@ -117,7 +112,9 @@ public class SessionService
     this.lockout = Objects.requireNonNull(lockout, "lockout must not be null");
     this.sessionPolicy = Objects.requireNonNull(sessionPolicy, "sessionPolicy must not be null");
     this.passwordPolicy = Objects.requireNonNull(passwordPolicy, "passwordPolicy must not be null");
-    this.dummyHash = passwords.hash(randomPassword());
+    // Random through the port randomness enters by, never a value anybody holds: it is minted here
+    // and only ever compared against.
+    this.dummyHash = passwords.hash(secrets.generate().value());
   }
 
   @Override
@@ -181,7 +178,8 @@ public class SessionService
   public RefreshOutcome refresh(String refreshToken) {
     Objects.requireNonNull(refreshToken, "refreshToken must not be null");
     Instant now = clock.instant();
-    Optional<StoredRefreshToken> found = sessions.findRefreshToken(secrets.digestOf(refreshToken));
+    byte[] digest = secrets.digestOf(refreshToken);
+    Optional<StoredRefreshToken> found = sessions.findRefreshToken(digest);
     if (found.isEmpty()) {
       return RefreshOutcome.Refused.of(RefreshRefusal.UNKNOWN_TOKEN);
     }
@@ -202,7 +200,7 @@ public class SessionService
     }
     // The conditional update is what decides the race: two requests holding one token both reach
     // here, and the one that does not change a row is presenting a token somebody else just spent.
-    if (!sessions.markReplaced(secrets.digestOf(refreshToken), now)) {
+    if (!sessions.markReplaced(digest, now)) {
       return reuseDetected(session, now);
     }
     RefreshTokenSecret successor = secrets.generate();
@@ -229,10 +227,10 @@ public class SessionService
    * <p><strong>A lockout is deliberately not checked here.</strong> An account is locked because
    * somebody is guessing at its password, and the person doing the guessing is not the person
    * holding this session; ending it would turn an attack on somebody into an outage for them, and
-   * hand any attacker a way to sign a colleague out by mistyping their password ten times. The lock
-   * stops what takes a password - a <em>sign-in</em> and a <em>change of one's own password</em>,
-   * which is where the guessing happens - and a session already held goes on working. Adding the
-   * filter here would look like tightening and would be a regression.
+   * hand any attacker a way to sign a colleague out by mistyping their password often enough. The
+   * lock stops what takes a password - a <em>sign-in</em> and a <em>change of one's own
+   * password</em>, which is where the guessing happens - and a session already held goes on
+   * working. Adding the filter here would look like tightening and would be a regression.
    */
   @Override
   public Optional<AuthenticatedActor> findActor(UserId account, SignInSessionId session) {
@@ -262,7 +260,8 @@ public class SessionService
    * counted as a failed attempt: without that, this endpoint would be a way to guess at a password
    * with no lockout behind it. That count is why the refusal is returned rather than thrown. A
    * locked account is refused here as at sign-in, whatever password it is given, and nothing is
-   * counted (R29).
+   * counted (R29). So is an account disabled after the request was authenticated, as its held copy
+   * shows (R17).
    */
   @Override
   public ChangePasswordOutcome changePassword(Actor actor, ChangePasswordCommand command) {
@@ -291,6 +290,11 @@ public class SessionService
     if (account.isLockedAt(now)) {
       return new ChangePasswordOutcome.CurrentPasswordRejected(CurrentPasswordRefusal.LOCKED);
     }
+    // Authenticated before an Admin's disable committed, and held after it: the disable ended every
+    // session, and one begun here would outlive a later restore (R17, ADR-041).
+    if (!account.active()) {
+      return new ChangePasswordOutcome.CurrentPasswordRejected(CurrentPasswordRefusal.DISABLED);
+    }
     if (!currentMatches) {
       Account counted = account.recordFailedSignIn(now, lockout);
       accounts.save(counted);
@@ -314,8 +318,11 @@ public class SessionService
     // under the old one, and the caller is handed a new session rather than being signed out of
     // their own password change.
     sessions.revokeEverySessionOf(changed.id(), SessionRevocation.PASSWORD_CHANGED, now);
+    // Begun before the change is recorded: the new session's writes can still fail and take the
+    // change back with them, and a line recorded first would outlive that rollback (#133).
+    IssuedSession replacement = beginSession(changed, now);
     record(changed, AccessChange.PASSWORD_CHANGED, changed.id().value());
-    return new ChangePasswordOutcome.Changed(beginSession(changed, now, AccessChange.SIGNED_IN));
+    return new ChangePasswordOutcome.Changed(replacement);
   }
 
   @Override
@@ -350,12 +357,22 @@ public class SessionService
 
   /**
    * Records a change about a session, looking its account up for the organisation to file under.
+   *
+   * <p>A session's account is never deleted from under it, so one that is not found is a fault and
+   * fails loudly. Filing the line under no organisation instead would make it read as an act that
+   * belongs to none, which {@link AuditedChange} reserves for the operator's.
    */
   private void recordAbout(SignInSession session, AccessChange change) {
-    Optional<Account> owner = accounts.findForAuthentication(session.account());
+    Account owner =
+        accounts
+            .findForAuthentication(session.account())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "The account of session %s no longer exists"
+                            .formatted(session.id().value())));
     audit.record(
-        new AuditedChange(
-            owner.flatMap(Account::organisation), session.account(), change, session.id().value()));
+        new AuditedChange(owner.organisation(), session.account(), change, session.id().value()));
   }
 
   /**
@@ -390,18 +407,18 @@ public class SessionService
     if (account.failedSignIns() > 0 || account.lockedUntil().isPresent()) {
       accounts.save(account.recordSuccessfulSignIn());
     }
-    return new SignInOutcome.SignedIn(beginSession(account, now, AccessChange.SIGNED_IN));
+    return new SignInOutcome.SignedIn(beginSession(account, now));
   }
 
   /**
-   * Opens a session and hands back everything a client needs to use it.
+   * Opens a session, records it as {@link AccessChange#SIGNED_IN} once its writes are made, and
+   * hands back everything a client needs to use it. A session begun by a password change is
+   * recorded as a sign-in too.
    *
    * @param account whose session it is
    * @param now when it begins
-   * @param change what is recorded about it, since a session begun by a password change is not a
-   *     sign-in and should not be counted as one
    */
-  private IssuedSession beginSession(Account account, Instant now, AccessChange change) {
+  private IssuedSession beginSession(Account account, Instant now) {
     SignInSession session =
         new SignInSession(
             SignInSessionId.newId(), account.id(), now, now.plus(sessionPolicy.absoluteLifetime()));
@@ -411,7 +428,7 @@ public class SessionService
     RefreshTokenSecret refresh = secrets.generate();
     sessions.start(session, refresh.digest(), refreshExpiresAt);
     IssuedAccessToken accessToken = tokens.issue(account.id(), session.id());
-    record(account, change, session.id().value());
+    record(account, AccessChange.SIGNED_IN, session.id().value());
     return new IssuedSession(
         accessToken.value(),
         accessToken.expiresAt(),
@@ -464,11 +481,5 @@ public class SessionService
 
   private static Instant earlier(Instant one, Instant other) {
     return one.isBefore(other) ? one : other;
-  }
-
-  private static String randomPassword() {
-    byte[] bytes = new byte[DUMMY_PASSWORD_BYTES];
-    new SecureRandom().nextBytes(bytes);
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
   }
 }

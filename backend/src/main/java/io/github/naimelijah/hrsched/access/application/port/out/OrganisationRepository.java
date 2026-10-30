@@ -26,7 +26,8 @@ public interface OrganisationRepository {
   Optional<Organisation> findById(OrganisationId id);
 
   /**
-   * @return every organisation on the platform; operator-only at the use case above
+   * @return every organisation on the platform, by name and then by identity, so two sharing a name
+   *     always come back in one order; operator-only at the use case above
    */
   List<Organisation> findAll();
 }

@@ -35,10 +35,11 @@ public sealed interface ChangePasswordOutcome {
 
   /**
    * The current password was not accepted, so nothing changed. A wrong one is counted as a failed
-   * sign-in, and can lock the account like any other. On a locked account no password is accepted
-   * and nothing is counted. The caller is answered alike either way.
+   * sign-in, and can lock the account like any other. On a locked account, or one disabled since
+   * the request was authenticated, no password is accepted and nothing is counted. The caller is
+   * answered alike whichever it was.
    *
-   * @param reason which of the two it was, for recording rather than for answering
+   * @param reason which it was, for recording rather than for answering
    */
   record CurrentPasswordRejected(CurrentPasswordRefusal reason) implements ChangePasswordOutcome {
 

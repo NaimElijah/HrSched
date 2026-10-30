@@ -100,8 +100,8 @@ public interface ManageAccountsUseCase {
    *
    * <p>Also clears any lockout and ends every session the account holds. Clearing the lockout is
    * the point as much as the password is: an Admin resetting a colleague who is locked out is how
-   * somebody gets back in, and leaving the lock running would make the reset useless for a quarter
-   * of an hour.
+   * somebody gets back in, and leaving the lock running would make the reset useless for as long as
+   * the lock lasts.
    *
    * @param actor the Admin making the change
    * @param command which account, and the password to give it
