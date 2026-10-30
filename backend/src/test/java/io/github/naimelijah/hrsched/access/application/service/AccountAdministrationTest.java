@@ -793,9 +793,7 @@ class AccountAdministrationTest {
     assertThat(audit.changes()).isEmpty();
   }
 
-  /**
-   * The failure that would let one customer change who may do what inside another's organisation.
-   */
+  /** The failure that would let one customer lock somebody out of another's organisation. */
   @Test
   void GivenAnAdminOfAnotherOrganisation_WhenDisablingSomebody_ThenItIsRefused() {
     Account account = existing(acme, Role.SCHEDULER, true);
@@ -845,7 +843,8 @@ class AccountAdministrationTest {
   }
 
   /**
-   * The failure that would let one customer change who may do what inside another's organisation.
+   * The failure that would let one customer take over an account in another's organisation, by
+   * choosing the password it signs in with.
    */
   @Test
   void GivenAnAdminOfAnotherOrganisation_WhenResettingSomebodysPassword_ThenItIsRefused() {
