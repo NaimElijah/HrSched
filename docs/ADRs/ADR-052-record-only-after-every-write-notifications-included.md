@@ -1,6 +1,15 @@
 # ADR-052: Record an audit line only after every write, a notification included
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** Telling the lapses first puts the approval on top only if the inbox
+    lists notifications raised at one instant in the order they were raised: each telling reads the
+    clock, and a fixed or coarse one gives a publication's tellings the same instant. The inbox
+    broke that tie by the
+    notification's identity, a random UUID, so the approval landed anywhere among the lapses
+    ([#254](https://github.com/NaimElijah/HrSched/issues/254)). Since `V13` it breaks the tie by
+    `notification.sequence`, the order the rows were inserted in, last first:
+    `JdbcNotificationRepositoryTest.GivenNotificationsRaisedAtOneInstant_WhenListed_ThenTheLastRaisedComesFirst`.
+    The decision stands.
 - **Date:** 2026-10-30
 
 ## Context

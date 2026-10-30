@@ -52,6 +52,18 @@ class JdbcNotificationRepositoryTest {
         occurredAt);
   }
 
+  /** As {@link #at(OrganisationId, EmployeeId, Instant)}, with an identity the test chose. */
+  private static Notification at(
+      OrganisationId organisation, EmployeeId recipient, Instant occurredAt, String id) {
+    return new Notification(
+        new NotificationId(UUID.fromString(id)),
+        organisation,
+        recipient,
+        NotificationKind.SWAP_REQUESTED,
+        UUID.randomUUID(),
+        occurredAt);
+  }
+
   @Test
   void GivenANotification_WhenSaved_ThenItsRecipientFindsIt() {
     Notification saved = at(ACME, ADA, Instant.parse("2026-10-05T12:00:00Z"));
@@ -91,6 +103,41 @@ class JdbcNotificationRepositoryTest {
     notifications.save(middle);
 
     assertThat(notifications.findFor(ACME, ADA)).containsExactly(newest, middle, oldest);
+  }
+
+  /**
+   * One use case can tell somebody several things at one instant: a publication approving a swap
+   * tells of the lapses, then of the approval, and ADR-052 tells them in that order so that the
+   * approval tops the inbox. The last told must therefore come first, whatever the identities. The
+   * invented identities are raised neither ascending nor descending, so an inbox breaking the tie
+   * by identity, either way round, would show.
+   */
+  @Test
+  void GivenNotificationsRaisedAtOneInstant_WhenListed_ThenTheLastRaisedComesFirst() {
+    Instant oneInstant = Instant.parse("2026-10-05T12:00:00Z");
+    Notification firstRaised = at(ACME, ADA, oneInstant, "00000000-0000-0000-0000-000000000002");
+    Notification secondRaised = at(ACME, ADA, oneInstant, "00000000-0000-0000-0000-000000000001");
+    Notification lastRaised = at(ACME, ADA, oneInstant, "00000000-0000-0000-0000-000000000003");
+    notifications.save(firstRaised);
+    notifications.save(secondRaised);
+    notifications.save(lastRaised);
+
+    assertThat(notifications.findFor(ACME, ADA))
+        .containsExactly(lastRaised, secondRaised, firstRaised);
+  }
+
+  /** Acknowledging a notification is not telling it again, so it keeps its place in the inbox. */
+  @Test
+  void GivenNotificationsRaisedAtOneInstant_WhenTheFirstIsMarkedRead_ThenItKeepsItsPlace() {
+    Instant oneInstant = Instant.parse("2026-10-05T12:00:00Z");
+    Notification firstRaised = at(ACME, ADA, oneInstant, "00000000-0000-0000-0000-000000000001");
+    Notification lastRaised = at(ACME, ADA, oneInstant, "00000000-0000-0000-0000-000000000002");
+    notifications.save(firstRaised);
+    notifications.save(lastRaised);
+
+    notifications.save(firstRaised.markedRead());
+
+    assertThat(notifications.findFor(ACME, ADA)).containsExactly(lastRaised, firstRaised);
   }
 
   @Test

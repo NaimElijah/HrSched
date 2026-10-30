@@ -17,7 +17,8 @@ public interface ReadNotificationsUseCase {
   /**
    * @param actor whoever is asking
    * @param organisation whose notifications
-   * @return their own notifications, newest first
+   * @return their own notifications, newest first, and of those raised at one instant, the last
+   *     raised first
    * @throws io.github.naimelijah.hrsched.notifications.domain.model.NotAddressableException if the
    *     actor has no personnel record and therefore no inbox
    */

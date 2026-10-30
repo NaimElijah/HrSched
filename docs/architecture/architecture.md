@@ -611,7 +611,9 @@ are not audited. Nothing at runtime depends on any of it.
 - **A publication lapses the swap requests waiting on what it supersedes (R33).** Before it records
   anything, `SchedulingService.publish` reads `findPendingNaming` for each roster it supersedes and
   saves each request `LAPSED`. Once the published roster is stored, it tells both parties of each
-  lapse, then, when a swap approval is what publishes, both parties of the approval, and only then
+  lapse, then, when a swap approval is what publishes, both parties of the approval (an inbox lists
+  what was told at one instant last told first, by the order `notification.sequence` records,
+  `V13`, so the approval tops it), and only then
   records one `ROSTER_SUPERSEDED` per roster it supersedes, `ROSTER_PUBLISHED`, and one
   `SWAP_LAPSED` per lapse - all in the publication's transaction; `SwapService` records
   `SWAP_APPROVED` once it returns. A swap approval stores its own request as approved before that
