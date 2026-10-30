@@ -9,6 +9,9 @@
     stores is now in PostgreSQL ([ADR-004](ADR-004-postgresql-behind-the-driven-ports.md)), so
     "nothing survives a restart" holds only for the trail itself, which is still a log stream. The
     durable one is Q20, #31.
+  - **Amended 2026-10-30:** A third count has moved: "the two `@RestControllerAdvice` classes"
+    under Decision. Every context's web exception handler now records the refusals it answers, and
+    `architecture.md` lists them. Where refusals are recorded, and why, stands.
 - **Date:** 2026-08-30
 
 ## Context

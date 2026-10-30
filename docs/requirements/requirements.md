@@ -339,8 +339,9 @@ filled every place it can, it keeps at least that many filled and minimises the 
   yet ([#31](https://github.com/NaimElijah/HrSched/issues/31)): today the record exists only in the
   log stream, and a log line cannot be rolled back. How long it is kept is Q23.
   *Enforced by `SchedulingService`, `EmployeeService`, `QualificationService` and their tests;
-  `SchedulingAuditLogTest`, `WorkforceAuditLogTest`, `SchedulingExceptionHandlerTest`,
-  `WorkforceExceptionHandlerTest`, `SignInNameTakenRefusalHttpTest`;
+  `SchedulingAuditLogTest`, `WorkforceAuditLogTest`, `AccessAuditLogTest`,
+  `SchedulingExceptionHandlerTest`, `WorkforceExceptionHandlerTest`, `AccessExceptionHandlerTest`,
+  `SignInNameTakenRefusalHttpTest`;
   [ADR-018](../ADRs/ADR-018-audit-through-a-port-not-a-queryable-trail.md).*
 - **Compliance** — availability, absence, and qualification records are personal data across
   multiple client organisations. HrSched must satisfy both Israel's **Protection of Privacy Law,

@@ -471,8 +471,8 @@ are not audited. Nothing at runtime depends on any of it.
   switched off until Q19 names somewhere to send them
   ([ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)).
 - **Every change and every refusal is recorded, and no name is.** State-changing use cases call an
-  `AuditTrail` driven port after saving; the two web exception handlers record refusals, because
-  they are the only place that sees every one. An `AuditedChange` carries the organisation, the
+  `AuditTrail` driven port after saving; the four contexts' web exception handlers record
+  refusals, because they are the only place that sees every one. An `AuditedChange` carries the organisation, the
   acting user, the kind of change and a bare `UUID` subject — a name cannot appear because there is
   nowhere to put one. A cross-tenant attempt, which the requirements call a security incident, is
   now a `WARN` and a counter while the caller still receives exactly the 404 it always did. Nothing
