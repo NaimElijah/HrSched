@@ -285,7 +285,7 @@ class SwapServiceTest {
 
   /** F7: a Scheduler may ask on somebody's behalf, as an Admin may, and the ask is theirs. */
   @Test
-  void GivenAScheduler_WhenAskingOnSomebodyElsesBehalf_ThenItIsRecordedAsTheirRequest() {
+  void GivenAScheduler_WhenAskingOnSomebodyElsesBehalf_ThenTheRequestIsTheirs() {
     ShiftId shift = aShift(Set.of());
     Roster published = publishedWith(ada, shift);
 
