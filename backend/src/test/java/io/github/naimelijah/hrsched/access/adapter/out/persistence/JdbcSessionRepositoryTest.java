@@ -182,6 +182,50 @@ class JdbcSessionRepositoryTest {
     assertThat(storedSessionRevocation(theirs.id())).isNull();
   }
 
+  /**
+   * A revocation says something ended a session early. One that had already run out ended of its
+   * own accord, and stamping it would make "how many sessions did disabling end?" count every
+   * sign-in the account ever made.
+   */
+  @Test
+  void GivenAnExpiredAndALiveSession_WhenEverySessionOfTheAccountIsRevoked_ThenOnlyTheLiveOneIs() {
+    Account account = anAccount();
+    SignInSession expired =
+        new SignInSession(
+            SignInSessionId.newId(),
+            account.id(),
+            NOW.minus(Duration.ofHours(13)),
+            NOW.minus(Duration.ofHours(1)));
+    SignInSession live = sessionFor(account);
+    repository.start(expired, digest("expired"), NOW.minus(Duration.ofHours(12)));
+    repository.start(live, digest("live"), NOW.plus(Duration.ofHours(1)));
+
+    repository.revokeEverySessionOf(account.id(), SessionRevocation.ACCOUNT_DISABLED, NOW);
+
+    assertThat(storedSessionRevocation(expired.id()))
+        .describedAs("it ended when it expired, and nothing ended it early")
+        .isNull();
+    assertThat(storedSessionRevocation(live.id())).isEqualTo("ACCOUNT_DISABLED");
+  }
+
+  /**
+   * A session is live only strictly before its expiry, as {@link SignInSession#isLiveAt} says, so
+   * one expiring at the very instant of the revocation has already ended and is not stamped.
+   */
+  @Test
+  void
+      GivenASessionExpiringAtTheInstantOfRevocation_WhenEverySessionIsRevoked_ThenItIsNotStamped() {
+    Account account = anAccount();
+    SignInSession endingNow =
+        new SignInSession(
+            SignInSessionId.newId(), account.id(), NOW.minus(Duration.ofHours(12)), NOW);
+    repository.start(endingNow, digest("ending-now"), NOW);
+
+    repository.revokeEverySessionOf(account.id(), SessionRevocation.PASSWORD_RESET, NOW);
+
+    assertThat(storedSessionRevocation(endingNow.id())).isNull();
+  }
+
   @Test
   void GivenNoSuchToken_WhenFindingIt_ThenNothingIsReturned() {
     assertThat(repository.findRefreshToken(digest("a-token-nobody-issued"))).isEmpty();

@@ -104,6 +104,10 @@ public interface SessionRepository {
    * account disabled, a password reset. Leaving one session alive after any of those would leave
    * the door somebody was being shut out of standing open.
    *
+   * <p>Live means not yet revoked and not yet expired at {@code now}. A session that has run out is
+   * left as it is: it ended of its own accord, and recording a revocation on it would count it
+   * among the sessions this act ended.
+   *
    * @param account whose sessions to end, never {@code null}
    * @param reason why they are ending, never {@code null}
    * @param now when they ended, never {@code null}

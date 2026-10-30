@@ -168,10 +168,12 @@ public class JdbcSessionRepository implements SessionRepository {
     Objects.requireNonNull(account, "account must not be null");
     Objects.requireNonNull(reason, "reason must not be null");
     Objects.requireNonNull(now, "now must not be null");
+    // Only the live ones, by the same test SignInSession.isLiveAt applies: a session that has run
+    // out ended of its own accord, and stamping it would count it among those this act ended.
     jdbc.sql(
             """
             UPDATE sign_in_session SET revoked_at = :now, revocation = :reason
-            WHERE account_id = :account AND revoked_at IS NULL
+            WHERE account_id = :account AND revoked_at IS NULL AND expires_at > :now
             """)
         .param("now", now.atOffset(ZoneOffset.UTC))
         .param("reason", reason.name())
