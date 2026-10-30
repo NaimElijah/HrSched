@@ -69,8 +69,7 @@ Pick the context → domain concept → port in/out → service (no annotation) 
 `UseCaseConfiguration` → adapters → decide who may call the route in `SecurityConfiguration` →
 tests. Two steps fail late rather than at compile time: a forgotten bean registration fails at
 startup, and a controller left out of its context's `@RestControllerAdvice(assignableTypes = …)`
-fails the architecture test, where it once failed silently, its domain exceptions never
-translated.
+fails the architecture test.
 
 ## Acting identity, tenancy and the security chain
 

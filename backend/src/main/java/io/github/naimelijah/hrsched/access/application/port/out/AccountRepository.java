@@ -13,10 +13,12 @@ import java.util.Optional;
  * Driven port: storing the accounts that may sign in.
  *
  * <p>Reads are scoped to an organisation, as everywhere else (ADR-009), with the two named
- * exceptions below; ADR-055 lists every read in access that takes no organisation, and why. An
- * account is personal data about a colleague — who they are, what they may do, and whether somebody
- * has been guessing their password — so a read that forgot its tenant predicate would hand one
- * customer another's staff list.
+ * exceptions below; ADR-055 lists every read in access that takes no organisation, and why. {@link
+ * #findForUpdate} is scoped too, but by an {@code Optional<OrganisationId>}, so the architecture
+ * test's list of methods taking no {@code OrganisationId} names it as well, for that {@code
+ * Optional} alone. An account is personal data about a colleague — who they are, what they may do,
+ * and whether somebody has been guessing their password — so a read that forgot its tenant
+ * predicate would hand one customer another's staff list.
  *
  * <p>The platform operator belongs to no organisation and is therefore invisible to every scoped
  * read here. That is the intended behaviour rather than a gap: an operator is not a member of any
