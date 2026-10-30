@@ -537,7 +537,8 @@ are not audited. Nothing at runtime depends on any of it.
   day a working day, and a day is 23 or 25 hours long when the clocks change. Work in two zones
   lands on each zone's own date. Only ids the JVM's time zone database knows are accepted, so a raw
   offset such as `+01:00` is refused; there is no default, and shifts stored before V5 keep the UTC
-  they were judged in. The Shifts page sends the browser's zone, so a site in another zone cannot
+  they were judged in. The schema checks only that a zone is named (`V14`), as it holds no zone
+  database. The Shifts page sends the browser's zone, so a site in another zone cannot
   yet be planned for
   ([#136](https://github.com/NaimElijah/HrSched/issues/136),
   [ADR-034](../ADRs/ADR-034-count-working-days-in-each-shifts-own-time-zone.md)).
@@ -611,7 +612,8 @@ are not audited. Nothing at runtime depends on any of it.
   against (Q9). **Version one is never stored:** reading the rules stores nothing, and the first
   revision writes version two. Every organisation starts bound by the empty set, so
   `SchedulingService.findConstraints` answers version one from `ConstraintSet.initial` when no row
-  holds it, and `roster.validated_against_constraint_version` carries no foreign key
+  holds it, and `roster.validated_against_constraint_version` carries no foreign key, only a check
+  that it is at least one (`V14`)
   ([ADR-038](../ADRs/ADR-038-read-a-constraint-version-back-by-its-number.md)).
 - **Approving a swap publishes a replacement; it never edits.** `SwapService` builds the roster that
   would have been published had the swap been in it, and then calls

@@ -875,6 +875,31 @@ class JdbcRosterRepositoryTest {
         .isInstanceOf(IllegalStateException.class);
   }
 
+  /**
+   * A published roster names the constraint version that approved it, and every version starts at
+   * one, so the schema refuses a version below it for a writer that skips the domain (V14).
+   */
+  @Test
+  void GivenAPublishedRosterNamingVersionZero_WhenStoredDirectly_ThenTheSchemaRefusesIt() {
+    assertThatThrownBy(
+            () ->
+                PostgresDatabase.jdbcClient()
+                    .sql(
+                        """
+                        INSERT INTO roster (id, organisation_id, starts_at, ends_at, published_at,
+                                            validated_against_constraint_version)
+                        VALUES (:id, :organisation, :startsAt, :endsAt, :publishedAt, 0)
+                        """)
+                    .param("id", RosterId.newId().value())
+                    .param("organisation", ACME.value())
+                    .param("startsAt", THE_WEEK.start().atOffset(ZoneOffset.UTC))
+                    .param("endsAt", THE_WEEK.end().atOffset(ZoneOffset.UTC))
+                    .param("publishedAt", PUBLISHED_AT.atOffset(ZoneOffset.UTC))
+                    .update())
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("roster_constraint_version_starts_at_one");
+  }
+
   // --- #250: reading past the driver's bind-parameter limit ------------------------------------
 
   /**

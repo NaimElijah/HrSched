@@ -125,3 +125,18 @@ ALTER TABLE objective_weights
 ALTER TABLE roster_generation_violation
     RENAME CONSTRAINT roster_generation_violation_position_check
         TO roster_generation_violation_position_from_zero;
+
+-- A roster names a version that can exist, and a shift a zone ------------------------------------
+--
+-- A published roster records the version of its organisation's rules that approved it. Every
+-- ConstraintSet version starts at one, as constraint_set_version_starts_at_one holds, and publish
+-- records the version of the set it judged by, so no roster names one below it. A shift carries a
+-- ZoneId, and no ZoneId has an empty id. Nothing more of the zone is checked, for V5's reason: the
+-- database does not hold the JVM's zone database.
+
+ALTER TABLE roster
+    ADD CONSTRAINT roster_constraint_version_starts_at_one
+        CHECK (validated_against_constraint_version >= 1);
+
+ALTER TABLE shift
+    ADD CONSTRAINT shift_counted_in_a_named_zone CHECK (zone <> '');
