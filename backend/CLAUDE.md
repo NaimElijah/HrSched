@@ -83,8 +83,9 @@ fails the architecture test.
   404. Nothing reads `X-User`, `X-Role`, `X-Organisation` or `X-Employee`; never bring them back.
 - **Tenancy is in every signature.** Repository lookups take an `OrganisationId`; there is no
   `findById(EmployeeId)`. The exceptions are the access context's credential reads and its register
-  of organisations, which ADR-055 lists and why. Use cases take an `Actor` and call `requireAccessTo` first. A
-  cross-tenant attempt is a 404, never a 403 — a 403 confirms the resource exists.
+  of organisations, which ADR-055 lists with its reasons. Use cases take an `Actor` and call
+  `requireAccessTo` first. A cross-tenant attempt is a 404, never a 403 — a 403 confirms the
+  resource exists.
 - **`UserId` and `EmployeeId` are never compared.** They are different identities on purpose. To
   ask whether an actor is the person being acted on, use `TenantActor.isThemself` — the link is
   carried, not inferred from matching UUIDs (ADR-012).
@@ -101,8 +102,9 @@ fails the architecture test.
 
 Persistence is settled (ADR-004): PostgreSQL, hand-written SQL through `JdbcClient`, Flyway, one
 schema with `organisation_id` on every aggregate root, bar the operator's account row (ADR-029) and
-the session tables, which carry none (ADR-055); child tables are reached only through their root. The domain may not carry `jakarta.persistence` annotations — the architecture test fails on
-them — so JPA would need a parallel annotated model, buying only what an adapter must not leak.
+the session tables, which carry none (ADR-055); child tables are reached only through their root.
+The domain may not carry `jakarta.persistence` annotations — the architecture test fails on them —
+so JPA would need a parallel annotated model, buying only what an adapter must not leak.
 
 - **Migrations** in `src/main/resources/db/migration/` are the only way the schema changes. Name
   one `V<n>__<rule_in_snake_case>.sql`, opening with a comment giving the rule, ADR and reasoning.
