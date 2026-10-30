@@ -10,8 +10,10 @@ import io.github.naimelijah.hrsched.shared.domain.model.UserId;
  * their own account while the thief keeps it. An Admin who could reset themselves here would have
  * that protection and be able to step around it in the same session.
  *
- * <p>It costs them nothing. An Admin who is signed in can change their password at {@code
- * /api/auth/password}, and one who is locked out cannot reach this endpoint at all.
+ * <p>It costs them little. An Admin who is signed in can change their password at {@code
+ * /api/auth/password}. A lockout ends no session, so a locked-out Admin who is still signed in
+ * reaches this endpoint too and is refused here; the lock refuses their own change as well, so,
+ * like any locked-out colleague, they wait for it to end or are reset by another Admin.
  */
 public class CannotResetOwnPasswordException extends RuntimeException {
 

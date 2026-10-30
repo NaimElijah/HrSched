@@ -227,10 +227,10 @@ public class SessionService
    * <p><strong>A lockout is deliberately not checked here.</strong> An account is locked because
    * somebody is guessing at its password, and the person doing the guessing is not the person
    * holding this session; ending it would turn an attack on somebody into an outage for them, and
-   * hand any attacker a way to sign a colleague out by mistyping their password ten times. The lock
-   * stops what takes a password - a <em>sign-in</em> and a <em>change of one's own password</em>,
-   * which is where the guessing happens - and a session already held goes on working. Adding the
-   * filter here would look like tightening and would be a regression.
+   * hand any attacker a way to sign a colleague out by mistyping their password often enough. The
+   * lock stops what takes a password - a <em>sign-in</em> and a <em>change of one's own
+   * password</em>, which is where the guessing happens - and a session already held goes on
+   * working. Adding the filter here would look like tightening and would be a regression.
    */
   @Override
   public Optional<AuthenticatedActor> findActor(UserId account, SignInSessionId session) {

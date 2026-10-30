@@ -46,12 +46,15 @@ import java.util.Set;
  *
  * <p>Provisioning runs top-down (ADR-029). The operator is bootstrapped from configuration, an
  * organisation's first Admin is created when it is onboarded, and every other account is created by
- * an Admin here. Nothing in this class can be reached without an account that already exists.
+ * an Admin here. Apart from {@link #ensureOperator}, which runs at startup before anybody can sign
+ * in, nothing in this class can be reached without an account that already exists.
  *
- * <p>Every administrative method takes the organisation's administration lock before it reads
- * anything, and the reason is {@link #requireOrganisationKeepsAnAdmin}: that rule is decided by
- * reading and then writing, so two Admins each disabling one of the last two would both read an
- * organisation that still had two and leave it with none.
+ * <p>The two methods that can take an active Admin away, {@link #changeMembership} and {@link
+ * #setAccountActive}, take the organisation's administration lock before they read anything, and
+ * the reason is {@link #requireOrganisationKeepsAnAdmin}: that rule is decided by reading and then
+ * writing, so two Admins each disabling one of the last two would both read an organisation that
+ * still had two and leave it with none. Creating an account and resetting a password take no Admin
+ * away, so they take no lock.
  */
 public class AccountService implements BootstrapOperatorUseCase, ManageAccountsUseCase {
 

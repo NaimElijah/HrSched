@@ -33,9 +33,9 @@ import tools.jackson.core.exc.StreamConstraintsException;
  *
  * <p>There is deliberately no catch-all, so an unexpected failure stays a 500 and stays visible.
  *
- * <p>As in the other two handlers, a cross-tenant attempt returns 404 rather than 403, because a
- * 403 would confirm that the organisation exists. Being refused as "not the operator" is a
- * different thing and is a 403: it discloses nothing, since the caller already knows whether they
+ * <p>As in the other three contexts' handlers, a cross-tenant attempt returns 404 rather than 403,
+ * because a 403 would confirm that the organisation exists. Being refused as "not the operator" is
+ * a different thing and is a 403: it discloses nothing, since the caller already knows whether they
  * claimed to be the operator.
  *
  * <p>It is also where these refusals are recorded, because it is the only place that sees every one
