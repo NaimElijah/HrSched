@@ -609,7 +609,10 @@ are not audited. Nothing at runtime depends on any of it.
 - **Every constraint version is stored, and any of them can be read back.** The table is keyed
   `(organisation_id, version)`, so revising never discards what came before, and
   `GET /api/constraints/{version}` answers the rules a roster naming that version was judged
-  against (Q9). **Version one is never stored:** reading the rules stores nothing, and the first
+  against (Q9). A limit is stored in whole seconds, so `JdbcConstraintSetRepository` refuses one
+  with a part of a second before it writes anything, rather than store a limit other than the one
+  configured; over HTTP a limit arrives in whole minutes, so no request reaches that refusal.
+  **Version one is never stored:** reading the rules stores nothing, and the first
   revision writes version two. Every organisation starts bound by the empty set, so
   `SchedulingService.findConstraints` answers version one from `ConstraintSet.initial` when no row
   holds it, and `roster.validated_against_constraint_version` carries no foreign key, only a check

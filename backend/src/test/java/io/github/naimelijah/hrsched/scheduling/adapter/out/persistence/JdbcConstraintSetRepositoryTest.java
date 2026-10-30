@@ -436,6 +436,44 @@ class JdbcConstraintSetRepositoryTest {
         .hasMessageContaining("working_time_constraint_carries_its_one_value");
   }
 
+  /**
+   * A limit is stored in whole seconds, so one with a part of a second could only be stored as
+   * another limit: a minimum rest of eleven hours and half a second, cut to eleven hours, would
+   * permit less rest than the organisation configured. It is refused before anything is written.
+   */
+  @Test
+  void GivenALimitWithAPartOfASecond_WhenSaved_ThenItIsRefusedAndNothingIsStored() {
+    // Invented: eleven hours and half a second of rest, a figure from no statute.
+    ConstraintSet set =
+        ConstraintSet.initial(ACME)
+            .revisedTo(
+                List.of(
+                    new MaximumConsecutiveWorkingDays(4),
+                    new MinimumRestBetweenAssignments(Duration.ofHours(11).plusMillis(500))));
+
+    assertThatThrownBy(() -> repository.save(set))
+        .isExactlyInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("minimum rest between assignments");
+    assertThat(storedVersions()).isEmpty();
+  }
+
+  /**
+   * Half a second would be cut to nothing, which the schema refuses as no limit at all; refused
+   * first in the adapter, it is refused for what it is.
+   */
+  @Test
+  void GivenALimitShorterThanASecond_WhenSaved_ThenItIsRefusedBeforeTheSchemaSeesIt() {
+    // Invented: a daily cap of half a second.
+    ConstraintSet set =
+        ConstraintSet.initial(ACME)
+            .revisedTo(List.of(new MaximumDailyWorkingTime(Duration.ofMillis(500))));
+
+    assertThatThrownBy(() -> repository.save(set))
+        .isExactlyInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("maximum daily working time");
+    assertThat(storedVersions()).isEmpty();
+  }
+
   private List<Integer> storedVersions() {
     return PostgresDatabase.jdbcClient()
         .sql("SELECT version FROM constraint_set WHERE organisation_id = :id ORDER BY version")
