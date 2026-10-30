@@ -148,6 +148,27 @@ describe('the queue', () => {
 
     expect(await screen.findByText('Nobody has asked for a swap.')).toBeInTheDocument();
   });
+
+  /** A shift's time read under one account is not what the next account to sign in is shown. */
+  it('GivenShiftsShown_WhenTheSessionChanges_ThenTheShiftsAreReadAgain', async () => {
+    const stub = aQueue();
+    const { rerender } = render(
+      <SignedIn session={A_TENANT}>
+        <SwapsPage people={[ADA, GRACE]} />
+      </SignedIn>,
+    );
+    await rowOfTheShift();
+    expect(callsTo(stub, 'GET', '/api/shifts/shift-1')).toHaveLength(1);
+
+    rerender(
+      <SignedIn session={{ ...A_TENANT, userId: '99999999-9999-4999-8999-999999999999' }}>
+        <SwapsPage people={[ADA, GRACE]} />
+      </SignedIn>,
+    );
+
+    await waitFor(() => expect(callsTo(stub, 'GET', '/api/shifts/shift-1')).toHaveLength(2));
+    await rowOfTheShift();
+  });
 });
 
 describe('deciding', () => {

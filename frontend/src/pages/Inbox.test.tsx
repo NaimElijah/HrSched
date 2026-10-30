@@ -153,6 +153,26 @@ describe('what it reads', () => {
     await screen.findByText(ASKED_BY_ADA);
     expect(stub.mock.calls.map(([path]) => path)).not.toContain('/api/shifts/shift-2');
   });
+
+  /** A shift's time read under one account is not what the next account to sign in is shown. */
+  it('GivenShiftsShown_WhenTheSessionChanges_ThenTheShiftsAreReadAgain', async () => {
+    const stub = serving([told('SWAP_REQUESTED')]);
+    const inbox = (
+      <Inbox employee={GRACE} nameOf={(employee) => (employee === ADA ? 'Ada' : employee)} />
+    );
+    const { rerender } = render(<SignedIn session={A_TENANT}>{inbox}</SignedIn>);
+    await screen.findByText(ASKED_BY_ADA);
+    expect(callsTo(stub, 'GET', '/api/shifts/shift-1')).toHaveLength(1);
+
+    rerender(
+      <SignedIn session={{ ...A_TENANT, userId: '99999999-9999-4999-8999-999999999999' }}>
+        {inbox}
+      </SignedIn>,
+    );
+
+    await waitFor(() => expect(callsTo(stub, 'GET', '/api/shifts/shift-1')).toHaveLength(2));
+    await screen.findByText(ASKED_BY_ADA);
+  });
 });
 
 describe('reading', () => {
