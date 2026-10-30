@@ -379,6 +379,26 @@ class SessionServiceTest {
     assertThat(sessions.revocationOf(session.id())).contains(SessionRevocation.REFRESH_REUSED);
   }
 
+  /**
+   * A session's account is never deleted from under it, so its absence is a fault. Recorded anyway,
+   * the line would carry no organisation, which the audit port reserves for an act that belongs to
+   * none: it would say something false rather than nothing.
+   */
+  @Test
+  void GivenASessionWhoseAccountIsGone_WhenSigningOut_ThenItFailsLoudlyAndRecordsNothing() {
+    SignInSession orphaned =
+        new SignInSession(
+            SignInSessionId.newId(), UserId.newId(), NOW, NOW.plus(Duration.ofHours(12)));
+    sessions.given(
+        "an-orphaned-token",
+        new StoredRefreshToken(orphaned, NOW.plus(Duration.ofHours(1)), Optional.empty()));
+
+    assertThatThrownBy(() -> service.signOut("an-orphaned-token"))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
   // --- the idle limit: a refresh token that sat unused too long, and the successor's expiry -----
 
   @Test

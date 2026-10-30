@@ -359,12 +359,22 @@ public class SessionService
 
   /**
    * Records a change about a session, looking its account up for the organisation to file under.
+   *
+   * <p>A session's account is never deleted from under it, so one that is not found is a fault and
+   * fails loudly. Filing the line under no organisation instead would make it read as an act that
+   * belongs to none, which {@link AuditedChange} reserves for the operator's.
    */
   private void recordAbout(SignInSession session, AccessChange change) {
-    Optional<Account> owner = accounts.findForAuthentication(session.account());
+    Account owner =
+        accounts
+            .findForAuthentication(session.account())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "The account of session %s no longer exists"
+                            .formatted(session.id().value())));
     audit.record(
-        new AuditedChange(
-            owner.flatMap(Account::organisation), session.account(), change, session.id().value()));
+        new AuditedChange(owner.organisation(), session.account(), change, session.id().value()));
   }
 
   /**
