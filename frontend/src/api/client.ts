@@ -18,6 +18,13 @@ import type { Session, SignedIn } from './session';
 const TRACE_ID_HEADER = 'X-Trace-Id';
 
 /**
+ * The one media type whose failure body is a sentence to show as it is. Anything else that is not
+ * JSON is a page or a payload written for something other than an alert, such as the HTML a gateway
+ * answers with when there is no backend behind it.
+ */
+const PLAIN_TEXT = 'text/plain';
+
+/**
  * Sent with every cookie-credentialed request, which the backend requires of them.
  *
  * Its presence is the whole check; the value is never read. A browser will not attach a header like
@@ -93,6 +100,8 @@ interface Answered {
   readonly status: number;
   readonly ok: boolean;
   readonly text: string;
+  /** The media type the body was sent as, without its parameters, or null when none was named. */
+  readonly mediaType: string | null;
   readonly reference: string | null;
 }
 
@@ -112,17 +121,24 @@ async function send(path: string, init: RequestInit): Promise<Answered> {
     status: response.status,
     ok: response.ok,
     text: await response.text(),
+    mediaType: mediaTypeOf(response.headers.get('Content-Type')),
     reference: response.headers.get(TRACE_ID_HEADER),
   };
 }
 
+function mediaTypeOf(contentType: string | null): string | null {
+  return contentType === null ? null : (contentType.split(';')[0] ?? '').trim().toLowerCase();
+}
+
 function interpret<T>(path: string, answered: Answered): T {
   if (!answered.ok) {
-    // No body at all is left for toApiError to describe by its status. An empty detail would be a
-    // failure that says nothing, which is what a gateway with no backend behind it sends.
+    // A body that is not JSON is the detail only when it was sent as plain text. A gateway with no
+    // backend behind it may send nothing or a page of HTML, and either is left for toApiError to
+    // describe by its status: markup shown as a message would put a raw page in an alert.
+    const plain = answered.mediaType === PLAIN_TEXT && answered.text.length > 0;
     throw toApiError(
       answered.status,
-      parseOrNull(answered.text) ?? (answered.text.length === 0 ? null : { detail: answered.text }),
+      parseOrNull(answered.text) ?? (plain ? { detail: answered.text } : null),
       answered.reference,
     );
   }

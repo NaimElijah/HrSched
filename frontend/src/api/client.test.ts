@@ -59,6 +59,21 @@ function answering(answer: (path: string, init?: RequestInit) => Answer) {
   return stub;
 }
 
+/** Answers every request with a failure carrying a body that is not JSON, of the given type. */
+function failingWith(status: number, contentType: string | null, text: string) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status,
+        headers: new Headers(contentType === null ? {} : { 'Content-Type': contentType }),
+        text: () => Promise.resolve(text),
+      }),
+    ),
+  );
+}
+
 function signedIn(session: Session = A_SESSION, token = 'token-1') {
   holdSession({ accessToken: token, tokenType: 'Bearer', expiresIn: 600, session });
 }
@@ -580,7 +595,7 @@ describe('what a failure carries', () => {
   });
 
   /**
-   * A proxy or gateway with nothing behind it answers with no body. The failure shown must still
+   * A proxy or gateway with nothing behind it can answer with no body. The failure shown must still
    * say something, or the person sees an empty alert.
    */
   it('GivenAFailureWithNoBody_WhenRequesting_ThenTheMessageNamesTheStatus', async () => {
@@ -610,20 +625,32 @@ describe('what a failure carries', () => {
     expect(error.isUnauthenticated).toBe(false);
   });
 
-  it('GivenANonJsonBody_WhenItFails_ThenTheTextIsSurfacedRatherThanAParseError', async () => {
-    const stub = vi.fn(() =>
-      Promise.resolve({
-        ok: false,
-        status: 502,
-        headers: new Headers(),
-        text: () => Promise.resolve('<html>bad gateway</html>'),
-      }),
-    );
-    vi.stubGlobal('fetch', stub);
+  it('GivenAPlainTextBody_WhenItFails_ThenTheTextIsSurfacedRatherThanAParseError', async () => {
+    failingWith(502, 'text/plain; charset=UTF-8', 'Bad gateway: the upstream did not answer.');
 
     const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
 
-    expect(error.message).toContain('bad gateway');
+    expect(error.message).toBe('Bad gateway: the upstream did not answer.');
+  });
+
+  /**
+   * A gateway's error page is markup written for a browser window, not a sentence for an alert:
+   * shown as the message it would put raw HTML on screen. Only a plain-text body is a message.
+   */
+  it('GivenAGatewaysHtmlPage_WhenItFails_ThenTheMessageNamesTheStatusRatherThanTheMarkup', async () => {
+    failingWith(502, 'text/html', '<html><body><h1>502 Bad Gateway</h1></body></html>');
+
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+
+    expect(error.message).toBe('The server returned 502.');
+  });
+
+  it('GivenANonJsonBodyOfNoStatedType_WhenItFails_ThenTheMessageNamesTheStatus', async () => {
+    failingWith(503, null, 'upstream connect error');
+
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+
+    expect(error.message).toBe('The server returned 503.');
   });
 
   it('GivenA204_WhenRequesting_ThenNothingIsParsed', async () => {
