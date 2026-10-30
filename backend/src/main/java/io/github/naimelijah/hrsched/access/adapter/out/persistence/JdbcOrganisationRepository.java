@@ -30,13 +30,14 @@ public class JdbcOrganisationRepository implements OrganisationRepository {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
   }
 
+  /**
+   * A plain insert, unlike the other repositories' guarded upserts: an organisation has no owner to
+   * guard the write by, so an identity already stored surfaces as the primary key's unique
+   * violation rather than renaming the tenant that holds it.
+   */
   @Override
   public void save(Organisation organisation) {
-    jdbc.sql(
-            """
-            INSERT INTO organisation (id, name) VALUES (:id, :name)
-            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
-            """)
+    jdbc.sql("INSERT INTO organisation (id, name) VALUES (:id, :name)")
         .param("id", organisation.id().value())
         .param("name", organisation.name())
         .update();

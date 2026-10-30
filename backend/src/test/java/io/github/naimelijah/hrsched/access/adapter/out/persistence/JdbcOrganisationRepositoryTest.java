@@ -1,23 +1,29 @@
 package io.github.naimelijah.hrsched.access.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.access.domain.model.Organisation;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import java.sql.SQLException;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * Specification of what the organisation store promises.
  *
  * <p>The only repository here whose reads are not scoped by tenant, because it is the register of
  * tenants. What it does promise is ordering — by name, then by identity for two sharing a name, so
- * the operator's listing is stable — and that saving under an existing identity replaces rather
- * than duplicates.
+ * the operator's listing is stable — and that saving under an identity already stored is refused,
+ * rather than renaming the tenant that holds it.
  */
 class JdbcOrganisationRepositoryTest {
+
+  /** PostgreSQL's {@code unique_violation}: here, the primary key refusing a second row. */
+  private static final String UNIQUE_VIOLATION = "23505";
 
   /** Invented: an identity PostgreSQL sorts before {@link #LATER_IDENTITY}. */
   private static final String EARLIER_IDENTITY = "00000000-0000-4000-8000-000000000001";
@@ -66,19 +72,26 @@ class JdbcOrganisationRepositoryTest {
   }
 
   /**
-   * An organisation is an entity: equality is by identity, so re-saving the same identity under a
-   * new name is a rename, not a second tenant.
+   * Saving registers a new tenant and nothing else. An identity already stored belongs to a tenant
+   * somebody onboarded, so a second save under it is a fault to surface, never a rename of that
+   * tenant: renaming is its own Admin's act (F30), not a side effect of onboarding.
    */
   @Test
-  void GivenAnOrganisationSavedTwice_WhenListed_ThenThereIsOneOfIt() {
+  void
+      GivenAnOrganisationAlreadyStored_WhenSavedAgainUnderItsIdentity_ThenItIsRefusedAndKeepsItsName() {
     OrganisationId id = OrganisationId.newId();
-
     organisations.save(new Organisation(id, "Acme"));
-    organisations.save(new Organisation(id, "Acme Holdings"));
 
+    assertThatThrownBy(() -> organisations.save(new Organisation(id, "Acme Holdings")))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .rootCause()
+        .isInstanceOfSatisfying(
+            SQLException.class,
+            refused -> assertThat(refused.getSQLState()).isEqualTo(UNIQUE_VIOLATION));
     assertThat(organisations.findAll())
         .extracting(Organisation::name)
-        .containsExactly("Acme Holdings");
+        .describedAs("the tenant already stored is neither renamed nor duplicated")
+        .containsExactly("Acme");
   }
 
   /** Two organisations sharing a name are still different customers, so the store must allow it. */

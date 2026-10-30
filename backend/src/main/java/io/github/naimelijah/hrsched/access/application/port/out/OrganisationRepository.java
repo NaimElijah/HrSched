@@ -21,6 +21,18 @@ import java.util.Optional;
  */
 public interface OrganisationRepository {
 
+  /**
+   * Registers a new organisation.
+   *
+   * <p>Registers only: an identity already stored belongs to a tenant somebody onboarded, and
+   * saving under it is refused rather than renaming that tenant.
+   *
+   * @param organisation the organisation to register, under an identity not yet stored, never
+   *     {@code null}
+   * @throws RuntimeException if the identity is already stored: the store's own refusal, left
+   *     untranslated, because two fresh identities colliding is a fault rather than a refusal any
+   *     caller could act on
+   */
   void save(Organisation organisation);
 
   Optional<Organisation> findById(OrganisationId id);
