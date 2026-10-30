@@ -1,7 +1,6 @@
 package io.github.naimelijah.hrsched.workforce.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
@@ -26,9 +25,10 @@ import io.github.naimelijah.hrsched.workforce.application.port.in.WithdrawPrefer
 import io.github.naimelijah.hrsched.workforce.application.port.in.WithdrawUnavailabilityCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
-import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChange;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
+import io.github.naimelijah.hrsched.workforce.domain.model.InvalidContractTermsException;
+import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
 import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
@@ -43,6 +43,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -51,6 +52,8 @@ import org.junit.jupiter.api.Test;
  * <p>The isolation tests here are the ones whose failure would be a security incident rather than a
  * bug. They assert that an actor of one organisation cannot read, write, or even learn of the
  * existence of another organisation's data.
+ *
+ * <p>Every instant and figure below is invented. None is taken from any jurisdiction.
  */
 class EmployeeServiceTest {
 
@@ -142,11 +145,9 @@ class EmployeeServiceTest {
     EmployeeId id = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
     TenantActor themselves = new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(id));
 
-    assertThatCode(
-            () ->
-                service.declareUnavailability(
-                    themselves, new DeclareUnavailabilityCommand(ACME, id, MONDAY)))
-        .doesNotThrowAnyException();
+    service.declareUnavailability(themselves, new DeclareUnavailabilityCommand(ACME, id, MONDAY));
+
+    assertThat(service.findUnavailability(admin(ACME), ACME, id)).containsExactly(MONDAY);
   }
 
   @Test
@@ -198,6 +199,181 @@ class EmployeeServiceTest {
                     admin(ACME), new GrantQualificationCommand(ACME, ours, theirs)))
         .describedAs("a qualification defined by another tenant must not be grantable here")
         .isInstanceOf(UnknownQualificationException.class);
+  }
+
+  // --- F9: only an Admin grants a qualification ---------------------------------------------
+  //
+  // One test per refusal rather than a table: each is a permission or tenancy decision. The
+  // security chain admits every tenant role to /api/employees/**, so the use case is what decides.
+
+  private QualificationId aTicketOfAcme() {
+    QualificationId ticket = QualificationId.newId();
+    qualifications.save(new Qualification(ticket, ACME, "Ticket"));
+    return ticket;
+  }
+
+  private Set<QualificationId> qualificationsHeldBy(EmployeeId employee) {
+    return service.findEmployee(admin(ACME), ACME, employee).orElseThrow().qualifications();
+  }
+
+  @Test
+  void GivenAnAdmin_WhenGrantingAQualification_ThenTheEmployeeHoldsIt() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    QualificationId ticket = aTicketOfAcme();
+
+    service.grantQualification(admin(ACME), new GrantQualificationCommand(ACME, ada, ticket));
+
+    assertThat(qualificationsHeldBy(ada)).containsExactly(ticket);
+  }
+
+  @Test
+  void GivenAScheduler_WhenGrantingAQualification_ThenItIsRefusedAndNotHeld() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    QualificationId ticket = aTicketOfAcme();
+
+    assertThatThrownBy(
+            () ->
+                service.grantQualification(
+                    actor(ACME, Role.SCHEDULER), new GrantQualificationCommand(ACME, ada, ticket)))
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(qualificationsHeldBy(ada)).isEmpty();
+    assertThat(audit.of(WorkforceChange.QUALIFICATION_GRANTED)).isEmpty();
+  }
+
+  /** Being the person a qualification is about does not let somebody vouch for it themself. */
+  @Test
+  void GivenTheEmployeeThemself_WhenGrantingThemselvesAQualification_ThenItIsRefusedAndNotHeld() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor themself = new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(ada));
+    QualificationId ticket = aTicketOfAcme();
+
+    assertThatThrownBy(
+            () ->
+                service.grantQualification(
+                    themself, new GrantQualificationCommand(ACME, ada, ticket)))
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(qualificationsHeldBy(ada)).isEmpty();
+    assertThat(audit.of(WorkforceChange.QUALIFICATION_GRANTED)).isEmpty();
+  }
+
+  /**
+   * The command names our organisation, our employee and our qualification, so the repositories'
+   * scoping finds all three, and only the check against the actor refuses.
+   */
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenGrantingToSomebodyOfOurs_ThenItIsRefusedAndNotHeld() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    QualificationId ticket = aTicketOfAcme();
+
+    assertThatThrownBy(
+            () ->
+                service.grantQualification(
+                    admin(RIVAL), new GrantQualificationCommand(ACME, ada, ticket)))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(qualificationsHeldBy(ada)).isEmpty();
+    assertThat(audit.of(WorkforceChange.QUALIFICATION_GRANTED)).isEmpty();
+  }
+
+  // --- F19: only an Admin sets somebody's contract ------------------------------------------
+  //
+  // One test per refusal, as for granting. Contracted hours are a term of an individual agreement,
+  // never a statutory figure, so both durations below are invented.
+
+  /** Invented: the hours an Admin agreed with Ada. */
+  private static final Duration AGREED_HOURS = Duration.ofMinutes(1381);
+
+  /** Invented: the hours somebody without the right tries to put in their place. */
+  private static final Duration OTHER_HOURS = Duration.ofMinutes(1741);
+
+  private EmployeeId adaContractedByAnAdmin() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.setContractTerms(admin(ACME), new SetContractTermsCommand(ACME, ada, AGREED_HOURS));
+    return ada;
+  }
+
+  private Optional<Duration> contractedHoursOf(EmployeeId employee) {
+    return service.findEmployee(admin(ACME), ACME, employee).orElseThrow().weeklyContractedHours();
+  }
+
+  @Test
+  void GivenAScheduler_WhenSettingSomebodysContract_ThenItIsRefusedAndUnchanged() {
+    EmployeeId ada = adaContractedByAnAdmin();
+
+    assertThatThrownBy(
+            () ->
+                service.setContractTerms(
+                    actor(ACME, Role.SCHEDULER),
+                    new SetContractTermsCommand(ACME, ada, OTHER_HOURS)))
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(contractedHoursOf(ada)).contains(AGREED_HOURS);
+    assertThat(audit.of(WorkforceChange.CONTRACT_SET)).hasSize(1);
+  }
+
+  /** The person a contract binds does not get to rewrite it. */
+  @Test
+  void GivenTheEmployeeThemself_WhenSettingTheirOwnContract_ThenItIsRefusedAndUnchanged() {
+    EmployeeId ada = adaContractedByAnAdmin();
+    TenantActor themself = new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(ada));
+
+    assertThatThrownBy(
+            () ->
+                service.setContractTerms(
+                    themself, new SetContractTermsCommand(ACME, ada, OTHER_HOURS)))
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(contractedHoursOf(ada)).contains(AGREED_HOURS);
+    assertThat(audit.of(WorkforceChange.CONTRACT_SET)).hasSize(1);
+  }
+
+  /**
+   * As for granting: the command names our employee, so only the check against the actor refuses.
+   */
+  @Test
+  void
+      GivenAnAdminOfAnotherOrganisation_WhenSettingSomebodysContract_ThenItIsRefusedAndUnchanged() {
+    EmployeeId ada = adaContractedByAnAdmin();
+
+    assertThatThrownBy(
+            () ->
+                service.setContractTerms(
+                    admin(RIVAL), new SetContractTermsCommand(ACME, ada, OTHER_HOURS)))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(contractedHoursOf(ada)).contains(AGREED_HOURS);
+    assertThat(audit.of(WorkforceChange.CONTRACT_SET)).hasSize(1);
+  }
+
+  // --- a refusal by the aggregate changes and records nothing --------------------------------
+  //
+  // The same class of bug as scheduling's #133, where a refusal came after something had changed.
+
+  /** Zero hours is not a contract; the agreed hours stay, and only their setting is recorded. */
+  @Test
+  void GivenNoHoursAtAll_WhenSettingSomebodysContract_ThenItIsRefusedAndNothingIsRecorded() {
+    EmployeeId ada = adaContractedByAnAdmin();
+
+    assertThatThrownBy(
+            () ->
+                service.setContractTerms(
+                    admin(ACME), new SetContractTermsCommand(ACME, ada, Duration.ZERO)))
+        .isInstanceOf(InvalidContractTermsException.class);
+    assertThat(contractedHoursOf(ada)).contains(AGREED_HOURS);
+    assertThat(audit.of(WorkforceChange.CONTRACT_SET)).hasSize(1);
+  }
+
+  /** R7. The second span, invented as Monday is, overlaps Monday's afternoon. */
+  @Test
+  void GivenAnOverlappingSpan_WhenDeclaringUnavailability_ThenItIsRefusedAndNothingIsRecorded() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    service.declareUnavailability(admin(ACME), new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+    TimeRange overlapping =
+        new TimeRange(Instant.parse("2026-09-07T12:00:00Z"), Instant.parse("2026-09-07T20:00:00Z"));
+
+    assertThatThrownBy(
+            () ->
+                service.declareUnavailability(
+                    admin(ACME), new DeclareUnavailabilityCommand(ACME, ada, overlapping)))
+        .isInstanceOf(OverlappingUnavailabilityException.class);
+    assertThat(service.findUnavailability(admin(ACME), ACME, ada)).containsExactly(MONDAY);
+    assertThat(audit.of(WorkforceChange.UNAVAILABILITY_DECLARED)).hasSize(1);
   }
 
   @Test
@@ -260,6 +436,40 @@ class EmployeeServiceTest {
     assertThat(service.findEmployee(admin(ACME), ACME, mole)).isEmpty();
   }
 
+  // --- F6: declaring on somebody's behalf (#100) -------------------------------------------
+  //
+  // An Admin or a Scheduler may speak for somebody. Each role's permission is its own test.
+
+  @Test
+  void GivenAScheduler_WhenDeclaringSomebodysUnavailability_ThenItIsDeclared() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor scheduler = actor(ACME, Role.SCHEDULER);
+
+    service.declareUnavailability(scheduler, new DeclareUnavailabilityCommand(ACME, ada, MONDAY));
+
+    assertThat(service.findUnavailability(admin(ACME), ACME, ada)).containsExactly(MONDAY);
+    assertThat(audit.of(WorkforceChange.UNAVAILABILITY_DECLARED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, scheduler.id(), WorkforceChange.UNAVAILABILITY_DECLARED, ada.value()));
+  }
+
+  @Test
+  void GivenAScheduler_WhenStatingSomebodysPreference_ThenItIsStated() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    TenantActor scheduler = actor(ACME, Role.SCHEDULER);
+
+    service.statePreference(
+        scheduler, new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS_NOT));
+
+    assertThat(service.findPreferences(admin(ACME), ACME, ada))
+        .containsExactly(new ShiftPreference(TUESDAY, PreferenceStrength.PREFERS_NOT));
+    assertThat(audit.of(WorkforceChange.PREFERENCE_STATED))
+        .containsExactly(
+            new AuditedChange(
+                ACME, scheduler.id(), WorkforceChange.PREFERENCE_STATED, ada.value()));
+  }
+
   // --- F6: reading back what somebody declared ----------------------------------------------
 
   @Test
@@ -314,6 +524,27 @@ class EmployeeServiceTest {
 
     assertThatThrownBy(() -> service.findPreferences(gracesAccount, ACME, ada))
         .isInstanceOf(NotPermittedException.class);
+  }
+
+  /**
+   * A preference is soft, but it is still somebody's say about when they work, and a colleague
+   * stating one for them would put words in their mouth that the generator then weighs.
+   */
+  @Test
+  void GivenAColleague_WhenStatingSomebodyElsesPreference_ThenItIsRefusedAndNothingIsStated() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+    EmployeeId grace = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Grace"));
+    TenantActor gracesAccount =
+        new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE, Optional.of(grace));
+
+    assertThatThrownBy(
+            () ->
+                service.statePreference(
+                    gracesAccount,
+                    new StatePreferenceCommand(ACME, ada, TUESDAY, PreferenceStrength.PREFERS_NOT)))
+        .isInstanceOf(NotPermittedException.class);
+    assertThat(service.findPreferences(admin(ACME), ACME, ada)).isEmpty();
+    assertThat(audit.of(WorkforceChange.PREFERENCE_STATED)).isEmpty();
   }
 
   /**
@@ -633,8 +864,9 @@ class EmployeeServiceTest {
   void GivenAnEmployee_WhenTheirContractIsSet_ThenTheyAreReadForUpdate() {
     EmployeeId ada = anEmployeeOfAcme();
 
+    // Invented: contracted hours are a term of an individual agreement, never a statute's.
     service.setContractTerms(
-        admin(ACME), new SetContractTermsCommand(ACME, ada, Duration.ofHours(30)));
+        admin(ACME), new SetContractTermsCommand(ACME, ada, Duration.ofMinutes(1801)));
 
     assertThat(employees.heldForUpdate()).containsExactly(ada);
   }
@@ -695,14 +927,51 @@ class EmployeeServiceTest {
     assertThat(employees.heldForUpdate()).isEmpty();
   }
 
-  /** In-memory stand-in for the driven port, scoped by organisation exactly as the real one is. */
+  // --- the doubles refuse what the adapters refuse -------------------------------------------
+  //
+  // JdbcEmployeeRepository refuses a save over an identity another organisation holds. A double
+  // that accepted it would let a use case writing across the tenant boundary pass every test here
+  // while the database refused it in production. The shared StubQualificationRepository is held
+  // to the same refusal in QualificationServiceTest.
+
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenTheEmployeeDoubleSavesOverIt_ThenItIsRefused() {
+    Employee theirs = new Employee(EmployeeId.newId(), RIVAL, "Their Employee");
+    employees.save(theirs);
+
+    assertThatThrownBy(() -> employees.save(new Employee(theirs.id(), ACME, "Ada")))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(employees.findById(RIVAL, theirs.id()))
+        .map(Employee::name)
+        .contains("Their Employee");
+    assertThat(employees.findById(ACME, theirs.id())).isEmpty();
+  }
+
+  /**
+   * In-memory stand-in for the driven port, scoped by organisation exactly as the real one is. It
+   * copies the real adapter's refusal of a save over an identity another organisation holds,
+   * because a double accepting what the database refuses tests nothing.
+   *
+   * <p>It does not copy {@code findForUpdate}'s refusal outside a writable transaction: these tests
+   * run without one, and that refusal is proven in {@code JdbcEmployeeRepositoryTest}.
+   */
   private static final class StubEmployeeRepository implements EmployeeRepository {
 
     private final Map<EmployeeId, Employee> saved = new HashMap<>();
     private final List<EmployeeId> heldForUpdate = new ArrayList<>();
 
+    /**
+     * @throws IllegalStateException if the identity already belongs to another organisation, as
+     *     {@code JdbcEmployeeRepository}'s upsert refuses it
+     */
     @Override
     public void save(Employee employee) {
+      Employee held = saved.get(employee.id());
+      if (held != null && !held.organisation().equals(employee.organisation())) {
+        throw new IllegalStateException(
+            "Refused to store %s: that identity already belongs to another organisation"
+                .formatted(employee.id().value()));
+      }
       saved.put(employee.id(), employee);
     }
 
@@ -736,30 +1005,6 @@ class EmployeeServiceTest {
       matching.removeIf(employee -> !employee.organisation().equals(organisation));
       matching.sort(Comparator.comparing(Employee::name));
       return List.copyOf(matching);
-    }
-  }
-
-  /** In-memory stand-in for the qualification port. */
-  private static final class StubQualificationRepository implements QualificationRepository {
-
-    private final Map<QualificationId, Qualification> saved = new HashMap<>();
-
-    @Override
-    public void save(Qualification qualification) {
-      saved.put(qualification.id(), qualification);
-    }
-
-    @Override
-    public Optional<Qualification> findById(OrganisationId organisation, QualificationId id) {
-      return Optional.ofNullable(saved.get(id))
-          .filter(qualification -> qualification.organisation().equals(organisation));
-    }
-
-    @Override
-    public List<Qualification> findByOrganisation(OrganisationId organisation) {
-      return saved.values().stream()
-          .filter(qualification -> qualification.organisation().equals(organisation))
-          .toList();
     }
   }
 
@@ -802,7 +1047,7 @@ class EmployeeServiceTest {
 
     // Invented: contracted hours are a term of an individual agreement, never a statutory figure.
     service.setContractTerms(
-        manager, new SetContractTermsCommand(ACME, subject, Duration.ofHours(20)));
+        manager, new SetContractTermsCommand(ACME, subject, Duration.ofMinutes(1201)));
 
     assertThat(audit.of(WorkforceChange.CONTRACT_SET))
         .containsExactly(
@@ -903,11 +1148,13 @@ class EmployeeServiceTest {
 
   @Test
   void GivenTheOperator_WhenSettingContractTerms_ThenItIsRefused() {
+    // Invented: contracted hours are a term of an individual agreement, never a statute's.
     assertThatThrownBy(
             () ->
                 service.setContractTerms(
                     anOperator(),
-                    new SetContractTermsCommand(ACME, EmployeeId.newId(), Duration.ofHours(20))))
+                    new SetContractTermsCommand(
+                        ACME, EmployeeId.newId(), Duration.ofMinutes(1201))))
         .isInstanceOf(NotATenantMemberException.class);
   }
 

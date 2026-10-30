@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { useAsync } from './useAsync';
@@ -18,8 +18,8 @@ import { useAsync } from './useAsync';
  * Flushing matters here more than anywhere else in the suite. An earlier version of the
  * stale-answer test awaited a single microtask, which does not flush a React re-render, so it
  * asserted against the previous DOM and passed with the `live` flag deleted. It reported a
- * property the hook does not have. Anything that resolves a promise and then inspects the tree
- * needs a macrotask and a `waitFor`, not `await Promise.resolve()`.
+ * property the hook does not have. A late answer is therefore settled inside `act`, which returns
+ * only once React has rendered what it caused, rather than after a guessed number of timer turns.
  */
 
 /** A promise whose settlement this test decides, so response ordering is chosen and never raced. */
@@ -108,10 +108,13 @@ describe('when the question changes', () => {
     second.resolve('second answer');
     await waitFor(() => expect(value()).toBe('second answer'));
 
-    first.resolve('first answer');
-    await new Promise((settle) => setTimeout(settle, 0));
+    // Inside act, so every update the late answer could cause has been rendered before the check.
+    await act(async () => {
+      first.resolve('first answer');
+      await first.promise;
+    });
 
-    await waitFor(() => expect(value()).toBe('second answer'));
+    expect(value()).toBe('second answer');
   });
 
   it('GivenAKeyChange_WhenTheAnswerIsStillInFlight_ThenItIsBusyAgain', async () => {

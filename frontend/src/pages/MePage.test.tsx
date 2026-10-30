@@ -1,9 +1,12 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dayLabel, spanLabel, timeLabel } from '../components/localDates';
+import { routeTo } from '../test-support/routeTo';
+import type { Answer } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { MePage } from './MePage';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * Employee self-service, which is the one place the acting identity has to carry an employee link
@@ -31,15 +34,11 @@ const WORK = {
   roster: 'roster-1',
 };
 
-interface Answer {
-  readonly status: number;
-  readonly body: unknown;
-}
-
 /**
  * Reading one's own schedule is answered with `schedule`, reading back what they declared with
- * `unavailability` and `preferences`, and every write with `write`. Any other read — the inbox on the
- * same page — gets an empty list: what it does with one is Inbox.test's business.
+ * `unavailability` and `preferences`, and each write this page can make, at its own method and
+ * path, with `write`. The inbox on the same page reads an empty list: what it does with one is
+ * Inbox.test's business. Anything else is a 404, so a write sent to the wrong place is refused.
  */
 function stubbed({
   schedule = { status: 200, body: [] },
@@ -52,26 +51,19 @@ function stubbed({
   preferences?: Answer;
   write?: Answer;
 } = {}) {
-  const stub = vi.fn((path: string, init?: RequestInit) => {
-    const answer =
-      (init?.method ?? 'GET') !== 'GET'
-        ? write
-        : path.startsWith('/api/me/schedule')
-          ? schedule
-          : path === `/api/employees/${EMPLOYEE}/unavailability`
-            ? unavailability
-            : path === `/api/employees/${EMPLOYEE}/preferences`
-              ? preferences
-              : { status: 200, body: [] };
-    return Promise.resolve({
-      ok: answer.status < 400,
-      status: answer.status,
-      headers: new Headers(),
-      text: () => Promise.resolve(answer.body === null ? '' : JSON.stringify(answer.body)),
-    });
+  const own = `/api/employees/${EMPLOYEE}`;
+  return routeTo({
+    '/api/me/schedule': schedule,
+    [`${own}/unavailability`]: unavailability,
+    [`${own}/preferences`]: preferences,
+    '/api/notifications': { status: 200, body: [] },
+    '/api/swaps': { status: 200, body: [] },
+    'POST /api/swaps': write,
+    [`POST ${own}/unavailability`]: write,
+    [`POST ${own}/preferences`]: write,
+    [`DELETE ${own}/unavailability`]: write,
+    [`DELETE ${own}/preferences`]: write,
   });
-  vi.stubGlobal('fetch', stub);
-  return stub;
 }
 
 function writes(stub: ReturnType<typeof stubbed>) {
@@ -116,20 +108,15 @@ function show() {
 
 async function fillSpan(from: string, to: string) {
   if (from !== '') {
-    await userEvent.type(screen.getByLabelText('From'), from);
+    await userEvent.type(screen.getByLabelText('From'), from, WITHOUT_PAUSES);
   }
   if (to !== '') {
-    await userEvent.type(screen.getByLabelText('To'), to);
+    await userEvent.type(screen.getByLabelText('To'), to, WITHOUT_PAUSES);
   }
 }
 
-beforeEach(() => {
-  window.localStorage.clear();
-});
-
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 describe('without an employee link', () => {
@@ -242,6 +229,7 @@ describe('handing a shift to a colleague', () => {
     await userEvent.type(
       await screen.findByLabelText(/^Colleague's employee identifier/),
       COLLEAGUE,
+      WITHOUT_PAUSES,
     );
     await userEvent.click(screen.getByRole('button', { name: /^Ask to hand/ }));
 
@@ -267,7 +255,7 @@ describe('handing a shift to a colleague', () => {
     show();
     const field = await screen.findByLabelText(/^Colleague's employee identifier/);
 
-    await userEvent.type(field, COLLEAGUE);
+    await userEvent.type(field, COLLEAGUE, WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: /^Ask to hand/ }));
 
     await screen.findByText(/^Asked\./);
@@ -296,6 +284,7 @@ describe('handing a shift to a colleague', () => {
     await userEvent.type(
       await screen.findByLabelText(/^Colleague's employee identifier/),
       COLLEAGUE,
+      WITHOUT_PAUSES,
     );
     const ask = screen.getByRole('button', { name: /^Ask to hand/ });
 
@@ -330,6 +319,7 @@ describe('handing a shift to a colleague', () => {
     await userEvent.type(
       await screen.findByLabelText(/^Colleague's employee identifier/),
       EMPLOYEE,
+      WITHOUT_PAUSES,
     );
     await userEvent.click(screen.getByRole('button', { name: /^Ask to hand/ }));
 
@@ -606,6 +596,10 @@ describe('what they declared', () => {
     await screen.findByText(/^Withdrawn:/);
     expect(withdraw).toBeDisabled();
     release();
+    // Waits for the read it released, so its answer lands inside this test rather than after it.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^Withdraw absence/ })).toBeEnabled(),
+    );
   });
 
   /** A refusal may mean the list on screen is stale, withdrawn already by somebody else. */
@@ -702,6 +696,7 @@ describe('validating the span before anything is sent', () => {
 });
 
 describe('declaring unavailability', () => {
+  /** Read in the zone vite.config.ts pins: 08:00 and 16:00 in Los Angeles in October. */
   it('GivenAValidSpan_WhenDeclaring_ThenTheRequestCarriesIsoInstants', async () => {
     actingAsEmployee(EMPLOYEE);
     const stub = stubbed();
@@ -712,8 +707,8 @@ describe('declaring unavailability', () => {
 
     await waitFor(() => expect(writes(stub)).toHaveLength(1));
     const sent = bodyOfFirstWrite(stub);
-    expect(sent.start).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
-    expect(sent.end).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+    expect(sent.start).toBe('2026-10-05T15:00:00.000Z');
+    expect(sent.end).toBe('2026-10-05T23:00:00.000Z');
   });
 
   it('GivenAValidSpan_WhenDeclaring_ThenItIsSentToTheEmployeesOwnRecord', async () => {
@@ -771,6 +766,7 @@ describe('stating a preference', () => {
     await userEvent.click(screen.getByRole('button', { name: 'State a preference' }));
 
     await waitFor(() => expect(writes(stub)).toHaveLength(1));
+    expect(writes(stub)[0]?.[0]).toBe(`/api/employees/${EMPLOYEE}/preferences`);
     expect(bodyOfFirstWrite(stub).strength).toBe('PREFERS_NOT');
   });
 

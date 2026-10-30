@@ -48,7 +48,11 @@ class JdbcAccountRepositoryTest {
 
   private static final OrganisationId ACME = OrganisationId.newId();
   private static final OrganisationId RIVAL = OrganisationId.newId();
+
+  /** Invented, and hashes nothing. */
   private static final PasswordHash HASH = new PasswordHash("{bcrypt}$2a$04$invented.test.value");
+
+  /** Invented. */
   private static final Instant CREATED_AT = Instant.parse("2026-09-01T09:00:00Z");
 
   /** How long a probing transaction waits for the lock before giving up. */

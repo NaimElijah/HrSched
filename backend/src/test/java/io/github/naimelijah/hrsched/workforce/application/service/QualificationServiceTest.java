@@ -15,14 +15,9 @@ import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.workforce.application.port.in.DefineQualificationCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.PublishedQualification;
 import io.github.naimelijah.hrsched.workforce.application.port.out.AuditedChange;
-import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChange;
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidQualificationNameException;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -192,28 +187,23 @@ class QualificationServiceTest {
     assertThat(service.findQualification(admin(ACME), ACME, theirs)).isEmpty();
   }
 
-  /** Hand-written, like every other double here: the repository is our own port. */
-  private static final class StubQualificationRepository implements QualificationRepository {
+  /**
+   * The one self-test of {@link StubQualificationRepository}, which {@code EmployeeServiceTest}
+   * uses too. The double copies {@code JdbcQualificationRepository}'s refusal of a save over an
+   * identity another organisation holds. A double that accepted it would let a use case writing
+   * across the tenant boundary pass every test here while the database refused it in production.
+   */
+  @Test
+  void GivenAnIdentityHeldByAnotherOrganisation_WhenTheDoubleSavesOverIt_ThenItIsRefused() {
+    Qualification theirs = new Qualification(QualificationId.newId(), RIVAL, "Their Ticket");
+    qualifications.save(theirs);
 
-    private final Map<QualificationId, Qualification> saved = new HashMap<>();
-
-    @Override
-    public void save(Qualification qualification) {
-      saved.put(qualification.id(), qualification);
-    }
-
-    @Override
-    public Optional<Qualification> findById(OrganisationId organisation, QualificationId id) {
-      return Optional.ofNullable(saved.get(id))
-          .filter(qualification -> qualification.organisation().equals(organisation));
-    }
-
-    @Override
-    public List<Qualification> findByOrganisation(OrganisationId organisation) {
-      return saved.values().stream()
-          .filter(qualification -> qualification.organisation().equals(organisation))
-          .toList();
-    }
+    assertThatThrownBy(() -> qualifications.save(new Qualification(theirs.id(), ACME, "Forklift")))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(qualifications.findById(RIVAL, theirs.id()))
+        .map(Qualification::name)
+        .contains("Their Ticket");
+    assertThat(qualifications.findById(ACME, theirs.id())).isEmpty();
   }
 
   @Test

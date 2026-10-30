@@ -12,6 +12,7 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.access.LoggedText;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import io.micrometer.core.instrument.Counter;
@@ -65,7 +66,7 @@ class OnboardingSignInNameTakenHttpTest {
   @BeforeEach
   void captureTheLog() {
     root = ((LoggerContext) LoggerFactory.getILoggerFactory()).getLogger(Logger.ROOT_LOGGER_NAME);
-    captured = new ListAppender<>();
+    captured = LoggedText.capturing();
     captured.start();
     root.addAppender(captured);
   }
@@ -174,16 +175,8 @@ class OnboardingSignInNameTakenHttpTest {
     return counter == null ? 0 : counter.count();
   }
 
-  /** Every message and every attached field, as one string to search. */
+  /** Everything the captured events carry, as one string to search: see {@link LoggedText}. */
   private String everything() {
-    return captured.list.stream()
-        .map(
-            event ->
-                event.getLevel()
-                    + " "
-                    + event.getFormattedMessage()
-                    + " "
-                    + (event.getKeyValuePairs() == null ? "" : event.getKeyValuePairs()))
-        .reduce("", (all, line) -> all + "\n" + line);
+    return LoggedText.of(captured.list);
   }
 }

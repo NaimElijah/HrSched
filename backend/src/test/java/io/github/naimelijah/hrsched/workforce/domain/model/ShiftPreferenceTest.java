@@ -1,7 +1,6 @@
 package io.github.naimelijah.hrsched.workforce.domain.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
@@ -16,8 +15,8 @@ import org.junit.jupiter.params.provider.EnumSource;
  *
  * <p>A preference is soft by construction: it carries a span and a strength and nothing else. The
  * shape is pinned below, because the day it gains a third field is the day a preference could start
- * behaving like a constraint. That the generator ignores preferences entirely is a different claim,
- * and belongs to the generator's own tests rather than here.
+ * behaving like a constraint. How generation weighs preferences (ADR-010, ADR-044) is a different
+ * claim, and belongs to the generator's own tests rather than here.
  */
 class ShiftPreferenceTest {
 
@@ -27,7 +26,9 @@ class ShiftPreferenceTest {
   @ParameterizedTest
   @EnumSource(PreferenceStrength.class)
   void GivenAnyStrength_WhenStatingAPreference_ThenItIsAccepted(PreferenceStrength strength) {
-    assertThatCode(() -> new ShiftPreference(MONDAY_DAY, strength)).doesNotThrowAnyException();
+    assertThat(new ShiftPreference(MONDAY_DAY, strength))
+        .extracting(ShiftPreference::period, ShiftPreference::strength)
+        .containsExactly(MONDAY_DAY, strength);
   }
 
   @Test

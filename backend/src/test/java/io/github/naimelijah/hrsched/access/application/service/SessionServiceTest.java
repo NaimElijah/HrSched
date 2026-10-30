@@ -61,6 +61,7 @@ import org.junit.jupiter.api.Test;
  */
 class SessionServiceTest {
 
+  /** Invented: the instant every test here happens at. */
   private static final Instant NOW = Instant.parse("2026-09-20T09:00:00Z");
 
   /**
@@ -69,13 +70,25 @@ class SessionServiceTest {
   private static final Instant AN_HOUR_AGO = NOW.minus(Duration.ofHours(1));
 
   private static final OrganisationId ACME = OrganisationId.newId();
+
+  /** Invented. */
   private static final String ADA = "ada@example.com";
+
+  /** Invented. */
   private static final String RIGHT_PASSWORD = "an invented password for a test";
+
+  /** Invented. */
   private static final String WRONG_PASSWORD = "not the invented password";
+
+  /** Invented: three failures lock an account for a quarter of an hour. */
   private static final LockoutPolicy LOCK_AFTER_THREE =
       new LockoutPolicy(3, Duration.ofMinutes(15));
-  private static final SessionPolicy A_DAY_AND_AN_HOUR =
+
+  /** Invented: a session lasts twelve hours at most, and an hour without being renewed. */
+  private static final SessionPolicy A_TWELVE_HOUR_SESSION_IDLE_AFTER_AN_HOUR =
       new SessionPolicy(Duration.ofHours(12), Duration.ofHours(1));
+
+  /** Invented. */
   private static final PasswordPolicy A_FIFTEEN_CHARACTER_MINIMUM = new PasswordPolicy(15, 72);
 
   private final StubAccountRepository accounts = new StubAccountRepository();
@@ -85,7 +98,7 @@ class SessionServiceTest {
   private final StubSessionSecrets secrets = new StubSessionSecrets();
   private final RecordingAuditTrail audit = new RecordingAuditTrail();
 
-  private final SessionService service = serviceAt(NOW, A_DAY_AND_AN_HOUR);
+  private final SessionService service = serviceAt(NOW, A_TWELVE_HOUR_SESSION_IDLE_AFTER_AN_HOUR);
 
   private SessionService serviceAt(Instant now, SessionPolicy policy) {
     return new SessionService(
@@ -364,6 +377,118 @@ class SessionServiceTest {
     assertThat(sessions.revocationOf(session.id())).contains(SessionRevocation.REFRESH_REUSED);
   }
 
+  // --- the idle limit: a refresh token that sat unused too long, and the successor's expiry -----
+
+  @Test
+  void GivenARefreshTokenPastItsIdleLimit_WhenRefreshing_ThenItIsRefusedAsExpiredAndNoneIsIssued() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    SignInSession live =
+        new SignInSession(
+            SignInSessionId.newId(), account.id(), AN_HOUR_AGO, NOW.plus(Duration.ofHours(11)));
+    sessions.given(
+        "an-idle-token", new StoredRefreshToken(live, NOW.minusSeconds(1), Optional.empty()));
+
+    RefreshOutcome outcome = service.refresh("an-idle-token");
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            RefreshOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(RefreshRefusal.EXPIRED));
+    assertThat(sessions.successorExpiryOf(live.id()))
+        .describedAs("an idle token renews nothing, though its session is still live")
+        .isEmpty();
+  }
+
+  /** The instant a refresh token expires is the first instant it is no longer accepted. */
+  @Test
+  void GivenARefreshTokenExpiringThisInstant_WhenRefreshing_ThenItIsRefusedAsExpired() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    SignInSession live =
+        new SignInSession(
+            SignInSessionId.newId(), account.id(), AN_HOUR_AGO, NOW.plus(Duration.ofHours(11)));
+    sessions.given("a-token-ending-now", new StoredRefreshToken(live, NOW, Optional.empty()));
+
+    RefreshOutcome outcome = service.refresh("a-token-ending-now");
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            RefreshOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(RefreshRefusal.EXPIRED));
+  }
+
+  /**
+   * A session ended early - signed out here - takes every token it issued with it, so a token still
+   * within its own expiry renews nothing. Ending it by sign-out rather than by its expiry is what
+   * leaves the token unexpired legitimately: a token never outlives the time its session was set to
+   * end.
+   */
+  @Test
+  void GivenAnUnexpiredRefreshTokenOfAnEndedSession_WhenRefreshing_ThenItIsRefusedAsSessionEnded() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    SignInSession ended =
+        new SignInSession(
+                SignInSessionId.newId(), account.id(), AN_HOUR_AGO, NOW.plus(Duration.ofHours(11)))
+            .revoked(SessionRevocation.SIGNED_OUT, NOW.minusSeconds(1));
+    sessions.given(
+        "a-token-outliving-its-session",
+        new StoredRefreshToken(ended, NOW.plus(Duration.ofMinutes(5)), Optional.empty()));
+
+    RefreshOutcome outcome = service.refresh("a-token-outliving-its-session");
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            RefreshOutcome.Refused.class,
+            refused -> assertThat(refused.reason()).isEqualTo(RefreshRefusal.SESSION_ENDED));
+    assertThat(sessions.successorExpiryOf(ended.id())).isEmpty();
+  }
+
+  @Test
+  void GivenASessionOutlivingTheIdleLimit_WhenRefreshing_ThenTheSuccessorExpiresAtTheIdleLimit() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    SignInSession session =
+        new SignInSession(
+            SignInSessionId.newId(), account.id(), NOW, NOW.plus(Duration.ofHours(12)));
+    sessions.given(
+        "a-current-token",
+        new StoredRefreshToken(session, NOW.plus(Duration.ofMinutes(5)), Optional.empty()));
+
+    RefreshOutcome outcome = service.refresh("a-current-token");
+
+    Instant anHourFromNow = NOW.plus(A_TWELVE_HOUR_SESSION_IDLE_AFTER_AN_HOUR.idleLifetime());
+    assertThat(sessions.successorExpiryOf(session.id())).contains(anHourFromNow);
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            RefreshOutcome.Renewed.class,
+            renewed ->
+                assertThat(renewed.session().refreshTokenExpiresAt()).isEqualTo(anHourFromNow));
+  }
+
+  /**
+   * Renewing extends nothing: a successor issued close to the session's end expires with it, so a
+   * stolen refresh token cannot be used to carry a session past the end it was given (ADR-028).
+   */
+  @Test
+  void
+      GivenASessionEndingSoonerThanTheIdleLimit_WhenRefreshing_ThenTheSuccessorEndsWithTheSession() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    Instant sessionEnd = NOW.plus(Duration.ofMinutes(30));
+    SignInSession endingSoon =
+        new SignInSession(SignInSessionId.newId(), account.id(), AN_HOUR_AGO, sessionEnd);
+    sessions.given(
+        "a-current-token",
+        new StoredRefreshToken(endingSoon, NOW.plus(Duration.ofMinutes(5)), Optional.empty()));
+
+    RefreshOutcome outcome = service.refresh("a-current-token");
+
+    assertThat(sessions.successorExpiryOf(endingSoon.id()))
+        .describedAs("the idle limit would reach past the session's end; the end wins")
+        .contains(sessionEnd);
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            RefreshOutcome.Renewed.class,
+            renewed -> assertThat(renewed.session().refreshTokenExpiresAt()).isEqualTo(sessionEnd));
+  }
+
   @Test
   void GivenAnUnknownRefreshToken_WhenRefreshing_ThenNothingIsRevoked() {
     RefreshOutcome outcome = service.refresh("a-token-nobody-ever-issued");
@@ -622,8 +747,9 @@ class SessionServiceTest {
   }
 
   /**
-   * Remembers the sessions it was asked to start and the revocations it was asked to make, and lets
-   * a test say that the conditional update found nothing to change.
+   * Remembers the sessions it was asked to start, the revocations it was asked to make, each
+   * account whose every session it was asked to end, and when each successor token it issued
+   * expires; and lets a test say that the conditional update found nothing to change.
    *
    * <p>That last part is the only way to reach the race the real adapter guards against: two
    * refreshes holding one token, where the database awards the exchange to one of them. Here the
@@ -635,6 +761,7 @@ class SessionServiceTest {
     private final Map<SignInSessionId, SessionRevocation> revocations = new LinkedHashMap<>();
     private final Map<String, StoredRefreshToken> tokens = new LinkedHashMap<>();
     private final Map<UserId, SessionRevocation> accountsWhoseSessionsEnded = new LinkedHashMap<>();
+    private final Map<SignInSessionId, Instant> successorExpiries = new LinkedHashMap<>();
     private boolean exchangeAlreadyTaken;
 
     List<SignInSession> started() {
@@ -643,6 +770,11 @@ class SessionServiceTest {
 
     Optional<SessionRevocation> revocationOf(SignInSessionId session) {
       return Optional.ofNullable(revocations.get(session));
+    }
+
+    /** When the successor issued for a session expires, as it was written; empty if none was. */
+    Optional<Instant> successorExpiryOf(SignInSessionId session) {
+      return Optional.ofNullable(successorExpiries.get(session));
     }
 
     Optional<SessionRevocation> everySessionEndedFor(UserId account) {
@@ -676,7 +808,7 @@ class SessionServiceTest {
     @Override
     public void issueSuccessor(
         SignInSessionId session, byte[] refreshDigest, Instant issuedAt, Instant expiresAt) {
-      // Nothing to remember: these tests are about which path was taken, not about what it wrote.
+      successorExpiries.put(session, expiresAt);
     }
 
     @Override

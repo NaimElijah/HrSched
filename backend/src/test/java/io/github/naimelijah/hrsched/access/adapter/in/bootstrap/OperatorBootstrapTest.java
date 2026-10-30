@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.github.naimelijah.hrsched.access.LoggedText;
 import io.github.naimelijah.hrsched.access.application.port.in.BootstrapOperatorCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.BootstrapOperatorUseCase;
 import java.util.ArrayList;
@@ -44,7 +45,7 @@ class OperatorBootstrapTest {
     logger =
         ((LoggerContext) LoggerFactory.getILoggerFactory())
             .getLogger(OperatorBootstrap.class.getName());
-    captured = new ListAppender<>();
+    captured = LoggedText.capturing();
     captured.start();
     logger.addAppender(captured);
   }
@@ -68,7 +69,11 @@ class OperatorBootstrapTest {
 
     assertThatThrownBy(() -> bootstrap.run(null))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("hrsched.bootstrap.operator.password");
+        .describedAs("names the half that is set first, then the half that is missing")
+        .hasMessageStartingWith(
+            "hrsched.bootstrap.operator.sign-in-name is set but"
+                + " hrsched.bootstrap.operator.password is not");
+    assertThat(useCase.asked()).describedAs("nothing is created half-configured").isEmpty();
   }
 
   @Test
@@ -78,7 +83,11 @@ class OperatorBootstrapTest {
 
     assertThatThrownBy(() -> bootstrap.run(null))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("hrsched.bootstrap.operator.sign-in-name");
+        .describedAs("names the half that is set first, then the half that is missing")
+        .hasMessageStartingWith(
+            "hrsched.bootstrap.operator.password is set but"
+                + " hrsched.bootstrap.operator.sign-in-name is not");
+    assertThat(useCase.asked()).describedAs("nothing is created half-configured").isEmpty();
   }
 
   @Test
@@ -97,6 +106,19 @@ class OperatorBootstrapTest {
     assertThat(everythingLogged()).doesNotContain(OPERATOR_NAME).doesNotContain(A_PASSWORD);
   }
 
+  /** What a first deployment's operator reads: that it was created, and what they must do next. */
+  @Test
+  void GivenNoOperatorYet_WhenRun_ThenItSaysOneWasCreatedAndItsPasswordMustBeChanged()
+      throws Exception {
+    new OperatorBootstrap(useCase, configured()).run(null);
+
+    assertThat(captured.list)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .describedAs("says the operator was created, not that it was there already")
+        .containsExactly(
+            "Created the platform operator; its password must be changed at first sign-in");
+  }
+
   @Test
   void GivenTheOperatorAlreadyExists_WhenRun_ThenItStillSaysSoWithoutNamingAnybody()
       throws Exception {
@@ -104,7 +126,10 @@ class OperatorBootstrapTest {
 
     new OperatorBootstrap(useCase, configured()).run(null);
 
-    assertThat(captured.list).isNotEmpty();
+    assertThat(captured.list)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .describedAs("says the operator was there already, not that it was created")
+        .containsExactly("The configured platform operator already exists and was left unchanged");
     assertThat(everythingLogged()).doesNotContain(OPERATOR_NAME).doesNotContain(A_PASSWORD);
   }
 
@@ -112,15 +137,9 @@ class OperatorBootstrapTest {
     return new BootstrapOperatorProperties(OPERATOR_NAME, A_PASSWORD);
   }
 
-  /** Every message and every attached field, as one string to search. */
+  /** Everything the captured events carry, as one string to search: see {@link LoggedText}. */
   private String everythingLogged() {
-    return captured.list.stream()
-        .map(
-            event ->
-                event.getFormattedMessage()
-                    + " "
-                    + (event.getKeyValuePairs() == null ? "" : event.getKeyValuePairs()))
-        .reduce("", (all, line) -> all + "\n" + line);
+    return LoggedText.of(captured.list);
   }
 
   /** Remembers what it was asked to ensure, and answers whatever the test told it to. */

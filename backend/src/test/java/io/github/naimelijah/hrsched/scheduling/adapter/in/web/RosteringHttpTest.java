@@ -856,6 +856,7 @@ class RosteringHttpTest {
     String organisation = anOrganisation(mockMvc);
     addEmployee(organisation, "Ada");
     defineShift(organisation, "2026-10-06T08:00:00Z", "2026-10-06T16:00:00Z", 1);
+    // Invented: ten hours a day, which the eight-hour shift satisfies.
     mockMvc
         .perform(
             as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
@@ -933,6 +934,7 @@ class RosteringHttpTest {
   @Test
   void GivenAnotherOrganisationsVersion_WhenReadingIt_ThenTheAnswerIsTheOneForNoVersionAtAll()
       throws Exception {
+    // Invented: any rule at all, so that the other organisation holds a version 2.
     mockMvc
         .perform(
             as(mockMvc, put("/api/constraints"), anOrganisation(mockMvc), "ADMIN")
@@ -1123,6 +1125,7 @@ class RosteringHttpTest {
       throws Exception {
     String organisation = anOrganisation(mockMvc);
     addEmployee(organisation, "Ada");
+    // Invented: one hour a day.
     mockMvc
         .perform(
             as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
@@ -1141,6 +1144,7 @@ class RosteringHttpTest {
 
   @Test
   void GivenAScheduler_WhenConfiguringConstraints_ThenItIsForbidden() throws Exception {
+    // Invented: the role is refused, so the value is never stored.
     mockMvc
         .perform(
             as(mockMvc, put("/api/constraints"), anOrganisation(mockMvc), "SCHEDULER")
@@ -1150,11 +1154,46 @@ class RosteringHttpTest {
 
   @Test
   void GivenAnEmployee_WhenConfiguringConstraints_ThenItIsForbidden() throws Exception {
+    // Invented: the role is refused, so the value is never stored.
     mockMvc
         .perform(
             as(mockMvc, put("/api/constraints"), anOrganisation(mockMvc), "EMPLOYEE")
                 .content("{\"maximumDailyMinutes\":600}"))
         .andExpect(status().isForbidden());
+  }
+
+  /** Publishing builds a roster, which is the Scheduler's alone; an Admin manages the rules. */
+  @Test
+  void GivenAnAdminRole_WhenPublishing_ThenItIsForbiddenAndItStaysADraft() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String roster = generateRoster(organisation, "2026-10-14T00:00:00Z", "2026-10-15T00:00:00Z");
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "ADMIN"))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("DRAFT"));
+  }
+
+  @Test
+  void GivenAnEmployeeRole_WhenPublishing_ThenItIsForbiddenAndItStaysADraft() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String roster = generateRoster(organisation, "2026-10-14T00:00:00Z", "2026-10-15T00:00:00Z");
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, ada))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("DRAFT"));
   }
 
   /**
@@ -1206,6 +1245,7 @@ class RosteringHttpTest {
   void GivenTwoOrganisations_WhenEachConfiguresRules_ThenNeitherSeesTheOther() throws Exception {
     String first = anOrganisation(mockMvc);
     String second = anOrganisation(mockMvc);
+    // Invented: any rule at all, so the first organisation has one to leak.
     mockMvc
         .perform(
             as(mockMvc, put("/api/constraints"), first, "ADMIN")
@@ -1216,8 +1256,11 @@ class RosteringHttpTest {
         .perform(as(mockMvc, get("/api/constraints"), second, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.constraints.length()").value(0));
-
-    assertThat(first).isNotEqualTo(second);
+    // And the rule was stored, so the empty answer above is isolation rather than a write lost.
+    mockMvc
+        .perform(as(mockMvc, get("/api/constraints"), first, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.maximumConsecutiveDays").value(3));
   }
 
   @Test
@@ -1294,6 +1337,37 @@ class RosteringHttpTest {
         .andExpect(jsonPath("$[0].status").value("DRAFT"));
   }
 
+  /** F11a: an Admin sees the organisation's rosters, as a Scheduler does (R12). */
+  @Test
+  void GivenAGeneratedRoster_WhenAnAdminListsRosters_ThenItIsReturned() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-23T08:00:00Z", "2026-10-23T16:00:00Z", 1);
+    String roster = generateRoster(organisation, "2026-10-23T00:00:00Z", "2026-10-24T00:00:00Z");
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/rosters"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].id").value(roster));
+  }
+
+  /** F11a, one roster at a time. */
+  @Test
+  void GivenAGeneratedRoster_WhenAnAdminReadsIt_ThenItIsReturnedWithItsAssignments()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    defineShift(organisation, "2026-10-23T08:00:00Z", "2026-10-23T16:00:00Z", 1);
+    String roster = generateRoster(organisation, "2026-10-23T00:00:00Z", "2026-10-24T00:00:00Z");
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.assignments.length()").value(1))
+        .andExpect(jsonPath("$.assignments[0].employee").value(ada));
+  }
+
   @Test
   void GivenRostersOfAnotherOrganisation_WhenListingThem_ThenNothingLeaks() throws Exception {
     String organisation = anOrganisation(mockMvc);
@@ -1326,6 +1400,43 @@ class RosteringHttpTest {
         .andExpect(jsonPath("$.minimumRestMinutes").value(661))
         .andExpect(jsonPath("$.maximumConsecutiveDays").value(5))
         .andExpect(jsonPath("$.maximumDailyMinutes").doesNotExist());
+  }
+
+  /**
+   * F21: any member sees the rules people are rostered under. The values are invented, chosen to be
+   * recognisable in the response, and are not any statute's.
+   */
+  @Test
+  void GivenConfiguredRules_WhenAnEmployeeReadsThem_ThenTheirThresholdsAreShown() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    mockMvc
+        .perform(
+            as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
+                .content("{\"minimumRestMinutes\":662}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(asThemself(mockMvc, get("/api/constraints"), organisation, ada))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.minimumRestMinutes").value(662));
+  }
+
+  /** F21, as a Scheduler, who builds rosters under these rules but may not change them (F10). */
+  @Test
+  void GivenConfiguredRules_WhenASchedulerReadsThem_ThenTheirThresholdsAreShown() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    // Invented, as above.
+    mockMvc
+        .perform(
+            as(mockMvc, put("/api/constraints"), organisation, "ADMIN")
+                .content("{\"maximumConsecutiveDays\":4}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/constraints"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.maximumConsecutiveDays").value(4));
   }
 
   @Test

@@ -68,11 +68,18 @@ class NotificationHttpTest {
         .andExpect(jsonPath("$.length()").value(0));
   }
 
+  /**
+   * The chain admits every tenant role to {@code /api/notifications/**}; the refusal is the use
+   * case's, which the detail tells apart from any 403 the chain could give.
+   */
   @Test
   void GivenNoPersonnelRecordIsClaimed_WhenReadingAnInbox_ThenItIsForbidden() throws Exception {
     mockMvc
         .perform(TestTenants.as(mockMvc, get("/api/notifications"), anOrganisation(), "ADMIN"))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isForbidden())
+        .andExpect(
+            jsonPath("$.detail")
+                .value("You have no personnel record, so you have no notifications."));
   }
 
   @Test
@@ -195,6 +202,38 @@ class NotificationHttpTest {
   }
 
   /**
+   * The acknowledgement that succeeds: Grace's own notification is answered 204 and then reads as
+   * read. Acknowledging it again, as a second open tab does, is a 204 too rather than an error.
+   */
+  @Test
+  void GivenTheirOwnNotification_WhenAcknowledgedTwice_ThenEachIsNoContentAndItReadsAsRead()
+      throws Exception {
+    String organisation = anOrganisation();
+    String ada = addEmployee(organisation, "Ada");
+    String grace = addEmployee(organisation, "Grace");
+    String gracesNotification = notificationForGrace(organisation, ada, grace);
+
+    mockMvc
+        .perform(
+            asThemself(
+                post("/api/notifications/" + gracesNotification + "/read"), organisation, grace))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(asThemself(get("/api/notifications"), organisation, grace))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].id").value(gracesNotification))
+        .andExpect(jsonPath("$[0].read").value(true));
+
+    mockMvc
+        .perform(
+            asThemself(
+                post("/api/notifications/" + gracesNotification + "/read"), organisation, grace))
+        .andExpect(status().isNoContent());
+  }
+
+  /**
    * Ada asked for the swap, so she knows the notification exists; it is still Grace's to
    * acknowledge. A 404, the answer for one that never existed, rather than a 403 that would confirm
    * it does.
@@ -217,6 +256,14 @@ class NotificationHttpTest {
     assertStillUnreadInGracesInbox(organisation, grace, gracesNotification);
   }
 
+  /**
+   * Their notification, acknowledged by a member of ours: the same 404. It does not prove the
+   * organisation filter, because our member is not Grace and the recipient filter alone would miss.
+   * Over HTTP that cannot be separated, as each personnel record holds one account and so nobody of
+   * ours can be linked to hers. The organisation filter alone is proven against the store, by
+   * {@code
+   * JdbcNotificationRepositoryTest#GivenANotificationInAnotherOrganisation_WhenWeRead_ThenItIsNotReturned}.
+   */
   @Test
   void
       GivenAnotherOrganisationsNotification_WhenOurMemberAcknowledgesIt_ThenItIsNotFoundAndStaysUnread()

@@ -18,12 +18,14 @@ class ContractTermsTest {
 
   @Test
   void GivenAPositiveDuration_WhenConstructingTerms_ThenItIsAccepted() {
-    assertThat(new ContractTerms(Duration.ofMinutes(2400)).weeklyContractedHours())
-        .isEqualTo(Duration.ofMinutes(2400));
+    // Invented: a contracted week, a term of an individual agreement.
+    assertThat(new ContractTerms(Duration.ofMinutes(2401)).weeklyContractedHours())
+        .isEqualTo(Duration.ofMinutes(2401));
   }
 
   @ParameterizedTest
-  @ValueSource(longs = {0L, -1L, -2400L})
+  // Invented: zero, the smallest step below it, and a negative week.
+  @ValueSource(longs = {0L, -1L, -2401L})
   void GivenANonPositiveDuration_WhenConstructingTerms_ThenItIsRejected(long minutes) {
     assertThatThrownBy(() -> new ContractTerms(Duration.ofMinutes(minutes)))
         .isInstanceOf(InvalidContractTermsException.class);
@@ -53,8 +55,9 @@ class ContractTermsTest {
 
   @Test
   void GivenTwoTermsOfTheSameLength_WhenComparingThem_ThenTheyAreEqual() {
-    assertThat(new ContractTerms(Duration.ofMinutes(2400)))
-        .isEqualTo(new ContractTerms(Duration.ofMinutes(2400)))
-        .hasSameHashCodeAs(new ContractTerms(Duration.ofMinutes(2400)));
+    // Invented: a contracted week, a term of an individual agreement.
+    assertThat(new ContractTerms(Duration.ofMinutes(2401)))
+        .isEqualTo(new ContractTerms(Duration.ofMinutes(2401)))
+        .hasSameHashCodeAs(new ContractTerms(Duration.ofMinutes(2401)));
   }
 }

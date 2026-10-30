@@ -99,7 +99,8 @@ class NotificationAuditLogTest {
 
   /**
    * The recipient is the one thing this context knows that the log must not. Who was told what
-   * lives in the store; the trail says only who caused an entry to exist.
+   * lives in the store; the trail says only who caused an entry to exist. Pinned as the whole set
+   * of keys rather than the absence of one name, so a recipient logged under any key shows.
    */
   @Test
   void GivenARecordedChange_WhenItIsWritten_ThenNoRecipientAppearsInIt() {
@@ -109,7 +110,7 @@ class NotificationAuditLogTest {
 
     assertThat(fieldsOf(onlyEvent()))
         .describedAs("the record has no recipient field, so one cannot appear")
-        .doesNotContainKey("recipient");
+        .containsOnlyKeys("organisation", "actor", "change", "subject");
   }
 
   @Test

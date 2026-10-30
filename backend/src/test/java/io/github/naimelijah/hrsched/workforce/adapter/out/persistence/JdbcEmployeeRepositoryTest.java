@@ -14,13 +14,16 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import io.github.naimelijah.hrsched.workforce.domain.model.ContractTerms;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
+import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
 import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -141,18 +144,19 @@ class JdbcEmployeeRepositoryTest {
     assertThat(repository.findById(ACME, casual.id()))
         .get()
         .extracting(Employee::contractTerms)
-        .satisfies(terms -> assertThat(terms).isEqualTo(java.util.Optional.empty()));
+        .satisfies(terms -> assertThat(terms).isEqualTo(Optional.empty()));
   }
 
   @Test
   void GivenContractedHours_WhenReadBack_ThenTheyComeBackExactly() {
-    Employee ada = employee(ACME, "Ada").contractedTo(new ContractTerms(Duration.ofHours(21)));
+    // Invented: contracted hours are a term of an individual agreement, never a statute's.
+    Employee ada = employee(ACME, "Ada").contractedTo(new ContractTerms(Duration.ofMinutes(1261)));
     repository.save(ada);
 
     assertThat(repository.findById(ACME, ada.id()))
         .get()
         .extracting(employee -> employee.contractTerms().orElseThrow().weeklyContractedHours())
-        .isEqualTo(Duration.ofHours(21));
+        .isEqualTo(Duration.ofMinutes(1261));
   }
 
   @Test
@@ -165,7 +169,7 @@ class JdbcEmployeeRepositoryTest {
     assertThat(repository.findById(ACME, ada.id()))
         .get()
         .extracting(Employee::qualifications)
-        .isEqualTo(java.util.Set.of(forklift, crane));
+        .isEqualTo(Set.of(forklift, crane));
   }
 
   @Test
@@ -176,7 +180,7 @@ class JdbcEmployeeRepositoryTest {
     assertThat(repository.findById(ACME, ada.id()))
         .get()
         .extracting(Employee::unavailability)
-        .isEqualTo(java.util.List.of(A_FORTNIGHT_OFF, A_WEEK_OFF));
+        .isEqualTo(List.of(A_FORTNIGHT_OFF, A_WEEK_OFF));
   }
 
   @Test
@@ -189,7 +193,7 @@ class JdbcEmployeeRepositoryTest {
     assertThat(repository.findById(ACME, ada.id()))
         .get()
         .extracting(Employee::preferences)
-        .isEqualTo(java.util.List.of(wants, wouldRather));
+        .isEqualTo(List.of(wants, wouldRather));
   }
 
   /**
@@ -206,7 +210,7 @@ class JdbcEmployeeRepositoryTest {
     assertThat(repository.findById(ACME, ada.id()))
         .get()
         .extracting(Employee::unavailability)
-        .isEqualTo(java.util.List.of(A_FORTNIGHT_OFF, A_WEEK_OFF));
+        .isEqualTo(List.of(A_FORTNIGHT_OFF, A_WEEK_OFF));
   }
 
   /**
@@ -221,7 +225,8 @@ class JdbcEmployeeRepositoryTest {
     Employee ada =
         employee(ACME, "Ada")
             .holding(forklift)
-            .contractedTo(new ContractTerms(Duration.ofHours(20)))
+            // Invented: contracted hours are a term of an individual agreement.
+            .contractedTo(new ContractTerms(Duration.ofMinutes(1201)))
             .unavailableFor(A_FORTNIGHT_OFF)
             .unavailableFor(A_WEEK_OFF)
             .preferring(wants);
@@ -235,7 +240,7 @@ class JdbcEmployeeRepositoryTest {
     assertThat(stored.qualifications()).containsExactly(forklift);
     assertThat(stored.contractTerms())
         .map(ContractTerms::weeklyContractedHours)
-        .contains(Duration.ofHours(20));
+        .contains(Duration.ofMinutes(1201));
   }
 
   /**
@@ -268,6 +273,43 @@ class JdbcEmployeeRepositoryTest {
         .isEqualTo("Their Employee");
   }
 
+  /**
+   * The schema does not refuse overlapping rows, so only the rebuild through the aggregate's own
+   * withers stops a row written by hand, a restore or a bug from handing the domain a state R7
+   * forbids. Loading such an employee fails loudly, by one identity and in a listing alike.
+   */
+  @Test
+  void GivenOverlappingUnavailabilityWrittenStraightIntoTheStore_WhenLoaded_ThenItIsRefused() {
+    Employee ada = employee(ACME, "Ada");
+    repository.save(ada);
+    // Invented: a week that overlaps the last day of A_FORTNIGHT_OFF.
+    TimeRange overlapping =
+        new TimeRange(Instant.parse("2026-08-14T00:00:00Z"), Instant.parse("2026-08-21T00:00:00Z"));
+    storeUnavailabilityDirectly(ada, 0, A_FORTNIGHT_OFF);
+    storeUnavailabilityDirectly(ada, 1, overlapping);
+
+    assertThatThrownBy(() -> repository.findById(ACME, ada.id()))
+        .isInstanceOf(OverlappingUnavailabilityException.class);
+    assertThatThrownBy(() -> repository.findByOrganisation(ACME))
+        .isInstanceOf(OverlappingUnavailabilityException.class);
+  }
+
+  /** Writes past the adapter, because no {@code Employee} can carry what this stores. */
+  private static void storeUnavailabilityDirectly(
+      Employee employee, int ordinal, TimeRange period) {
+    PostgresDatabase.jdbcClient()
+        .sql(
+            """
+            INSERT INTO employee_unavailability (employee_id, ordinal, starts_at, ends_at)
+            VALUES (:id, :ordinal, :startsAt, :endsAt)
+            """)
+        .param("id", employee.id().value())
+        .param("ordinal", ordinal)
+        .param("startsAt", period.start().atOffset(ZoneOffset.UTC))
+        .param("endsAt", period.end().atOffset(ZoneOffset.UTC))
+        .update();
+  }
+
   @Test
   void GivenTwoEmployeesWithOwnedRows_WhenListed_ThenNeitherGetsTheOthers() {
     Employee ada = employee(ACME, "Ada").unavailableFor(A_FORTNIGHT_OFF);
@@ -277,7 +319,7 @@ class JdbcEmployeeRepositoryTest {
 
     assertThat(repository.findByOrganisation(ACME))
         .extracting(Employee::unavailability)
-        .containsExactly(java.util.List.of(A_FORTNIGHT_OFF), java.util.List.of(A_WEEK_OFF));
+        .containsExactly(List.of(A_FORTNIGHT_OFF), List.of(A_WEEK_OFF));
   }
 
   /**

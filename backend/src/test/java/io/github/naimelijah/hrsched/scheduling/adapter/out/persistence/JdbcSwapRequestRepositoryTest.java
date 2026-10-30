@@ -1,5 +1,8 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.STUCK_AFTER_SECONDS;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitWaitingOnALock;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.backendServingThisTransaction;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -45,9 +48,6 @@ class JdbcSwapRequestRepositoryTest {
   private static final Instant NINE = Instant.parse("2026-10-01T09:00:00Z");
   private static final Instant TEN = Instant.parse("2026-10-01T10:00:00Z");
   private static final Instant ELEVEN = Instant.parse("2026-10-01T11:00:00Z");
-
-  /** How long a racing writer may take before the test calls it stuck rather than slow. */
-  private static final long STUCK_AFTER_SECONDS = 30;
 
   private final JdbcSwapRequestRepository repository =
       new JdbcSwapRequestRepository(PostgresDatabase.jdbcClient());
@@ -347,7 +347,8 @@ class JdbcSwapRequestRepositoryTest {
                                   rejecting.countDown();
                                   repository.save(pending.rejected());
                                 }));
-                awaitWaitingOnALock(rejecter, rejecting);
+                awaitStarted(rejecting);
+                awaitWaitingOnALock(rejecter.get());
                 return waiting;
               });
 
@@ -365,19 +366,8 @@ class JdbcSwapRequestRepositoryTest {
         .isEqualTo(SwapRequestStatus.APPROVED);
   }
 
-  /** The PostgreSQL backend serving the calling thread's transaction, which joins it. */
-  private static int backendServingThisTransaction() {
-    return PostgresDatabase.jdbcClient()
-        .sql("SELECT pg_backend_pid()")
-        .query(Integer.class)
-        .single();
-  }
-
-  /**
-   * Returns once the other writer is waiting for a lock some other transaction holds. Asks
-   * PostgreSQL rather than sleeping; the bound only fails a test that would otherwise hang.
-   */
-  private static void awaitWaitingOnALock(AtomicInteger backend, CountDownLatch known) {
+  /** Returns once the other writer has said which backend serves it. */
+  private static void awaitStarted(CountDownLatch known) {
     try {
       if (!known.await(STUCK_AFTER_SECONDS, TimeUnit.SECONDS)) {
         throw new IllegalStateException("The other writer never started");
@@ -385,16 +375,6 @@ class JdbcSwapRequestRepositoryTest {
     } catch (InterruptedException interrupted) {
       Thread.currentThread().interrupt();
       throw new IllegalStateException("Interrupted waiting for the other writer", interrupted);
-    }
-    long giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(STUCK_AFTER_SECONDS);
-    while (!PostgresDatabase.jdbcClient()
-        .sql("SELECT cardinality(pg_blocking_pids(:pid)) > 0")
-        .param("pid", backend.get())
-        .query(Boolean.class)
-        .single()) {
-      if (System.nanoTime() > giveUpAt) {
-        throw new IllegalStateException("The other writer never waited for a lock");
-      }
     }
   }
 
@@ -404,7 +384,8 @@ class JdbcSwapRequestRepositoryTest {
     repository.save(pending);
     repository.save(pending.approved());
 
-    assertThatThrownBy(() -> repository.save(pending.rejected()));
+    assertThatThrownBy(() -> repository.save(pending.rejected()))
+        .isInstanceOf(SwapNotPendingException.class);
 
     assertThat(repository.findById(ACME, pending.id()))
         .get()

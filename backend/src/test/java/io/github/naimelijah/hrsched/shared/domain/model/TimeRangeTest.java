@@ -61,6 +61,21 @@ class TimeRangeTest {
     assertThat(morning.gapTo(overlapping)).isEqualTo(Duration.ZERO);
   }
 
+  /**
+   * A range is half-open, so one ending at the instant the next starts shares no instant with it:
+   * back-to-back shifts do not overlap, and nothing separates them.
+   */
+  @Test
+  void GivenARangeEndingWhereTheNextStarts_WhenComparingThem_ThenTheyDoNotOverlapAndHaveNoGap() {
+    TimeRange day = new TimeRange(EIGHT_AM, FOUR_PM);
+    TimeRange evening = new TimeRange(FOUR_PM, LATER);
+
+    assertThat(day.overlaps(evening)).isFalse();
+    assertThat(evening.overlaps(day)).isFalse();
+    assertThat(day.gapTo(evening)).isEqualTo(Duration.ZERO);
+    assertThat(evening.gapTo(day)).isEqualTo(Duration.ZERO);
+  }
+
   @Test
   void GivenANullBoundary_WhenConstructingARange_ThenItIsRejected() {
     assertThatThrownBy(() -> new TimeRange(null, FOUR_PM)).isInstanceOf(NullPointerException.class);

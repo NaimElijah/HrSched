@@ -90,7 +90,8 @@ class ActorAuthenticationConverterTest {
   @Test
   void GivenATokenTheUseCaseDoesNotRecognise_WhenConverted_ThenItIsRefused() {
     assertThatThrownBy(() -> converter.convert(aToken()))
-        .isInstanceOf(InvalidBearerTokenException.class);
+        .isInstanceOf(InvalidBearerTokenException.class)
+        .hasMessage(ONE_REFUSAL);
   }
 
   @Test
@@ -143,7 +144,11 @@ class ActorAuthenticationConverterTest {
     return authenticated.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();
   }
 
-  /** Answers with whatever the test arranged, and with nothing until it has. */
+  /**
+   * Answers with whatever the test arranged, for {@link #ACCOUNT} signed in to {@link #SESSION} and
+   * for no other pair, as the real query asks for both at once. Nothing is known until a test
+   * arranges it.
+   */
   private static final class StubAuthenticatedActors implements AuthenticatedActorsUseCase {
 
     private AuthenticatedActor known;
@@ -154,7 +159,9 @@ class ActorAuthenticationConverterTest {
 
     @Override
     public Optional<AuthenticatedActor> findActor(UserId account, SignInSessionId session) {
-      return Optional.ofNullable(known);
+      return ACCOUNT.equals(account) && SESSION.equals(session)
+          ? Optional.ofNullable(known)
+          : Optional.empty();
     }
   }
 }

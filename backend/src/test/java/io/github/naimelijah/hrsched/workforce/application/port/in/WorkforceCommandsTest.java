@@ -27,6 +27,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  *
  * <p>A command checks completeness, never sensibleness. A blank name passes here and is refused by
  * {@code Employee} and {@code Qualification}, which is the correct place for it.
+ *
+ * <p>Every instant and figure below is invented. None is taken from any statute.
  */
 class WorkforceCommandsTest {
 
@@ -42,9 +44,9 @@ class WorkforceCommandsTest {
         () -> new GrantQualificationCommand(null, ADA, QualificationId.newId()),
         () -> new GrantQualificationCommand(ACME, null, QualificationId.newId()),
         () -> new GrantQualificationCommand(ACME, ADA, null),
-        // 2400 minutes is invented; contracted hours are a term of an agreement, not a statute.
-        () -> new SetContractTermsCommand(null, ADA, Duration.ofMinutes(2400)),
-        () -> new SetContractTermsCommand(ACME, null, Duration.ofMinutes(2400)),
+        // 2401 minutes is invented; contracted hours are a term of an agreement, not a statute.
+        () -> new SetContractTermsCommand(null, ADA, Duration.ofMinutes(2401)),
+        () -> new SetContractTermsCommand(ACME, null, Duration.ofMinutes(2401)),
         () -> new SetContractTermsCommand(ACME, ADA, null));
   }
 
@@ -56,7 +58,11 @@ class WorkforceCommandsTest {
         () -> new StatePreferenceCommand(null, ADA, MONDAY_DAY, PreferenceStrength.PREFERS),
         () -> new StatePreferenceCommand(ACME, null, MONDAY_DAY, PreferenceStrength.PREFERS),
         () -> new StatePreferenceCommand(ACME, ADA, null, PreferenceStrength.PREFERS),
-        () -> new StatePreferenceCommand(ACME, ADA, MONDAY_DAY, null),
+        () -> new StatePreferenceCommand(ACME, ADA, MONDAY_DAY, null));
+  }
+
+  private static Stream<ThrowingCallable> nullFieldsOnQualificationCommands() {
+    return Stream.of(
         () -> new DefineQualificationCommand(null, "Forklift"),
         () -> new DefineQualificationCommand(ACME, null));
   }
@@ -82,6 +88,13 @@ class WorkforceCommandsTest {
   @ParameterizedTest
   @MethodSource("nullFieldsOnAvailabilityCommands")
   void GivenANullField_WhenConstructingAnAvailabilityCommand_ThenItIsRejected(
+      ThrowingCallable constructing) {
+    assertThatThrownBy(constructing).isInstanceOf(NullPointerException.class);
+  }
+
+  @ParameterizedTest
+  @MethodSource("nullFieldsOnQualificationCommands")
+  void GivenANullField_WhenConstructingAQualificationCommand_ThenItIsRejected(
       ThrowingCallable constructing) {
     assertThatThrownBy(constructing).isInstanceOf(NullPointerException.class);
   }

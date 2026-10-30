@@ -13,14 +13,17 @@ import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * What starting a session actually writes.
+ * What the session adapter writes and reads back: starting a session, exchanging and revoking its
+ * refresh tokens, ending every session of one account, and finding the session a token names.
  *
  * <p>A refresh token is found by its digest and never by itself, which is the only way the real
  * code ever looks one up. That the digest is a real hash rather than the token is {@code
@@ -30,8 +33,14 @@ import org.junit.jupiter.api.Test;
  */
 class JdbcSessionRepositoryTest {
 
+  /** Invented. */
   private static final Instant NOW = Instant.parse("2026-09-20T09:00:00Z");
+
+  /** Invented, and hashes nothing. */
   private static final PasswordHash HASH = new PasswordHash("{bcrypt}$2a$04$invented.test.value");
+
+  /** PostgreSQL's {@code foreign_key_violation}. */
+  private static final String FOREIGN_KEY_VIOLATION = "23503";
 
   private final JdbcAccountRepository accounts =
       new JdbcAccountRepository(PostgresDatabase.jdbcClient());
@@ -136,6 +145,43 @@ class JdbcSessionRepositoryTest {
     assertThat(storedSessionRevocation(session.id())).isEqualTo("REFRESH_REUSED");
   }
 
+  /**
+   * The authenticated read asks for the account and the session together, so a token pairing one
+   * account with another's session finds nothing, while each with its own is found.
+   */
+  @Test
+  void GivenASessionOfAnotherAccount_WhenFindingItAsTheAuthenticatedSession_ThenNothingIsFound() {
+    Account mine = anAccount();
+    Account theirs = anAccount();
+    SignInSession theirSession = sessionFor(theirs);
+    repository.start(theirSession, digest("their-refresh-token"), NOW.plus(Duration.ofHours(1)));
+
+    assertThat(repository.findAuthenticatedSession(mine.id(), theirSession.id())).isEmpty();
+    assertThat(repository.findAuthenticatedSession(theirs.id(), theirSession.id()))
+        .describedAs("the same session, with its own account, is found")
+        .isPresent();
+  }
+
+  /** Ending every session of one account ends no session of anybody else's. */
+  @Test
+  void GivenTwoAccountsWithSessions_WhenEverySessionOfOneIsRevoked_ThenTheOthersAreUntouched() {
+    Account ending = anAccount();
+    Account bystander = anAccount();
+    SignInSession laptop = sessionFor(ending);
+    SignInSession phone = sessionFor(ending);
+    SignInSession theirs = sessionFor(bystander);
+    repository.start(laptop, digest("laptop"), NOW.plus(Duration.ofHours(1)));
+    repository.start(phone, digest("phone"), NOW.plus(Duration.ofHours(1)));
+    repository.start(theirs, digest("theirs"), NOW.plus(Duration.ofHours(1)));
+
+    repository.revokeEverySessionOf(
+        ending.id(), SessionRevocation.PASSWORD_CHANGED, NOW.plusSeconds(60));
+
+    assertThat(storedSessionRevocation(laptop.id())).isEqualTo("PASSWORD_CHANGED");
+    assertThat(storedSessionRevocation(phone.id())).isEqualTo("PASSWORD_CHANGED");
+    assertThat(storedSessionRevocation(theirs.id())).isNull();
+  }
+
   @Test
   void GivenNoSuchToken_WhenFindingIt_ThenNothingIsReturned() {
     assertThat(repository.findRefreshToken(digest("a-token-nobody-issued"))).isEmpty();
@@ -154,7 +200,11 @@ class JdbcSessionRepositoryTest {
     assertThatThrownBy(
             () ->
                 repository.start(orphan, digest("a-refresh-token"), NOW.plus(Duration.ofHours(1))))
-        .isInstanceOf(RuntimeException.class);
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .rootCause()
+        .isInstanceOfSatisfying(
+            SQLException.class,
+            refused -> assertThat(refused.getSQLState()).isEqualTo(FOREIGN_KEY_VIOLATION));
   }
 
   private Account anAccount() {

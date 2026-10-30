@@ -23,7 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * roster and an Employee reading their own record both need to know what the words mean. Only the
  * tenant boundary applies to the listing.
  *
- * <p>Annotated identically to the other HTTP tests so all three share one Spring context.
+ * <p>Annotated identically to the other HTTP tests so they all share one Spring context.
  */
 @Import(PostgresBackedApplication.class)
 @SpringBootTest

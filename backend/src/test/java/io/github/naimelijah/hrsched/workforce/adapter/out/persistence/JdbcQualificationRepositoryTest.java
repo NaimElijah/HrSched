@@ -93,11 +93,12 @@ class JdbcQualificationRepositoryTest {
   }
 
   /**
-   * Nothing in the domain refuses a repeated name, so nothing in the store may either — a unique
-   * index here would be a new domain rule introduced as a storage detail.
+   * Pins a known gap, not a rule. R23 makes a qualification's name unique within its organisation,
+   * and until #95 builds that, neither the domain nor the store refuses a repeated name. When #95
+   * lands, this test is revisited.
    */
   @Test
-  void GivenTwoQualificationsSharingAName_WhenSaved_ThenBothAreKept() {
+  void GivenTwoQualificationsSharingAName_WhenSaved_ThenBothAreKeptUntilR23IsBuilt() {
     repository.save(qualification(ACME, "Forklift"));
     repository.save(qualification(ACME, "Forklift"));
 

@@ -28,9 +28,11 @@ import org.springframework.transaction.interceptor.TransactionInterceptor;
  * <p>A method that only reads is marked read-only. That is not decoration: {@code
  * ActorAuthenticationConverter} calls {@code findActor} on <em>every</em> request whose token
  * verifies, so without it each such request would open a read-write transaction before the handler
- * opened its own. The naming convention is the only signal available, because the application layer
- * may carry no annotation to say so — and being wrong about it costs a wasted flush, never
- * correctness.
+ * opened its own. The naming convention, a name starting with {@code find}, is the only signal
+ * available, because the application layer may carry no annotation to say so. Being wrong about it
+ * is not harmless: the read-only flag reaches the connection, PostgreSQL begins the transaction
+ * read-only, and it refuses any write in it with SQLSTATE 25006, so nothing is stored ({@code
+ * TransactionalUseCasesTest}). A method named {@code find…} must only read.
  *
  * <p>The proxy is a subclass rather than an interface proxy, so a bean keeps its concrete type and
  * {@code UseCaseConfiguration} reads as it did before. Nothing here works on a self-invocation — a

@@ -15,7 +15,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
-import java.time.Instant;
+import java.time.Clock;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
@@ -218,7 +218,7 @@ public final class TestTenants {
                 context.getBean(PasswordHasher.class).hash(PASSWORD),
                 membership,
                 false,
-                Instant.now()));
+                context.getBean(Clock.class).instant()));
   }
 
   private static String signIn(MockMvc mockMvc, String signInName) throws Exception {
