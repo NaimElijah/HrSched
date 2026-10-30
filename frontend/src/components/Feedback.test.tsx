@@ -169,12 +169,17 @@ describe('the other refusals', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('the network went away');
   });
 
-  it.each([['a string'], [42], [{ odd: true }], [true]])(
+  it.each([
+    ['a string', 'a string'],
+    [42, '42'],
+    [{ odd: true }, '[object Object]'],
+    [true, 'true'],
+  ])(
     'GivenSomethingThatIsNotAnError_WhenRendering_ThenItIsStringifiedRatherThanCrashing (%j)',
-    (thrown) => {
+    (thrown, shown) => {
       render(<Failure error={thrown} />);
 
-      expect(screen.getByRole('alert')).toHaveTextContent(String(thrown));
+      expect(screen.getByRole('alert').textContent, 'the whole alert').toBe(shown);
     },
   );
 
