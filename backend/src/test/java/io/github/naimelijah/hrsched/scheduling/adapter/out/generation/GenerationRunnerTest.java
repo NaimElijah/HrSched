@@ -157,7 +157,7 @@ class GenerationRunnerTest {
    * defect messages do.
    */
   @Test
-  void GivenWorkThatFails_WhenLogged_ThenTheLineIsAConstantCarryingOnlyTheFailure()
+  void GivenWorkThatFails_WhenItRuns_ThenTheLineIsAConstantCarryingOnlyTheFailure()
       throws InterruptedException {
     Logger logger =
         ((LoggerContext) LoggerFactory.getILoggerFactory())
