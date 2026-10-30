@@ -21,6 +21,14 @@ import com.tngtech.archunit.lang.SimpleConditionEvent;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
+import java.io.Console;
+import java.io.File;
+import java.io.FileDescriptor;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.RandomAccessFile;
+import java.io.Reader;
+import java.io.Writer;
 import java.lang.annotation.Annotation;
 import java.util.Optional;
 import java.util.Set;
@@ -66,15 +74,75 @@ class HexagonalArchitectureTest {
                           "..application..", "..adapter..", "..configuration..")))
           .because("the domain must be testable and reusable without the framework");
 
+  /**
+   * The application layer depends on the JDK and on HrSched's own core, and on nothing else.
+   *
+   * <p>An allow-list, as the domain's is. This rule once forbade Spring, the adapters and the
+   * composition root by name, so Jackson, a token library, the PostgreSQL driver or any library
+   * added later passed it; a use case needing one of those needs a driven port instead. Within
+   * HrSched it allows everything but an adapter, the composition root and the root package's {@code
+   * HrSchedApplication}. What it may use of another context is {@link
+   * #contexts_touch_only_published_ports_of_other_contexts}'s concern. {@code
+   * HexagonalArchitectureRulesTest} watches it reject a library and that entry point.
+   */
   @ArchTest
   static final ArchRule application_is_free_of_the_framework =
       noClasses()
           .that()
           .resideInAPackage("..application..")
           .should()
-          .dependOnClassesThat()
-          .resideInAnyPackage("org.springframework..", "..adapter..", "..configuration..")
-          .because("use cases are wired by configuration, never annotated by it");
+          .dependOnClassesThat(
+              JavaClass.Predicates.resideOutsideOfPackages(
+                      "java..", "io.github.naimelijah.hrsched..")
+                  .or(
+                      JavaClass.Predicates.resideInAnyPackage(
+                          "..adapter..", "..configuration..", "io.github.naimelijah.hrsched")))
+          .because(
+              "a use case is plain Java over its own ports, wired by configuration and never"
+                  + " annotated by it");
+
+  /**
+   * The JDK types that read or write a disk, a terminal or a stream, whatever package they are in.
+   */
+  private static final Set<Class<?>> JDK_IO_TYPES =
+      Set.of(
+          InputStream.class,
+          OutputStream.class,
+          Reader.class,
+          Writer.class,
+          File.class,
+          RandomAccessFile.class,
+          FileDescriptor.class,
+          Console.class);
+
+  /**
+   * The domain and the application layer do no I/O.
+   *
+   * <p>Both allow-lists admit the whole JDK, and the JDK is not only collections and time: {@code
+   * java.sql}, {@code java.net}, {@code java.nio.file} and {@code java.nio.channels}, and {@code
+   * java.io}'s streams, readers, writers and files reach a database, a network or a disk as surely
+   * as a library does. Reaching outside is a driven port's job, so the use case can be tested with
+   * a fake and the domain with {@code new}.
+   *
+   * <p>{@code java.io}'s exceptions and {@code Serializable} do no I/O and stay allowed, as do
+   * {@code java.nio.charset} and {@code java.security}, which the core uses to measure a password
+   * and to draw a token. {@code HexagonalArchitectureRulesTest} watches it reject a file in the
+   * domain and an HTTP client in a use case, and permit {@code Serializable}.
+   */
+  @ArchTest
+  static final ArchRule the_core_does_no_io =
+      noClasses()
+          .that()
+          .resideInAnyPackage("..domain..", "..application..")
+          .should()
+          .dependOnClassesThat(
+              JavaClass.Predicates.resideInAnyPackage(
+                      "java.sql..", "java.net..", "java.nio.file..", "java.nio.channels..")
+                  .or(
+                      DescribedPredicate.describe(
+                          "are JDK streams, readers, writers or files",
+                          target -> JDK_IO_TYPES.stream().anyMatch(target::isAssignableTo))))
+          .because("reaching a database, a network or a disk is a driven port's job");
 
   @ArchTest
   static final ArchRule dependencies_point_inward =
@@ -323,10 +391,9 @@ class HexagonalArchitectureTest {
    * <p>OR-Tools is native code with a modelling discipline of its own, a version held back for one
    * platform's runtime, and a crash that takes the JVM with it. Confined to {@code
    * scheduling.adapter.out.generation}, it can be replaced, upgraded or moved into a process of its
-   * own by changing one package. The domain's allow-list already rejects this library there, but
-   * the rule for the application layer names the packages it forbids, and this library is not among
-   * them, so without this rule a model type could reach a use case, or any adapter but this one,
-   * unnoticed.
+   * own by changing one package. The allow-lists of the domain and the application layer already
+   * reject this library there, but nothing else would keep a model type out of any adapter but this
+   * one.
    */
   @ArchTest
   static final ArchRule the_solver_stays_in_its_adapter =

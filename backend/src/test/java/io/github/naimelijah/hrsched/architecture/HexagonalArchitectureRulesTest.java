@@ -26,11 +26,17 @@ import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.no
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDrivenPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesThroughThePublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.in.FixturePayUseCase;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.FixturePayrollService;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceCallingOverHttp;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceKnowingTheEntryPoint;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceReachingAPublishedPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceWithAWireFormat;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainKnowingTheEntryPoint;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainReadingAFile;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainUsingSpring;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainWithAWireFormat;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.FixturePayslip;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.SerializablePayslip;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.FixtureKernelValue;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoAPublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoAnUnlistedContext;
@@ -288,6 +294,66 @@ class HexagonalArchitectureRulesTest {
             HexagonalArchitectureTest.domain_depends_on_nothing_but_the_jdk,
             FixturePayslip.class,
             FixtureKernelValue.class);
+
+    assertHolds(result);
+  }
+
+  @Test
+  void GivenAUseCaseUsingALibrary_WhenTheApplicationRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.application_is_free_of_the_framework,
+            ServiceWithAWireFormat.class);
+
+    assertViolatedNaming(result, "tools.jackson.databind.ObjectMapper");
+  }
+
+  @Test
+  void
+      GivenAUseCaseReferencingAnHrSchedClassOutsideTheCore_WhenTheApplicationRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.application_is_free_of_the_framework,
+            ServiceKnowingTheEntryPoint.class);
+
+    assertViolatedNaming(result, "io.github.naimelijah.hrsched.HrSchedApplication");
+  }
+
+  @Test
+  void
+      GivenAUseCaseKnowingTheJdkItsPortsItsDomainAndTheKernel_WhenTheApplicationRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.application_is_free_of_the_framework,
+            FixturePayrollService.class);
+
+    assertHolds(result);
+  }
+
+  @Test
+  void GivenADomainClassHoldingAFile_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, DomainReadingAFile.class);
+
+    assertViolatedNaming(result, "java.io.File");
+  }
+
+  @Test
+  void GivenAUseCaseHoldingAnHttpClient_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, ServiceCallingOverHttp.class);
+
+    assertViolatedNaming(result, "java.net.http.HttpClient");
+  }
+
+  /** {@code java.io} is a package, not a verdict: its exceptions and markers do no I/O. */
+  @Test
+  void GivenCoreClassesUsingOnlyJavaIoNamesThatDoNoIo_WhenTheIoRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.the_core_does_no_io,
+            SerializablePayslip.class,
+            FixturePayrollService.class);
 
     assertHolds(result);
   }
