@@ -858,7 +858,7 @@ class HexagonalArchitectureTest {
    * @param parameters its parameter types, raw, in order
    * @param reason why it cannot be scoped, as its port's javadoc gives it
    */
-  record UnscopedLookup(Class<?> port, String method, List<Class<?>> parameters, String reason) {}
+  record UnscopedMethod(Class<?> port, String method, List<Class<?>> parameters, String reason) {}
 
   /**
    * The repository methods that take no organisation, each named, with the reason its port gives:
@@ -869,68 +869,68 @@ class HexagonalArchitectureTest {
    * belongs to an account rather than a tenant, and the register of tenants is the one thing with
    * no tenant above it. ADR-055 records each.
    */
-  static final List<UnscopedLookup> UNSCOPED_LOOKUPS =
+  static final List<UnscopedMethod> UNSCOPED_METHODS =
       List.of(
-          new UnscopedLookup(
+          new UnscopedMethod(
               AccountRepository.class,
               "findBySignInName",
               List.of(SignInName.class),
               "a sign-in request carries a name and a password, and no organisation to scope by"
                   + " until the account is found"),
-          new UnscopedLookup(
+          new UnscopedMethod(
               AccountRepository.class,
               "findForAuthentication",
               List.of(UserId.class),
               "authentication works before there is an organisation, and the operator's account"
                   + " belongs to none"),
-          new UnscopedLookup(
+          new UnscopedMethod(
               AccountRepository.class,
               "findForUpdate",
               List.of(Optional.class, UserId.class),
               "scoped by an Optional<OrganisationId>, whose empty value names the operator's"
                   + " account, which belongs to no organisation"),
-          new UnscopedLookup(
+          new UnscopedMethod(
               SessionRepository.class,
               "findRefreshToken",
               List.of(byte[].class),
               "a session belongs to an account rather than a tenant, and is reached only by the"
                   + " digest of a token this system issued"),
-          new UnscopedLookup(
+          new UnscopedMethod(
               SessionRepository.class,
               "findAuthenticatedSession",
               List.of(UserId.class, SignInSessionId.class),
               "the read that discovers which organisation the caller belongs to, and the operator"
                   + " belongs to none"),
-          new UnscopedLookup(
+          new UnscopedMethod(
               SessionRepository.class,
               "start",
               List.of(SignInSession.class, byte[].class, Instant.class),
               "a session belongs to an account rather than a tenant, and the operator's to none,"
                   + " so there is no organisation to open it under"),
-          new UnscopedLookup(
+          new UnscopedMethod(
               SessionRepository.class,
               "markReplaced",
               List.of(byte[].class, Instant.class),
               "reaches a refresh token only by the digest of a token this system issued"),
-          new UnscopedLookup(
+          new UnscopedMethod(
               SessionRepository.class,
               "issueSuccessor",
               List.of(SignInSessionId.class, byte[].class, Instant.class, Instant.class),
               "renews a session reached only through a token this system issued, and a session"
                   + " belongs to an account rather than a tenant"),
-          new UnscopedLookup(
+          new UnscopedMethod(
               SessionRepository.class,
               "revoke",
               List.of(SignInSessionId.class, SessionRevocation.class, Instant.class),
               "ends a session reached only through a token this system issued, and a session"
                   + " belongs to an account rather than a tenant"),
-          new UnscopedLookup(
+          new UnscopedMethod(
               SessionRepository.class,
               "revokeEverySessionOf",
               List.of(UserId.class, SessionRevocation.class, Instant.class),
               "ends the sessions of one account, which is their scope, and the operator's"
                   + " account belongs to no organisation"),
-          new UnscopedLookup(
+          new UnscopedMethod(
               OrganisationRepository.class,
               "findAll",
               List.of(),
@@ -954,7 +954,7 @@ class HexagonalArchitectureTest {
    * habit, and read across tenants or tell that a record exists in one. Every method is asked,
    * rather than those named like a lookup, because a name pattern catches only the names somebody
    * thought of. A save is exempt, as its aggregate carries its organisation. The few methods that
-   * cannot take one are named in {@link #UNSCOPED_LOOKUPS}, each with its port's own reason, so a
+   * cannot take one are named in {@link #UNSCOPED_METHODS}, each with its port's own reason, so a
    * new one is a decision written down rather than an omission. {@code
    * HexagonalArchitectureRulesTest} watches it reject a fixture repository's unscoped lookup,
    * question and lock, an allowed signature on a port the list does not name, a fixture directory's
@@ -963,14 +963,14 @@ class HexagonalArchitectureTest {
    */
   @ArchTest
   static final ArchRule repository_methods_take_an_organisation =
-      repositoryMethodsTakeAnOrganisation(UNSCOPED_LOOKUPS);
+      repositoryMethodsTakeAnOrganisation(UNSCOPED_METHODS);
 
   /**
-   * @param unscoped the methods allowed to take no organisation; {@link #UNSCOPED_LOOKUPS} for the
+   * @param unscoped the methods allowed to take no organisation; {@link #UNSCOPED_METHODS} for the
    *     build's rule
    * @return the tenancy rule with that allow-list
    */
-  static ArchRule repositoryMethodsTakeAnOrganisation(List<UnscopedLookup> unscoped) {
+  static ArchRule repositoryMethodsTakeAnOrganisation(List<UnscopedMethod> unscoped) {
     return methods()
         .that()
         .areDeclaredInClassesThat(
@@ -988,16 +988,16 @@ class HexagonalArchitectureTest {
                 + " written (ADR-009)");
   }
 
-  private static DescribedPredicate<JavaMethod> oneOf(List<UnscopedLookup> lookups) {
+  private static DescribedPredicate<JavaMethod> oneOf(List<UnscopedMethod> allowed) {
     return DescribedPredicate.describe(
         "are an allowed unscoped method",
         method ->
-            lookups.stream()
+            allowed.stream()
                 .anyMatch(
-                    lookup ->
-                        method.getOwner().isEquivalentTo(lookup.port())
-                            && method.getName().equals(lookup.method())
-                            && hasParameters(method, lookup.parameters())));
+                    entry ->
+                        method.getOwner().isEquivalentTo(entry.port())
+                            && method.getName().equals(entry.method())
+                            && hasParameters(method, entry.parameters())));
   }
 
   private static boolean hasParameters(JavaMethod method, List<Class<?>> parameters) {

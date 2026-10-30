@@ -12,7 +12,7 @@ import com.tngtech.archunit.lang.EvaluationResult;
 import io.github.naimelijah.hrsched.HrSchedApplication;
 import io.github.naimelijah.hrsched.access.application.service.SessionService;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
-import io.github.naimelijah.hrsched.architecture.HexagonalArchitectureTest.UnscopedLookup;
+import io.github.naimelijah.hrsched.architecture.HexagonalArchitectureTest.UnscopedMethod;
 import io.github.naimelijah.hrsched.architecture.actors.AsksAnAccountForItsActor;
 import io.github.naimelijah.hrsched.architecture.actors.BuildsATenantActor;
 import io.github.naimelijah.hrsched.architecture.actors.BuildsAnOperator;
@@ -720,7 +720,7 @@ class HexagonalArchitectureRulesTest {
         evaluate(
             HexagonalArchitectureTest.repositoryMethodsTakeAnOrganisation(
                 List.of(
-                    new UnscopedLookup(
+                    new UnscopedMethod(
                         UnscopedPayslipRepository.class,
                         "findByReference",
                         List.of(String.class),
@@ -742,27 +742,25 @@ class HexagonalArchitectureRulesTest {
   @Test
   void
       GivenTheUnscopedMethodsAllowed_WhenEachIsLookedUpOnItsPort_ThenEveryOneIsASignatureItDeclaresWithAReason() {
-    assertThat(HexagonalArchitectureTest.UNSCOPED_LOOKUPS)
+    assertThat(HexagonalArchitectureTest.UNSCOPED_METHODS)
         .as("allowed unscoped methods")
         .isNotEmpty()
         .allSatisfy(
-            lookup -> {
-              assertThat(declares(lookup))
+            entry -> {
+              assertThat(declares(entry))
                   .as(
                       "%s declares %s%s",
-                      lookup.port().getSimpleName(), lookup.method(), lookup.parameters())
+                      entry.port().getSimpleName(), entry.method(), entry.parameters())
                   .isTrue();
-              assertThat(lookup.reason())
-                  .as("the reason %s is allowed", lookup.method())
+              assertThat(entry.reason())
+                  .as("the reason %s is allowed", entry.method())
                   .isNotBlank();
             });
   }
 
-  private static boolean declares(UnscopedLookup lookup) {
+  private static boolean declares(UnscopedMethod entry) {
     try {
-      lookup
-          .port()
-          .getDeclaredMethod(lookup.method(), lookup.parameters().toArray(Class<?>[]::new));
+      entry.port().getDeclaredMethod(entry.method(), entry.parameters().toArray(Class<?>[]::new));
       return true;
     } catch (NoSuchMethodException absent) {
       return false;

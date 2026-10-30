@@ -54,7 +54,7 @@ A context may reference another context's `application.port.in` package and **no
   package; a `@RestController` is handled by no `@RestControllerAdvice` of its own context, which
   lists it in `assignableTypes` or holds it in its `basePackages` or `basePackageClasses`; or a
   method other than a `save…` on a driven-port `*Repository` or `*Directory` takes no
-  `OrganisationId` and is not in the named `UNSCOPED_LOOKUPS`. Never weaken or delete a rule to
+  `OrganisationId` and is not in the named `UNSCOPED_METHODS`. Never weaken or delete a rule to
   make code pass — the rule is the point. Deleting one that provably cannot fail is different, and
   needs the proof.
 - **When adding an architecture rule, watch it fail first.** All twenty rules here have been
