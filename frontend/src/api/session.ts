@@ -117,9 +117,7 @@ export function endSession(): void {
  *
  * For a session this tab may no longer act as, when the session the cookie now belongs to is
  * somebody else's and live: telling the other tabs would sign that account out of every tab it is
- * using. And for a request refused again with the token a renewal has just issued: the backend no
- * longer believes this session, but it accepted the cookie a moment ago, so the other tabs learn
- * of it through their own renewals, as they do of a renewal for another account (ADR-048).
+ * using.
  */
 export function forgetSessionHere(): void {
   forget(ENDED);

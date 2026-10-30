@@ -74,6 +74,21 @@ function failingWith(status: number, contentType: string | null, text: string) {
   );
 }
 
+/** What a renewal for A_SESSION answers with, carrying the given token. */
+function renewal(token: string) {
+  return { accessToken: token, tokenType: 'Bearer', expiresIn: 600, session: A_SESSION };
+}
+
+/** A response as `fetch` resolves it, with a JSON body. */
+function answered(status: number, body: unknown) {
+  return {
+    ok: status < 400,
+    status,
+    headers: new Headers(),
+    text: () => Promise.resolve(JSON.stringify(body)),
+  };
+}
+
 function signedIn(session: Session = A_SESSION, token = 'token-1') {
   holdSession({ accessToken: token, tokenType: 'Bearer', expiresIn: 600, session });
 }
@@ -532,40 +547,121 @@ describe('renewing a session', () => {
   });
 
   /**
-   * A token issued a moment ago and refused anyway means the backend no longer believes this
-   * session. Left signed in, the shell would keep offering screens whose every request is refused.
-   * Only this tab forgets: the cookie was accepted a moment ago, and the other tabs learn of it
-   * through their own renewals (ADR-048).
+   * A refused retry is a question about the cookie, asked once more without retrying the request:
+   * the renewal decides, through ADR-048's own triggers, whether the session goes on. A cookie
+   * refused now ends the session in every tab, as any refused renewal does.
    */
-  it('GivenARetryThatIsRefusedAgain_WhenRequesting_ThenTheSessionEndsInThisTab', async () => {
+  it('GivenARetryRefusedAgain_WhenTheCookieIsRefusedToo_ThenTheSessionEndsInEveryTab', async () => {
     signedIn();
     const posted = vi.spyOn(BroadcastChannel.prototype, 'postMessage');
     const endings: string[] = [];
     const stopListening = onSessionEnded((how) => endings.push(how));
-    answering((path) =>
-      path === '/api/auth/refresh'
-        ? {
-            status: 200,
-            body: {
-              accessToken: 'token-2',
-              tokenType: 'Bearer',
-              expiresIn: 600,
-              session: A_SESSION,
-            },
-          }
-        : { status: 401, body: {} },
-    );
+    let renewals = 0;
+    const stub = answering((path) => {
+      if (path === '/api/auth/refresh') {
+        renewals += 1;
+        return renewals === 1
+          ? { status: 200, body: renewal('token-2') }
+          : { status: 401, body: {} };
+      }
+      return { status: 401, body: {} };
+    });
 
     const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
     stopListening();
-    const toOtherTabs = posted.mock.calls.length;
+    const toOtherTabs = posted.mock.calls.map(([message]) => message as unknown);
     posted.mockRestore();
 
     expect(error.isUnauthenticated).toBe(true);
     expect(endings).toEqual(['ended']);
+    expect(toOtherTabs).toEqual(['ended']);
     expect(currentSession()).toBeNull();
-    expect(currentAccessToken()).toBeNull();
-    expect(toOtherTabs).toBe(0);
+    expect(stub.mock.calls.filter(([called]) => called === '/api/shifts')).toHaveLength(2);
+  });
+
+  /** A renewal nobody answered has decided nothing about the cookie, and that failure is the news. */
+  it('GivenARetryRefusedAgain_WhenAskingTheCookieFailsWithoutAnAnswer_ThenThatFailureIsThrown', async () => {
+    signedIn();
+    let renewals = 0;
+    answering((path) => {
+      if (path === '/api/auth/refresh') {
+        renewals += 1;
+        return renewals === 1
+          ? { status: 200, body: renewal('token-2') }
+          : { status: 502, body: null };
+      }
+      return { status: 401, body: {} };
+    });
+
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+
+    expect(error.status).toBe(502);
+    expect(currentSession()).toEqual(A_SESSION);
+  });
+
+  /**
+   * A token refused while the session is live, such as one signed with a key being rotated out,
+   * says nothing about the cookie. The session is kept, and the page is handed the refusal.
+   */
+  it('GivenARetryRefusedAgain_WhenTheCookieIsStillLiveForTheSameAccount_ThenTheSessionIsKept', async () => {
+    signedIn();
+    const endings: string[] = [];
+    const stopListening = onSessionEnded((how) => endings.push(how));
+    let renewals = 0;
+    const stub = answering((path) => {
+      if (path === '/api/auth/refresh') {
+        renewals += 1;
+        return { status: 200, body: renewal(`token-${String(renewals + 1)}`) };
+      }
+      return { status: 401, body: {} };
+    });
+
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+    stopListening();
+
+    expect(error.isUnauthenticated).toBe(true);
+    expect(endings).toEqual([]);
+    expect(currentSession()).toEqual(A_SESSION);
+    expect(currentAccessToken()).toBe('token-3');
+    expect(stub.mock.calls.filter(([called]) => called === '/api/shifts')).toHaveLength(2);
+  });
+
+  /**
+   * A password change answered while the retry was out began a newer session. The retry's 401 is
+   * about the token it carried, not that one, so it asks nothing and ends nothing.
+   */
+  it('GivenARetryRefusedAgain_WhenTheTokenChangedWhileItWasOut_ThenNothingMoreHappens', async () => {
+    signedIn();
+    const endings: string[] = [];
+    const stopListening = onSessionEnded((how) => endings.push(how));
+    let releaseRetry!: () => void;
+    const retryHeld = new Promise<void>((resolve) => {
+      releaseRetry = resolve;
+    });
+    let reads = 0;
+    const stub = vi.fn(async (path: string) => {
+      if (path === '/api/auth/refresh') {
+        return answered(200, renewal('token-2'));
+      }
+      reads += 1;
+      if (reads === 2) {
+        await retryHeld;
+      }
+      return answered(401, {});
+    });
+    vi.stubGlobal('fetch', stub);
+
+    const pending = api.get('/api/shifts').catch((e: unknown) => e);
+    await vi.waitFor(() => expect(reads).toBe(2));
+    holdSession(renewal('token-3'));
+    releaseRetry();
+    const error = (await pending) as ApiError;
+    stopListening();
+
+    expect(error.isUnauthenticated).toBe(true);
+    expect(endings).toEqual([]);
+    expect(currentAccessToken()).toBe('token-3');
+    expect(stub.mock.calls.filter(([called]) => called === '/api/auth/refresh')).toHaveLength(1);
   });
 
   it('GivenARefresh_WhenSent_ThenItCarriesTheRequestedWithHeader', async () => {

@@ -88,16 +88,21 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (first.status !== 401 || NOT_RENEWED.has(path) || sentAs === null) {
     return interpret<T>(path, first);
   }
-  // One renewal, then one retry, and never more. A second 401 means the session is genuinely over,
-  // and retrying past that would be a loop that looks like an outage, so this tab forgets it: the
-  // backend has refused a token it issued a moment ago. A session that ended or changed hands while
-  // the retry was out is not this request's to forget.
+  // One renewal, then one retry, and never more: retrying past a second 401 would be a loop that
+  // looks like an outage.
   if (!(await refreshOnce(sentAs))) {
     return interpret<T>(path, first);
   }
+  const carried = currentAccessToken();
   const retried = await send(path, init);
-  if (retried.status === 401 && currentSession()?.userId === sentAs.userId) {
-    forgetSessionHere();
+  // A token refused a moment after it was issued says nothing certain about the cookie: the session
+  // may have ended, or the token alone may be at fault. So the cookie is asked once more, without
+  // retrying the request, and the renewal's own outcomes decide what happens to the session, as
+  // they do for any renewal (ADR-048). The page is handed the retry's 401 either way, unless asking
+  // fails without an answer. A token replaced while the retry was out, by a password change or a
+  // sign-out, is not the one refused, and nothing is asked.
+  if (retried.status === 401 && currentAccessToken() === carried) {
+    await refreshOnce(sentAs);
   }
   return interpret<T>(path, retried);
 }
