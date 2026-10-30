@@ -7,7 +7,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.workforce.application.port.in.AddEmployeeCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.DeclareUnavailabilityCommand;
-import io.github.naimelijah.hrsched.workforce.application.port.in.FindRosterableEmployeesUseCase;
+import io.github.naimelijah.hrsched.workforce.application.port.in.FindEmployeeRecordsUseCase;
 import io.github.naimelijah.hrsched.workforce.application.port.in.GrantQualificationCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.ManageEmployeesUseCase;
 import io.github.naimelijah.hrsched.workforce.application.port.in.SetContractTermsCommand;
@@ -44,12 +44,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class EmployeeController {
 
   private final ManageEmployeesUseCase manageEmployees;
-  private final FindRosterableEmployeesUseCase findEmployees;
+  private final FindEmployeeRecordsUseCase employeeRecords;
 
   public EmployeeController(
-      ManageEmployeesUseCase manageEmployees, FindRosterableEmployeesUseCase findEmployees) {
+      ManageEmployeesUseCase manageEmployees, FindEmployeeRecordsUseCase employeeRecords) {
     this.manageEmployees = manageEmployees;
-    this.findEmployees = findEmployees;
+    this.employeeRecords = employeeRecords;
   }
 
   @PostMapping
@@ -64,7 +64,7 @@ public class EmployeeController {
 
   @GetMapping
   public List<EmployeeResponse> list(@AuthenticationPrincipal Actor actor) {
-    return findEmployees.findRosterable(actor, actingIn(actor)).stream()
+    return employeeRecords.findEmployeeRecords(actor, actingIn(actor)).stream()
         .map(EmployeeResponse::from)
         .toList();
   }
@@ -80,8 +80,8 @@ public class EmployeeController {
   @GetMapping("/{id}")
   public EmployeeResponse find(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
     EmployeeId employee = new EmployeeId(id);
-    return manageEmployees
-        .findEmployee(actor, actingIn(actor), employee)
+    return employeeRecords
+        .findEmployeeRecord(actor, actingIn(actor), employee)
         .map(EmployeeResponse::from)
         .orElseThrow(() -> new UnknownEmployeeException(employee));
   }

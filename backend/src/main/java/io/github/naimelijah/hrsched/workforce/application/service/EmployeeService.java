@@ -8,6 +8,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.workforce.application.port.in.AddEmployeeCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.DeclareUnavailabilityCommand;
+import io.github.naimelijah.hrsched.workforce.application.port.in.EmployeeRecord;
+import io.github.naimelijah.hrsched.workforce.application.port.in.FindEmployeeRecordsUseCase;
 import io.github.naimelijah.hrsched.workforce.application.port.in.FindRosterableEmployeesUseCase;
 import io.github.naimelijah.hrsched.workforce.application.port.in.GrantQualificationCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.ManageEmployeesUseCase;
@@ -42,7 +44,8 @@ import java.util.Set;
  * check is here rather than in an adapter because there is more than one adapter, and a guarantee
  * that depends on every caller remembering is not a guarantee.
  */
-public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEmployeesUseCase {
+public class EmployeeService
+    implements ManageEmployeesUseCase, FindRosterableEmployeesUseCase, FindEmployeeRecordsUseCase {
 
   private static final Set<Role> MAY_ADMINISTER = Set.of(Role.ADMIN);
   private static final Set<Role> MAY_SEE_EVERYONE = Set.of(Role.ADMIN, Role.SCHEDULER);
@@ -126,23 +129,44 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
         actor, command.organisation(), WorkforceChange.PREFERENCE_WITHDRAWN, command.employee());
   }
 
-  /**
-   * Restricted to Admins and Schedulers: unavailability is personal data — medical appointments,
-   * caring responsibilities — and an employee has no reason to read a colleague's.
-   */
   @Override
   public List<RosterableEmployee> findRosterable(Actor actor, OrganisationId organisation) {
-    authorise(actor, organisation, MAY_SEE_EVERYONE);
-    return employees.findByOrganisation(organisation).stream()
-        .map(EmployeeService::publish)
-        .toList();
+    return everyoneIn(actor, organisation).stream().map(EmployeeService::publish).toList();
   }
 
   @Override
   public Optional<RosterableEmployee> findEmployee(
       Actor actor, OrganisationId organisation, EmployeeId employee) {
+    return somebodyIn(actor, organisation, employee).map(EmployeeService::publish);
+  }
+
+  @Override
+  public List<EmployeeRecord> findEmployeeRecords(Actor actor, OrganisationId organisation) {
+    return everyoneIn(actor, organisation).stream().map(EmployeeService::recordOf).toList();
+  }
+
+  @Override
+  public Optional<EmployeeRecord> findEmployeeRecord(
+      Actor actor, OrganisationId organisation, EmployeeId employee) {
+    return somebodyIn(actor, organisation, employee).map(EmployeeService::recordOf);
+  }
+
+  /**
+   * Restricted to Admins and Schedulers: unavailability is personal data — medical appointments,
+   * caring responsibilities — and an employee has no reason to read a colleague's. Every read of
+   * the whole staff goes through here, published or not, so the restriction cannot drift between
+   * them.
+   */
+  private List<Employee> everyoneIn(Actor actor, OrganisationId organisation) {
     authorise(actor, organisation, MAY_SEE_EVERYONE);
-    return employees.findById(organisation, employee).map(EmployeeService::publish);
+    return employees.findByOrganisation(organisation);
+  }
+
+  /** One person, restricted as {@link #everyoneIn} is, because the answer carries the same. */
+  private Optional<Employee> somebodyIn(
+      Actor actor, OrganisationId organisation, EmployeeId employee) {
+    authorise(actor, organisation, MAY_SEE_EVERYONE);
+    return employees.findById(organisation, employee);
   }
 
   @Override
@@ -172,6 +196,12 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
         employee.contractTerms().map(ContractTerms::weeklyContractedHours),
         spansStated(employee, PreferenceStrength.PREFERS),
         spansStated(employee, PreferenceStrength.PREFERS_NOT));
+  }
+
+  /** The published form, and beside it what only this context's own screens are told. */
+  private static EmployeeRecord recordOf(Employee employee) {
+    return new EmployeeRecord(
+        publish(employee), employee.contractTerms().map(ContractTerms::weeklyContractedHours));
   }
 
   private static List<TimeRange> spansStated(Employee employee, PreferenceStrength strength) {

@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.workforce.adapter.in.web;
 
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
+import io.github.naimelijah.hrsched.workforce.application.port.in.EmployeeRecord;
 import io.github.naimelijah.hrsched.workforce.application.port.in.RosterableEmployee;
 import java.time.Duration;
 import java.util.List;
@@ -33,13 +34,14 @@ public record EmployeeResponse(
     List<PeriodResponse> unavailability,
     Long weeklyContractedMinutes) {
 
-  static EmployeeResponse from(RosterableEmployee employee) {
+  static EmployeeResponse from(EmployeeRecord record) {
+    RosterableEmployee employee = record.employee();
     return new EmployeeResponse(
         employee.id().value(),
         employee.name(),
         employee.qualifications().stream().map(QualificationId::value).toList(),
         employee.unavailability().stream().map(PeriodResponse::from).toList(),
-        employee.weeklyContractedHours().map(Duration::toMinutes).orElse(null));
+        record.weeklyContractedHours().map(Duration::toMinutes).orElse(null));
   }
 
   /**

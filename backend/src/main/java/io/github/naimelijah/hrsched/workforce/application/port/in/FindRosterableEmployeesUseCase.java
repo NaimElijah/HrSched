@@ -6,10 +6,12 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.List;
 
 /**
- * Workforce's published API: who an organisation could roster.
+ * Driving port: who an organisation could roster, as scheduling reads them.
  *
- * <p>The one entry point other contexts are permitted to use. Everything else about this context —
- * its aggregate, its services, its storage — stays private.
+ * <p>Scheduling consumes it, beside {@link ManageQualificationsUseCase}; access consumes {@link
+ * ManageEmployeesUseCase}. Each answers in the published language, {@link RosterableEmployee},
+ * never the aggregate. Workforce's own screens read people through {@link
+ * FindEmployeeRecordsUseCase} instead. This context's aggregate, services and storage stay private.
  */
 public interface FindRosterableEmployeesUseCase {
 

@@ -23,6 +23,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -128,6 +129,94 @@ class EmployeeHttpTest {
         .perform(as(mockMvc, get("/api/employees"), organisation, "ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].unavailability.length()").value(0));
+  }
+
+  /**
+   * Somebody holding a qualification, with one declared absence and a contract, so every field of
+   * the response carries a value. Returns the document both reads must answer with for them.
+   */
+  private String adaFullyRecordedIn(String organisation) throws Exception {
+    String ada = addEmployee(organisation, "Ada");
+    String forklift = defineQualification(organisation, "Forklift");
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                put("/api/employees/" + ada + "/qualifications/" + forklift),
+                organisation,
+                "ADMIN"))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
+                .content("{\"start\":\"2026-10-07T00:00:00Z\",\"end\":\"2026-10-08T00:00:00Z\"}"))
+        .andExpect(status().isNoContent());
+    // Invented: a contracted week, a term of an individual agreement and never a statute's.
+    mockMvc
+        .perform(
+            as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
+                .content("{\"weeklyContractedMinutes\":2101}"))
+        .andExpect(status().isNoContent());
+    return """
+        {"id":"%s","name":"Ada","qualifications":["%s"],
+         "unavailability":[{"start":"2026-10-07T00:00:00Z","end":"2026-10-08T00:00:00Z"}],
+         "weeklyContractedMinutes":2101}"""
+        .formatted(ada, forklift);
+  }
+
+  /**
+   * Pins the listing's whole document, not a path at a time: the field set, every value, and the
+   * contracted minutes Admins and Schedulers read here, so a change to how the hours reach this
+   * response cannot change what a caller is sent. Compared strictly, so a field added, dropped or
+   * renamed fails it.
+   */
+  @Test
+  void GivenSomebodyFullyRecorded_WhenListed_ThenTheDocumentIsExactlyTheirRecord()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = adaFullyRecordedIn(organisation);
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(content().json("[" + ada + "]", JsonCompareMode.STRICT));
+  }
+
+  /** As the listing's, for one person read by identity. */
+  @Test
+  void GivenSomebodyFullyRecorded_WhenReadByIdentity_ThenTheDocumentIsExactlyTheirRecord()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = adaFullyRecordedIn(organisation);
+    String id = JsonPath.read(ada, "$.id");
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + id), organisation, "SCHEDULER"))
+        .andExpect(status().isOk())
+        .andExpect(content().json(ada, JsonCompareMode.STRICT));
+  }
+
+  /**
+   * Without a contract the field is still sent, as {@code null}: no inclusion rule is configured,
+   * so the record's absent minutes serialise as null rather than being left out.
+   */
+  @Test
+  void GivenSomebodyWithoutAContract_WhenReadByIdentity_ThenTheirMinutesAreSentAsNull()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + ada), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(
+            content()
+                .json(
+                    """
+                    {"id":"%s","name":"Ada","qualifications":[],"unavailability":[],
+                     "weeklyContractedMinutes":null}"""
+                        .formatted(ada),
+                    JsonCompareMode.STRICT));
   }
 
   @Test

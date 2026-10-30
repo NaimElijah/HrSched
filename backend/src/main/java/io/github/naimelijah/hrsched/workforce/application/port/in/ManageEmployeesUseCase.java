@@ -85,7 +85,10 @@ public interface ManageEmployeesUseCase {
    * is, because the answer carries the same absences.
    *
    * <p>Declared here rather than on {@code FindRosterableEmployeesUseCase} because that port is
-   * what scheduling consumes (ADR-008), and nothing there needs one person at a time.
+   * what scheduling consumes (ADR-008), and nothing there needs one person at a time. Access
+   * consumes this one, to ask whether somebody is employed here, so it answers in the published
+   * language; workforce's own screens read one person through {@link
+   * FindEmployeeRecordsUseCase#findEmployeeRecord}.
    *
    * @param actor whoever is asking; must be an Admin or Scheduler of the organisation
    * @param organisation the organisation to look in

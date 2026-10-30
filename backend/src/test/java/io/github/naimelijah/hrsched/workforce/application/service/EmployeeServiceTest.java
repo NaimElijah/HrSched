@@ -17,6 +17,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.workforce.application.port.in.AddEmployeeCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.DeclareUnavailabilityCommand;
+import io.github.naimelijah.hrsched.workforce.application.port.in.EmployeeRecord;
 import io.github.naimelijah.hrsched.workforce.application.port.in.GrantQualificationCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.in.RosterableEmployee;
 import io.github.naimelijah.hrsched.workforce.application.port.in.SetContractTermsCommand;
@@ -434,6 +435,86 @@ class EmployeeServiceTest {
     EmployeeId mole = service.addEmployee(admin(RIVAL), new AddEmployeeCommand(RIVAL, "Mole"));
 
     assertThat(service.findEmployee(admin(ACME), ACME, mole)).isEmpty();
+  }
+
+  // --- workforce's own reads, contract included ---------------------------------------------
+  //
+  // Restricted exactly as the published reads are, one test per decision, because they answer
+  // with the same absences and the contracted hours besides.
+
+  @Test
+  void GivenAScheduler_WhenListingRecords_ThenOurOwnAreReturnedWithTheirHours() {
+    service.addEmployee(admin(RIVAL), new AddEmployeeCommand(RIVAL, "Mole"));
+    EmployeeId ada = adaContractedByAnAdmin();
+
+    List<EmployeeRecord> records = service.findEmployeeRecords(actor(ACME, Role.SCHEDULER), ACME);
+
+    assertThat(records).extracting(record -> record.employee().id()).containsExactly(ada);
+    assertThat(records.getFirst().weeklyContractedHours()).contains(AGREED_HOURS);
+  }
+
+  @Test
+  void GivenSomebodyWithoutAContract_WhenReadingTheirRecord_ThenTheHoursAreAbsent() {
+    EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
+
+    assertThat(service.findEmployeeRecord(admin(ACME), ACME, ada))
+        .map(EmployeeRecord::weeklyContractedHours)
+        .contains(Optional.empty());
+  }
+
+  @Test
+  void GivenAnEmployeeRole_WhenListingRecords_ThenItIsRefused() {
+    adaContractedByAnAdmin();
+
+    assertThatThrownBy(() -> service.findEmployeeRecords(actor(ACME, Role.EMPLOYEE), ACME))
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenAnEmployeeRole_WhenReadingSomebodysRecord_ThenItIsRefused() {
+    EmployeeId ada = adaContractedByAnAdmin();
+
+    assertThatThrownBy(() -> service.findEmployeeRecord(actor(ACME, Role.EMPLOYEE), ACME, ada))
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenListingOurRecords_ThenItIsRefused() {
+    adaContractedByAnAdmin();
+
+    assertThatThrownBy(() -> service.findEmployeeRecords(admin(RIVAL), ACME))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingSomebodysRecord_ThenItIsRefused() {
+    EmployeeId ada = adaContractedByAnAdmin();
+
+    assertThatThrownBy(() -> service.findEmployeeRecord(admin(RIVAL), ACME, ada))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenAnotherOrganisationsEmployee_WhenReadThroughOurRecords_ThenNothingIsFound() {
+    EmployeeId mole = service.addEmployee(admin(RIVAL), new AddEmployeeCommand(RIVAL, "Mole"));
+
+    assertThat(service.findEmployeeRecord(admin(ACME), ACME, mole)).isEmpty();
+  }
+
+  @Test
+  void GivenTheOperator_WhenListingRecords_ThenItIsRefused() {
+    adaContractedByAnAdmin();
+
+    assertThatThrownBy(() -> service.findEmployeeRecords(new Operator(UserId.newId()), ACME))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingARecord_ThenItIsRefused() {
+    EmployeeId ada = adaContractedByAnAdmin();
+
+    assertThatThrownBy(() -> service.findEmployeeRecord(new Operator(UserId.newId()), ACME, ada))
+        .isInstanceOf(NotATenantMemberException.class);
   }
 
   // --- F6: declaring on somebody's behalf (#100) -------------------------------------------
