@@ -9,12 +9,15 @@ import io.github.naimelijah.hrsched.notifications.domain.model.NotificationKind;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import java.sql.SQLException;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.springframework.dao.DataAccessException;
 
 /**
  * Specification of what the notification store promises.
@@ -24,6 +27,8 @@ import org.junit.jupiter.params.provider.EnumSource;
  * tenant. The tests whose failure would be a security incident are the isolation ones: the two
  * reads that must not cross an organisation or reach a colleague, and the saves that must not write
  * over another organisation's notification.
+ *
+ * <p>Every instant, identity and sequence written out here is invented.
  */
 class JdbcNotificationRepositoryTest {
 
@@ -31,6 +36,9 @@ class JdbcNotificationRepositoryTest {
   private static final OrganisationId RIVAL = OrganisationId.newId();
   private static final EmployeeId ADA = EmployeeId.newId();
   private static final EmployeeId GRACE = EmployeeId.newId();
+
+  /** PostgreSQL's SQLSTATE for a value written into a {@code GENERATED ALWAYS} column. */
+  private static final String GENERATED_ALWAYS = "428C9";
 
   private final JdbcNotificationRepository notifications =
       new JdbcNotificationRepository(PostgresDatabase.jdbcClient());
@@ -45,6 +53,18 @@ class JdbcNotificationRepositoryTest {
       OrganisationId organisation, EmployeeId recipient, Instant occurredAt) {
     return new Notification(
         NotificationId.newId(),
+        organisation,
+        recipient,
+        NotificationKind.SWAP_REQUESTED,
+        UUID.randomUUID(),
+        occurredAt);
+  }
+
+  /** As {@link #at(OrganisationId, EmployeeId, Instant)}, with an identity the test chose. */
+  private static Notification at(
+      OrganisationId organisation, EmployeeId recipient, Instant occurredAt, String id) {
+    return new Notification(
+        new NotificationId(UUID.fromString(id)),
         organisation,
         recipient,
         NotificationKind.SWAP_REQUESTED,
@@ -91,6 +111,81 @@ class JdbcNotificationRepositoryTest {
     notifications.save(middle);
 
     assertThat(notifications.findFor(ACME, ADA)).containsExactly(newest, middle, oldest);
+  }
+
+  /**
+   * One use case can tell somebody several things at one instant: a publication approving a swap
+   * tells of the lapses, then of the approval, and ADR-052 tells them in that order so that the
+   * approval tops the inbox. The last told must therefore come first, whatever the identities. The
+   * invented identities are raised neither ascending nor descending, so an inbox breaking the tie
+   * by identity, either way round, would show.
+   */
+  @Test
+  void GivenNotificationsRaisedAtOneInstant_WhenListed_ThenTheLastRaisedComesFirst() {
+    Instant oneInstant = Instant.parse("2026-10-05T12:00:00Z");
+    Notification firstRaised = at(ACME, ADA, oneInstant, "00000000-0000-0000-0000-000000000002");
+    Notification secondRaised = at(ACME, ADA, oneInstant, "00000000-0000-0000-0000-000000000001");
+    Notification lastRaised = at(ACME, ADA, oneInstant, "00000000-0000-0000-0000-000000000003");
+    notifications.save(firstRaised);
+    notifications.save(secondRaised);
+    notifications.save(lastRaised);
+
+    assertThat(notifications.findFor(ACME, ADA))
+        .containsExactly(lastRaised, secondRaised, firstRaised);
+  }
+
+  /**
+   * Acknowledging a notification is not telling it again, so it keeps its place in the inbox. The
+   * instant and the identities are invented; the identities put the first raised first by identity,
+   * so an identity tie-break would show.
+   */
+  @Test
+  void GivenNotificationsRaisedAtOneInstant_WhenTheFirstIsMarkedRead_ThenItKeepsItsPlace() {
+    Instant oneInstant = Instant.parse("2026-10-05T12:00:00Z");
+    Notification firstRaised = at(ACME, ADA, oneInstant, "00000000-0000-0000-0000-000000000001");
+    Notification lastRaised = at(ACME, ADA, oneInstant, "00000000-0000-0000-0000-000000000002");
+    notifications.save(firstRaised);
+    notifications.save(lastRaised);
+
+    notifications.save(firstRaised.markedRead());
+
+    assertThat(notifications.findFor(ACME, ADA)).containsExactly(lastRaised, firstRaised);
+  }
+
+  /**
+   * The order of a tie is the database's to record, never a writer's to choose: a writer that could
+   * name a notification's {@code sequence} could put any notification on top of its inbox. A plain
+   * insert naming one is refused with PostgreSQL's {@code generated_always} error, and nothing is
+   * stored. The invented sequence is one any stored row would sort below.
+   */
+  @Test
+  void GivenAnInsertNamingTheSequence_WhenStored_ThenItIsRefusedAndNothingIsStored() {
+    assertThatThrownBy(
+            () ->
+                PostgresDatabase.jdbcClient()
+                    .sql(
+                        """
+                        INSERT INTO notification (id, organisation_id, recipient_id, kind, subject,
+                                                  occurred_at, read, sequence)
+                        VALUES (:id, :organisation, :recipient, 'SWAP_REQUESTED', :subject,
+                                :occurredAt, false, :sequence)
+                        """)
+                    .param("id", UUID.randomUUID())
+                    .param("organisation", ACME.value())
+                    .param("recipient", ADA.value())
+                    .param("subject", UUID.randomUUID())
+                    .param(
+                        "occurredAt",
+                        Instant.parse("2026-10-05T12:00:00Z").atOffset(ZoneOffset.UTC))
+                    .param("sequence", Long.MAX_VALUE)
+                    .update())
+        .isInstanceOf(DataAccessException.class)
+        .rootCause()
+        .isInstanceOfSatisfying(
+            SQLException.class,
+            refusal -> assertThat(refusal.getSQLState()).isEqualTo(GENERATED_ALWAYS));
+
+    assertThat(notifications.findFor(ACME, ADA)).isEmpty();
   }
 
   @Test

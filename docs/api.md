@@ -243,6 +243,12 @@ rules`, as publishing it would. With invented identifiers and weights:
 - **An organisation name that cannot be one.** Onboarding an organisation under a blank name, or
   one carrying a NUL character or an unpaired surrogate, answers `400` titled `Invalid request`,
   stores nothing, and the detail repeats no name.
+- **An employee or qualification name the store cannot hold.** Adding an employee
+  (`POST /api/employees`) or defining a qualification (`POST /api/qualifications`) under a name
+  carrying a NUL character or half of a surrogate pair, or one longer than 2,000 bytes of UTF-8,
+  answers `400` titled `Invalid request`, stores nothing, and the detail repeats no name. The limit
+  is in bytes, not characters, so a name in a script needing two or three bytes a character reaches
+  it sooner.
 - **An Employee account linked to nobody.** Creating one, taking the link away from one, giving
   the Employee role to an account linked to nobody, or restoring one stored unlinked before R34
   answers `422` titled `Employee account not linked`.

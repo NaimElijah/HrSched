@@ -47,7 +47,8 @@ public interface EmployeeRepository {
 
   /**
    * @param organisation whose employees to list
-   * @return every employee of that organisation
+   * @return every employee of that organisation, ordered by name, then by identity, so two sharing
+   *     a name come back in the same order every time
    */
   List<Employee> findByOrganisation(OrganisationId organisation);
 }

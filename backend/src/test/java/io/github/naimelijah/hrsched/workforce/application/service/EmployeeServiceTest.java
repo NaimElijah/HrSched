@@ -383,7 +383,7 @@ class EmployeeServiceTest {
 
     RosterableEmployee published = service.findRosterable(admin(ACME), ACME).getFirst();
 
-    assertThat(published.isAvailableFor(MONDAY)).isFalse();
+    assertThat(published.unavailability()).containsExactly(MONDAY);
   }
 
   /**

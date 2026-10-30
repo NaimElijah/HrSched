@@ -32,11 +32,13 @@ public class QualificationController {
   @PostMapping
   public ResponseEntity<QualificationResponse> define(
       @AuthenticationPrincipal Actor actor, @RequestBody DefineQualificationRequest request) {
+    OrganisationId organisation = actingIn(actor);
+    String name = request.requiredName();
     QualificationId id =
         manageQualifications.defineQualification(
-            actor, new DefineQualificationCommand(actingIn(actor), request.requiredName()));
+            actor, new DefineQualificationCommand(organisation, name));
     return ResponseEntity.created(URI.create("/api/qualifications/" + id.value()))
-        .body(new QualificationResponse(id.value(), request.requiredName()));
+        .body(new QualificationResponse(id.value(), name));
   }
 
   @GetMapping
