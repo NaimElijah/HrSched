@@ -106,8 +106,19 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
     }
   }
 
-  /** One constraint as its row stores it: its kind, and exactly one of the two values. */
-  private record StoredConstraint(String kind, Long durationSeconds, Integer dayCount) {}
+  /**
+   * One constraint as its row stores it: its kind, and exactly one of the two values. Held here as
+   * well as by {@code working_time_constraint_carries_its_one_value}, so a mapping that gave a row
+   * both or neither fails before anything is written rather than partway through a revision.
+   */
+  private record StoredConstraint(String kind, Long durationSeconds, Integer dayCount) {
+    StoredConstraint {
+      if ((durationSeconds == null) == (dayCount == null)) {
+        throw new IllegalArgumentException(
+            "A stored %s carries exactly one of a duration and a count of days".formatted(kind));
+      }
+    }
+  }
 
   /**
    * Exhaustive over the sealed hierarchy, with no {@code default}: a new constraint type will not
