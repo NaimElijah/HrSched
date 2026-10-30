@@ -14,6 +14,7 @@ import io.github.naimelijah.hrsched.access.application.port.in.SignInOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInRefusal;
 import io.github.naimelijah.hrsched.access.application.port.out.AccessChange;
 import io.github.naimelijah.hrsched.access.application.port.out.AccessTokenIssuer;
+import io.github.naimelijah.hrsched.access.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.access.application.port.out.AuthenticatedSession;
 import io.github.naimelijah.hrsched.access.application.port.out.IssuedAccessToken;
 import io.github.naimelijah.hrsched.access.application.port.out.RefreshTokenSecret;
@@ -595,6 +596,31 @@ class SessionServiceTest {
         .isInstanceOf(StubSessionRepository.SessionNotStored.class);
 
     assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The new session is recorded as it is begun, and the change only once that session's writes are
+   * made (#133). The change is the account's own: filed under its organisation, made by it, and
+   * about it rather than about the session.
+   */
+  @Test
+  void GivenTheRightCurrentPassword_WhenChangingIt_ThenTheNewSessionAndThenTheChangeAreRecorded() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+
+    service.changePassword(
+        themself,
+        new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(audit.changes())
+        .containsExactly(AccessChange.SIGNED_IN, AccessChange.PASSWORD_CHANGED);
+    assertThat(audit.of(AccessChange.PASSWORD_CHANGED))
+        .containsExactly(
+            new AuditedChange(
+                Optional.of(ACME),
+                account.id(),
+                AccessChange.PASSWORD_CHANGED,
+                account.id().value()));
   }
 
   /** The operator belongs to no organisation, so its account is held where it is: in none. */
