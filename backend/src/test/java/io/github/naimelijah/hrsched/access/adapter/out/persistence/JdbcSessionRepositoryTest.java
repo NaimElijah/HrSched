@@ -22,7 +22,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * What starting a session actually writes.
+ * What the session adapter writes and reads back: starting a session, exchanging and revoking its
+ * refresh tokens, ending every session of one account, and finding the session a token names.
  *
  * <p>A refresh token is found by its digest and never by itself, which is the only way the real
  * code ever looks one up. That the digest is a real hash rather than the token is {@code
@@ -32,7 +33,10 @@ import org.springframework.dao.DataIntegrityViolationException;
  */
 class JdbcSessionRepositoryTest {
 
+  /** Invented. */
   private static final Instant NOW = Instant.parse("2026-09-20T09:00:00Z");
+
+  /** Invented, and hashes nothing. */
   private static final PasswordHash HASH = new PasswordHash("{bcrypt}$2a$04$invented.test.value");
 
   /** PostgreSQL's {@code foreign_key_violation}. */
