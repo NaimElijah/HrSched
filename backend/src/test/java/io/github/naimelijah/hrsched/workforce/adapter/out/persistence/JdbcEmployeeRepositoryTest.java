@@ -15,7 +15,6 @@ import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import io.github.naimelijah.hrsched.workforce.domain.model.ContractTerms;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidEmployeeNameException;
-import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
 import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
@@ -31,6 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -57,6 +57,10 @@ class JdbcEmployeeRepositoryTest {
       new TimeRange(Instant.parse("2026-12-20T00:00:00Z"), Instant.parse("2026-12-27T00:00:00Z"));
   private static final TimeRange MONDAY_DAY =
       new TimeRange(Instant.parse("2026-09-07T08:00:00Z"), Instant.parse("2026-09-07T16:00:00Z"));
+
+  /** Invented: a week overlapping the last day of {@link #A_FORTNIGHT_OFF}. */
+  private static final TimeRange OVERLAPPING_THE_FORTNIGHT =
+      new TimeRange(Instant.parse("2026-08-14T00:00:00Z"), Instant.parse("2026-08-21T00:00:00Z"));
 
   /** Blank to {@link String#isBlank}, but not to the schema's {@code btrim}, which trims spaces. */
   private static final String BLANK_TO_THE_DOMAIN_ONLY = "\t";
@@ -297,57 +301,112 @@ class JdbcEmployeeRepositoryTest {
   }
 
   /**
-   * The schema does not refuse overlapping rows, so only the rebuild through the aggregate's own
-   * withers stops a row written by hand, a restore or a bug from handing the domain a state R7
-   * forbids. Loading such an employee fails loudly, by one identity and in a listing alike.
-   *
-   * <p>Loudly means as our defect, not as the domain's refusal: that refusal is how a caller is
-   * told their own request overlaps, and is answered 400 without a log line, so a store breaking R7
-   * would read as the caller's mistake and leave the operator nothing. It carries no cause either,
-   * because Spring resolves a handler by an exception's causes too, and would find that one's; the
-   * refusal travels suppressed instead, which Spring does not walk, so its stack still reaches the
-   * log. The message names the identity and the rule only, never the name or a span.
+   * R7 in the schema ({@code V15}): a row written past the adapter, by hand, a restore or a bug,
+   * cannot hand the domain an overlap to load. Nothing translates the violation, because the domain
+   * refuses an overlap before anything is written, so one reaching the store is a defect.
    */
   @Test
-  void GivenOverlappingUnavailabilityInTheStore_WhenLoaded_ThenItFailsAsADefect() {
-    Employee ada = employee(ACME, "Ada");
+  void GivenAStoredSpan_WhenAnOverlappingOneIsWrittenPastTheAdapter_ThenTheStoreRefusesIt() {
+    Employee ada = employee(ACME, "Ada").unavailableFor(A_FORTNIGHT_OFF);
     repository.save(ada);
-    // Invented: a week that overlaps the last day of A_FORTNIGHT_OFF.
-    TimeRange overlapping =
-        new TimeRange(Instant.parse("2026-08-14T00:00:00Z"), Instant.parse("2026-08-21T00:00:00Z"));
-    storeUnavailabilityDirectly(ada, 0, A_FORTNIGHT_OFF);
-    storeUnavailabilityDirectly(ada, 1, overlapping);
 
-    assertThatThrownBy(() -> repository.findById(ACME, ada.id()))
-        .isInstanceOf(IllegalStateException.class)
-        .hasNoCause()
-        .satisfies(JdbcEmployeeRepositoryTest::carriesTheRefusalSuppressed)
-        .hasMessageContaining(ada.id().value().toString())
-        .hasMessageContaining("R7")
-        .message()
-        .doesNotContain(ada.name());
-    assertThatThrownBy(() -> repository.findByOrganisation(ACME))
-        .isInstanceOf(IllegalStateException.class)
-        .hasNoCause()
-        .satisfies(JdbcEmployeeRepositoryTest::carriesTheRefusalSuppressed)
-        .hasMessageContaining(ada.id().value().toString())
-        .hasMessageContaining("R7")
-        .message()
-        .doesNotContain(ada.name());
+    assertThatThrownBy(() -> storeUnavailabilityDirectly(ada, 1, OVERLAPPING_THE_FORTNIGHT))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("employee_unavailability_does_not_overlap");
+    assertThat(repository.findById(ACME, ada.id()).orElseThrow().unavailability())
+        .containsExactly(A_FORTNIGHT_OFF);
   }
 
-  private static void carriesTheRefusalSuppressed(Throwable failure) {
-    assertThat(failure.getSuppressed())
-        .singleElement()
-        .isInstanceOf(OverlappingUnavailabilityException.class);
+  /**
+   * The exclusion compares {@code [starts_at, ends_at)}, half-open like {@code TimeRange}, so spans
+   * that only abut share no instant and both store, as R7 allows: one ending where the first
+   * begins, and one beginning where it ends.
+   */
+  @Test
+  void GivenSpansThatOnlyAbutOneAnother_WhenSaved_ThenEveryOneIsStored() {
+    // Invented: the days either side of A_FORTNIGHT_OFF, each touching it at one instant.
+    TimeRange endingWhereItBegins =
+        new TimeRange(Instant.parse("2026-07-31T00:00:00Z"), A_FORTNIGHT_OFF.start());
+    TimeRange beginningWhereItEnds =
+        new TimeRange(A_FORTNIGHT_OFF.end(), Instant.parse("2026-08-16T00:00:00Z"));
+    Employee ada =
+        employee(ACME, "Ada")
+            .unavailableFor(A_FORTNIGHT_OFF)
+            .unavailableFor(endingWhereItBegins)
+            .unavailableFor(beginningWhereItEnds);
+
+    repository.save(ada);
+
+    assertThat(repository.findById(ACME, ada.id()).orElseThrow().unavailability())
+        .containsExactly(A_FORTNIGHT_OFF, endingWhereItBegins, beginningWhereItEnds);
+  }
+
+  /**
+   * A save deletes the employee's spans and then inserts the new set, so a new span overlapping one
+   * it replaces is never compared with it: the exclusion is checked as each statement runs, and the
+   * delete has already run. Withdrawing a span and declaring one overlapping it is a legitimate
+   * change of mind.
+   */
+  @Test
+  void GivenAStoredSpan_WhenSavedWithItReplacedByAnOverlappingOne_ThenOnlyTheNewOneIsKept() {
+    Employee ada = employee(ACME, "Ada").unavailableFor(A_FORTNIGHT_OFF);
+    repository.save(ada);
+
+    repository.save(
+        ada.noLongerUnavailableFor(A_FORTNIGHT_OFF).unavailableFor(OVERLAPPING_THE_FORTNIGHT));
+
+    assertThat(repository.findById(ACME, ada.id()).orElseThrow().unavailability())
+        .containsExactly(OVERLAPPING_THE_FORTNIGHT);
+  }
+
+  /**
+   * The ordinal is a list position, which the adapter counts from 0; a negative one is a row
+   * nothing of ours wrote ({@code V15}). -1 is invented, as the nearest value the check refuses.
+   */
+  @Test
+  void GivenANegativeOrdinal_WhenUnavailabilityIsWrittenPastTheAdapter_ThenTheStoreRefusesIt() {
+    Employee ada = employee(ACME, "Ada");
+    repository.save(ada);
+
+    assertThatThrownBy(() -> storeUnavailabilityDirectly(ada, -1, A_FORTNIGHT_OFF))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("employee_unavailability_ordinal_not_negative");
+  }
+
+  /** As for unavailability; -1 is invented, as the nearest value the check refuses. */
+  @Test
+  void GivenANegativeOrdinal_WhenAPreferenceIsWrittenPastTheAdapter_ThenTheStoreRefusesIt() {
+    Employee ada = employee(ACME, "Ada");
+    repository.save(ada);
+
+    assertThatThrownBy(
+            () ->
+                PostgresDatabase.jdbcClient()
+                    .sql(
+                        """
+                        INSERT INTO employee_preference
+                            (employee_id, ordinal, starts_at, ends_at, strength)
+                        VALUES (:id, -1, :startsAt, :endsAt, 'PREFERS')
+                        """)
+                    .param("id", ada.id().value())
+                    .param("startsAt", MONDAY_DAY.start().atOffset(ZoneOffset.UTC))
+                    .param("endsAt", MONDAY_DAY.end().atOffset(ZoneOffset.UTC))
+                    .update())
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("employee_preference_ordinal_not_negative");
   }
 
   /**
    * {@code employee_name_not_blank} trims spaces only, so a name that is only a tab stores, while
    * the domain refuses every blank name (R2). A row written by hand, a restore or a bug can hold
-   * one, and loading it fails as our defect for the reasons the overlap test gives: the domain's
-   * refusal is answered 400 as the caller's mistake, so it travels suppressed rather than as the
-   * cause, and the message names the identity and the rule only.
+   * one, and loading such an employee fails loudly, by one identity and in a listing alike.
+   *
+   * <p>Loudly means as our defect, not as the domain's refusal: that refusal is how a caller is
+   * told their own name is blank, and is answered 400 without a log line, so a store breaking R2
+   * would read as the caller's mistake and leave the operator nothing. It carries no cause either,
+   * because Spring resolves a handler by an exception's causes too, and would find that one's; the
+   * refusal travels suppressed instead, which Spring does not walk, so its stack still reaches the
+   * log. The message names the identity and the rule only.
    */
   @Test
   void GivenABlankNameInTheStore_WhenLoaded_ThenItFailsAsADefect() {
@@ -384,7 +443,7 @@ class JdbcEmployeeRepositoryTest {
         .update();
   }
 
-  /** Writes past the adapter, because no {@code Employee} can carry what this stores. */
+  /** Writes past the adapter, to choose the ordinal and the span it stores. */
   private static void storeUnavailabilityDirectly(
       Employee employee, int ordinal, TimeRange period) {
     PostgresDatabase.jdbcClient()

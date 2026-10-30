@@ -25,6 +25,12 @@
       [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md).
     - The count of adapters ("Eight") has moved. `Jdbc*Repository` classes in each context's
       `adapter.out.persistence` package are the current set.
+  - **Amended 2026-10-30:** The schema now holds R7, non-overlapping unavailability, with the
+    `employee_unavailability_does_not_overlap` exclusion constraint (migration `V15`). The
+    alternatives table said to revisit the `EXCLUDE` for it "when the `btree_gist` extension is
+    wanted for another reason", and `V2` installed `btree_gist` for the published-roster exclusion.
+    The constraint is checked immediately, not deferred, and no adapter translates its violation:
+    the domain refuses an overlap before anything is written.
 - **Date:** 2026-09-06
 
 ## Context
