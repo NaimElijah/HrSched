@@ -151,10 +151,8 @@ class JdbcConstraintSetRepositoryTest {
    */
   @Test
   void GivenASetStoredBeforeTheSchemaHeldADomainRule_WhenReadBack_ThenItFailsAsStoredData() {
-    TransactionTemplate transaction = new TransactionTemplate(PostgresDatabase.transactions());
-
-    List<Throwable> refusals =
-        transaction.execute(
+    new TransactionTemplate(PostgresDatabase.transactions())
+        .executeWithoutResult(
             status -> {
               status.setRollbackOnly();
               PostgresDatabase.jdbcClient()
@@ -169,18 +167,17 @@ class JdbcConstraintSetRepositoryTest {
               // Invented: two daily caps, of 437 minutes and of 511, figures from no statute.
               insertDailyCap(0, Duration.ofMinutes(437));
               insertDailyCap(1, Duration.ofMinutes(511));
-              return List.of(
-                  catchThrowable(() -> repository.findCurrent(ACME)),
-                  catchThrowable(() -> repository.findVersion(ACME, 2)));
-            });
 
-    assertThat(refusals.getFirst())
-        .isExactlyInstanceOf(IllegalStateException.class)
-        .hasMessageContaining(ACME.value().toString())
-        .hasMessageContaining("version 2")
-        .hasMessageContaining("maximum daily working time is given twice")
-        .hasNoCause();
-    assertThat(refusals.getLast()).isExactlyInstanceOf(IllegalStateException.class).hasNoCause();
+              assertThatThrownBy(() -> repository.findCurrent(ACME))
+                  .isExactlyInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining(ACME.value().toString())
+                  .hasMessageContaining("version 2")
+                  .hasMessageContaining("maximum daily working time is given twice")
+                  .hasNoCause();
+              assertThatThrownBy(() -> repository.findVersion(ACME, 2))
+                  .isExactlyInstanceOf(IllegalStateException.class)
+                  .hasNoCause();
+            });
   }
 
   private static void insertDailyCap(int ordinal, Duration maximum) {
@@ -440,7 +437,8 @@ class JdbcConstraintSetRepositoryTest {
    * A limit is stored in whole seconds, so one with a part of a second could only be stored as
    * another limit: a minimum rest of 437 minutes and half a second, cut to 437 minutes, would
    * permit less rest than the organisation configured. It is refused before anything is written,
-   * the rule stored beside it included.
+   * the rule stored beside it included. The refusal names the rule but not its value, which is the
+   * organisation's configuration.
    */
   @Test
   void GivenALimitWithAPartOfASecond_WhenSaved_ThenItIsRefusedAndNothingIsStored() {
@@ -454,8 +452,31 @@ class JdbcConstraintSetRepositoryTest {
 
     assertThatThrownBy(() -> repository.save(set))
         .isExactlyInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("minimum rest between assignments");
+        .hasMessageContaining("minimum rest between assignments")
+        .hasMessageNotContainingAny(spellingsOf(rest));
     assertThat(storedVersions()).isEmpty();
+  }
+
+  /** The weekly cap is stored in whole seconds too, and refused the same way. */
+  @Test
+  void GivenAWeeklyCapWithAPartOfASecond_WhenSaved_ThenItIsRefusedAndNothingIsStored() {
+    // Invented: 2,311 minutes and a quarter of a second a week.
+    Duration cap = Duration.ofMinutes(2_311).plusMillis(250);
+    ConstraintSet set =
+        ConstraintSet.initial(ACME).revisedTo(List.of(new MaximumWeeklyWorkingTime(cap)));
+
+    assertThatThrownBy(() -> repository.save(set))
+        .isExactlyInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("maximum weekly working time")
+        .hasMessageNotContainingAny(spellingsOf(cap));
+    assertThat(storedVersions()).isEmpty();
+  }
+
+  /** The ways a message could repeat a limit: as a {@code Duration}, in seconds, or in minutes. */
+  private static String[] spellingsOf(Duration limit) {
+    return new String[] {
+      limit.toString(), Long.toString(limit.toSeconds()), Long.toString(limit.toMinutes())
+    };
   }
 
   /**
@@ -471,7 +492,8 @@ class JdbcConstraintSetRepositoryTest {
 
     assertThatThrownBy(() -> repository.save(set))
         .isExactlyInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("maximum daily working time");
+        .hasMessageContaining("maximum daily working time")
+        .hasMessageNotContaining(Duration.ofMillis(500).toString());
     assertThat(storedVersions()).isEmpty();
   }
 
