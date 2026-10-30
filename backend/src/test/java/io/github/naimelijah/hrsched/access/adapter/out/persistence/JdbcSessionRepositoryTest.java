@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -311,12 +312,17 @@ class JdbcSessionRepositoryTest {
         .single();
   }
 
+  /**
+   * The stored revocation, or {@code null} for a session nothing has ended. A session with no row
+   * fails the read rather than reading as not revoked, so a test of what was stamped cannot pass
+   * over a session that was never stored.
+   */
   private static String storedSessionRevocation(SignInSessionId session) {
     return PostgresDatabase.jdbcClient()
         .sql("SELECT revocation FROM sign_in_session WHERE id = :id")
         .param("id", session.value())
-        .query(String.class)
-        .optional()
+        .query((row, rowNumber) -> Optional.ofNullable(row.getString("revocation")))
+        .single()
         .orElse(null);
   }
 
