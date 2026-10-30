@@ -574,7 +574,7 @@ describe('changing an account', () => {
     expect(changeRole).toBeDisabled();
     server['/api/accounts'] = { status: 200, body: [ADA, { ...GRACE, employee: ROBIN.id }] };
     readBack();
-    await waitFor(() => expect(changeRole).toBeEnabled());
+    await waitFor(() => expect(role).toBeEnabled());
     await userEvent.selectOptions(role, 'EMPLOYEE');
     await userEvent.click(changeRole);
 
@@ -638,6 +638,42 @@ describe('changing an account', () => {
     await screen.findByText('Changed the role of grace@example.com.');
     await waitFor(() => expect(role).toBeEnabled());
     expect(role).toHaveValue('EMPLOYEE');
+  });
+
+  /**
+   * The backend stores and audits a membership change whether or not anything differs, so a
+   * Change pressed with the stored value still chosen would record a change nobody made.
+   */
+  it('GivenTheStoredRoleStillChosen_WhenChangeIsPressed_ThenNothingIsSentOrSaid', async () => {
+    const stub = theOrganisation();
+    show();
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
+    const change = screen.getByRole('button', { name: 'Change the role of grace@example.com' });
+
+    await userEvent.click(change);
+    await userEvent.selectOptions(role, 'ADMIN');
+    await userEvent.selectOptions(role, 'SCHEDULER');
+    await userEvent.click(change);
+
+    expect(writes(stub)).toHaveLength(0);
+    expect(screen.queryByText(/^Changed/)).not.toBeInTheDocument();
+    expect(change).toBeDisabled();
+  });
+
+  it('GivenTheStoredEmployeeStillChosen_WhenChangeIsPressed_ThenNothingIsSentOrSaid', async () => {
+    const stub = theOrganisation();
+    show();
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const change = screen.getByRole('button', {
+      name: 'Change the employee of grace@example.com',
+    });
+
+    await userEvent.click(change);
+
+    expect(writes(stub)).toHaveLength(0);
+    expect(screen.queryByText(/^Changed/)).not.toBeInTheDocument();
+    expect(change).toBeDisabled();
   });
 
   /** A refusal reads nothing back, so the row must not wait for a read that never comes. */

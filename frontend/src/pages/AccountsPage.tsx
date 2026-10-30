@@ -200,7 +200,8 @@ function EmployeeOptions({ staff, linked }: { staff: readonly Employee[]; linked
  *
  * A role or an employee is chosen, then submitted. A change sent on choosing would be made by an
  * arrow key, since a closed select changes on every one in some browsers, and an Admin could demote
- * themselves in one keystroke.
+ * themselves in one keystroke. Change sends nothing until something other than what is stored is
+ * chosen: the backend stores and audits a membership change whether or not it differs.
  *
  * Every change made here is sent from the copy of the account the row was drawn from, and the
  * membership is one value, so a change resends the field it leaves alone. Sent from a copy read
@@ -230,6 +231,8 @@ function AccountRow({
   } | null>(null);
   const role = chosenRole?.on === account ? chosenRole.role : account.role;
   const employee = chosenEmployee?.on === account ? chosenEmployee.employee : account.employee;
+  const roleChosen = role !== account.role;
+  const employeeChosen = employee !== account.employee;
   // Whether this row's change is on its way, and then the copy of the account that change's own
   // read-back will replace. The copy is read from `held` when the change is answered, because by
   // then another row's read-back may have replaced the one the change was sent from.
@@ -274,6 +277,9 @@ function AccountRow({
           className="row"
           onSubmit={(event) => {
             event.preventDefault();
+            if (!roleChosen) {
+              return;
+            }
             void change(`Changed the role of ${account.signInName}.`, () =>
               accounts.changeMembership(account.id, role, account.employee),
             );
@@ -297,7 +303,7 @@ function AccountRow({
           </label>
           <button
             type="submit"
-            disabled={waiting}
+            disabled={waiting || !roleChosen}
             aria-label={`Change the role of ${account.signInName}`}
           >
             Change
@@ -309,6 +315,9 @@ function AccountRow({
           className="row"
           onSubmit={(event) => {
             event.preventDefault();
+            if (!employeeChosen) {
+              return;
+            }
             void change(`Changed who ${account.signInName} is.`, () =>
               accounts.changeMembership(account.id, account.role, employee),
             );
@@ -331,7 +340,7 @@ function AccountRow({
           </label>
           <button
             type="submit"
-            disabled={waiting}
+            disabled={waiting || !employeeChosen}
             aria-label={`Change the employee of ${account.signInName}`}
           >
             Change
