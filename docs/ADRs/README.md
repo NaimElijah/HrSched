@@ -31,7 +31,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-020](ADR-020-refuse-a-request-naming-an-unknown-organisation.md) | Refuse a request naming an organisation nobody onboarded, at the boundary | Superseded by [ADR-031](ADR-031-take-the-organisation-from-the-account.md) | 2026-09-01 |
 | [ADR-021](ADR-021-notifications-as-a-bounded-context.md) | Make notifications a bounded context, and let it hold no words | Accepted, amended by [ADR-004](ADR-004-postgresql-behind-the-driven-ports.md) | 2026-09-01 |
 | [ADR-022](ADR-022-approving-a-swap-publishes-a-replacement-roster.md) | Approve a swap by publishing a replacement roster, never by editing one | Accepted, amended by [ADR-023](ADR-023-the-transaction-boundary-is-the-use-case.md) | 2026-09-01 |
-| [ADR-023](ADR-023-the-transaction-boundary-is-the-use-case.md) | Make the use case the transaction boundary, wrapped at the composition root | Accepted, amended by [ADR-045](ADR-045-generate-outside-the-use-cases-transaction.md) | 2026-09-06 |
+| [ADR-023](ADR-023-the-transaction-boundary-is-the-use-case.md) | Make the use case the transaction boundary, wrapped at the composition root | Accepted, amended by [ADR-045](ADR-045-generate-outside-the-use-cases-transaction.md), [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) | 2026-09-06 |
 | [ADR-024](ADR-024-answer-unbindable-requests-with-a-problem-detail.md) | Answer a request Spring cannot bind with a problem detail, from one fallback handler | Accepted, amended by [ADR-053](ADR-053-bound-a-request-body-and-accept-only-utf-8-json.md) | 2026-09-14 |
 | [ADR-025](ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md) | Edit a draft roster through controls on a board, not by drag and drop | Accepted | 2026-09-14 |
 | [ADR-026](ADR-026-make-overlapping-published-rosters-unrepresentable.md) | Make two overlapping published rosters of one organisation unrepresentable in the schema | Superseded by [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md) | 2026-09-14 |
@@ -60,6 +60,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-051](ADR-051-record-why-each-frontend-dependency-is-there.md) | Record why each frontend dependency is there | Accepted | 2026-10-29 |
 | [ADR-052](ADR-052-record-only-after-every-write-notifications-included.md) | Record an audit line only after every write, a notification included | Accepted | 2026-10-30 |
 | [ADR-053](ADR-053-bound-a-request-body-and-accept-only-utf-8-json.md) | Bound a request body in bytes, and accept nothing but UTF-8 JSON | Accepted | 2026-10-30 |
+| [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) | Run a use case read-only when its name starts with `find` | Accepted | 2026-10-30 |
 
 ## Decisions waiting to be recorded
 
