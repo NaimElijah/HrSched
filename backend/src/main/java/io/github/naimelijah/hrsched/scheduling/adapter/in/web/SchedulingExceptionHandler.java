@@ -5,6 +5,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableE
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationsStoppedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
@@ -322,6 +323,21 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
     problem.setTitle("Generation is busy");
+    return problem;
+  }
+
+  /**
+   * The instance asked has stopped taking generations, because it is shutting down (ADR-046). A
+   * 503, as a busy instance's is: nothing about the request was wrong, and asking again shortly may
+   * reach one that is not stopping. Not saturation, so the busy counter is left alone and the line
+   * says what happened instead.
+   */
+  @ExceptionHandler(GenerationsStoppedException.class)
+  public ProblemDetail handleGenerationsStopped(GenerationsStoppedException exception) {
+    log.atWarn().log("Generation refused: the instance is shutting down");
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
+    problem.setTitle("Generation is unavailable");
     return problem;
   }
 

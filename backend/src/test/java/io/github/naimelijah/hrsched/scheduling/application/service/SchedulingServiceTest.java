@@ -28,6 +28,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationPolicy;
 import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationStatus;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationsStoppedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
@@ -836,6 +837,48 @@ class SchedulingServiceTest {
     assertThatThrownBy(
             () -> busy.startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)))
         .isInstanceOf(TooManyGenerationsException.class);
+
+    assertThat(generations.all())
+        .singleElement()
+        .extracting(RosterGeneration::status)
+        .isEqualTo(GenerationStatus.FAILED);
+    assertThat(rosters.findByOrganisation(ACME)).isEmpty();
+    assertThat(audit.changes()).containsExactly(SchedulingChange.GENERATION_REQUESTED);
+  }
+
+  /**
+   * As every run being busy is: a runner that has stopped refuses the generation before anything is
+   * solved, and it is stored as failed rather than left pending until it reads as lost.
+   */
+  @Test
+  void GivenARunnerThatHasStopped_WhenAGenerationIsStarted_ThenItIsRefusedAndStoredAsFailed() {
+    available(ACME);
+    aShift(ACME, Set.of());
+    audit.forget();
+    SchedulingService stopping =
+        new SchedulingService(
+            shifts,
+            rosters,
+            constraintSets,
+            objectiveWeights,
+            new FakeSwaps(new CallLog()),
+            workforce,
+            new FirstFitGenerator(),
+            new RecordingUnitsOfWork(),
+            generations,
+            work -> {
+              throw new GenerationsStoppedException(new IllegalStateException("an invented stop"));
+            },
+            LOST_AFTER,
+            new RecordingNotifier(),
+            audit,
+            Clock.fixed(NOW, ZoneOffset.UTC));
+
+    assertThatThrownBy(
+            () ->
+                stopping.startGeneration(
+                    scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)))
+        .isInstanceOf(GenerationsStoppedException.class);
 
     assertThat(generations.all())
         .singleElement()

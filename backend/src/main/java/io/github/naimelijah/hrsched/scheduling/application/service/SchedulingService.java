@@ -35,6 +35,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationPolicy;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationsStoppedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
@@ -272,7 +273,8 @@ public class SchedulingService
    * stored in a unit of work of its own, which commits before the solve is handed to a thread, so
    * that thread always finds it. Then this answers, and the solve runs in the background.
    *
-   * <p>One refused because too many are running is stored as failed, so nobody polling it waits.
+   * <p>One refused because too many are running, or because the instance has stopped taking them,
+   * is stored as failed, so nobody polling it waits.
    */
   @Override
   public GenerationState startGeneration(Actor actor, GenerateRosterCommand command) {
@@ -298,13 +300,13 @@ public class SchedulingService
         requested.id().value());
     try {
       background.start(() -> complete(actor, command, requested));
-    } catch (TooManyGenerationsException busy) {
+    } catch (TooManyGenerationsException | GenerationsStoppedException notStarted) {
       units.writing(
           () -> {
             generations.save(requested.failed(clock.instant()));
             return requested;
           });
-      throw busy;
+      throw notStarted;
     }
     return GenerationState.of(requested, clock.instant());
   }

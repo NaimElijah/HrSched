@@ -11,6 +11,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationsStoppedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
@@ -38,6 +39,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +59,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.method.annotation.ExceptionHandlerMethodResolver;
 
 /**
  * Specification of which scheduling failure earns which status.
@@ -528,6 +531,36 @@ class SchedulingExceptionHandlerTest {
     assertThat(logged.getLevel()).isEqualTo(Level.WARN);
     assertThat(logged.getFormattedMessage()).isEqualTo("Generation refused: every run is busy");
     assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
+  }
+
+  /**
+   * A runner that has stopped is not saturation: the caller is told 503 and to ask again, the line
+   * says nothing about runs being busy, and the busy counter is not moved. The handler is found as
+   * Spring finds it, from the exception, so a refusal routed to nothing fails here rather than
+   * reaching the caller as a 500.
+   */
+  @Test
+  void GivenAStoppedRunnersRefusal_WhenSpringRoutesIt_ThenItIsUnavailableAndNotCountedAsBusy()
+      throws Exception {
+    GenerationsStoppedException stopped =
+        new GenerationsStoppedException(new IllegalStateException("what the pool said"));
+    Method routed =
+        new ExceptionHandlerMethodResolver(SchedulingExceptionHandler.class)
+            .resolveMethodByThrowable(stopped);
+    assertThat(routed).describedAs("the handler Spring routes the refusal to").isNotNull();
+
+    ProblemDetail problem = (ProblemDetail) routed.invoke(handler, stopped);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE.value());
+    assertThat(problem.getDetail())
+        .isEqualTo(stopped.getMessage())
+        .contains("ask again")
+        .doesNotContain("what the pool said");
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage()).doesNotContain("busy");
+    assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
+    assertThat(meters.find("hrsched.generations.busy").counter()).isNull();
   }
 
   /** A miss is not an incident: logging every 404 would bury the ones that are. */

@@ -8,6 +8,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationsStoppedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
@@ -80,16 +81,15 @@ class GenerationRunnerTest {
 
   /**
    * Once stopped, the pool refuses everything, busy or not. Saying that every run is busy would be
-   * false, and would be counted as saturation; the refusal says the runner has stopped, and keeps
-   * what the pool said.
+   * false, and would be counted as saturation; the refusal is the port's own for a stopped runner,
+   * so the caller can fail the generation as it does a busy one, and keeps what the pool said.
    */
   @Test
   void GivenARunnerThatHasStopped_WhenWorkIsStarted_ThenItIsRefusedAsStoppedNotAsBusy() {
     runner.stop();
 
     assertThatThrownBy(() -> runner.start(() -> {}))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("stopped")
+        .isInstanceOf(GenerationsStoppedException.class)
         .hasCauseInstanceOf(RejectedExecutionException.class);
   }
 
