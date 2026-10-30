@@ -1,4 +1,4 @@
-package io.github.naimelijah.hrsched.architecture.fixtures.actors;
+package io.github.naimelijah.hrsched.architecture.actors;
 
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;

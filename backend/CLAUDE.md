@@ -41,11 +41,23 @@ A context may reference another context's `application.port.in` package and **no
 
 - **Dependencies point inward, and contexts are independent. Both are enforced.**
   `HexagonalArchitectureTest` fails the build if the domain depends on anything but the JDK and
-  HrSched's own domain packages, the application touches an adapter, a context reaches past
-  another's published ports, the kernel depends on a context, or a context's layers form a cycle.
-  Never weaken or delete a rule to make code pass — the rule is the point. Deleting one that
-  provably cannot fail is different, and needs the proof.
-- **When adding an architecture rule, watch it fail first.** All thirteen rules here have been
+  HrSched's own domain packages; the application on anything but the JDK, SLF4J and HrSched's
+  packages outside the adapters and `configuration`; either reaches a database, a network, a
+  remote object, a disk, a stream or another program through the JDK (`java.sql`, `java.net` but
+  `URI`, `java.rmi`, `java.nio.file`, `java.nio.channels`, `java.io`'s streams, readers, writers
+  and files but the in-memory ones, `ZipFile`, `ProcessBuilder`, `Process`, `Runtime`), so a port
+  takes no `OutputStream` either, as the adapter does the I/O; a context reaches past another's
+  published ports, or reaches them from outside its `adapter/out`; a class in `configuration`
+  other than the `@Configuration` wiring reaches past them; the kernel depends on a context;
+  contexts, or a context's layers, form a cycle; a class in a context sits outside its `domain`,
+  `application` and `adapter` packages; a class other than `HrSchedApplication` sits in the root
+  package; a `@RestController` is handled by no `@RestControllerAdvice` of its own context, which
+  lists it in `assignableTypes` or holds it in its `basePackages` or `basePackageClasses`; or a
+  method other than a `save…` on a driven-port `*Repository` or `*Directory` takes no
+  `OrganisationId` and is not in the named `UNSCOPED_METHODS`. Never weaken or delete a rule to
+  make code pass — the rule is the point. Deleting one that provably cannot fail is different, and
+  needs the proof.
+- **When adding an architecture rule, watch it fail first.** All twenty rules here have been
   observed failing on a deliberately introduced violation, then reverted; a rule that has only
   ever been green proves nothing. A rule whose logic is ours keeps that failure as a test in
   `HexagonalArchitectureRulesTest`, against a class under `architecture/fixtures` that breaks it
@@ -58,7 +70,7 @@ Pick the context → domain concept → port in/out → service (no annotation) 
 `UseCaseConfiguration` → adapters → decide who may call the route in `SecurityConfiguration` →
 tests. Two steps fail late rather than at compile time: a forgotten bean registration fails at
 startup, and a controller left out of its context's `@RestControllerAdvice(assignableTypes = …)`
-handler fails silently — its domain exceptions are never translated.
+fails the architecture test.
 
 ## Acting identity, tenancy and the security chain
 

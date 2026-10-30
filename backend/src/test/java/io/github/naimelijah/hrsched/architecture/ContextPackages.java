@@ -19,15 +19,27 @@ final class ContextPackages {
   /** HrSched's own packages: every rule the build enforces is built from this. */
   static final ContextPackages HRSCHED = new ContextPackages("io.github.naimelijah.hrsched");
 
+  /** The top-level package that wires every context into Spring. */
+  private static final String COMPOSITION_ROOT = "configuration";
+
   /**
    * Top-level packages that are not bounded contexts: the composition root, the architecture tests
    * themselves, and the shared kernel every context is allowed to depend on.
+   *
+   * <p>Not being a context exempts the composition root from the cross-context rule only. What it
+   * may see inside a context is a rule of its own, which exempts its wiring and nothing else.
    */
   private static final Set<String> NOT_A_CONTEXT =
-      Set.of("configuration", "architecture", "shared");
+      Set.of(COMPOSITION_ROOT, "architecture", "shared");
+
+  /** The packages every context is made of, and nothing else (ADR-003, ADR-006). */
+  private static final Set<String> LAYERS = Set.of("domain", "application", "adapter");
 
   /** The only part of a context other contexts may reference: its driving ports. */
   private static final String PUBLISHED = ".application.port.in.";
+
+  /** The only part of a context that may reference another: its driven adapters (ADR-008). */
+  private static final String DRIVEN_ADAPTERS = ".adapter.out.";
 
   private final String rootPrefix;
 
@@ -36,6 +48,21 @@ final class ContextPackages {
    */
   ContextPackages(String root) {
     this.rootPrefix = root + ".";
+  }
+
+  /**
+   * @return the root package itself, whose direct subpackages are the contexts
+   */
+  String root() {
+    return rootPrefix.substring(0, rootPrefix.length() - 1);
+  }
+
+  /**
+   * @return an ArchUnit slice pattern capturing each top-level package under the root, contexts and
+   *     the packages that are not one alike
+   */
+  String topLevelPackages() {
+    return rootPrefix + "(*)..";
   }
 
   /**
@@ -54,10 +81,55 @@ final class ContextPackages {
   }
 
   /**
+   * @param context a context, as {@link #contextOf} names it
+   * @return the fully qualified name of its package
+   */
+  String packageOf(String context) {
+    return rootPrefix + context;
+  }
+
+  /**
+   * @param clazz any class
+   * @return whether it sits in the composition root, or a package beneath it
+   */
+  boolean isInTheCompositionRoot(JavaClass clazz) {
+    return (clazz.getPackageName() + ".").startsWith(rootPrefix + COMPOSITION_ROOT + ".");
+  }
+
+  /**
+   * @param clazz any class
+   * @return whether it sits in one of the layers of the context it belongs to; false for a class in
+   *     no context
+   */
+  boolean isInALayer(JavaClass clazz) {
+    return contextOf(clazz)
+        .map(
+            context -> {
+              String below =
+                  (clazz.getPackageName() + ".").substring((rootPrefix + context + ".").length());
+              int dot = below.indexOf('.');
+              return dot > 0 && LAYERS.contains(below.substring(0, dot));
+            })
+        .orElse(false);
+  }
+
+  /**
    * @param clazz any class
    * @return whether it sits in a context's published driving-port package
    */
   boolean isPublished(JavaClass clazz) {
     return (clazz.getPackageName() + ".").contains(PUBLISHED);
+  }
+
+  /**
+   * @param clazz any class
+   * @return whether it sits in the driven-adapter package of the context it belongs to
+   */
+  boolean isDrivenAdapter(JavaClass clazz) {
+    return contextOf(clazz)
+        .map(
+            context ->
+                (clazz.getPackageName() + ".").startsWith(rootPrefix + context + DRIVEN_ADAPTERS))
+        .orElse(false);
   }
 }

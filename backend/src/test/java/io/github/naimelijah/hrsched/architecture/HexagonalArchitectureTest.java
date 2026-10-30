@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.architecture;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
@@ -9,8 +10,11 @@ import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.sli
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaAccess;
+import com.tngtech.archunit.core.domain.JavaAnnotation;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaConstructor;
+import com.tngtech.archunit.core.domain.JavaMethod;
+import com.tngtech.archunit.core.domain.JavaPackage;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -18,11 +22,47 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import io.github.naimelijah.hrsched.HrSchedApplication;
+import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
+import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
+import io.github.naimelijah.hrsched.access.application.port.out.SessionRepository;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
+import io.github.naimelijah.hrsched.access.domain.model.SessionRevocation;
+import io.github.naimelijah.hrsched.access.domain.model.SignInName;
+import io.github.naimelijah.hrsched.access.domain.model.SignInSession;
+import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
+import io.github.naimelijah.hrsched.shared.domain.model.UserId;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.CharArrayReader;
+import java.io.CharArrayWriter;
+import java.io.Console;
+import java.io.File;
+import java.io.FileDescriptor;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.RandomAccessFile;
+import java.io.Reader;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.io.Writer;
+import java.lang.annotation.Annotation;
+import java.net.URI;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+import java.util.zip.ZipFile;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
  * Executable specification of the hexagon.
@@ -64,15 +104,125 @@ class HexagonalArchitectureTest {
                           "..application..", "..adapter..", "..configuration..")))
           .because("the domain must be testable and reusable without the framework");
 
+  /**
+   * The application layer depends on the JDK, on SLF4J and on HrSched's own core, and on nothing
+   * else.
+   *
+   * <p>An allow-list, as the domain's is. This rule once forbade Spring, the adapters and the
+   * composition root by name, so Jackson, a token library, the PostgreSQL driver or any library
+   * added later passed it; a use case needing one of those needs a driven port instead. Within
+   * HrSched it allows everything but an adapter, the composition root and the root package's {@code
+   * HrSchedApplication}. What it may use of another context is {@link
+   * #contexts_touch_only_published_ports_of_other_contexts}'s concern.
+   *
+   * <p>SLF4J is allowed because the deny-list this replaced allowed it, and the allow-list is not
+   * where a logging policy is decided: a use case could log through SLF4J before it, as through
+   * {@code java.util.logging} still. Whether a use case may log at all is a decision of its own.
+   * {@link #the_domain_does_not_log} keeps it out of the domain. {@code
+   * HexagonalArchitectureRulesTest} watches this rule reject a library and that entry point, and
+   * permit SLF4J.
+   */
   @ArchTest
   static final ArchRule application_is_free_of_the_framework =
       noClasses()
           .that()
           .resideInAPackage("..application..")
           .should()
-          .dependOnClassesThat()
-          .resideInAnyPackage("org.springframework..", "..adapter..", "..configuration..")
-          .because("use cases are wired by configuration, never annotated by it");
+          .dependOnClassesThat(
+              JavaClass.Predicates.resideOutsideOfPackages(
+                      "java..", "org.slf4j..", "io.github.naimelijah.hrsched..")
+                  .or(
+                      JavaClass.Predicates.resideInAnyPackage(
+                          "..adapter..", "..configuration..", "io.github.naimelijah.hrsched")))
+          .because(
+              "a use case is plain Java over its own ports, wired by configuration and never"
+                  + " annotated by it");
+
+  /**
+   * The JDK packages that reach a database, a network, a remote object or a disk, whatever their
+   * types are called.
+   */
+  private static final String[] JDK_IO_PACKAGES = {
+    "java.sql..", "java.net..", "java.rmi..", "java.nio.file..", "java.nio.channels.."
+  };
+
+  /**
+   * The JDK types that read or write a disk, a terminal, a stream or another program, whatever
+   * package they are in. Their subtypes are refused with them.
+   */
+  private static final Set<Class<?>> JDK_IO_TYPES =
+      Set.of(
+          InputStream.class,
+          OutputStream.class,
+          Reader.class,
+          Writer.class,
+          File.class,
+          RandomAccessFile.class,
+          FileDescriptor.class,
+          Console.class,
+          ZipFile.class,
+          ProcessBuilder.class,
+          Process.class,
+          Runtime.class);
+
+  /**
+   * The JDK types in those packages or hierarchies that reach nothing outside the process: a
+   * location, which is a value, and the readers, writers and streams over memory. Exempt by exact
+   * type, so a subclass of one is not.
+   */
+  private static final Set<Class<?>> JDK_IN_MEMORY_TYPES =
+      Set.of(
+          URI.class,
+          StringReader.class,
+          StringWriter.class,
+          ByteArrayInputStream.class,
+          ByteArrayOutputStream.class,
+          CharArrayReader.class,
+          CharArrayWriter.class);
+
+  /**
+   * The domain and the application layer do no I/O through the JDK.
+   *
+   * <p>Both allow-lists admit the whole JDK, and the JDK is not only collections and time. So this
+   * rule refuses, in either layer, any dependency on {@code java.sql} (a database), {@code
+   * java.net} (a network), {@code java.rmi} (a remote object), {@code java.nio.file} or {@code
+   * java.nio.channels} (a disk or a channel), and on {@code InputStream}, {@code OutputStream},
+   * {@code Reader}, {@code Writer}, {@code File}, {@code RandomAccessFile}, {@code FileDescriptor},
+   * {@code Console}, {@code ZipFile}, {@code ProcessBuilder}, {@code Process} or {@code Runtime},
+   * or any subtype of one. It exempts {@code java.net.URI} and the in-memory {@code StringReader},
+   * {@code StringWriter}, {@code ByteArrayInputStream}, {@code ByteArrayOutputStream}, {@code
+   * CharArrayReader} and {@code CharArrayWriter}. Reaching outside is a driven port's job, so the
+   * use case can be tested with a fake and the domain with {@code new}. A port therefore cannot
+   * declare an {@code OutputStream} parameter either, and that is intended: the adapter does the
+   * I/O.
+   *
+   * <p>{@code java.io}'s exceptions and {@code Serializable} do no I/O and stay allowed, as do
+   * {@code java.nio.charset} and {@code java.security}, which the core uses to measure a password
+   * and to draw a token. A library that does I/O is the allow-lists' to refuse, not this rule's.
+   * {@code HexagonalArchitectureRulesTest} watches it reject a file, a {@code BufferedReader} and
+   * an archive in the domain, and a database connection, an HTTP client, a process and a
+   * remote-object registry in a use case, and permit {@code Serializable}, a {@code URI} and the
+   * in-memory types.
+   */
+  @ArchTest
+  static final ArchRule the_core_does_no_io =
+      noClasses()
+          .that()
+          .resideInAnyPackage("..domain..", "..application..")
+          .should()
+          .dependOnClassesThat(
+              JavaClass.Predicates.resideInAnyPackage(JDK_IO_PACKAGES)
+                  .or(
+                      DescribedPredicate.describe(
+                          "are JDK streams, readers, writers, files, archives or processes",
+                          target -> JDK_IO_TYPES.stream().anyMatch(target::isAssignableTo)))
+                  .and(
+                      DescribedPredicate.describe(
+                          "are not a URI or an in-memory reader, writer or stream",
+                          target ->
+                              JDK_IN_MEMORY_TYPES.stream().noneMatch(target::isEquivalentTo))))
+          .because(
+              "reaching a database, a network, a disk or another program is a driven port's job");
 
   @ArchTest
   static final ArchRule dependencies_point_inward =
@@ -96,7 +246,7 @@ class HexagonalArchitectureTest {
           .mayOnlyBeAccessedByLayers("Application", "Adapter", "Configuration");
 
   /**
-   * Contexts integrate only through one another's published driving ports.
+   * Contexts integrate only through one another's published driving ports, consumed in an adapter.
    *
    * <p>ADR-006 forbade every cross-context reference. Modelling the real domain showed that is too
    * strict to be honest: generating a roster needs qualifications and unavailability, which live in
@@ -105,10 +255,16 @@ class HexagonalArchitectureTest {
    * context's {@code application.port.in} package, and nothing else of it. Its domain, its
    * services, its adapters and its driven ports all stay private. See ADR-008.
    *
+   * <p>The allowance is spent only in the consuming context's {@code adapter.out}, behind a driven
+   * port of its own, so its domain and application layers never name the other context and a change
+   * to the other's published language stops at that adapter (ADR-008). Which adapter, and how many,
+   * is left to each context.
+   *
    * <p>Loosening a rule is exactly when a rule quietly stops protecting anything, so this one has a
    * failure test: {@code HexagonalArchitectureRulesTest} evaluates it against fixture contexts, and
-   * it must reject a reference into another context's domain or driven ports while permitting one
-   * into its published ports.
+   * it must reject a reference into another context's domain or driven ports, and a use case or a
+   * driving adapter naming another's published port, while permitting a driven adapter's reference
+   * into that port.
    */
   @ArchTest
   static final ArchRule contexts_touch_only_published_ports_of_other_contexts =
@@ -121,24 +277,93 @@ class HexagonalArchitectureTest {
   static ArchRule contextsTouchOnlyPublishedPortsOfOtherContexts(ContextPackages packages) {
     return classes()
         .should(onlyReachOtherContextsThroughTheirPublishedPorts(packages))
-        .because("a context may use another context's published driving ports, and nothing else");
+        .because(
+            "a context may use another context's published driving ports, from a driven adapter,"
+                + " and nothing else");
+  }
+
+  /**
+   * Only the wiring sees inside a context: in {@code configuration}, a class annotated
+   * {@code @Configuration}, and the classes nested in one.
+   *
+   * <p>Building a context's services means naming them, and their driven ports, so the composition
+   * root cannot be held to published ports as a context is. But the exemption belongs to the
+   * wiring, not to the package: exempting every class under {@code configuration} would leave a
+   * sanctioned back door, where translation logic between contexts accretes in an ordinary class
+   * that merely lives there, the one place no rule inspects (ADR-008). Any other class there may
+   * use a context's published ports, as a context may, and nothing else of it.
+   *
+   * <p>A class nested in a {@code @Configuration} class inherits its exemption, and no rule can
+   * tell wiring from logic, so what is nested there is review's to check.
+   *
+   * <p>The annotation is a parameter because a fixture cannot carry Spring's: see {@code
+   * FixtureConfiguration}. {@code HexagonalArchitectureRulesTest} watches the rule reject a helper
+   * beside the wiring reaching a domain, permit its reaching a published port, permit the wiring
+   * and a class nested in it, and permit {@code UseCaseConfiguration} under the build's own rule.
+   */
+  @ArchTest
+  static final ArchRule only_the_wiring_sees_inside_a_context =
+      onlyTheWiringSeesInsideAContext(ContextPackages.HRSCHED, Configuration.class);
+
+  /**
+   * @param packages where the contexts and the composition root are; {@link
+   *     ContextPackages#HRSCHED} for the build's rule
+   * @param wiring the annotation that marks wiring; {@code @Configuration} for the build's rule
+   * @return the composition-root rule over those packages
+   */
+  static ArchRule onlyTheWiringSeesInsideAContext(
+      ContextPackages packages, Class<? extends Annotation> wiring) {
+    return classes()
+        .that(
+            DescribedPredicate.describe(
+                "are in the composition root", packages::isInTheCompositionRoot))
+        .should(reachContextsOnlyThroughTheirPublishedPortsUnlessWiring(packages, wiring))
+        .because("only the wiring builds a context, so only the wiring may see inside one");
+  }
+
+  private static ArchCondition<JavaClass> reachContextsOnlyThroughTheirPublishedPortsUnlessWiring(
+      ContextPackages packages, Class<? extends Annotation> wiring) {
+    return new ArchCondition<>(
+        "reach contexts only through their published driving ports, unless annotated @"
+            + wiring.getSimpleName()) {
+      @Override
+      public void check(JavaClass origin, ConditionEvents events) {
+        if (isWiring(origin, wiring)) {
+          return;
+        }
+        for (Dependency dependency : origin.getDirectDependenciesFromSelf()) {
+          JavaClass target = dependency.getTargetClass();
+          if (packages.contextOf(target).isPresent() && !packages.isPublished(target)) {
+            events.add(SimpleConditionEvent.violated(origin, dependency.getDescription()));
+          }
+        }
+      }
+    };
+  }
+
+  /** A nested or anonymous class of the wiring is part of it, as a lambda inside it would be. */
+  private static boolean isWiring(JavaClass clazz, Class<? extends Annotation> wiring) {
+    return clazz.isAnnotatedWith(wiring)
+        || clazz.getEnclosingClass().map(enclosing -> isWiring(enclosing, wiring)).orElse(false);
   }
 
   private static ArchCondition<JavaClass> onlyReachOtherContextsThroughTheirPublishedPorts(
       ContextPackages packages) {
-    return new ArchCondition<>("only reach other contexts through their published driving ports") {
+    return new ArchCondition<>(
+        "only reach other contexts through their published driving ports, from a driven adapter") {
       @Override
       public void check(JavaClass origin, ConditionEvents events) {
         Optional<String> originContext = packages.contextOf(origin);
         if (originContext.isEmpty()) {
           return;
         }
+        boolean mayConsume = packages.isDrivenAdapter(origin);
         for (Dependency dependency : origin.getDirectDependenciesFromSelf()) {
           JavaClass target = dependency.getTargetClass();
           Optional<String> targetContext = packages.contextOf(target);
           boolean crossesContexts =
               targetContext.isPresent() && !targetContext.get().equals(originContext.get());
-          if (crossesContexts && !packages.isPublished(target)) {
+          if (crossesContexts && !(mayConsume && packages.isPublished(target))) {
             events.add(SimpleConditionEvent.violated(origin, dependency.getDescription()));
           }
         }
@@ -250,10 +475,9 @@ class HexagonalArchitectureTest {
    * <p>OR-Tools is native code with a modelling discipline of its own, a version held back for one
    * platform's runtime, and a crash that takes the JVM with it. Confined to {@code
    * scheduling.adapter.out.generation}, it can be replaced, upgraded or moved into a process of its
-   * own by changing one package. The domain's allow-list already rejects this library there, but
-   * the rule for the application layer names the packages it forbids, and this library is not among
-   * them, so without this rule a model type could reach a use case, or any adapter but this one,
-   * unnoticed.
+   * own by changing one package. The allow-lists of the domain and the application layer already
+   * reject this library there, but nothing else would keep a model type out of any adapter but this
+   * one.
    */
   @ArchTest
   static final ArchRule the_solver_stays_in_its_adapter =
@@ -375,10 +599,9 @@ class HexagonalArchitectureTest {
   /**
    * Cycles are checked one level below the context, between a context's own layers.
    *
-   * <p>A context-level cycle rule was removed as dead: any cycle between two contexts requires a
-   * dependency between them, which {@link #contexts_touch_only_published_ports_of_other_contexts}
-   * already forbids outright, so it had no failure mode left. This rule does have one — a {@code
-   * scheduling.domain -> scheduling.application} dependency fails it, and was observed doing so.
+   * <p>{@link #contexts_are_free_of_cycles} cannot see such a cycle, as both ends sit in one of its
+   * slices (ADR-006). This rule can — a {@code scheduling.domain -> scheduling.application}
+   * dependency fails it, and was observed doing so.
    */
   @ArchTest
   static final ArchRule layers_within_a_context_are_free_of_cycles =
@@ -387,4 +610,417 @@ class HexagonalArchitectureTest {
           .namingSlices("$1.$2")
           .should()
           .beFreeOfCycles();
+
+  /**
+   * Contexts depend on one another in one direction only.
+   *
+   * <p>ADR-008 lets any context reach another's published ports, so two contexts can each reach the
+   * other's, adapter to port, with every other rule here satisfied. That pair can no longer change,
+   * or be extracted, one without the other: the boundary between them is gone. A context-level
+   * cycle rule was once removed as dead, when ADR-006 forbade every cross-context reference and so
+   * left a cycle nothing to be made of; the published ports gave it a failure mode back. {@code
+   * HexagonalArchitectureRulesTest} watches it reject two fixture contexts reaching each other's
+   * ports, and permit one reaching the other's.
+   *
+   * <p>Sliced by every top-level package, so a cycle through {@code configuration} or the kernel is
+   * one too, and {@code HexagonalArchitectureRulesTest} watches it reject the fixture kernel and a
+   * fixture context reaching each other.
+   */
+  @ArchTest
+  static final ArchRule contexts_are_free_of_cycles =
+      contextsAreFreeOfCycles(ContextPackages.HRSCHED);
+
+  /**
+   * @param packages where the contexts are; {@link ContextPackages#HRSCHED} for the build's rule
+   * @return the context cycle rule over those contexts
+   */
+  static ArchRule contextsAreFreeOfCycles(ContextPackages packages) {
+    return slices()
+        .matching(packages.topLevelPackages())
+        .namingSlices("$1")
+        .should()
+        .beFreeOfCycles()
+        .because("two contexts reaching each other can no longer change one without the other");
+  }
+
+  /**
+   * The attribute of an exception handler naming the controllers whose exceptions it translates.
+   */
+  private static final String HANDLED_CONTROLLERS = "assignableTypes";
+
+  /**
+   * The attribute of an exception handler naming the packages whose controllers it translates for.
+   */
+  private static final String HANDLED_PACKAGES = "basePackages";
+
+  /**
+   * The attribute of an exception handler naming classes whose packages are those whose controllers
+   * it translates for.
+   */
+  private static final String HANDLED_PACKAGE_CLASSES = "basePackageClasses";
+
+  /**
+   * Every {@code @RestController} in a context is handled by an exception handler of that context.
+   *
+   * <p>Each context translates its own domain exceptions in a {@code @RestControllerAdvice} limited
+   * to its own controllers, so that one context's handler never answers for another's exception.
+   * Limited by {@code assignableTypes}, the cost is a failure nothing reports: a controller left
+   * off the list compiles, starts and serves, and its domain exceptions are simply never
+   * translated. A handler limited instead by {@code basePackages} or {@code basePackageClasses} to
+   * a package holding the controller cannot forget it, and the rule accepts that too. Only a
+   * handler in the controller's own context counts, as another context's translates other
+   * exceptions. {@code HexagonalArchitectureRulesTest} watches it reject a fixture controller its
+   * handler does not list, one listed only by another context's handler, and one outside its
+   * handler's packages, and permit one listed and two inside their handlers' packages.
+   *
+   * <p>The annotations are parameters for the reason {@link #onlyTheWiringSeesInsideAContext}'s is;
+   * the handler's is read by the attribute names Spring gives it.
+   */
+  @ArchTest
+  static final ArchRule every_controller_is_listed_by_its_contexts_handler =
+      everyControllerIsListedByItsContextsHandler(
+          ContextPackages.HRSCHED, RestController.class, RestControllerAdvice.class);
+
+  /**
+   * @param packages where the contexts are; {@link ContextPackages#HRSCHED} for the build's rule
+   * @param controller the annotation that marks a controller; {@code @RestController} for the
+   *     build's rule
+   * @param handler the annotation that marks an exception handler, with {@code assignableTypes},
+   *     {@code basePackages} and {@code basePackageClasses} attributes;
+   *     {@code @RestControllerAdvice} for the build's rule
+   * @return the exception-handler rule over those contexts
+   */
+  static ArchRule everyControllerIsListedByItsContextsHandler(
+      ContextPackages packages,
+      Class<? extends Annotation> controller,
+      Class<? extends Annotation> handler) {
+    return classes()
+        .that()
+        .areAnnotatedWith(controller)
+        .and(DescribedPredicate.describe("belong to a bounded context", inAContext(packages)))
+        .should(beListedByAHandlerOfTheirContext(packages, handler))
+        .because("a controller its handler does not list has its domain exceptions untranslated");
+  }
+
+  private static Predicate<JavaClass> inAContext(ContextPackages packages) {
+    return clazz -> packages.contextOf(clazz).isPresent();
+  }
+
+  private static ArchCondition<JavaClass> beListedByAHandlerOfTheirContext(
+      ContextPackages packages, Class<? extends Annotation> handler) {
+    return new ArchCondition<>(
+        "be listed in the "
+            + HANDLED_CONTROLLERS
+            + ", or inside the "
+            + HANDLED_PACKAGES
+            + " or "
+            + HANDLED_PACKAGE_CLASSES
+            + ", of a @"
+            + handler.getSimpleName()
+            + " in their context") {
+      @Override
+      public void check(JavaClass controller, ConditionEvents events) {
+        String context = packages.contextOf(controller).orElseThrow();
+        boolean listed =
+            contextPackage(controller, packages.packageOf(context))
+                .getClassesInPackageTree()
+                .stream()
+                .flatMap(origin -> origin.tryGetAnnotationOfType(handler.getName()).stream())
+                .anyMatch(annotation -> lists(annotation, controller));
+        if (!listed) {
+          events.add(
+              SimpleConditionEvent.violated(
+                  controller,
+                  controller.getName()
+                      + " is handled by no @"
+                      + handler.getSimpleName()
+                      + " in "
+                      + context));
+        }
+      }
+    };
+  }
+
+  /**
+   * The package of the context a class belongs to, as the imported classes' package tree has it.
+   */
+  private static JavaPackage contextPackage(JavaClass clazz, String contextPackage) {
+    JavaPackage enclosing = clazz.getPackage();
+    while (!enclosing.getName().equals(contextPackage)) {
+      enclosing = enclosing.getParent().orElseThrow();
+    }
+    return enclosing;
+  }
+
+  private static boolean lists(JavaAnnotation<?> handler, JavaClass controller) {
+    String controllerPackage = controller.getPackageName();
+    return classesIn(handler, HANDLED_CONTROLLERS)
+            .anyMatch(listed -> listed.getName().equals(controller.getName()))
+        || handler.get(HANDLED_PACKAGES).map(String[].class::cast).stream()
+            .flatMap(Arrays::stream)
+            .anyMatch(base -> isWithin(controllerPackage, base))
+        || classesIn(handler, HANDLED_PACKAGE_CLASSES)
+            .anyMatch(marker -> isWithin(controllerPackage, marker.getPackageName()));
+  }
+
+  private static Stream<JavaClass> classesIn(JavaAnnotation<?> handler, String attribute) {
+    return handler.get(attribute).map(JavaClass[].class::cast).stream().flatMap(Arrays::stream);
+  }
+
+  /** Whether a package is the base package or beneath it, as Spring matches a base package. */
+  private static boolean isWithin(String candidate, String base) {
+    return candidate.equals(base) || candidate.startsWith(base + ".");
+  }
+
+  /**
+   * Every class in a context sits in its {@code domain}, its {@code application} or its {@code
+   * adapter} package.
+   *
+   * <p>Every context repeats the same shape (ADR-003, ADR-006), and the rules above lean on it: the
+   * domain's and the application's are written against those package names, and {@link
+   * #dependencies_point_inward} considers only classes inside a layer. A class in {@code
+   * scheduling.util} would escape all three, free to depend on anything and to be depended on by
+   * anything, and so would a class directly in {@code scheduling}. A {@code package-info} is not
+   * such a class: it is the package's own, and a context's root package may carry an annotation
+   * such as {@code @NullMarked}. {@code HexagonalArchitectureRulesTest} watches it reject a class
+   * in a helper package and one directly in a context's root, and permit a class from each layer
+   * and an annotated {@code package-info} at a context's root.
+   */
+  @ArchTest
+  static final ArchRule every_class_in_a_context_is_in_a_layer =
+      everyClassInAContextIsInALayer(ContextPackages.HRSCHED);
+
+  /** The simple name of a package's own class, which holds the package's annotations. */
+  private static final String PACKAGE_INFO = "package-info";
+
+  /**
+   * @param packages where the contexts are; {@link ContextPackages#HRSCHED} for the build's rule
+   * @return the layer rule over those contexts
+   */
+  static ArchRule everyClassInAContextIsInALayer(ContextPackages packages) {
+    return classes()
+        .that(DescribedPredicate.describe("belong to a bounded context", inAContext(packages)))
+        .and()
+        .doNotHaveSimpleName(PACKAGE_INFO)
+        .should(
+            new ArchCondition<>(
+                "reside in their context's domain, application or adapter package") {
+              @Override
+              public void check(JavaClass clazz, ConditionEvents events) {
+                if (!packages.isInALayer(clazz)) {
+                  events.add(
+                      SimpleConditionEvent.violated(
+                          clazz, clazz.getName() + " is in no layer of its context"));
+                }
+              }
+            })
+        .because("a class outside every layer escapes every rule written against the layers");
+  }
+
+  /**
+   * Only {@code HrSchedApplication} resides in the root package.
+   *
+   * <p>A class in {@code io.github.naimelijah.hrsched} itself belongs to no context, is not in the
+   * composition root, sits in no layer and in no slice of either cycle rule, so every rule here
+   * passes it by: a {@code RosterTranslator} there could reach into two contexts' domains with the
+   * build green. It is the back door {@link #only_the_wiring_sees_inside_a_context} closes in
+   * {@code configuration} and {@link #every_class_in_a_context_is_in_a_layer} closes in a context.
+   * {@code HexagonalArchitectureRulesTest} watches it reject a class beside a stand-in entry point,
+   * and permit the entry point alone.
+   */
+  @ArchTest
+  static final ArchRule only_the_entry_point_resides_in_the_root_package =
+      onlyTheEntryPointResidesInTheRootPackage(ContextPackages.HRSCHED, HrSchedApplication.class);
+
+  /**
+   * @param packages where the root package is; {@link ContextPackages#HRSCHED} for the build's rule
+   * @param entryPoint the one class allowed there; {@code HrSchedApplication} for the build's rule
+   * @return the root-package rule over that root
+   */
+  static ArchRule onlyTheEntryPointResidesInTheRootPackage(
+      ContextPackages packages, Class<?> entryPoint) {
+    return classes()
+        .that()
+        .resideInAPackage(packages.root())
+        .should()
+        .be(entryPoint)
+        .because("a class in the root package belongs to no context, and no rule looks at it");
+  }
+
+  /**
+   * A repository method allowed to take no {@code OrganisationId}.
+   *
+   * <p>Named by its parameter types as well as its name, so an overload added later, or the method
+   * itself once its parameters change, is not allowed by an entry written for another signature.
+   *
+   * @param port the driven port declaring it, by class literal so a renamed port fails compilation
+   * @param method its name
+   * @param parameters its parameter types, raw, in order
+   * @param reason why it cannot be scoped, as its port's javadoc gives it
+   */
+  record UnscopedMethod(Class<?> port, String method, List<Class<?>> parameters, String reason) {}
+
+  /**
+   * The repository methods that take no organisation, each named, with the reason its port gives:
+   * six reads, and the five writes that keep a session.
+   *
+   * <p>All belong to access, where the tenant is still being discovered: signing in and
+   * authenticating come before there is an organisation, the operator belongs to none, a session
+   * belongs to an account rather than a tenant, and the register of tenants is the one thing with
+   * no tenant above it. ADR-055 records each.
+   */
+  static final List<UnscopedMethod> UNSCOPED_METHODS =
+      List.of(
+          new UnscopedMethod(
+              AccountRepository.class,
+              "findBySignInName",
+              List.of(SignInName.class),
+              "a sign-in request carries a name and a password, and no organisation to scope by"
+                  + " until the account is found"),
+          new UnscopedMethod(
+              AccountRepository.class,
+              "findForAuthentication",
+              List.of(UserId.class),
+              "authentication works before there is an organisation, and the operator's account"
+                  + " belongs to none"),
+          new UnscopedMethod(
+              AccountRepository.class,
+              "findForUpdate",
+              List.of(Optional.class, UserId.class),
+              "scoped by an Optional<OrganisationId>, whose empty value names the operator's"
+                  + " account, which belongs to no organisation"),
+          new UnscopedMethod(
+              SessionRepository.class,
+              "findRefreshToken",
+              List.of(byte[].class),
+              "a session belongs to an account rather than a tenant, and is reached only by the"
+                  + " digest of a token this system issued"),
+          new UnscopedMethod(
+              SessionRepository.class,
+              "findAuthenticatedSession",
+              List.of(UserId.class, SignInSessionId.class),
+              "the read that discovers which organisation the caller belongs to, and the operator"
+                  + " belongs to none"),
+          new UnscopedMethod(
+              SessionRepository.class,
+              "start",
+              List.of(SignInSession.class, byte[].class, Instant.class),
+              "a session belongs to an account rather than a tenant, and the operator's to none,"
+                  + " so there is no organisation to open it under"),
+          new UnscopedMethod(
+              SessionRepository.class,
+              "markReplaced",
+              List.of(byte[].class, Instant.class),
+              "reaches a refresh token only by the digest of a token this system issued"),
+          new UnscopedMethod(
+              SessionRepository.class,
+              "issueSuccessor",
+              List.of(SignInSessionId.class, byte[].class, Instant.class, Instant.class),
+              "renews a session reached only through a token this system issued, and a session"
+                  + " belongs to an account rather than a tenant"),
+          new UnscopedMethod(
+              SessionRepository.class,
+              "revoke",
+              List.of(SignInSessionId.class, SessionRevocation.class, Instant.class),
+              "ends a session reached only through a token this system issued, and a session"
+                  + " belongs to an account rather than a tenant"),
+          new UnscopedMethod(
+              SessionRepository.class,
+              "revokeEverySessionOf",
+              List.of(UserId.class, SessionRevocation.class, Instant.class),
+              "ends the sessions of one account, which is their scope, and the operator's"
+                  + " account belongs to no organisation"),
+          new UnscopedMethod(
+              OrganisationRepository.class,
+              "findAll",
+              List.of(),
+              "the register of tenants has no outer scope to filter by, and listing it is"
+                  + " operator-only at the use case above"));
+
+  /**
+   * The method names of a save, the one kind of repository method the tenancy rule does not ask
+   * about: the aggregate it stores carries its own organisation.
+   */
+  private static final String SAVE = "save.*";
+
+  /**
+   * Every method of a repository or a directory takes the organisation it works in, but a save.
+   *
+   * <p>ADR-009 makes the tenant part of the signature, so a cross-tenant read cannot be written by
+   * forgetting a {@code WHERE organisation_id = ?}, only by passing the wrong organisation, which a
+   * reviewer sees. That holds only while every method of a driven port named {@code …Repository} or
+   * {@code …Directory} takes an {@code OrganisationId}: a {@code findById(EmployeeId)}, an {@code
+   * existsByEmail(String)} or a {@code countActive()} added later would compile, pass review by
+   * habit, and read across tenants or tell that a record exists in one. Every method is asked,
+   * rather than those named like a lookup, because a name pattern catches only the names somebody
+   * thought of. A save is exempt, as its aggregate carries its organisation. The few methods that
+   * cannot take one are named in {@link #UNSCOPED_METHODS}, each with its port's own reason, so a
+   * new one is a decision written down rather than an omission. {@code
+   * HexagonalArchitectureRulesTest} watches it reject a fixture repository's unscoped lookup,
+   * question and lock, an allowed signature on a port the list does not name, a fixture directory's
+   * unscoped read, and an overload of an allowed method, and permit a scoped repository; it checks
+   * that every allowed method is still a signature its port declares, with a reason.
+   */
+  @ArchTest
+  static final ArchRule repository_methods_take_an_organisation =
+      repositoryMethodsTakeAnOrganisation(UNSCOPED_METHODS);
+
+  /**
+   * @param unscoped the methods allowed to take no organisation; {@link #UNSCOPED_METHODS} for the
+   *     build's rule
+   * @return the tenancy rule with that allow-list
+   */
+  static ArchRule repositoryMethodsTakeAnOrganisation(List<UnscopedMethod> unscoped) {
+    return methods()
+        .that()
+        .areDeclaredInClassesThat(
+            JavaClass.Predicates.resideInAPackage("..application.port.out..")
+                .and(
+                    JavaClass.Predicates.simpleNameEndingWith("Repository")
+                        .or(JavaClass.Predicates.simpleNameEndingWith("Directory")))
+                .and(JavaClass.Predicates.INTERFACES))
+        .and()
+        .haveNameNotMatching(SAVE)
+        .and(DescribedPredicate.not(oneOf(unscoped)))
+        .should(takeAnOrganisation())
+        .because(
+            "a method without the tenant in its signature is a cross-tenant read waiting to be"
+                + " written (ADR-009)");
+  }
+
+  private static DescribedPredicate<JavaMethod> oneOf(List<UnscopedMethod> allowed) {
+    return DescribedPredicate.describe(
+        "are an allowed unscoped method",
+        method ->
+            allowed.stream()
+                .anyMatch(
+                    entry ->
+                        method.getOwner().isEquivalentTo(entry.port())
+                            && method.getName().equals(entry.method())
+                            && hasParameters(method, entry.parameters())));
+  }
+
+  private static boolean hasParameters(JavaMethod method, List<Class<?>> parameters) {
+    List<JavaClass> actual = method.getRawParameterTypes();
+    return actual.size() == parameters.size()
+        && IntStream.range(0, parameters.size())
+            .allMatch(index -> actual.get(index).isEquivalentTo(parameters.get(index)));
+  }
+
+  private static ArchCondition<JavaMethod> takeAnOrganisation() {
+    return new ArchCondition<>("take an " + OrganisationId.class.getSimpleName()) {
+      @Override
+      public void check(JavaMethod method, ConditionEvents events) {
+        boolean scoped =
+            method.getRawParameterTypes().stream()
+                .anyMatch(parameter -> parameter.isEquivalentTo(OrganisationId.class));
+        if (!scoped) {
+          events.add(
+              SimpleConditionEvent.violated(
+                  method,
+                  method.getFullName() + " takes no " + OrganisationId.class.getSimpleName()));
+        }
+      }
+    };
+  }
 }
