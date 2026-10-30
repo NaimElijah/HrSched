@@ -201,6 +201,11 @@ function EmployeeOptions({ staff, linked }: { staff: readonly Employee[]; linked
  * A role or an employee is chosen, then submitted. A change sent on choosing would be made by an
  * arrow key, since a closed select changes on every one in some browsers, and an Admin could demote
  * themselves in one keystroke.
+ *
+ * Every change made here is sent from the copy of the account the row was drawn from, and the
+ * membership is one value, so a change resends the field it leaves alone. The row waits,
+ * from sending a change until the list has been read back: sent from the copy read before the last
+ * change was stored, the next would put back what that change replaced.
  */
 function AccountRow({
   account,
@@ -222,12 +227,30 @@ function AccountRow({
   } | null>(null);
   const role = chosenRole?.on === account ? chosenRole.role : account.role;
   const employee = chosenEmployee?.on === account ? chosenEmployee.employee : account.employee;
+  // The copy of the account the last change was sent from. Until a reload replaces it, that change
+  // is in flight or stored but not yet read back.
+  const [sentFrom, setSentFrom] = useState<Account | null>(null);
+  const waiting = sentFrom === account;
+
+  /** Sends one change, unless one sent from this copy of the account is still waiting. */
+  async function change(what: string, request: () => Promise<void>): Promise<boolean> {
+    if (waiting) {
+      return false;
+    }
+    setSentFrom(account);
+    const changed = await administer(what, request);
+    if (!changed) {
+      // A refusal reads nothing back, so there is no new copy to wait for.
+      setSentFrom(null);
+    }
+    return changed;
+  }
 
   async function reset() {
     if (replacement === '') {
       return;
     }
-    const done = await administer(`Reset the password of ${account.signInName}.`, () =>
+    const done = await change(`Reset the password of ${account.signInName}.`, () =>
       accounts.resetPassword(account.id, replacement),
     );
     if (done) {
@@ -243,7 +266,7 @@ function AccountRow({
           className="row"
           onSubmit={(event) => {
             event.preventDefault();
-            void administer(`Changed the role of ${account.signInName}.`, () =>
+            void change(`Changed the role of ${account.signInName}.`, () =>
               accounts.changeMembership(account.id, role, account.employee),
             );
           }}
@@ -252,6 +275,7 @@ function AccountRow({
             <span className="visually-hidden">Role for {account.signInName}</span>
             <select
               value={role}
+              disabled={waiting}
               onChange={(event) =>
                 setChosenRole({ on: account, role: event.target.value as TenantRole })
               }
@@ -263,7 +287,11 @@ function AccountRow({
               ))}
             </select>
           </label>
-          <button type="submit" aria-label={`Change the role of ${account.signInName}`}>
+          <button
+            type="submit"
+            disabled={waiting}
+            aria-label={`Change the role of ${account.signInName}`}
+          >
             Change
           </button>
         </form>
@@ -273,7 +301,7 @@ function AccountRow({
           className="row"
           onSubmit={(event) => {
             event.preventDefault();
-            void administer(`Changed who ${account.signInName} is.`, () =>
+            void change(`Changed who ${account.signInName} is.`, () =>
               accounts.changeMembership(account.id, account.role, employee),
             );
           }}
@@ -282,6 +310,7 @@ function AccountRow({
             <span className="visually-hidden">Employee for {account.signInName}</span>
             <select
               value={employee ?? NOT_LINKED}
+              disabled={waiting}
               onChange={(event) =>
                 setChosenEmployee({
                   on: account,
@@ -292,7 +321,11 @@ function AccountRow({
               <EmployeeOptions staff={staff} linked={account.employee} />
             </select>
           </label>
-          <button type="submit" aria-label={`Change the employee of ${account.signInName}`}>
+          <button
+            type="submit"
+            disabled={waiting}
+            aria-label={`Change the employee of ${account.signInName}`}
+          >
             Change
           </button>
         </form>
@@ -312,15 +345,16 @@ function AccountRow({
             autoComplete="new-password"
           />
         </label>
-        <button type="button" onClick={() => void reset()}>
+        <button type="button" disabled={waiting} onClick={() => void reset()}>
           Reset password
         </button>
       </td>
       <td>
         <button
           type="button"
+          disabled={waiting}
           onClick={() =>
-            void administer(
+            void change(
               account.active
                 ? `Disabled ${account.signInName}.`
                 : `Restored ${account.signInName}.`,

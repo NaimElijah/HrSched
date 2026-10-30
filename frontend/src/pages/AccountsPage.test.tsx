@@ -529,6 +529,82 @@ describe('changing an account', () => {
     expect(writes(stub)).toHaveLength(0);
   });
 
+  /**
+   * The membership is one value, so a change resends the field it does not change. Sent from the
+   * copy of the account read before the last change was stored, it would put back what that change
+   * replaced: the row waits until the list has been read again.
+   */
+  it('GivenAChangeStoredButNotYetReadBack_WhenTheRowIsUsedAgain_ThenItWaitsAndThenSendsWhatIsStored', async () => {
+    const membership = `/api/accounts/${GRACE.id}/membership`;
+    const server: Record<string, Answer> = {
+      '/api/accounts': { status: 200, body: [ADA, GRACE] },
+      '/api/employees': { status: 200, body: [GRACE_HOPPER, ROBIN] },
+      [`PUT ${membership}`]: { status: 204, body: null },
+    };
+    const routed = routeTo(server);
+    let readBack!: () => void;
+    const readingBack = new Promise<void>((resolve) => {
+      readBack = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        path === '/api/accounts' && callsTo(routed, 'PUT', membership).length > 0
+          ? readingBack.then(() => routed(path, init))
+          : routed(path, init),
+      ),
+    );
+    show();
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await within(rowFor('grace@example.com')).findByRole('option', {
+      name: `Robin Example · ${ROBIN.id}`,
+    });
+    await userEvent.selectOptions(
+      within(rowFor('grace@example.com')).getByLabelText('Employee for grace@example.com'),
+      ROBIN.id,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the employee of grace@example.com' }),
+    );
+    await screen.findByText('Changed who grace@example.com is.');
+
+    const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
+    const changeRole = screen.getByRole('button', { name: 'Change the role of grace@example.com' });
+    expect(role).toBeDisabled();
+    expect(changeRole).toBeDisabled();
+    server['/api/accounts'] = { status: 200, body: [ADA, { ...GRACE, employee: ROBIN.id }] };
+    readBack();
+    await waitFor(() => expect(changeRole).toBeEnabled());
+    await userEvent.selectOptions(role, 'EMPLOYEE');
+    await userEvent.click(changeRole);
+
+    await waitFor(() => expect(callsTo(routed, 'PUT', membership)).toHaveLength(2));
+    const second = callsTo(routed, 'PUT', membership)[1]?.[1];
+    expect(JSON.parse(String(second?.body))).toEqual({ role: 'EMPLOYEE', employee: ROBIN.id });
+  });
+
+  /** A refusal reads nothing back, so the row must not wait for a read that never comes. */
+  it('GivenAChangeRefused_WhenShown_ThenTheRowCanBeUsedAgain', async () => {
+    theOrganisation({
+      'PUT /api/accounts/11111111-1111-4111-8111-111111111111/membership': {
+        status: 409,
+        body: { detail: 'An organisation must keep at least one active Admin.' },
+      },
+    });
+    show();
+    await screen.findByRole('cell', { name: 'ada@example.com' });
+    const role = within(rowFor('ada@example.com')).getByLabelText('Role for ada@example.com');
+
+    await userEvent.selectOptions(role, 'SCHEDULER');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the role of ada@example.com' }),
+    );
+
+    await screen.findByRole('alert');
+    expect(role).toBeEnabled();
+    expect(role).toHaveValue('SCHEDULER');
+  });
+
   it('GivenAnActiveAccount_WhenDisabled_ThenTheActivationIsSent', async () => {
     const stub = theOrganisation({
       'PUT /api/accounts/11111111-1111-4111-8111-111111111111/activation': {
