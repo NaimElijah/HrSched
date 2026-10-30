@@ -1055,9 +1055,11 @@ public class SchedulingService
   /**
    * Records a change that has already been saved.
    *
-   * <p>Called once every write the use case makes has run, its notifications included, never
-   * before: an audit line outlives the rollback of a write that fails after it, and an entry for
-   * something that then failed to store is a record of something that did not happen (#133).
+   * <p>Called once every write in the use case's transaction has run, its notifications included,
+   * never before: an audit line outlives the rollback of a write that fails after it, and an entry
+   * for something that then failed to store is a record of something that did not happen (#133).
+   * {@code startGeneration}, which runs in no single transaction, records between units of work
+   * instead, each already committed when it records (ADR-045).
    */
   private void recorded(
       Actor actor, OrganisationId organisation, SchedulingChange change, UUID subject) {
