@@ -104,15 +104,22 @@ class HexagonalArchitectureTest {
           .because("the domain must be testable and reusable without the framework");
 
   /**
-   * The application layer depends on the JDK and on HrSched's own core, and on nothing else.
+   * The application layer depends on the JDK, on SLF4J and on HrSched's own core, and on nothing
+   * else.
    *
    * <p>An allow-list, as the domain's is. This rule once forbade Spring, the adapters and the
    * composition root by name, so Jackson, a token library, the PostgreSQL driver or any library
    * added later passed it; a use case needing one of those needs a driven port instead. Within
    * HrSched it allows everything but an adapter, the composition root and the root package's {@code
    * HrSchedApplication}. What it may use of another context is {@link
-   * #contexts_touch_only_published_ports_of_other_contexts}'s concern. {@code
-   * HexagonalArchitectureRulesTest} watches it reject a library and that entry point.
+   * #contexts_touch_only_published_ports_of_other_contexts}'s concern.
+   *
+   * <p>SLF4J is allowed because the deny-list this replaced allowed it, and the allow-list is not
+   * where a logging policy is decided: a use case could log through SLF4J before it, as through
+   * {@code java.util.logging} still. Whether a use case may log at all is a decision of its own.
+   * {@link #the_domain_does_not_log} keeps it out of the domain. {@code
+   * HexagonalArchitectureRulesTest} watches this rule reject a library and that entry point, and
+   * permit SLF4J.
    */
   @ArchTest
   static final ArchRule application_is_free_of_the_framework =
@@ -122,7 +129,7 @@ class HexagonalArchitectureTest {
           .should()
           .dependOnClassesThat(
               JavaClass.Predicates.resideOutsideOfPackages(
-                      "java..", "io.github.naimelijah.hrsched..")
+                      "java..", "org.slf4j..", "io.github.naimelijah.hrsched..")
                   .or(
                       JavaClass.Predicates.resideInAnyPackage(
                           "..adapter..", "..configuration..", "io.github.naimelijah.hrsched")))

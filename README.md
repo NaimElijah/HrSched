@@ -110,7 +110,7 @@ overlapping roster was published at the same moment.
 
 These rules fail the build when they are broken. `HexagonalArchitectureTest` runs nineteen ArchUnit
 rules on every build. They cover a domain that depends on nothing but the JDK and HrSched's own
-domain, dependency direction, an application layer that depends on nothing but the JDK and
+domain, dependency direction, an application layer that depends on nothing but the JDK, SLF4J and
 HrSched's core, no database, network, remote-object, disk, stream or process I/O through the JDK
 in either (a `URI` and the in-memory readers, writers and streams excepted), every class of a
 context in one of its layers, published ports between contexts, consumed only in an adapter, only

@@ -45,6 +45,7 @@ import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.se
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceCallingOverHttp;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceHoldingAConnection;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceKnowingTheEntryPoint;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceLoggingThroughSlf4j;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceReachingAPublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceStartingAProcess;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceWithAWireFormat;
@@ -355,6 +356,17 @@ class HexagonalArchitectureRulesTest {
             ServiceKnowingTheEntryPoint.class);
 
     assertViolatedNaming(result, "io.github.naimelijah.hrsched.HrSchedApplication");
+  }
+
+  /** The allow-list takes no position on logging in a use case, so SLF4J is as allowed as JUL. */
+  @Test
+  void GivenAUseCaseLoggingThroughSlf4j_WhenTheApplicationRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.application_is_free_of_the_framework,
+            ServiceLoggingThroughSlf4j.class);
+
+    assertHolds(result);
   }
 
   @Test
