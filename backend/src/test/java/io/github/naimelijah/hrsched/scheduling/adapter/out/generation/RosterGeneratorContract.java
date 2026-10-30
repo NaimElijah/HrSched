@@ -348,14 +348,16 @@ abstract class RosterGeneratorContract {
     Shift monday = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1, Set.of());
     Shift tuesday = shift("2026-10-06T08:00:00Z", "2026-10-06T16:00:00Z", 1, Set.of());
     Shift wednesday = shift("2026-10-07T08:00:00Z", "2026-10-07T16:00:00Z", 1, Set.of());
-    // Invented: twenty hours, room for two eight-hour shifts and not three.
-    ConstraintSet twentyHourWeeks = rules(new MaximumWeeklyWorkingTime(Duration.ofHours(20)));
+    // Invented: nineteen hours, room for two eight-hour shifts and not three.
+    ConstraintSet nineteenHourWeeks = rules(new MaximumWeeklyWorkingTime(Duration.ofHours(19)));
 
     List<Assignment> added =
         generator()
             .generate(
                 request(
-                    List.of(monday, tuesday, wednesday), List.of(anyone("Ada")), twentyHourWeeks));
+                    List.of(monday, tuesday, wednesday),
+                    List.of(anyone("Ada")),
+                    nineteenHourWeeks));
 
     assertThat(added).hasSize(2);
   }

@@ -111,8 +111,8 @@ class ConstraintSetTest {
 
   @Test
   void GivenAWeeklyMaximum_WhenTheTotalExceedsIt_ThenItIsViolated() {
-    // Invented: twenty hours a week, which three ten-hour days break.
-    ConstraintSet rules = setOf(new MaximumWeeklyWorkingTime(Duration.ofHours(20)));
+    // Invented: twenty-three hours a week, which three ten-hour days break.
+    ConstraintSet rules = setOf(new MaximumWeeklyWorkingTime(Duration.ofHours(23)));
     EmployeeSchedule busy =
         new EmployeeSchedule(
             ADA,
