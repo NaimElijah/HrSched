@@ -46,10 +46,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -80,9 +78,6 @@ public class SessionService
         AuthenticatedActorsUseCase,
         ReadSessionUseCase,
         ChangePasswordUseCase {
-
-  /** Bytes of randomness behind the dummy password, which exists only to be compared against. */
-  private static final int DUMMY_PASSWORD_BYTES = 32;
 
   private final AccountRepository accounts;
   private final SessionRepository sessions;
@@ -117,7 +112,9 @@ public class SessionService
     this.lockout = Objects.requireNonNull(lockout, "lockout must not be null");
     this.sessionPolicy = Objects.requireNonNull(sessionPolicy, "sessionPolicy must not be null");
     this.passwordPolicy = Objects.requireNonNull(passwordPolicy, "passwordPolicy must not be null");
-    this.dummyHash = passwords.hash(randomPassword());
+    // Random through the port randomness enters by, never a value anybody holds: it is minted here
+    // and only ever compared against.
+    this.dummyHash = passwords.hash(secrets.generate().value());
   }
 
   @Override
@@ -181,7 +178,8 @@ public class SessionService
   public RefreshOutcome refresh(String refreshToken) {
     Objects.requireNonNull(refreshToken, "refreshToken must not be null");
     Instant now = clock.instant();
-    Optional<StoredRefreshToken> found = sessions.findRefreshToken(secrets.digestOf(refreshToken));
+    byte[] digest = secrets.digestOf(refreshToken);
+    Optional<StoredRefreshToken> found = sessions.findRefreshToken(digest);
     if (found.isEmpty()) {
       return RefreshOutcome.Refused.of(RefreshRefusal.UNKNOWN_TOKEN);
     }
@@ -202,7 +200,7 @@ public class SessionService
     }
     // The conditional update is what decides the race: two requests holding one token both reach
     // here, and the one that does not change a row is presenting a token somebody else just spent.
-    if (!sessions.markReplaced(secrets.digestOf(refreshToken), now)) {
+    if (!sessions.markReplaced(digest, now)) {
       return reuseDetected(session, now);
     }
     RefreshTokenSecret successor = secrets.generate();
@@ -483,11 +481,5 @@ public class SessionService
 
   private static Instant earlier(Instant one, Instant other) {
     return one.isBefore(other) ? one : other;
-  }
-
-  private static String randomPassword() {
-    byte[] bytes = new byte[DUMMY_PASSWORD_BYTES];
-    new SecureRandom().nextBytes(bytes);
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
   }
 }
