@@ -44,9 +44,11 @@ class HexagonalArchitectureTest {
    *
    * <p>An allow-list rather than a list of forbidden frameworks: a list names only the libraries
    * somebody thought of, so a Jackson annotation on a domain record, or any library added later,
-   * passed it. {@code HexagonalArchitectureRulesTest} watches it reject both a library and Spring.
-   * Within HrSched it still forbids the outer layers by name, which {@link
-   * #dependencies_point_inward} also does.
+   * passed it. Within HrSched it allows only a {@code domain} package, the kernel's included, so
+   * the root package's {@code HrSchedApplication} is outside it as much as a library is. {@code
+   * HexagonalArchitectureRulesTest} watches it reject a library, Spring and that entry point. The
+   * outer layers are also forbidden by name, as {@link #dependencies_point_inward} forbids them, so
+   * a {@code domain} package nested inside one of them is not a way in.
    */
   @ArchTest
   static final ArchRule domain_depends_on_nothing_but_the_jdk =
@@ -56,7 +58,7 @@ class HexagonalArchitectureTest {
           .should()
           .dependOnClassesThat(
               JavaClass.Predicates.resideOutsideOfPackages(
-                      "java..", "io.github.naimelijah.hrsched..")
+                      "java..", "io.github.naimelijah.hrsched..domain..")
                   .or(
                       JavaClass.Predicates.resideInAnyPackage(
                           "..application..", "..adapter..", "..configuration..")))

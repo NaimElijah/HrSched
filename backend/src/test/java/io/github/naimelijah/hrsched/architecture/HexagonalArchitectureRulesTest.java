@@ -20,6 +20,7 @@ import io.github.naimelijah.hrsched.architecture.fixtures.actors.ReferencesTheOp
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDomain;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDrivenPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesThroughThePublishedPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainKnowingTheEntryPoint;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainUsingSpring;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainWithAWireFormat;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.FixturePayslip;
@@ -157,6 +158,17 @@ class HexagonalArchitectureRulesTest {
             DomainUsingSpring.class);
 
     assertViolatedNaming(result, "org.springframework.util.Assert");
+  }
+
+  @Test
+  void
+      GivenADomainClassReferencingAnHrSchedClassOutsideEveryDomain_WhenTheDomainRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.domain_depends_on_nothing_but_the_jdk,
+            DomainKnowingTheEntryPoint.class);
+
+    assertViolatedNaming(result, "io.github.naimelijah.hrsched.HrSchedApplication");
   }
 
   @Test
