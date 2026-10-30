@@ -118,7 +118,7 @@ Three rules hold this together, and each fails the build when broken:
 | `notifications.domain.model` | `Notification` — something one person has been told, and whether they have seen it. It carries identifiers, a kind, a time and a flag, and **there is nowhere in it to put a sentence or a name** ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)). |
 | `notifications.application` | Raising and reading notifications. `NotifyUseCase` is this context's **published API** and is deliberately not on a controller; `ReadNotificationsUseCase` is strictly self-service, and whose inbox is read comes from the acting identity rather than from any parameter. Takes a `Clock`, so when something happened is an input rather than an ambient fact. |
 | `workforce.domain.model` | `Employee` (aggregate root: qualifications, unavailability, preferences, contract terms), `Qualification`, `ShiftPreference`, `ContractTerms`. |
-| `workforce.application` | Employee and qualification use cases. `FindRosterableEmployeesUseCase` is this context's **published API**, returning `RosterableEmployee` rather than the aggregate. A use case that changes an employee reads them with `EmployeeRepository.findForUpdate`, so two changes to one person at once — an Admin's and their own — take turns and both apply ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)). |
+| `workforce.application` | Employee and qualification use cases. Other contexts consume three of its ports, each from an `adapter.out.workforce` class: scheduling's `WorkforceDirectoryAdapter` takes `FindRosterableEmployeesUseCase`, which returns `RosterableEmployee` rather than the aggregate, and `ManageQualificationsUseCase`, and access's `WorkforceEmployeeDirectory` takes `ManageEmployeesUseCase` to ask whether an employee exists. A use case that changes an employee reads them with `EmployeeRepository.findForUpdate`, so two changes to one person at once — an Admin's and their own — take turns and both apply ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)). |
 | `scheduling.domain.model` | `Shift`, `Roster` (aggregate root), `Assignment`, `ConstraintSet` and the sealed `WorkingTimeConstraint` family, `EmployeeSchedule` and the `WorkingPeriod`s it holds, `HeldWork`; `Objective`, `ObjectiveWeights` and the `StatedPreferences` a candidate carries ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)). |
 | `scheduling.application` | Shift definition, constraint and objective configuration, roster generation and publication. Assembles the evidence constraints are judged against. |
 | `scheduling.adapter.out.workforce` | An anti-corruption layer: one of **two** classes in scheduling permitted to name another context, and only its published port. |
@@ -718,7 +718,9 @@ are not audited. Nothing at runtime depends on any of it.
   strength, and `RosterCandidate` holds them as `StatedPreferences`, which never decide whether
   anybody may work, only how a roster scores
   ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)).
-  Contracted hours still do not cross.
+  Contracted hours travel on `RosterableEmployee` too, as `weeklyContractedHours`, but
+  scheduling's `WorkforceDirectoryAdapter` drops them, so nothing in scheduling reads them until
+  [#103](https://github.com/NaimElijah/HrSched/issues/103) bounds a roster by them.
 - **A declaration is withdrawn by what it says, because it has no identity** (F26). Unavailability
   is a `TimeRange` and a preference a `ShiftPreference` value inside the `Employee` aggregate, and
   their rows are keyed by an ordinal the repository renumbers on every save. So
