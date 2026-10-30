@@ -304,9 +304,10 @@ filled every place it can, it keeps at least that many filled and minimises the 
   95th percentile**. Generating a draft at the largest size takes at most **10 minutes**, so it runs
   as a background job ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). Decided on
   2026-09-22 ([#36](https://github.com/NaimElijah/HrSched/issues/36)). *`GenerationAtScaleRun`
-  checks generation at the largest size against the configured limits, run by hand rather than in
-  the build, but no run of it has yet completed: the one attempt was stopped for want of memory
-  before both searches ended (see its javadoc). Nothing measures the rest yet.*
+  checks generation at the largest size against these 10 minutes, under the configured limits, run
+  by hand rather than in the build, but no run of it has yet completed: the one attempt was
+  stopped for want of memory before both searches ended (see its javadoc). Nothing measures the
+  rest yet.*
 - **Availability** — HrSched is up around the clock, because people read their roster before a
   shift at any hour: **99.9%** of each month. A disaster loses **no committed write**, and service
   is restored within **1 hour**. Decided on 2026-09-22
