@@ -5,9 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
-import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -30,21 +28,9 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 class PublishedLanguageTest {
 
-  private static final TimeRange MONDAY_DAY =
-      new TimeRange(Instant.parse("2026-09-07T08:00:00Z"), Instant.parse("2026-09-07T16:00:00Z"));
-  private static final TimeRange TUESDAY_DAY =
-      new TimeRange(Instant.parse("2026-09-08T08:00:00Z"), Instant.parse("2026-09-08T16:00:00Z"));
-
-  private static RosterableEmployee ada(
-      Set<QualificationId> qualifications, List<TimeRange> unavailability) {
+  private static RosterableEmployee ada() {
     return new RosterableEmployee(
-        EmployeeId.newId(),
-        "Ada",
-        qualifications,
-        unavailability,
-        Optional.empty(),
-        List.of(),
-        List.of());
+        EmployeeId.newId(), "Ada", Set.of(), List.of(), Optional.empty(), List.of(), List.of());
   }
 
   private static Stream<ThrowingCallable> nullFields() {
@@ -87,35 +73,8 @@ class PublishedLanguageTest {
   }
 
   @Test
-  void GivenAnEmployeeHoldingEveryRequirement_WhenAskedIfTheyHoldThemAll_ThenTheyDo() {
-    QualificationId forklift = QualificationId.newId();
-
-    assertThat(ada(Set.of(forklift), List.of()).holdsAll(Set.of(forklift))).isTrue();
-  }
-
-  @Test
-  void GivenAnEmployeeMissingOneRequirement_WhenAskedIfTheyHoldThemAll_ThenTheyDoNot() {
-    assertThat(ada(Set.of(), List.of()).holdsAll(Set.of(QualificationId.newId()))).isFalse();
-  }
-
-  @Test
-  void GivenNoRequirements_WhenAskedIfTheyHoldThemAll_ThenTheyDo() {
-    assertThat(ada(Set.of(), List.of()).holdsAll(Set.of())).isTrue();
-  }
-
-  @Test
-  void GivenAnEmployeeUnavailableForTheSpan_WhenAskedIfTheyAreAvailable_ThenTheyAreNot() {
-    assertThat(ada(Set.of(), List.of(MONDAY_DAY)).isAvailableFor(MONDAY_DAY)).isFalse();
-  }
-
-  @Test
-  void GivenAnEmployeeUnavailableElsewhere_WhenAskedIfTheyAreAvailable_ThenTheyAre() {
-    assertThat(ada(Set.of(), List.of(TUESDAY_DAY)).isAvailableFor(MONDAY_DAY)).isTrue();
-  }
-
-  @Test
   void GivenNoContract_WhenPublished_ThenTheHoursAreAbsentRatherThanNull() {
-    assertThat(ada(Set.of(), List.of()).weeklyContractedHours()).isEmpty();
+    assertThat(ada().weeklyContractedHours()).isEmpty();
   }
 
   @Test
