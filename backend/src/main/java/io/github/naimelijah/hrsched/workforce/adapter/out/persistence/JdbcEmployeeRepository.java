@@ -62,9 +62,18 @@ public class JdbcEmployeeRepository implements EmployeeRepository {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * @throws IllegalArgumentException if the contracted hours have a part smaller than a second,
+   *     which the store, holding whole seconds, would drop; refused before anything is written
+   * @throws IllegalStateException if the identity already belongs to another organisation
+   */
   @Override
   public void save(Employee employee) {
     UUID id = employee.id().value();
+    Long contractedSeconds =
+        employee.contractTerms().map(terms -> storableSeconds(terms, id)).orElse(null);
     int stored =
         jdbc.sql(
                 """
@@ -78,19 +87,28 @@ public class JdbcEmployeeRepository implements EmployeeRepository {
             .param("id", id)
             .param("organisation", employee.organisation().value())
             .param("name", employee.name())
-            .param(
-                "contracted",
-                employee
-                    .contractTerms()
-                    .map(ContractTerms::weeklyContractedHours)
-                    .map(Duration::toSeconds)
-                    .orElse(null))
+            .param("contracted", contractedSeconds)
             .update();
     requireStored(stored, id);
 
     replaceQualifications(employee, id);
     replaceUnavailability(employee, id);
     replacePreferences(employee, id);
+  }
+
+  /**
+   * {@code weekly_contracted_seconds} holds whole seconds, so a sub-second part would be dropped on
+   * the way in, and hours under a second would reach the positive check as 0. The message names the
+   * employee and never the hours, which say things about a household.
+   */
+  private static long storableSeconds(ContractTerms terms, UUID id) {
+    Duration hours = terms.weeklyContractedHours();
+    if (hours.getNano() != 0) {
+      throw new IllegalArgumentException(
+          "Refused to store %s: contracted hours must be whole seconds, as they are stored"
+              .formatted(id));
+    }
+    return hours.toSeconds();
   }
 
   private void replaceQualifications(Employee employee, UUID id) {

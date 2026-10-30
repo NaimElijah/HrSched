@@ -778,6 +778,10 @@ are not audited. Nothing at runtime depends on any of it.
   translates a violation, as nothing the domain accepts reaches one. Both owned tables' ordinals,
   which only keep the aggregate's list order, are list positions from 0, and a check refuses a
   negative one.
+- **Contracted hours are stored in whole seconds, exactly or not at all.** A request carries them
+  as whole minutes. `JdbcEmployeeRepository` refuses a `ContractTerms` with a part smaller than a
+  second with an `IllegalArgumentException` before it writes anything, rather than drop the part,
+  or, for hours under a second, reach `employee_contracted_hours_positive` with 0.
 - **A declaration is withdrawn by what it says, because it has no identity** (F26). Unavailability
   is a `TimeRange` and a preference a `ShiftPreference` value inside the `Employee` aggregate, and
   their rows are keyed by an ordinal the repository renumbers on every save. So

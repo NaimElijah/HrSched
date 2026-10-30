@@ -949,8 +949,9 @@ class EmployeeServiceTest {
 
   /**
    * In-memory stand-in for the driven port, scoped by organisation exactly as the real one is. It
-   * copies the real adapter's refusal of a save over an identity another organisation holds,
-   * because a double accepting what the database refuses tests nothing.
+   * copies the real adapter's refusals of a save over an identity another organisation holds and of
+   * contracted hours finer than a second, because a double accepting what the database refuses
+   * tests nothing.
    *
    * <p>It does not copy {@code findForUpdate}'s refusal outside a writable transaction: these tests
    * run without one, and that refusal is proven in {@code JdbcEmployeeRepositoryTest}.
@@ -961,11 +962,21 @@ class EmployeeServiceTest {
     private final List<EmployeeId> heldForUpdate = new ArrayList<>();
 
     /**
+     * @throws IllegalArgumentException if the contracted hours have a part smaller than a second,
+     *     as {@code JdbcEmployeeRepository} refuses them
      * @throws IllegalStateException if the identity already belongs to another organisation, as
      *     {@code JdbcEmployeeRepository}'s upsert refuses it
      */
     @Override
     public void save(Employee employee) {
+      if (employee
+          .contractTerms()
+          .filter(terms -> terms.weeklyContractedHours().getNano() != 0)
+          .isPresent()) {
+        throw new IllegalArgumentException(
+            "Refused to store %s: contracted hours must be whole seconds"
+                .formatted(employee.id().value()));
+      }
       Employee held = saved.get(employee.id());
       if (held != null && !held.organisation().equals(employee.organisation())) {
         throw new IllegalStateException(

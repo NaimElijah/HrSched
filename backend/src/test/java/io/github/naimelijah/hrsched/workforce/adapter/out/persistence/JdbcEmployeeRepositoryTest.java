@@ -186,6 +186,40 @@ class JdbcEmployeeRepositoryTest {
         .isEqualTo(Duration.ofMinutes(1261));
   }
 
+  /**
+   * The column holds whole seconds, so storing would drop a part smaller than one and the hours
+   * read back would not be the hours agreed. The HTTP boundary sends whole minutes, so only another
+   * caller of the port could pass one, and it is refused before anything is written: Ada keeps
+   * having no contract. The minutes and the nanosecond beside them are invented.
+   */
+  @Test
+  void GivenContractedHoursWithASubSecondPart_WhenSaved_ThenTheyAreRefusedAndNothingIsWritten() {
+    Employee ada = employee(ACME, "Ada");
+    repository.save(ada);
+    Employee withAFraction =
+        ada.contractedTo(new ContractTerms(Duration.ofMinutes(1261).plusNanos(1)));
+
+    assertThatThrownBy(() -> repository.save(withAFraction))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(ada.id().value().toString());
+    assertThat(repository.findById(ACME, ada.id()).orElseThrow().contractTerms()).isEmpty();
+  }
+
+  /**
+   * Under a second, the whole seconds are 0, which {@code employee_contracted_hours_positive} would
+   * refuse as a constraint violation nobody translates. Refused here first, for the reason the
+   * fraction is. Half a second is invented.
+   */
+  @Test
+  void GivenContractedHoursUnderASecond_WhenSaved_ThenTheyAreRefusedBeforeTheStoreSeesThem() {
+    Employee ada = employee(ACME, "Ada").contractedTo(new ContractTerms(Duration.ofMillis(500)));
+
+    assertThatThrownBy(() -> repository.save(ada))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(ada.id().value().toString());
+    assertThat(repository.findById(ACME, ada.id())).isEmpty();
+  }
+
   @Test
   void GivenQualificationsTheyHold_WhenReadBack_ThenAllOfThemComeBack() {
     QualificationId forklift = aQualification(ACME, "Forklift");
