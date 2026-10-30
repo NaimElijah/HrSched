@@ -108,3 +108,20 @@ CREATE INDEX swap_request_by_assignment ON swap_request (roster_id, shift_id, re
 ALTER TABLE roster_generation
     ADD CONSTRAINT roster_generation_finished_while_it_could
         CHECK (finished_at IS NULL OR (finished_at >= requested_at AND finished_at <= lost_at));
+
+-- Every check is named for what it holds -------------------------------------------------------
+--
+-- V11 and V12 left PostgreSQL to name four checks after their columns, so a refusal said which
+-- column but not which rule. Each is renamed for the rule it holds, as every other constraint in
+-- the schema is. Nothing matches a violation of any of them by name.
+
+ALTER TABLE objective_weights
+    RENAME CONSTRAINT objective_weights_fairness_check TO objective_weights_fairness_at_least_one;
+ALTER TABLE objective_weights
+    RENAME CONSTRAINT objective_weights_preferences_check
+        TO objective_weights_preferences_at_least_one;
+ALTER TABLE objective_weights
+    RENAME CONSTRAINT objective_weights_disruption_check TO objective_weights_disruption_at_least_one;
+ALTER TABLE roster_generation_violation
+    RENAME CONSTRAINT roster_generation_violation_position_check
+        TO roster_generation_violation_position_from_zero;
