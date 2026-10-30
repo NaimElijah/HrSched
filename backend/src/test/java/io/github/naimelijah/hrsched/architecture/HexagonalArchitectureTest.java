@@ -9,6 +9,7 @@ import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.sli
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaAccess;
+import com.tngtech.archunit.core.domain.JavaAnnotation;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaConstructor;
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -30,9 +31,13 @@ import java.io.RandomAccessFile;
 import java.io.Reader;
 import java.io.Writer;
 import java.lang.annotation.Annotation;
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
  * Executable specification of the hexagon.
@@ -556,5 +561,87 @@ class HexagonalArchitectureTest {
         .should()
         .beFreeOfCycles()
         .because("two contexts reaching each other can no longer change one without the other");
+  }
+
+  /**
+   * The attribute of an exception handler naming the controllers whose exceptions it translates.
+   */
+  private static final String HANDLED_CONTROLLERS = "assignableTypes";
+
+  /**
+   * Every controller in a context is listed by an exception handler of that context.
+   *
+   * <p>Each context translates its own domain exceptions in a {@code @RestControllerAdvice} limited
+   * by {@code assignableTypes} to its own controllers, so that one context's handler never answers
+   * for another's exception. The cost of that limit is a failure nothing reports: a controller left
+   * off the list compiles, starts and serves, and its domain exceptions are simply never
+   * translated. {@code HexagonalArchitectureRulesTest} watches it reject a fixture controller its
+   * handler does not list, and permit one it does.
+   *
+   * <p>The annotations are parameters for the reason {@link #onlyTheWiringSeesInsideAContext}'s is;
+   * the handler's is read by the attribute name Spring gives it.
+   */
+  @ArchTest
+  static final ArchRule every_controller_is_listed_by_its_contexts_handler =
+      everyControllerIsListedByItsContextsHandler(
+          ContextPackages.HRSCHED, RestController.class, RestControllerAdvice.class);
+
+  /**
+   * @param packages where the contexts are; {@link ContextPackages#HRSCHED} for the build's rule
+   * @param controller the annotation that marks a controller; {@code @RestController} for the
+   *     build's rule
+   * @param handler the annotation that marks an exception handler, with an {@code assignableTypes}
+   *     attribute; {@code @RestControllerAdvice} for the build's rule
+   * @return the exception-handler rule over those contexts
+   */
+  static ArchRule everyControllerIsListedByItsContextsHandler(
+      ContextPackages packages,
+      Class<? extends Annotation> controller,
+      Class<? extends Annotation> handler) {
+    return classes()
+        .that()
+        .areAnnotatedWith(controller)
+        .and(DescribedPredicate.describe("belong to a bounded context", inAContext(packages)))
+        .should(beListedByAHandlerOfTheirContext(packages, handler))
+        .because("a controller its handler does not list has its domain exceptions untranslated");
+  }
+
+  private static Predicate<JavaClass> inAContext(ContextPackages packages) {
+    return clazz -> packages.contextOf(clazz).isPresent();
+  }
+
+  private static ArchCondition<JavaClass> beListedByAHandlerOfTheirContext(
+      ContextPackages packages, Class<? extends Annotation> handler) {
+    return new ArchCondition<>(
+        "be listed in the " + HANDLED_CONTROLLERS + " of a @" + handler.getSimpleName()) {
+      @Override
+      public void check(JavaClass controller, ConditionEvents events) {
+        Optional<String> context = packages.contextOf(controller);
+        boolean listed =
+            controller.getDirectDependenciesToSelf().stream()
+                .map(Dependency::getOriginClass)
+                .filter(origin -> packages.contextOf(origin).equals(context))
+                .flatMap(origin -> origin.tryGetAnnotationOfType(handler.getName()).stream())
+                .anyMatch(annotation -> lists(annotation, controller));
+        if (!listed) {
+          events.add(
+              SimpleConditionEvent.violated(
+                  controller,
+                  controller.getName()
+                      + " is in the "
+                      + HANDLED_CONTROLLERS
+                      + " of no @"
+                      + handler.getSimpleName()
+                      + " in "
+                      + context.orElseThrow()));
+        }
+      }
+    };
+  }
+
+  private static boolean lists(JavaAnnotation<?> handler, JavaClass controller) {
+    return handler.get(HANDLED_CONTROLLERS).map(JavaClass[].class::cast).stream()
+        .flatMap(Arrays::stream)
+        .anyMatch(listed -> listed.getName().equals(controller.getName()));
   }
 }

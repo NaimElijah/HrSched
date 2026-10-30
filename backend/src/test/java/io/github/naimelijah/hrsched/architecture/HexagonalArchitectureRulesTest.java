@@ -22,6 +22,9 @@ import io.github.naimelijah.hrsched.architecture.fixtures.configuration.HelperRe
 import io.github.naimelijah.hrsched.architecture.fixtures.configuration.WiringReachingIntoContexts;
 import io.github.naimelijah.hrsched.architecture.fixtures.notifications.adapter.out.payroll.ReachesBackThroughPayrollsPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.notifications.application.port.in.FixtureNotifyUseCase;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.PayrollController;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.PayrollExceptionHandler;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.UnhandledPayrollController;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDomain;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDrivenPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesThroughThePublishedPort;
@@ -43,6 +46,8 @@ import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.Ke
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoConfiguration;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoNotifications;
 import io.github.naimelijah.hrsched.architecture.fixtures.stereotypes.FixtureConfiguration;
+import io.github.naimelijah.hrsched.architecture.fixtures.stereotypes.FixtureController;
+import io.github.naimelijah.hrsched.architecture.fixtures.stereotypes.FixtureExceptionHandler;
 import io.github.naimelijah.hrsched.configuration.UseCaseConfiguration;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
@@ -354,6 +359,33 @@ class HexagonalArchitectureRulesTest {
             HexagonalArchitectureTest.the_core_does_no_io,
             SerializablePayslip.class,
             FixturePayrollService.class);
+
+    assertHolds(result);
+  }
+
+  @Test
+  void
+      GivenAControllerItsContextsHandlerDoesNotList_WhenTheExceptionHandlerRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyControllerIsListedByItsContextsHandler(
+                FIXTURES, FixtureController.class, FixtureExceptionHandler.class),
+            PayrollController.class,
+            UnhandledPayrollController.class,
+            PayrollExceptionHandler.class);
+
+    assertViolatedNaming(result, "UnhandledPayrollController");
+  }
+
+  @Test
+  void
+      GivenAControllerItsContextsHandlerLists_WhenTheExceptionHandlerRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyControllerIsListedByItsContextsHandler(
+                FIXTURES, FixtureController.class, FixtureExceptionHandler.class),
+            PayrollController.class,
+            PayrollExceptionHandler.class);
 
     assertHolds(result);
   }

@@ -45,10 +45,11 @@ A context may reference another context's `application.port.in` package and **no
   outside the adapters and `configuration`; either reaches a file, stream or network through the
   JDK; a context reaches past another's published ports, or reaches them from outside its
   `adapter/out`; a class in `configuration` other than the `@Configuration` wiring reaches past
-  them; the kernel depends on a context; or contexts, or a context's layers, form a cycle. Never
-  weaken or delete a rule to make code pass — the rule is the point. Deleting one that provably
-  cannot fail is different, and needs the proof.
-- **When adding an architecture rule, watch it fail first.** All sixteen rules here have been
+  them; the kernel depends on a context; contexts, or a context's layers, form a cycle; or a
+  `@RestController` is missing from its context's `@RestControllerAdvice(assignableTypes = …)`.
+  Never weaken or delete a rule to make code pass — the rule is the point. Deleting one that
+  provably cannot fail is different, and needs the proof.
+- **When adding an architecture rule, watch it fail first.** All seventeen rules here have been
   observed failing on a deliberately introduced violation, then reverted; a rule that has only
   ever been green proves nothing. A rule whose logic is ours keeps that failure as a test in
   `HexagonalArchitectureRulesTest`, against a class under `architecture/fixtures` that breaks it
@@ -61,7 +62,8 @@ Pick the context → domain concept → port in/out → service (no annotation) 
 `UseCaseConfiguration` → adapters → decide who may call the route in `SecurityConfiguration` →
 tests. Two steps fail late rather than at compile time: a forgotten bean registration fails at
 startup, and a controller left out of its context's `@RestControllerAdvice(assignableTypes = …)`
-handler fails silently — its domain exceptions are never translated.
+fails the architecture test, where it once failed silently, its domain exceptions never
+translated.
 
 ## Acting identity, tenancy and the security chain
 
