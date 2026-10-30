@@ -23,7 +23,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -236,21 +235,12 @@ public class JdbcRosterRepository implements RosterRepository {
   }
 
   /**
-   * Read from the driver's exception rather than by exception type, because Spring maps an
-   * exclusion violation to nothing more specific than a data integrity violation, which says
-   * nothing about which rule. The constraint is matched by name inside the driver's message, as
-   * {@link UniqueViolations} does; a deadlock names no constraint, so it is matched by its SQLState
-   * alone.
+   * The exclusion violation is matched by the constraint's name; a deadlock names no constraint, so
+   * it is matched by its SQLState alone.
    */
   private static boolean isPublicationCollision(DataAccessException refused) {
-    if (!(NestedExceptionUtils.getMostSpecificCause(refused) instanceof SQLException cause)) {
-      return false;
-    }
-    String state = cause.getSQLState();
-    return DEADLOCK_DETECTED.equals(state)
-        || (EXCLUSION_VIOLATION.equals(state)
-            && cause.getMessage() != null
-            && cause.getMessage().contains(ONE_PUBLISHED_PER_MOMENT));
+    return StoreRefusals.isReportedAs(refused, DEADLOCK_DETECTED)
+        || StoreRefusals.isViolationOf(refused, EXCLUSION_VIOLATION, ONE_PUBLISHED_PER_MOMENT);
   }
 
   @Override

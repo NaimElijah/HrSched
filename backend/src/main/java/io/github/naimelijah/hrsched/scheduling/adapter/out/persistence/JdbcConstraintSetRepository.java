@@ -86,7 +86,7 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
     } catch (DataAccessException refused) {
       // Matched by name, so only two revisions taking one version are a lost race; any other unique
       // constraint a later migration adds surfaces as the store reported it.
-      if (UniqueViolations.isViolationOf(refused, VERSION_TAKEN)) {
+      if (StoreRefusals.isViolationOf(refused, StoreRefusals.UNIQUE_VIOLATION, VERSION_TAKEN)) {
         throw new ConstraintsRevisedConcurrentlyException(constraintSet.version(), refused);
       }
       throw refused;
