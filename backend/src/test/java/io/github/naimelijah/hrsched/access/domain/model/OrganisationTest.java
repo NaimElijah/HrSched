@@ -24,10 +24,14 @@ class OrganisationTest {
         .isInstanceOf(InvalidOrganisationNameException.class);
   }
 
-  /** PostgreSQL's {@code text} cannot hold a NUL, so a name carrying one could never be stored. */
-  @Test
-  void GivenANameCarryingANul_WhenConstructingAnOrganisation_ThenItIsRejected() {
-    assertThatThrownBy(() -> new Organisation(OrganisationId.newId(), "Acme\0Logistics"))
+  /**
+   * PostgreSQL's {@code text} cannot hold a NUL, so a name carrying one could never be stored,
+   * wherever it sits. A NUL alone is not blank, so only the NUL check refuses that row.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"\0Acme", "Acme\0", "Acme\0Logistics", "\0"})
+  void GivenANameCarryingANul_WhenConstructingAnOrganisation_ThenItIsRejected(String name) {
+    assertThatThrownBy(() -> new Organisation(OrganisationId.newId(), name))
         .isInstanceOf(InvalidOrganisationNameException.class);
   }
 
