@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callsTo, routeTo } from '../test-support/routeTo';
-import { A_TENANT, SignedIn } from '../test-support/session';
+import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { RulesPage } from './RulesPage';
 import { WITHOUT_PAUSES } from '../test-support/typing';
 
@@ -90,13 +90,12 @@ describe('the rules page', () => {
   it('GivenARevisionTheBackendRefuses_WhenRevising_ThenItsReasonIsShownAndTheEditKept', async () => {
     routeTo({
       '/api/constraints': { status: 200, body: CONFIGURED },
-      'PUT /api/constraints': {
-        status: 400,
-        body: { detail: 'maximumDailyMinutes must be positive' },
-      },
+      // Revising the rules is an Admin's. The field's own `min` stops a non-positive limit before
+      // the backend could refuse it as invalid, so the refusal that can reach this form is the role's.
+      'PUT /api/constraints': { status: 403, body: { detail: 'Your role does not permit this.' } },
     });
     render(
-      <SignedIn session={A_TENANT}>
+      <SignedIn session={A_SCHEDULER}>
         <RulesPage />
       </SignedIn>,
     );
@@ -107,9 +106,7 @@ describe('the rules page', () => {
     await userEvent.type(daily, String(REVISED_DAILY), WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'maximumDailyMinutes must be positive',
-    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your role does not permit this.');
     expect(daily).toHaveValue(REVISED_DAILY);
   });
 

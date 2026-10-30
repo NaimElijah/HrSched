@@ -2,7 +2,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callsTo, routeTo, writes } from '../test-support/routeTo';
-import { A_TENANT, SignedIn } from '../test-support/session';
+import type { Session } from '../api/session';
+import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { ObjectivesPage } from './ObjectivesPage';
 import { WITHOUT_PAUSES } from '../test-support/typing';
 
@@ -32,9 +33,9 @@ function sentBody(stub: ReturnType<typeof routeTo>): Record<string, unknown> {
   return JSON.parse(body) as Record<string, unknown>;
 }
 
-function show() {
+function show(session: Session = A_TENANT) {
   render(
-    <SignedIn session={A_TENANT}>
+    <SignedIn session={session}>
       <ObjectivesPage />
     </SignedIn>,
   );
@@ -104,16 +105,17 @@ describe('the objectives page', () => {
   it('GivenARevisionTheBackendRefuses_WhenRevising_ThenItsReasonIsShownAndTheEditKept', async () => {
     routeTo({
       '/api/objectives': { status: 200, body: STORED },
-      'PUT /api/objectives': { status: 403, body: { detail: 'Only an Admin may.' } },
+      // Revising the weights is an Admin's, so a Scheduler is who the backend refuses.
+      'PUT /api/objectives': { status: 403, body: { detail: 'Your role does not permit this.' } },
     });
-    show();
+    show(A_SCHEDULER);
     const preferences = await screen.findByLabelText(/Preferences weight/);
     await waitFor(() => expect(screen.getByLabelText(/Fairness weight/)).toHaveValue(3));
 
     await userEvent.type(preferences, '2', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Only an Admin may.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your role does not permit this.');
     expect(preferences).toHaveValue(2);
   });
 

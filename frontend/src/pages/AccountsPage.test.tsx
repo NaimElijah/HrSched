@@ -67,6 +67,9 @@ const UNLINKED_EMPLOYEE_REFUSED =
 /** Invented for these tests. Nothing here suggests what a real password should look like. */
 const A_PASSWORD = 'an invented temporary password';
 
+/** Invented, and short on purpose: a password a configured minimum length can refuse. */
+const A_SHORT_PASSWORD = 'short';
+
 function theOrganisation(overrides: Record<string, Answer> = {}) {
   return routeTo({
     '/api/accounts': { status: 200, body: [ADA, GRACE] },
@@ -590,9 +593,14 @@ describe('resetting a colleague’s password', () => {
 
   it('GivenAResetRefused_WhenShown_ThenTheTypedPasswordIsKept', async () => {
     theOrganisation({
+      // What AccessExceptionHandler answers a temporary password the policy refuses.
       'POST /api/accounts/99999999-9999-4999-8999-999999999999/password': {
         status: 422,
-        body: { detail: 'A password must be at least 15 characters long.' },
+        body: {
+          title: 'Password not accepted',
+          detail: 'That temporary password does not satisfy the policy.',
+          reason: 'TOO_SHORT',
+        },
       },
     });
     show();
@@ -602,13 +610,13 @@ describe('resetting a colleague’s password', () => {
       .getByRole('cell', { name: 'grace@example.com' })
       .closest('tr') as HTMLElement;
     const field = within(row).getByLabelText('New temporary password for grace@example.com');
-    await userEvent.type(field, A_PASSWORD, WITHOUT_PAUSES);
+    await userEvent.type(field, A_SHORT_PASSWORD, WITHOUT_PAUSES);
     await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'A password must be at least 15 characters long.',
+      'That temporary password does not satisfy the policy.',
     );
-    expect(field).toHaveValue(A_PASSWORD);
+    expect(field).toHaveValue(A_SHORT_PASSWORD);
   });
 
   it('GivenAResetField_WhenShown_ThenItIsMaskedAndEmpty', async () => {

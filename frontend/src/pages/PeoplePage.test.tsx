@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callsTo, routeTo, writes } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
-import { A_TENANT, SignedIn } from '../test-support/session';
+import type { Session } from '../api/session';
+import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { PeoplePage } from './PeoplePage';
 import { WITHOUT_PAUSES } from '../test-support/typing';
 
@@ -73,9 +74,9 @@ function theOrganisation(overrides: Record<string, Answer> = {}) {
   });
 }
 
-function show() {
+function show(session: Session = A_TENANT) {
   render(
-    <SignedIn session={A_TENANT}>
+    <SignedIn session={session}>
       <PeoplePage />
     </SignedIn>,
   );
@@ -169,8 +170,11 @@ describe('adding an employee', () => {
   });
 
   it('GivenTheBackendRefuses_WhenAdding_ThenTheRefusalIsShownAndTheNameSurvives', async () => {
-    theOrganisation({ 'POST /api/employees': { status: 403, body: { detail: 'Only an Admin.' } } });
-    show();
+    // Adding someone is an Admin's, so a Scheduler is who the backend refuses.
+    theOrganisation({
+      'POST /api/employees': { status: 403, body: { detail: 'Your role does not permit this.' } },
+    });
+    show(A_SCHEDULER);
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
     await userEvent.type(screen.getByLabelText('Name'), 'Marie', WITHOUT_PAUSES);
@@ -257,12 +261,14 @@ describe('setting contracted hours', () => {
 
   it('GivenTheBackendRefusesTheTerms_WhenSet_ThenTheRefusalIsShown', async () => {
     theOrganisation({
+      // Setting terms is an Admin's. The field's own `min` stops a non-positive value before the
+      // backend could refuse it as invalid, so the refusal that can reach this page is the role's.
       'PUT /api/employees/e-1/contract': {
-        status: 400,
-        body: { detail: 'weeklyContractedMinutes must be positive' },
+        status: 403,
+        body: { detail: 'Your role does not permit this.' },
       },
     });
-    show();
+    show(A_SCHEDULER);
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
     await userEvent.type(
@@ -273,9 +279,7 @@ describe('setting contracted hours', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
 
     await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        'weeklyContractedMinutes must be positive',
-      ),
+      expect(screen.getByRole('alert')).toHaveTextContent('Your role does not permit this.'),
     );
   });
 });

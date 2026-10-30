@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callsTo, routeTo } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
-import { A_TENANT, SignedIn } from '../test-support/session';
+import type { Session } from '../api/session';
+import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { QualificationsPage } from './QualificationsPage';
 import { WITHOUT_PAUSES } from '../test-support/typing';
 
@@ -31,9 +32,9 @@ const NONE_DEFINED: Record<string, Answer> = {
   '/api/qualifications': { status: 200, body: [] },
 };
 
-function show() {
+function show(session: Session = A_TENANT) {
   render(
-    <SignedIn session={A_TENANT}>
+    <SignedIn session={session}>
       <QualificationsPage />
     </SignedIn>,
   );
@@ -96,9 +97,13 @@ describe('defining one', () => {
   it('GivenTheBackendRefuses_WhenDefining_ThenTheRefusalIsShownAndTheNameSurvives', async () => {
     theOrganisation({
       ...NONE_DEFINED,
-      'POST /api/qualifications': { status: 403, body: { detail: 'Only an Admin may.' } },
+      // Defining one is an Admin's, so a Scheduler is who the backend refuses.
+      'POST /api/qualifications': {
+        status: 403,
+        body: { detail: 'Your role does not permit this.' },
+      },
     });
-    show();
+    show(A_SCHEDULER);
 
     await userEvent.type(screen.getByLabelText('Name'), 'Forklift', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define' }));
