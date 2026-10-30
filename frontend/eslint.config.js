@@ -23,12 +23,13 @@ export default tseslint.config(
   },
   {
     // A request that bypasses client.ts goes out without the bearer token and is never renewed on a
-    // 401. Tests are exempt because they stand in for the network, not because they talk to it.
+    // 401. Tests get no exemption: they replace fetch by name through vi.stubGlobal, and one that
+    // called it would reach the real network.
     // checkGlobalObject follows only a declared global object: window is declared above, globalThis
     // comes with ecmaVersion, and self is declared here so that self.fetch is caught too.
     files: ['src/**/*.{ts,tsx}'],
     languageOptions: { globals: { self: 'readonly' } },
-    ignores: ['src/api/client.ts', 'src/**/*.test.{ts,tsx}', 'src/test-support/**'],
+    ignores: ['src/api/client.ts'],
     rules: {
       'no-restricted-globals': [
         'error',

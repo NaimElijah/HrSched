@@ -13,7 +13,7 @@ sees the file.
 `frontend/` is a React 19 SPA built by Vite (ADR-013):
 
 - `src/api/` — the typed client. `client.ts` is the **only** module that calls `fetch` (lint
-  refuses it anywhere else outside tests) or names a header. Every request carries the bearer
+  refuses it anywhere else) or names a header. Every request carries the bearer
   token except refresh and sign-out, whose credential is the refresh cookie plus
   `X-Requested-With` (ADR-028). `session.ts` holds the access token in memory; `problem.ts`
   validates the error body rather than casting it; `scheduling.ts`, `workforce.ts`, `access.ts`
