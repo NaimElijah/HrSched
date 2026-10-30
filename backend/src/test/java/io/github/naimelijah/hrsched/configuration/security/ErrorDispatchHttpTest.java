@@ -4,17 +4,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
+import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Specification that the security chain lets the container render an error, and lets nobody ask for
@@ -47,6 +50,8 @@ class ErrorDispatchHttpTest {
 
   private static final int UNAUTHORIZED = 401;
 
+  private static final int FORBIDDEN = 403;
+
   private static final String CONTENT_SECURITY_POLICY = "Content-Security-Policy";
   private static final String NOTHING_LOADS_AND_NOTHING_FRAMES =
       "default-src 'none'; frame-ancestors 'none'";
@@ -60,6 +65,9 @@ class ErrorDispatchHttpTest {
   private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
   @LocalServerPort private int port;
+
+  /** Signs the operator in, for a token to send over the real port. */
+  @Autowired private MockMvc mockMvc;
 
   /**
    * Health answers {@code GET} to anybody and has no {@code POST}, so Spring MVC answers a POST
@@ -127,6 +135,24 @@ class ErrorDispatchHttpTest {
     assertThat(response.statusCode())
         .describedAs("status, which answered: %s", response.body())
         .isEqualTo(UNAUTHORIZED);
+  }
+
+  /**
+   * Refused to a signed-in caller too, with a 403 rather than a 401: the page is closed to
+   * everybody, not merely behind a sign-in.
+   */
+  @Test
+  void GivenTheOperatorsToken_WhenAskingForTheErrorPageDirectly_ThenItIsForbidden()
+      throws Exception {
+    String token = TestTenants.operatorToken(mockMvc);
+
+    HttpResponse<String> response =
+        send(
+            HttpRequest.newBuilder(uri("/error")).header("Authorization", "Bearer " + token).GET());
+
+    assertThat(response.statusCode())
+        .describedAs("status, which answered: %s", response.body())
+        .isEqualTo(FORBIDDEN);
   }
 
   /** The container's rendering of a 405, asked for in the given media type. */
