@@ -2,6 +2,7 @@ package io.github.naimelijah.hrsched.access;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.ThrowableProxyUtil;
+import ch.qos.logback.core.read.ListAppender;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -21,7 +22,31 @@ public final class LoggedText {
   private LoggedText() {}
 
   /**
-   * @param events what a test's appender captured
+   * An appender that keeps every event it is given, with the MDC as it stood when the line was
+   * logged.
+   *
+   * <p>An event reads the MDC lazily, the first time anybody asks for it, and by the time a test
+   * searches, the request that logged the line has cleared its MDC. Logback's own {@code
+   * ListAppender} keeps the event untouched, so what it held carried the MDC only while another
+   * appender, the console formatting the line first, happened to have asked already. Preparing the
+   * event for deferred processing takes the MDC on the logging thread, whatever else is attached.
+   *
+   * @return an appender, not yet started or attached; every test that searches with {@link #of}
+   *     captures through one
+   */
+  public static ListAppender<ILoggingEvent> capturing() {
+    return new ListAppender<>() {
+      @Override
+      protected void append(ILoggingEvent event) {
+        event.prepareForDeferredProcessing();
+        super.append(event);
+      }
+    };
+  }
+
+  /**
+   * @param events what an appender from {@link #capturing} captured; one that kept the events
+   *     untouched may have lost their MDC
    * @return every level, message, field, MDC entry and exception those events carry, one event per
    *     line
    */

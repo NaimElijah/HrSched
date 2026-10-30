@@ -45,7 +45,7 @@ class OperatorBootstrapTest {
     logger =
         ((LoggerContext) LoggerFactory.getILoggerFactory())
             .getLogger(OperatorBootstrap.class.getName());
-    captured = new ListAppender<>();
+    captured = LoggedText.capturing();
     captured.start();
     logger.addAppender(captured);
   }

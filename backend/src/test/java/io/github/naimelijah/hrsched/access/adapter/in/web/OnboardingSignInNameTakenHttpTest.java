@@ -66,7 +66,7 @@ class OnboardingSignInNameTakenHttpTest {
   @BeforeEach
   void captureTheLog() {
     root = ((LoggerContext) LoggerFactory.getILoggerFactory()).getLogger(Logger.ROOT_LOGGER_NAME);
-    captured = new ListAppender<>();
+    captured = LoggedText.capturing();
     captured.start();
     root.addAppender(captured);
   }
