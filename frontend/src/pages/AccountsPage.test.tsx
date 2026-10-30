@@ -583,6 +583,63 @@ describe('changing an account', () => {
     expect(JSON.parse(String(second?.body))).toEqual({ role: 'EMPLOYEE', employee: ROBIN.id });
   });
 
+  /**
+   * Another row's change reads the list back too, and that copy says nothing about a change still
+   * on its way. The row waits for its own request, then for the read-back that request started.
+   */
+  it('GivenAChangeInFlight_WhenAnotherRowsChangeIsReadBack_ThenTheRowStillWaits', async () => {
+    const membership = `/api/accounts/${GRACE.id}/membership`;
+    const server: Record<string, Answer> = {
+      '/api/accounts': { status: 200, body: [ADA, GRACE] },
+      '/api/employees': { status: 200, body: [GRACE_HOPPER, ROBIN] },
+      [`PUT ${membership}`]: { status: 204, body: null },
+      [`POST /api/accounts/${ADA.id}/password`]: { status: 204, body: null },
+    };
+    const routed = routeTo(server);
+    let answer!: () => void;
+    const answering = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        path === membership ? answering.then(() => routed(path, init)) : routed(path, init),
+      ),
+    );
+    show();
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
+    await userEvent.selectOptions(role, 'EMPLOYEE');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the role of grace@example.com' }),
+    );
+    const listedBefore = callsTo(routed, 'GET', '/api/accounts').length;
+
+    await userEvent.type(
+      screen.getByLabelText('New temporary password for ada@example.com'),
+      A_PASSWORD,
+      WITHOUT_PAUSES,
+    );
+    await userEvent.click(
+      within(rowFor('ada@example.com')).getByRole('button', { name: 'Reset password' }),
+    );
+    await screen.findByText('Reset the password of ada@example.com.');
+    await waitFor(() =>
+      expect(callsTo(routed, 'GET', '/api/accounts').length).toBeGreaterThan(listedBefore),
+    );
+
+    const changeEmployee = screen.getByRole('button', {
+      name: 'Change the employee of grace@example.com',
+    });
+    expect(role).toBeDisabled();
+    expect(changeEmployee).toBeDisabled();
+    server['/api/accounts'] = { status: 200, body: [ADA, { ...GRACE, role: 'EMPLOYEE' }] };
+    answer();
+    await screen.findByText('Changed the role of grace@example.com.');
+    await waitFor(() => expect(role).toBeEnabled());
+    expect(role).toHaveValue('EMPLOYEE');
+  });
+
   /** A refusal reads nothing back, so the row must not wait for a read that never comes. */
   it('GivenAChangeRefused_WhenShown_ThenTheRowCanBeUsedAgain', async () => {
     theOrganisation({

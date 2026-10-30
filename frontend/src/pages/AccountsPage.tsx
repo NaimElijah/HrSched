@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { accounts } from '../api/access';
 import type { Account, TenantRole } from '../api/access';
 import { workforce } from '../api/workforce';
@@ -203,9 +203,12 @@ function EmployeeOptions({ staff, linked }: { staff: readonly Employee[]; linked
  * themselves in one keystroke.
  *
  * Every change made here is sent from the copy of the account the row was drawn from, and the
- * membership is one value, so a change resends the field it leaves alone. The row waits,
- * from sending a change until the list has been read back: sent from the copy read before the last
- * change was stored, the next would put back what that change replaced.
+ * membership is one value, so a change resends the field it leaves alone. Sent from a copy read
+ * before the last change was stored, the next change would put back what that one replaced. So the
+ * row waits while its change is on its way, and then until the read-back that change started has
+ * replaced the copy the row held when it was answered. A copy another row's read-back brings in the
+ * meantime does not end the wait. A row remounted while its change is on its way, by a new session
+ * or a list that no longer holds the account, forgets that it was waiting: that is not covered.
  */
 function AccountRow({
   account,
@@ -227,22 +230,27 @@ function AccountRow({
   } | null>(null);
   const role = chosenRole?.on === account ? chosenRole.role : account.role;
   const employee = chosenEmployee?.on === account ? chosenEmployee.employee : account.employee;
-  // The copy of the account the last change was sent from. Until a reload replaces it, that change
-  // is in flight or stored but not yet read back.
-  const [sentFrom, setSentFrom] = useState<Account | null>(null);
-  const waiting = sentFrom === account;
+  // Whether this row's change is on its way, and then the copy of the account that change's own
+  // read-back will replace. The copy is read from `held` when the change is answered, because by
+  // then another row's read-back may have replaced the one the change was sent from.
+  const [sending, setSending] = useState(false);
+  const [readingBack, setReadingBack] = useState<Account | null>(null);
+  const held = useRef(account);
+  useLayoutEffect(() => {
+    held.current = account;
+  });
+  const waiting = sending || readingBack === account;
 
-  /** Sends one change, unless one sent from this copy of the account is still waiting. */
+  /** Sends one change, unless this row's last one is on its way or not yet read back. */
   async function change(what: string, request: () => Promise<void>): Promise<boolean> {
     if (waiting) {
       return false;
     }
-    setSentFrom(account);
+    setSending(true);
     const changed = await administer(what, request);
-    if (!changed) {
-      // A refusal reads nothing back, so there is no new copy to wait for.
-      setSentFrom(null);
-    }
+    setSending(false);
+    // A refusal reads nothing back, so there is no new copy to wait for.
+    setReadingBack(changed ? held.current : null);
     return changed;
   }
 
