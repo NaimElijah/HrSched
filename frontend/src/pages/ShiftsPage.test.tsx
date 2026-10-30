@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { callsTo, routeTo } from '../test-support/routeTo';
+import { callsTo, routeTo, writes } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { ShiftsPage } from './ShiftsPage';
@@ -155,7 +155,7 @@ describe('validating before anything is sent', () => {
     await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
-    expect(callsTo(stub, 'POST', '/api/shifts')).toHaveLength(0);
+    expect(writes(stub)).toHaveLength(0);
   });
 
   it('GivenAMissingEnd_WhenDefining_ThenNothingIsSent', async () => {
@@ -166,7 +166,7 @@ describe('validating before anything is sent', () => {
     await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
-    expect(callsTo(stub, 'POST', '/api/shifts')).toHaveLength(0);
+    expect(writes(stub)).toHaveLength(0);
   });
 });
 

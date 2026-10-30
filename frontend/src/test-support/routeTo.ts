@@ -40,3 +40,12 @@ export function callsTo(stub: ReturnType<typeof routeTo>, method: string, path: 
     ([called, init]) => (init?.method ?? 'GET') === method && called === path,
   );
 }
+
+/**
+ * Every call a routed stub received with a method other than GET, wherever it was sent. A check
+ * that nothing was sent asserts this is empty, so a write to a path the test did not think of is
+ * caught as well as one to the path it did.
+ */
+export function writes(stub: ReturnType<typeof routeTo>) {
+  return stub.mock.calls.filter(([, init]) => (init?.method ?? 'GET') !== 'GET');
+}

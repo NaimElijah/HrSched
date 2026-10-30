@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { callsTo, routeTo } from '../test-support/routeTo';
+import { callsTo, routeTo, writes } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { ObjectivesPage } from './ObjectivesPage';
 import { WITHOUT_PAUSES } from '../test-support/typing';
@@ -98,7 +98,7 @@ describe('the objectives page', () => {
     await userEvent.type(screen.getByLabelText(/Fairness weight/), '4', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
 
-    expect(callsTo(stub, 'PUT', '/api/objectives')).toHaveLength(0);
+    expect(writes(stub)).toHaveLength(0);
   });
 
   it('GivenARevisionTheBackendRefuses_WhenRevising_ThenItsReasonIsShownAndTheEditKept', async () => {
