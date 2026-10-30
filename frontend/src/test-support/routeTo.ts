@@ -15,6 +15,9 @@ export interface Answer {
  * receiving somebody else's body: a write to the wrong endpoint, or with the wrong method, is
  * refused rather than answered as if the test had named it.
  *
+ * The answers are looked up in `handlers` on every request, not copied, so a test may change one
+ * after the page has loaded to stand for what the server holds by then.
+ *
  * `fetch` is stubbed rather than mocked with a library: the HTTP API is our own port (ADR-013).
  */
 export function routeTo(handlers: Readonly<Record<string, Answer>>) {
