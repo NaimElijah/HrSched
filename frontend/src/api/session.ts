@@ -44,6 +44,7 @@ const ENDED: SessionEnding = 'ended';
 const SIGN_OUT_UNCONFIRMED: SessionEnding = 'sign-out-unconfirmed';
 
 const listeners = new Set<(how: SessionEnding) => void>();
+const heldListeners = new Set<(held: Session) => void>();
 
 /**
  * Where tabs tell each other a session ended, and how. Only the two {@link SessionEnding} values
@@ -83,13 +84,20 @@ export function currentSession(): Session | null {
 }
 
 /**
- * Remembers a session that has just begun or been renewed.
+ * Remembers a session that has just begun or been renewed, and tells anybody watching.
+ *
+ * A renewal answers with the session as the backend holds it now, so a role or an employee link
+ * changed since sign-in arrives here: the notification is what lets the shell stop showing, and
+ * the pages stop acting on, the one it replaced.
  *
  * @param signedIn what the backend answered with
  */
 export function holdSession(signedIn: SignedIn): void {
   accessToken = signedIn.accessToken;
   session = signedIn.session;
+  for (const listener of [...heldListeners]) {
+    listener(signedIn.session);
+  }
 }
 
 /**
@@ -144,4 +152,14 @@ function forget(how: SessionEnding): void {
 export function onSessionEnded(listener: (how: SessionEnding) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/**
+ * @param listener called whenever a session is held — begun, renewed or begun again by a password
+ *     change — with the session as the backend answered it
+ * @returns a function that stops listening
+ */
+export function onSessionHeld(listener: (held: Session) => void): () => void {
+  heldListeners.add(listener);
+  return () => heldListeners.delete(listener);
 }

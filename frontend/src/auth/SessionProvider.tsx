@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { auth } from '../api/client';
-import { onSessionEnded } from '../api/session';
+import { onSessionEnded, onSessionHeld } from '../api/session';
 import type { Session } from '../api/session';
 
 /**
@@ -168,6 +168,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           }
         }
       }),
+    [],
+  );
+
+  // A session held for the account on screen is that session renewed, and carries its role,
+  // employee link and password flag as the backend holds them now (#254). One held while
+  // nothing is on screen, or for another account, is a sign-in or a restore, and each of those sets
+  // the session itself once it has been read back.
+  useEffect(
+    () =>
+      onSessionHeld((held) =>
+        setSession((shown) => (shown === null || shown.userId !== held.userId ? shown : held)),
+      ),
     [],
   );
 

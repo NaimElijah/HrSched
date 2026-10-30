@@ -274,3 +274,70 @@ describe('a session that ends underneath somebody', () => {
     await waitFor(() => expect(currentAccessToken()).toBeNull());
   });
 });
+
+/**
+ * A renewal answers with the session as the backend now holds it. A role or an employee link an
+ * Admin changed since sign-in arrives that way, and the screens must act on it: a page still
+ * acting on the old link would declare unavailability for somebody the account no longer is.
+ */
+describe('a session renewed underneath somebody', () => {
+  const EMPLOYEE_BEFORE = '66666666-6666-4666-8666-666666666666';
+  const EMPLOYEE_AFTER = '88888888-8888-4888-8888-888888888888';
+
+  /**
+   * Restores `before`, then renews as `after` on the next read of `refused`: that read is refused
+   * once, as one sent with an expired token is, and answered once the renewal has been sent.
+   */
+  async function renewedAs(before: Session, after: Session, refused: string) {
+    const server: Record<string, Answer> = {
+      ...THE_SHELL,
+      'POST /api/auth/refresh': { status: 200, body: signedInBody(before) },
+      '/api/auth/session': { status: 200, body: before },
+    };
+    const routed = routeTo(server);
+    show();
+    await screen.findByRole('button', { name: 'People' });
+    const answered = server[refused] ?? { status: 200, body: [] };
+    server[refused] = NO_COOKIE;
+    server['POST /api/auth/refresh'] = { status: 200, body: signedInBody(after) };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) => {
+        if (path === '/api/auth/refresh') {
+          server[refused] = answered;
+        }
+        return routed(path, init);
+      }),
+    );
+    return routed;
+  }
+
+  it('GivenARenewalCarryingAChangedRole_WhenItIsHeld_ThenTheShellShowsTheNewRole', async () => {
+    await renewedAs(
+      { ...A_TENANT, role: 'SCHEDULER' },
+      { ...A_TENANT, role: 'ADMIN' },
+      '/api/qualifications',
+    );
+    expect(screen.getByText(/^SCHEDULER in/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Qualifications' }));
+
+    expect(await screen.findByText(/^ADMIN in/)).toBeInTheDocument();
+  });
+
+  it('GivenARenewalCarryingAMovedEmployeeLink_WhenItIsHeld_ThenOwnRecordsAreReadForTheNewLink', async () => {
+    const routed = await renewedAs(
+      { ...A_TENANT, employee: EMPLOYEE_BEFORE },
+      { ...A_TENANT, employee: EMPLOYEE_AFTER },
+      '/api/me/schedule',
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Me' }));
+
+    await waitFor(() =>
+      expect(
+        callsTo(routed, 'GET', `/api/employees/${EMPLOYEE_AFTER}/unavailability`).length,
+      ).toBeGreaterThan(0),
+    );
+  });
+});
