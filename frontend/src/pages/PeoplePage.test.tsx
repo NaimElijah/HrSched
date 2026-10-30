@@ -155,6 +155,18 @@ describe('what is already known about each person', () => {
 });
 
 describe('adding an employee', () => {
+  /** The new person may sort anywhere in the table, so the page says what it did. */
+  it('GivenAName_WhenAdded_ThenItSaysSo', async () => {
+    theOrganisation();
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+
+    await userEvent.type(screen.getByLabelText('Name'), 'Marie', WITHOUT_PAUSES);
+    await userEvent.click(screen.getByRole('button', { name: 'Add employee' }));
+
+    expect(await screen.findByText('Added Marie.')).toHaveAttribute('role', 'status');
+  });
+
   it('GivenAName_WhenAdded_ThenItIsSentAndTheFieldClears', async () => {
     const stub = theOrganisation();
     show();
@@ -208,18 +220,47 @@ describe('adding an employee', () => {
 });
 
 describe('granting a qualification', () => {
+  /** The picker empties once a grant is stored, so the page says what was granted, and to whom. */
+  it('GivenAQualificationGranted_WhenItSucceeds_ThenItSaysSo', async () => {
+    theOrganisation();
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+
+    await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), 'q-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada · e-1' }));
+
+    expect(await screen.findByText('Granted Forklift to Ada.')).toHaveAttribute('role', 'status');
+  });
+
+  /** Two people can share a name, and a grant pressed on the wrong one cannot be revoked. */
+  it('GivenTwoPeopleSharingAName_WhenListed_ThenEachGrantIsNamedByIdentifierToo', async () => {
+    theOrganisation({
+      '/api/employees': {
+        status: 200,
+        body: [...PEOPLE, { ...PEOPLE[1], id: 'e-9', name: 'Ada' }],
+      },
+    });
+    show();
+    await waitFor(() => expect(screen.getAllByText('Ada')).toHaveLength(2));
+
+    expect(screen.getByRole('button', { name: 'Grant to Ada · e-1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Grant to Ada · e-9' })).toBeInTheDocument();
+  });
+
   it('GivenAQualificationChosen_WhenGranting_ThenItIsSentForThatEmployee', async () => {
     const stub = theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
     await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), 'q-1');
-    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada · e-1' }));
 
     await waitFor(() =>
       expect(callsTo(stub, 'PUT', '/api/employees/e-1/qualifications/q-1')).toHaveLength(1),
     );
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Grant to Ada' })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Grant to Ada · e-1' })).toBeEnabled(),
+    );
   });
 
   /**
@@ -243,7 +284,7 @@ describe('granting a qualification', () => {
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
     await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), '');
-    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada · e-1' }));
 
     expect(writes(stub)).toHaveLength(0);
   });
@@ -259,12 +300,14 @@ describe('granting a qualification', () => {
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
     await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), 'q-1');
-    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada · e-1' }));
 
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Nothing here for this organisation.'),
     );
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Grant to Ada' })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Grant to Ada · e-1' })).toBeEnabled(),
+    );
   });
 });
 

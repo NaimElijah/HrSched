@@ -16,6 +16,9 @@ export function PeoplePage() {
   const sessionKey = useSessionKey();
   const [name, setName] = useState('');
   const [failure, setFailure] = useState<unknown>(null);
+  // What the last change did. An added person may sort anywhere in the table, and a granted
+  // qualification's picker empties, so neither is otherwise confirmed where the Admin is looking.
+  const [done, setDone] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
   const people = useAsync(() => workforce.findEmployees(), sessionKey);
@@ -24,11 +27,16 @@ export function PeoplePage() {
     (qualifications.value ?? []).map((qualification) => [qualification.id, qualification.name]),
   );
 
-  /** @returns whether the action succeeded */
-  async function act(action: () => Promise<unknown>): Promise<boolean> {
+  /**
+   * @param said what to say once the action has succeeded, if anything
+   * @returns whether the action succeeded
+   */
+  async function act(action: () => Promise<unknown>, said?: string): Promise<boolean> {
     setFailure(null);
+    setDone(null);
     try {
       await action();
+      setDone(said ?? null);
       people.reload();
       return true;
     } catch (error) {
@@ -56,7 +64,7 @@ export function PeoplePage() {
           void act(async () => {
             await workforce.addEmployee(name);
             setName('');
-          }).finally(() => setAdding(false));
+          }, `Added ${name}.`).finally(() => setAdding(false));
         }}
       >
         <label>
@@ -69,6 +77,9 @@ export function PeoplePage() {
       </form>
 
       <Failure error={failure} />
+      <p className="done" role="status">
+        {done}
+      </p>
       <Failure error={people.error} />
       <Busy busy={people.busy} />
 
@@ -114,9 +125,13 @@ export function PeoplePage() {
               <td>
                 <GrantField
                   employee={employee.name}
+                  identifier={employee.id}
                   qualifications={qualifications.value ?? []}
                   onSubmit={(qualification) =>
-                    act(() => workforce.grantQualification(employee.id, qualification))
+                    act(
+                      () => workforce.grantQualification(employee.id, qualification),
+                      `Granted ${qualificationNames.get(qualification) ?? qualification} to ${employee.name}.`,
+                    )
                   }
                 />
               </td>
@@ -148,11 +163,17 @@ export function PeoplePage() {
  */
 function GrantField({
   employee,
+  identifier,
   qualifications,
   onSubmit,
 }: {
   /** Whose field it is, so every row's controls have a name of their own. */
   employee: string;
+  /**
+   * Whose field it is beyond doubt: two people can share a name, and a grant pressed on the wrong
+   * one cannot be revoked, so the button names both, as the account screen's employee choice does.
+   */
+  identifier: string;
   qualifications: readonly Qualification[];
   /** Grants the chosen qualification, resolving to whether it was granted. */
   onSubmit: (qualification: string) => Promise<boolean>;
@@ -189,7 +210,7 @@ function GrantField({
           </option>
         ))}
       </select>
-      <button type="submit" disabled={granting} aria-label={`Grant to ${employee}`}>
+      <button type="submit" disabled={granting} aria-label={`Grant to ${employee} · ${identifier}`}>
         Grant
       </button>
     </form>
