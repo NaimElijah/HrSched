@@ -648,7 +648,7 @@ public class SchedulingService
     List<Roster> existing = rosters.findByOrganisation(organisation);
 
     List<ConstraintViolation> violations =
-        violationsOf(
+        violationsForPublication(
             organisation,
             draft,
             constraints,
@@ -690,6 +690,25 @@ public class SchedulingService
         request ->
             recorded(actor, organisation, SchedulingChange.SWAP_LAPSED, request.id().value()));
     return published;
+  }
+
+  /**
+   * {@link #violationsOf}, refusing a roster that cannot be checked as a refused publication: the
+   * same check refuses an assignment or a read, which are not (#134).
+   *
+   * @throws RosterNotVerifiableException saying it refused a publication
+   */
+  private List<ConstraintViolation> violationsForPublication(
+      OrganisationId organisation,
+      Roster draft,
+      ConstraintSet constraints,
+      List<Roster> existing,
+      List<RosterCandidate> candidates) {
+    try {
+      return violationsOf(organisation, draft, constraints, existing, candidates);
+    } catch (RosterNotVerifiableException unverifiable) {
+      throw unverifiable.refusingPublication();
+    }
   }
 
   /**

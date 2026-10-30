@@ -323,12 +323,28 @@ class SchedulingExceptionHandlerTest {
   }
 
   @Test
-  void GivenARosterThatCannotBeChecked_WhenTranslated_ThenItIsCountedApart() {
+  void GivenAPublicationOfARosterThatCannotBeChecked_WhenTranslated_ThenItIsCountedApart() {
     handler.handleNotVerifiable(
-        new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()));
+        new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()).refusingPublication());
 
     assertThat(refused("not_verifiable")).isEqualTo(1.0);
     assertThat(refused("not_compliant")).isZero();
+  }
+
+  /**
+   * #134: assigning, assessing a draft and reading one's own schedule refuse the same way when a
+   * shift cannot be resolved, and answer the same, but nothing was published, so nothing is counted
+   * as a refused publication.
+   */
+  @Test
+  void
+      GivenARosterThatCannotBeCheckedOutsidePublication_WhenTranslated_ThenNoPublicationIsRefused() {
+    ProblemDetail problem =
+        handler.handleNotVerifiable(
+            new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY.value());
+    assertThat(refused("not_verifiable")).isZero();
   }
 
   /**
@@ -419,14 +435,29 @@ class SchedulingExceptionHandlerTest {
    * The roster and the shift stay out of the line: what to look at is in the 422 the caller got.
    */
   @Test
-  void GivenARosterThatCannotBeChecked_WhenTranslated_ThenItIsLoggedAtWarnCarryingNoFields() {
+  void
+      GivenAPublicationOfARosterThatCannotBeChecked_WhenTranslated_ThenItIsLoggedAtWarnBareOfFields() {
+    handler.handleNotVerifiable(
+        new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()).refusingPublication());
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo("Publication refused: the roster names work that cannot be checked");
+    assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
+  }
+
+  /** As a refused publication is, but not called one (#134). */
+  @Test
+  void
+      GivenARosterThatCannotBeCheckedOutsidePublication_WhenTranslated_ThenItIsLoggedBareOfFields() {
     handler.handleNotVerifiable(
         new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()));
 
     ILoggingEvent logged = onlyEvent();
     assertThat(logged.getLevel()).isEqualTo(Level.WARN);
     assertThat(logged.getFormattedMessage())
-        .isEqualTo("Publication refused: the roster names work that cannot be checked");
+        .isEqualTo("Refused: the roster names work that cannot be checked");
     assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
   }
 

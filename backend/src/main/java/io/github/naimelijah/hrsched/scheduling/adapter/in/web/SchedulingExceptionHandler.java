@@ -153,11 +153,18 @@ public class SchedulingExceptionHandler {
    * A roster naming a shift that cannot be resolved is refused, not published with that work
    * unchecked. Like a rule breach it is a 422: the request was well formed, the roster is not
    * publishable.
+   *
+   * <p>Assigning, assessing a draft and reading one's own schedule refuse the same way, and answer
+   * the same; only a refused publication is counted and logged as one (#134).
    */
   @ExceptionHandler(RosterNotVerifiableException.class)
   public ProblemDetail handleNotVerifiable(RosterNotVerifiableException exception) {
-    log.warn("Publication refused: the roster names work that cannot be checked");
-    count(REFUSED, "reason", "not_verifiable", "Publications refused, by what refused them");
+    if (exception.refusedPublication()) {
+      log.warn("Publication refused: the roster names work that cannot be checked");
+      count(REFUSED, "reason", "not_verifiable", "Publications refused, by what refused them");
+    } else {
+      log.warn("Refused: the roster names work that cannot be checked");
+    }
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Roster cannot be checked against the rules");

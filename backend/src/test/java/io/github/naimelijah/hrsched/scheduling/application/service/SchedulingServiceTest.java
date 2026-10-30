@@ -82,6 +82,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -2344,6 +2345,36 @@ class SchedulingServiceTest {
         .isInstanceOf(RosterNotVerifiableException.class);
 
     assertThat(rosters.byId(thisWeek.id()).status()).isEqualTo(RosterStatus.DRAFT);
+  }
+
+  /** #134: what refused is told apart, so only a refused publication is counted as one. */
+  @Test
+  void GivenAnAssignedShiftThatCannotBeResolved_WhenPublishing_ThenItRefusedAPublication() {
+    EmployeeId ada = available(ACME);
+    Roster draft =
+        new Roster(RosterId.newId(), ACME, THE_WEEK)
+            .withAssignments(List.of(new Assignment(ShiftId.newId(), ada)));
+    rosters.save(draft);
+
+    assertThat(catchThrowable(() -> service.publish(scheduler(ACME), ACME, draft.id())))
+        .asInstanceOf(InstanceOfAssertFactories.type(RosterNotVerifiableException.class))
+        .extracting(RosterNotVerifiableException::refusedPublication)
+        .isEqualTo(true);
+  }
+
+  /** #134: an assignment refused for work that cannot be placed in time is not a publication. */
+  @Test
+  void
+      GivenTheirWorkOnTheAdjacentRosterCannotBeResolved_WhenAssigning_ThenNoPublicationWasRefused() {
+    EmployeeId ada = available(ACME);
+    rosters.save(publishedCarrying(NEXT_WEEK, new Assignment(ShiftId.newId(), ada)));
+    Roster thisWeek = storedDraft(THE_WEEK);
+    ShiftId monday = aShift(ACME, Set.of());
+
+    assertThat(catchThrowable(() -> assign(thisWeek, monday, ada)))
+        .asInstanceOf(InstanceOfAssertFactories.type(RosterNotVerifiableException.class))
+        .extracting(RosterNotVerifiableException::refusedPublication)
+        .isEqualTo(false);
   }
 
   /**
