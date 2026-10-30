@@ -14,7 +14,10 @@ import java.util.Optional;
  * <p>Keeps every version, as {@code JdbcConstraintSetRepository} does, so that a test can revise
  * the rules and still read back the version an earlier roster was published under (Q9). Refuses a
  * version already stored, as {@code constraint_set}'s primary key does: a fake that overwrote it
- * would let a revision that lost its race pass here and fail in production.
+ * would let a revision that lost its race pass here and fail in production. It refuses with an
+ * {@link IllegalStateException}, not the store's {@code DuplicateKeyException}: the port declares
+ * neither, no use case tells the two apart, and the service tests stay as free of Spring as the
+ * services they test.
  */
 final class FakeConstraintSets implements ConstraintSetRepository {
 
