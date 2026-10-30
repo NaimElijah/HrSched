@@ -1,5 +1,7 @@
 package io.github.naimelijah.hrsched.shared.domain.model;
 
+import java.util.Objects;
+
 /**
  * Whoever is performing an operation.
  *
@@ -63,8 +65,10 @@ public sealed interface Actor permits TenantActor, Operator {
    * @return this actor as a member of that organisation
    * @throws CrossTenantAccessException if this actor belongs to a different organisation
    * @throws NotATenantMemberException if this actor belongs to no organisation at all
+   * @throws NullPointerException if {@code organisation} is {@code null}, whoever is acting
    */
   default TenantActor requireAccessTo(OrganisationId organisation) {
+    Objects.requireNonNull(organisation, "organisation must not be null");
     return switch (this) {
       case TenantActor tenant -> {
         if (!tenant.mayAccess(organisation)) {
