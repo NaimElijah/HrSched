@@ -202,8 +202,11 @@ final class GenerationInstances {
   }
 
   /**
-   * Each kind of rule, some of the time, and sometimes a second of one kind: R24 is not built, so
-   * duplicates are stored and every one of them is enforced.
+   * Each kind of rule, some of the time, and at most one of each (R24).
+   *
+   * <p>A second daily cap is still drawn some of the time, as it was when a set could hold two, and
+   * the tighter of the two is kept: enforcing both was enforcing that one, so every seed builds the
+   * problem it always did.
    */
   private static List<WorkingTimeConstraint> rules(Random random) {
     List<WorkingTimeConstraint> rules = new ArrayList<>();
@@ -220,9 +223,22 @@ final class GenerationInstances {
       rules.add(new MaximumConsecutiveWorkingDays(2 + random.nextInt(4)));
     }
     if (random.nextDouble() < 0.25) {
-      rules.add(new MaximumDailyWorkingTime(Duration.ofHours(6 + random.nextInt(7))));
+      tightenDailyCap(rules, Duration.ofHours(6 + random.nextInt(7)));
     }
     return rules;
+  }
+
+  /** Adds a daily cap of {@code maximum}, or keeps the one already there if it is tighter. */
+  private static void tightenDailyCap(List<WorkingTimeConstraint> rules, Duration maximum) {
+    for (int at = 0; at < rules.size(); at++) {
+      if (rules.get(at) instanceof MaximumDailyWorkingTime daily) {
+        if (maximum.compareTo(daily.maximum()) < 0) {
+          rules.set(at, new MaximumDailyWorkingTime(maximum));
+        }
+        return;
+      }
+    }
+    rules.add(new MaximumDailyWorkingTime(maximum));
   }
 
   private static Set<QualificationId> someOf(

@@ -29,6 +29,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentE
 import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationPolicy;
 import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
+import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
@@ -331,6 +332,27 @@ class SchedulingServiceTest {
             service.findConstraints(
                 admin(ACME), ACME, published.validatedAgainstConstraintVersion()))
         .contains(approving);
+  }
+
+  /** R24, refused as the set is built, before anything is stored or recorded. */
+  @Test
+  void GivenTwoRulesOfOneKind_WhenAnAdminRevisesTheRules_ThenNothingIsStoredOrRecorded() {
+    audit.forget();
+
+    // Invented: two daily caps, of eight hours and of ten.
+    assertThatThrownBy(
+            () ->
+                service.reviseConstraints(
+                    admin(ACME),
+                    new ReviseConstraintsCommand(
+                        ACME,
+                        List.of(
+                            new MaximumDailyWorkingTime(Duration.ofHours(8)),
+                            new MaximumDailyWorkingTime(Duration.ofHours(10))))))
+        .isInstanceOf(InvalidConstraintException.class);
+
+    assertThat(constraintSets.findCurrent(ACME)).isEmpty();
+    assertThat(audit.changes()).isEmpty();
   }
 
   /**

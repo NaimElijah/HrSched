@@ -181,6 +181,37 @@ class ConstraintSetTest {
     assertThat(second.constraints()).hasSize(1);
   }
 
+  /**
+   * R24: at most one rule of each kind. Two daily caps would both be enforced, yet the rules read
+   * back show one of them, so a caller resending what it read would drop the other without seeing
+   * it. Two different thresholds, both invented, so neither can be mistaken for the other.
+   */
+  @Test
+  void GivenTwoRulesOfOneKind_WhenRevisingTo_ThenTheRevisionIsRejected() {
+    ConstraintSet first = ConstraintSet.initial(ACME);
+    List<WorkingTimeConstraint> twoDailyCaps =
+        List.of(
+            new MaximumDailyWorkingTime(Duration.ofHours(8)),
+            new MaximumDailyWorkingTime(Duration.ofHours(10)));
+
+    assertThatThrownBy(() -> first.revisedTo(twoDailyCaps))
+        .isInstanceOf(InvalidConstraintException.class);
+  }
+
+  @Test
+  void GivenOneRuleOfEachKind_WhenRevisingTo_ThenEveryOneIsKept() {
+    // Invented: one of each kind, none of them from any statute.
+    List<WorkingTimeConstraint> oneOfEach =
+        List.of(
+            new MinimumRestBetweenAssignments(Duration.ofHours(9)),
+            new MaximumDailyWorkingTime(Duration.ofHours(10)),
+            new MaximumWeeklyWorkingTime(Duration.ofHours(40)),
+            new MaximumConsecutiveWorkingDays(5));
+
+    assertThat(ConstraintSet.initial(ACME).revisedTo(oneOfEach).constraints())
+        .containsExactlyElementsOf(oneOfEach);
+  }
+
   @Test
   void GivenAMeaninglessThreshold_WhenConfiguringAConstraint_ThenItIsRejected() {
     assertThatThrownBy(() -> new MinimumRestBetweenAssignments(Duration.ZERO))

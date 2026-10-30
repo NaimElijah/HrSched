@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWorkingDays;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
@@ -110,22 +111,35 @@ class JdbcConstraintSetRepositoryTest {
   }
 
   /**
-   * R24 says a set holds at most one constraint of each kind, but it is not built yet (#96): today
-   * {@code ConstraintSet} is a plain list and permits two of one kind, so the store keeps whatever
-   * it is handed. This pins today's behaviour, not the requirement, and changes when #96 lands.
+   * R24: a set holds at most one constraint of each kind, which {@code ConstraintSet} now refuses
+   * to be built otherwise, so no revision can store two. The schema still permits them (V1), so a
+   * set holding two could only have been written past the domain. Read back, it is refused rather
+   * than loaded as rules that are not what they say. This pins today's answer to #96's open point,
+   * what becomes of such a set, not a decision on it.
    */
   @Test
-  void GivenTwoConstraintsOfOneKind_WhenReadBack_ThenBothAreStillThere() {
-    List<WorkingTimeConstraint> twice =
-        List.of(
-            new MaximumDailyWorkingTime(Duration.ofHours(10)),
-            new MaximumDailyWorkingTime(Duration.ofHours(12)));
-    repository.save(ConstraintSet.initial(ACME).revisedTo(twice));
+  void GivenTwoConstraintsOfOneKindStoredPastTheDomain_WhenReadBack_ThenTheReadIsRefused() {
+    PostgresDatabase.jdbcClient()
+        .sql("INSERT INTO constraint_set (organisation_id, version) VALUES (:id, 2)")
+        .param("id", ACME.value())
+        .update();
+    // Invented: two daily caps, of ten hours and of twelve.
+    for (int ordinal = 0; ordinal < 2; ordinal++) {
+      PostgresDatabase.jdbcClient()
+          .sql(
+              """
+              INSERT INTO working_time_constraint
+                  (organisation_id, version, ordinal, kind, duration_seconds, day_count)
+              VALUES (:id, 2, :ordinal, 'MAXIMUM_DAILY_WORKING_TIME', :seconds, NULL)
+              """)
+          .param("id", ACME.value())
+          .param("ordinal", ordinal)
+          .param("seconds", Duration.ofHours(10 + 2L * ordinal).toSeconds())
+          .update();
+    }
 
-    assertThat(repository.findCurrent(ACME))
-        .get()
-        .extracting(ConstraintSet::constraints)
-        .isEqualTo(twice);
+    assertThatThrownBy(() -> repository.findCurrent(ACME))
+        .isInstanceOf(InvalidConstraintException.class);
   }
 
   /**
