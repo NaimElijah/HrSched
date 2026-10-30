@@ -5,10 +5,11 @@
     [ADR-008](ADR-008-context-integration.md): a context may reference another context's
     `application.port.in` package and nothing else. "No `shared/` package is created" is replaced
     by the same record, which adds the shared kernel `shared.domain.model`. The rest stands.
-  - **Amended 2026-10-30:** `packages_are_free_of_cycles`, the cycle check sliced by context, no
-    longer exists. The cycle between contexts is caught by `contexts_are_free_of_cycles` in
-    `HexagonalArchitectureTest`, which slices every top-level package, the kernel and
-    `configuration` included. `layers_within_a_context_are_free_of_cycles` stands as described.
+  - **Erratum 2026-10-30:** `packages_are_free_of_cycles`, under Consequences, should read
+    `contexts_are_free_of_cycles` in `HexagonalArchitectureTest`. The rule named here was deleted
+    before this record merged (967215b). The one that now catches a cycle between contexts slices
+    every top-level package, the kernel and `configuration` included.
+    `layers_within_a_context_are_free_of_cycles` stands as described.
 - **Date:** 2026-08-29
 
 ## Context
