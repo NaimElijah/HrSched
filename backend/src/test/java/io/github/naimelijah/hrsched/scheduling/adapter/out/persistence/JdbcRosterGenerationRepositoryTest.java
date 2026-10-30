@@ -15,14 +15,25 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DelegatingDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -138,49 +149,86 @@ class JdbcRosterGenerationRepositoryTest {
    * A Scheduler polls while the solve's refusal commits. Under READ COMMITTED each statement reads
    * its own snapshot, so a read made of two statements could see the row still pending and its
    * violations not yet written, then the row refused: a refused generation with nothing broken,
-   * which cannot be loaded. The refusal is committed before every connection the read asks for
-   * after its first, so a read taking more than one statement meets it.
+   * which cannot be loaded.
+   *
+   * <p>The poll runs as it does in production: one read-only transaction on one connection. The
+   * refusal commits, on a connection and thread of its own, just before that connection prepares
+   * any statement after its first, so a read taking more than one statement meets it.
    */
   @Test
-  void GivenARefusalCommittingWhileAPollReadsTheGeneration_WhenReadBack_ThenItIsAsItStoodBefore() {
+  void GivenARefusalCommittingWhileAPollReadsTheGeneration_WhenReadBack_ThenItIsAsItStoodBefore()
+      throws Exception {
     RosterGeneration asked = askedBy(ACME);
     repository.save(asked);
     RosterGeneration refused =
         asked.refused(
             List.of(ConstraintViolation.declaredUnavailable(EmployeeId.newId(), ShiftId.newId())),
             ASKED.plusSeconds(1));
-    JdbcRosterGenerationRepository polling =
-        new JdbcRosterGenerationRepository(
-            JdbcClient.create(
-                new CommittingBeforeTheSecondConnection(
-                    () ->
-                        new TransactionTemplate(PostgresDatabase.transactions())
-                            .executeWithoutResult(status -> repository.save(refused)))));
+    ExecutorService elsewhere = Executors.newSingleThreadExecutor();
+    try {
+      DataSource committingBetween =
+          new CommittingBeforeTheSecondStatement(
+              () ->
+                  awaitDone(
+                      elsewhere.submit(
+                          () ->
+                              new TransactionTemplate(PostgresDatabase.transactions())
+                                  .executeWithoutResult(status -> repository.save(refused)))));
+      TransactionTemplate poll =
+          new TransactionTemplate(new DataSourceTransactionManager(committingBetween));
+      poll.setReadOnly(true);
+      JdbcRosterGenerationRepository polling =
+          new JdbcRosterGenerationRepository(JdbcClient.create(committingBetween));
 
-    RosterGeneration read = polling.findById(ACME, asked.id()).orElseThrow();
+      RosterGeneration read =
+          poll.execute(status -> polling.findById(ACME, asked.id()).orElseThrow());
 
-    assertThat(read.status()).isEqualTo(GenerationStatus.PENDING);
-    assertThat(read.violations()).isEmpty();
+      assertThat(read.status()).isEqualTo(GenerationStatus.PENDING);
+      assertThat(read.violations()).isEmpty();
+    } finally {
+      elsewhere.shutdownNow();
+    }
   }
 
-  /** Runs a write once, just before lending a connection to any statement after the first. */
-  private static final class CommittingBeforeTheSecondConnection extends DelegatingDataSource {
+  private static void awaitDone(Future<?> write) {
+    try {
+      write.get(RacingTransactions.STUCK_AFTER_SECONDS, TimeUnit.SECONDS);
+    } catch (InterruptedException | ExecutionException | TimeoutException failed) {
+      throw new IllegalStateException("The refusal never committed", failed);
+    }
+  }
+
+  /**
+   * Lends connections that run a write once, just before preparing their second statement: between
+   * the statements of one read, on the connection the read holds.
+   */
+  private static final class CommittingBeforeTheSecondStatement extends DelegatingDataSource {
 
     private final Runnable write;
-    private int lent;
+    private int prepared;
 
-    CommittingBeforeTheSecondConnection(Runnable write) {
+    CommittingBeforeTheSecondStatement(Runnable write) {
       super(PostgresDatabase.dataSource());
       this.write = write;
     }
 
     @Override
     public Connection getConnection() throws SQLException {
-      lent++;
-      if (lent == 2) {
-        write.run();
-      }
-      return super.getConnection();
+      Connection lent = super.getConnection();
+      return (Connection)
+          Proxy.newProxyInstance(
+              Connection.class.getClassLoader(),
+              new Class<?>[] {Connection.class},
+              (proxy, method, arguments) -> {
+                if (method.getName().equals("prepareStatement") && ++prepared == 2) {
+                  write.run();
+                }
+                try {
+                  return method.invoke(lent, arguments);
+                } catch (InvocationTargetException thrown) {
+                  throw thrown.getCause();
+                }
+              });
     }
   }
 
