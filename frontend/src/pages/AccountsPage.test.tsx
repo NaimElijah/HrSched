@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AccountsPage } from './AccountsPage';
-import { callsTo, routeTo } from '../test-support/routeTo';
+import { callsTo, holdingWrites, routeTo, writes } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import type { Session } from '../api/session';
@@ -284,6 +284,23 @@ describe('creating an account', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('That sign-in name is already in use.'),
     );
+  });
+
+  /** A second creation sent meanwhile is refused for the name the first took, beside its success. */
+  it('GivenACreationInFlight_WhenCreatedAgain_ThenOnlyOneIsSent', async () => {
+    const routed = theOrganisation({ 'POST /api/accounts': { status: 201, body: null } });
+    const release = holdingWrites(routed);
+    show();
+    await fillIn('robin@example.com', 'SCHEDULER', A_PASSWORD);
+    const create = screen.getByRole('button', { name: 'Create account' });
+
+    await userEvent.click(create);
+    await userEvent.click(create);
+
+    expect(create).toBeDisabled();
+    release();
+    await screen.findByText('Created robin@example.com.');
+    expect(writes(routed)).toHaveLength(1);
   });
 });
 

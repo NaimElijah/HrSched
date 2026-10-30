@@ -37,6 +37,9 @@ export function AccountsPage() {
   const [employee, setEmployee] = useState(NOT_LINKED);
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
+  // A second creation sent while the first is on its way would be refused for the name the first
+  // took, and that refusal shown beside the first one's success.
+  const [creating, setCreating] = useState(false);
 
   const listed = useAsync(() => accounts.findAccounts(), sessionKey);
   const staff = useAsync(() => workforce.findEmployees(), sessionKey);
@@ -58,6 +61,10 @@ export function AccountsPage() {
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
+    if (creating) {
+      return;
+    }
+    setCreating(true);
     const created = await administer(`Created ${signInName}.`, () =>
       accounts.createAccount({
         signInName,
@@ -66,6 +73,7 @@ export function AccountsPage() {
         ...(employee === NOT_LINKED ? {} : { employee }),
       }),
     );
+    setCreating(false);
     if (created) {
       setSignInName('');
       setTemporaryPassword('');
@@ -123,7 +131,9 @@ export function AccountsPage() {
             <EmployeeOptions staff={staff.value ?? []} linked={null} />
           </select>
         </label>
-        <button type="submit">Create account</button>
+        <button type="submit" disabled={creating}>
+          Create account
+        </button>
       </form>
 
       <Failure error={failure} />

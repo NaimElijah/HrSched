@@ -80,6 +80,9 @@ export function RostersPage({
   // A change made on the board does not bump it: the board already holds what the server returned.
   const [revision, setRevision] = useState(0);
   const [starting, setStarting] = useState(false);
+  // A second publication sent while the first is on its way would be refused as a conflict, and
+  // that refusal shown beside the first one's success.
+  const [publishing, setPublishing] = useState(false);
   const generating = starting || waitingFor !== null;
   // Why asking how the generation stands last failed, while it is still being asked.
   const [askingFailed, setAskingFailed] = useState<unknown>(null);
@@ -88,14 +91,20 @@ export function RostersPage({
   const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (employee: string): string | undefined => personById.get(employee)?.name;
 
-  async function act(action: () => Promise<unknown>) {
+  async function publish(roster: string) {
+    if (publishing) {
+      return;
+    }
     setFailure(null);
+    setPublishing(true);
     try {
-      await action();
+      await scheduling.publishRoster(roster);
       rosters.reload();
       setRevision((previous) => previous + 1);
     } catch (error) {
       setFailure(error);
+    } finally {
+      setPublishing(false);
     }
   }
 
@@ -271,7 +280,8 @@ export function RostersPage({
                   {roster.status === 'DRAFT' ? (
                     <button
                       type="button"
-                      onClick={() => void act(() => scheduling.publishRoster(roster.id))}
+                      disabled={publishing}
+                      onClick={() => void publish(roster.id)}
                     >
                       Publish
                     </button>

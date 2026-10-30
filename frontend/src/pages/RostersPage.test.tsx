@@ -6,7 +6,7 @@ import type { Session } from '../api/session';
 import type { Employee } from '../api/workforce';
 import { dayLabel, timeLabel } from '../components/localDates';
 import { A_TENANT, SignedIn } from '../test-support/session';
-import { callsTo, routeTo, type Answer } from '../test-support/routeTo';
+import { callsTo, holdingWrites, routeTo, type Answer } from '../test-support/routeTo';
 import { RostersPage } from './RostersPage';
 
 /**
@@ -192,6 +192,29 @@ describe('the rosters page', () => {
     expect(callsTo(stub, 'POST', '/api/rosters/roster-1/publication')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  /** A second publication sent meanwhile is refused as a conflict, beside the first one's success. */
+  it('GivenAPublicationInFlight_WhenPublishIsPressedAgain_ThenOnlyOneIsSent', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
+    const server: Record<string, Answer> = {
+      '/api/rosters': { status: 200, body: [ROSTER] },
+      '/api/shifts': { status: 200, body: [SHIFT] },
+      'POST /api/rosters/roster-1/publication': { status: 200, body: published },
+    };
+    const routed = routeTo(server);
+    const release = holdingWrites(routed);
+    renderPage([ADA]);
+    const publish = await screen.findByRole('button', { name: 'Publish' });
+    server['/api/rosters'] = { status: 200, body: [published] };
+
+    await userEvent.click(publish);
+    await userEvent.click(publish);
+
+    expect(publish).toBeDisabled();
+    release();
+    expect(await screen.findByRole('cell', { name: 'PUBLISHED' })).toBeInTheDocument();
+    expect(callsTo(routed, 'POST', '/api/rosters/roster-1/publication')).toHaveLength(1);
   });
 
   it('GivenTheRosterTable_WhenRendered_ThenEveryColumnHasAHeader', async () => {
