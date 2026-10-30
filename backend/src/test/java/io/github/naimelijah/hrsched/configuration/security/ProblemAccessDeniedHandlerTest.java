@@ -8,7 +8,6 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.Map;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +34,7 @@ import tools.jackson.databind.json.JsonMapper;
 class ProblemAccessDeniedHandlerTest {
 
   /** Invented: the identifier the token adapter would give as the refused caller's name. */
-  private static final String INVENTED_ACCOUNT = UUID.randomUUID().toString();
+  private static final String INVENTED_ACCOUNT = "5e1ec7ed-0000-4000-8000-00000000ac70";
 
   private final ProblemAccessDeniedHandler handler =
       new ProblemAccessDeniedHandler(JsonMapper.builder().build(), new SimpleMeterRegistry());
