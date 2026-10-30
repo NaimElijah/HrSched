@@ -70,7 +70,11 @@ class NotificationInsertionOrderMigrationTest {
     PostgresDatabase.jdbcClient().sql("DROP DATABASE " + database + " WITH (FORCE)").update();
   }
 
-  /** The column is NOT NULL, so the rows already there must each be given a value, not refused. */
+  /**
+   * V13 accepts a table already holding rows, and they stay listed newest first. That is all this
+   * shows: the rows are at two instants, so the order is decided before any tie-break is reached.
+   * That the rows are numbered, and below every later one, is the next test's to show.
+   */
   @Test
   void GivenNotificationsStoredBeforeV13_WhenMigrated_ThenEachIsStillInItsInboxNewestFirst() {
     NotificationId morning = storedTheWayV12Did(MORNING, "00000000-0000-0000-0000-000000000001");

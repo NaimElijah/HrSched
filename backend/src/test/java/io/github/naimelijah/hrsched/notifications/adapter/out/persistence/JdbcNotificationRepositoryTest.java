@@ -27,6 +27,8 @@ import org.springframework.dao.DataAccessException;
  * tenant. The tests whose failure would be a security incident are the isolation ones: the two
  * reads that must not cross an organisation or reach a colleague, and the saves that must not write
  * over another organisation's notification.
+ *
+ * <p>Every instant, identity and sequence written out here is invented.
  */
 class JdbcNotificationRepositoryTest {
 
@@ -132,7 +134,11 @@ class JdbcNotificationRepositoryTest {
         .containsExactly(lastRaised, secondRaised, firstRaised);
   }
 
-  /** Acknowledging a notification is not telling it again, so it keeps its place in the inbox. */
+  /**
+   * Acknowledging a notification is not telling it again, so it keeps its place in the inbox. The
+   * instant and the identities are invented; the identities put the first raised first by identity,
+   * so an identity tie-break would show.
+   */
   @Test
   void GivenNotificationsRaisedAtOneInstant_WhenTheFirstIsMarkedRead_ThenItKeepsItsPlace() {
     Instant oneInstant = Instant.parse("2026-10-05T12:00:00Z");
