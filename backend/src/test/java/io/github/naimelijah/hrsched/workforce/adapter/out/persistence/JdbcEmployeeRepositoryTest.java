@@ -14,7 +14,6 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import io.github.naimelijah.hrsched.workforce.domain.model.ContractTerms;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
-import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
 import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
@@ -277,9 +276,15 @@ class JdbcEmployeeRepositoryTest {
    * The schema does not refuse overlapping rows, so only the rebuild through the aggregate's own
    * withers stops a row written by hand, a restore or a bug from handing the domain a state R7
    * forbids. Loading such an employee fails loudly, by one identity and in a listing alike.
+   *
+   * <p>Loudly means as our defect, not as the domain's refusal: that refusal is how a caller is
+   * told their own request overlaps, and is answered 400 without a log line, so a store breaking R7
+   * would read as the caller's mistake and leave the operator nothing. It carries no cause either,
+   * because Spring resolves a handler by an exception's causes too, and would find that one's. The
+   * message names the identity and the rule only, never the name or a span.
    */
   @Test
-  void GivenOverlappingUnavailabilityWrittenStraightIntoTheStore_WhenLoaded_ThenItIsRefused() {
+  void GivenOverlappingUnavailabilityInTheStore_WhenLoaded_ThenItFailsAsADefect() {
     Employee ada = employee(ACME, "Ada");
     repository.save(ada);
     // Invented: a week that overlaps the last day of A_FORTNIGHT_OFF.
@@ -289,9 +294,19 @@ class JdbcEmployeeRepositoryTest {
     storeUnavailabilityDirectly(ada, 1, overlapping);
 
     assertThatThrownBy(() -> repository.findById(ACME, ada.id()))
-        .isInstanceOf(OverlappingUnavailabilityException.class);
+        .isInstanceOf(IllegalStateException.class)
+        .hasNoCause()
+        .hasMessageContaining(ada.id().value().toString())
+        .hasMessageContaining("R7")
+        .message()
+        .doesNotContain(ada.name());
     assertThatThrownBy(() -> repository.findByOrganisation(ACME))
-        .isInstanceOf(OverlappingUnavailabilityException.class);
+        .isInstanceOf(IllegalStateException.class)
+        .hasNoCause()
+        .hasMessageContaining(ada.id().value().toString())
+        .hasMessageContaining("R7")
+        .message()
+        .doesNotContain(ada.name());
   }
 
   /** Writes past the adapter, because no {@code Employee} can carry what this stores. */
