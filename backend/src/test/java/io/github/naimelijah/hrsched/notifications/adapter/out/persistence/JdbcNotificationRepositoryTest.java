@@ -9,12 +9,15 @@ import io.github.naimelijah.hrsched.notifications.domain.model.NotificationKind;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import java.sql.SQLException;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.springframework.dao.DataAccessException;
 
 /**
  * Specification of what the notification store promises.
@@ -31,6 +34,9 @@ class JdbcNotificationRepositoryTest {
   private static final OrganisationId RIVAL = OrganisationId.newId();
   private static final EmployeeId ADA = EmployeeId.newId();
   private static final EmployeeId GRACE = EmployeeId.newId();
+
+  /** PostgreSQL's SQLSTATE for a value written into a {@code GENERATED ALWAYS} column. */
+  private static final String GENERATED_ALWAYS = "428C9";
 
   private final JdbcNotificationRepository notifications =
       new JdbcNotificationRepository(PostgresDatabase.jdbcClient());
@@ -138,6 +144,42 @@ class JdbcNotificationRepositoryTest {
     notifications.save(firstRaised.markedRead());
 
     assertThat(notifications.findFor(ACME, ADA)).containsExactly(lastRaised, firstRaised);
+  }
+
+  /**
+   * The order of a tie is the database's to record, never a writer's to choose: a writer that could
+   * name a notification's {@code sequence} could put any notification on top of its inbox. A plain
+   * insert naming one is refused with PostgreSQL's {@code generated_always} error, and nothing is
+   * stored. The invented sequence is one any stored row would sort below.
+   */
+  @Test
+  void GivenAnInsertNamingTheSequence_WhenStored_ThenItIsRefusedAndNothingIsStored() {
+    assertThatThrownBy(
+            () ->
+                PostgresDatabase.jdbcClient()
+                    .sql(
+                        """
+                        INSERT INTO notification (id, organisation_id, recipient_id, kind, subject,
+                                                  occurred_at, read, sequence)
+                        VALUES (:id, :organisation, :recipient, 'SWAP_REQUESTED', :subject,
+                                :occurredAt, false, :sequence)
+                        """)
+                    .param("id", UUID.randomUUID())
+                    .param("organisation", ACME.value())
+                    .param("recipient", ADA.value())
+                    .param("subject", UUID.randomUUID())
+                    .param(
+                        "occurredAt",
+                        Instant.parse("2026-10-05T12:00:00Z").atOffset(ZoneOffset.UTC))
+                    .param("sequence", Long.MAX_VALUE)
+                    .update())
+        .isInstanceOf(DataAccessException.class)
+        .rootCause()
+        .isInstanceOfSatisfying(
+            SQLException.class,
+            refusal -> assertThat(refusal.getSQLState()).isEqualTo(GENERATED_ALWAYS));
+
+    assertThat(notifications.findFor(ACME, ADA)).isEmpty();
   }
 
   @Test
