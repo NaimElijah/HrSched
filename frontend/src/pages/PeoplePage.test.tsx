@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { callsTo, routeTo, writes } from '../test-support/routeTo';
+import { callsTo, holdingWrites, routeTo, writes } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
 import type { Session } from '../api/session';
 import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
@@ -184,6 +184,24 @@ describe('adding an employee', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
     );
     expect(screen.getByLabelText('Name')).toHaveValue('Marie');
+  });
+
+  /** Each addition is a person of their own, and none can be deleted afterwards. */
+  it('GivenAnAdditionInFlight_WhenAddedAgain_ThenOnlyOneEmployeeIsPosted', async () => {
+    const routed = theOrganisation();
+    const release = holdingWrites(routed);
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    await userEvent.type(screen.getByLabelText('Name'), 'Marie', WITHOUT_PAUSES);
+    const add = screen.getByRole('button', { name: 'Add employee' });
+
+    await userEvent.click(add);
+    await userEvent.click(add);
+
+    expect(add).toBeDisabled();
+    release();
+    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue(''));
+    expect(writes(routed)).toHaveLength(1);
   });
 });
 

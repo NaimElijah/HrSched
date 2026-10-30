@@ -4,11 +4,16 @@ import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
 
-/** Admin: who works here, what they hold, and what they are contracted to. */
+/**
+ * Admin: who works here, what they hold, and what they are contracted to.
+ *
+ * Nobody added can be removed, so an addition is sent once: the button waits for the answer.
+ */
 export function PeoplePage() {
   const sessionKey = useSessionKey();
   const [name, setName] = useState('');
   const [failure, setFailure] = useState<unknown>(null);
+  const [adding, setAdding] = useState(false);
 
   const people = useAsync(() => workforce.findEmployees(), sessionKey);
   const qualifications = useAsync(() => workforce.findQualifications(), sessionKey);
@@ -38,17 +43,23 @@ export function PeoplePage() {
         className="row"
         onSubmit={(event) => {
           event.preventDefault();
+          if (adding) {
+            return;
+          }
+          setAdding(true);
           void act(async () => {
             await workforce.addEmployee(name);
             setName('');
-          });
+          }).finally(() => setAdding(false));
         }}
       >
         <label>
           Name
           <input value={name} onChange={(event) => setName(event.target.value)} required />
         </label>
-        <button type="submit">Add employee</button>
+        <button type="submit" disabled={adding}>
+          Add employee
+        </button>
       </form>
 
       <Failure error={failure} />
