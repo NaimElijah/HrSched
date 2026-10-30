@@ -1,6 +1,13 @@
 # ADR-003: Structure the application as a hexagon, enforced by ArchUnit
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** The count of "Four rules" has moved.
+    [ADR-006](ADR-006-organise-packages-by-bounded-context.md),
+    [ADR-008](ADR-008-context-integration.md) and later records added more, and
+    `HexagonalArchitectureTest` holds the current set. The first rule, "the domain depends on
+    nothing but the JDK", no longer holds as written: the test admits HrSched's own domain
+    packages, the shared kernel's included ([ADR-008](ADR-008-context-integration.md)). The
+    `ShiftPeriod` the text names is now the kernel's `TimeRange`.
 - **Date:** 2026-08-29
 
 ## Context

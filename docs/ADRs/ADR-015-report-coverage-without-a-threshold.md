@@ -1,6 +1,8 @@
 # ADR-015: Report test coverage on both projects, and never enforce a threshold
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** "Vitest 4.1.11" has moved. The version in use, and the matching
+    `@vitest/coverage-v8`, are in `frontend/package.json`.
 - **Date:** 2026-08-30
 
 ## Context

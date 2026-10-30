@@ -1,6 +1,10 @@
 # ADR-016: Emit structured JSON logs everywhere, and propagate a W3C trace id
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** `ActorFromHeaders`, which the text says "must be deleted", has been
+    deleted, and the actor now comes from the token
+    ([ADR-011](ADR-011-issue-our-own-access-tokens.md)). The trigger on the rejected MDC filter,
+    that authentication lands, has fired, and ADR-011 rejected the filter again with a new trigger.
 - **Date:** 2026-08-30
 
 ## Context

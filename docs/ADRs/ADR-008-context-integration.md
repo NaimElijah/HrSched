@@ -1,6 +1,11 @@
 # ADR-008: Contexts integrate through published ports and a minimal shared kernel
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** the build now holds "consuming a published port happens in an
+    adapter": `contexts_touch_only_published_ports_of_other_contexts` allows a reference into
+    another context's `application.port.in` only from the origin context's `adapter.out`, so a use
+    case or a controller naming another context's port fails it. Contexts also depend one way, held
+    by `contexts_are_free_of_cycles`. Both live in `HexagonalArchitectureTest`. The rest stands.
 - **Date:** 2026-08-30
 
 ## Context

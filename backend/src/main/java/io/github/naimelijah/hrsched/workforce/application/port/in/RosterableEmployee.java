@@ -17,8 +17,9 @@ import java.util.Set;
  * which is also what the architecture rules enforce.
  *
  * <p>Everything here is what a roster generator needs to decide eligibility, and to weigh one legal
- * roster against another: what each person said about when they would like to work (ADR-010).
- * Nothing else.
+ * roster against another: what each person said about when they would like to work (ADR-010). It
+ * also carries their contracted hours, which scheduling does not read yet: #103 bounds a roster by
+ * them (ADR-008). Nothing else.
  *
  * @param id who they are
  * @param name their name, for display

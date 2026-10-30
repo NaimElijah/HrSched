@@ -1,6 +1,11 @@
 # ADR-017: Expose metrics for a scraper to pull, and ship no monitoring stack
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:**
+    [ADR-049](ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md) refuses the
+    `metrics` and `prometheus` endpoints to every caller until a scraper exists. Everything else
+    here stands. The count of "four meters of our own" has moved; the `hrsched.` meters the code
+    registers are the current set.
 - **Date:** 2026-08-30
 
 ## Context

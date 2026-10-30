@@ -21,7 +21,8 @@ dependency rule — see ADR-003 and ADR-006. Every context repeats the same shap
   translation) everywhere, and `bootstrap/` and `token/` in access. May use Spring.
 - `<context>/adapter/out/<kind>/` — driven port implementations, one package per thing driven:
   `persistence/` and `audit/` everywhere, `generation/`, `password/` and `token/` where a context
-  needs one, and a package named after another context it consumes. May use Spring. Each
+  needs one, and, for a context that consumes another's published port, a package named for what it
+  consumes: `workforce/`, and `notification/` for the `notifications` context. May use Spring. Each
   `Jdbc*Repository` owns its own SQL; there is deliberately no shared helper package, because
   `ContextPackages` would treat a new top-level package as a bounded context and every context
   touching it would fail the cross-context rule.
@@ -80,9 +81,11 @@ fails the architecture test.
   the organisation from it through `actingIn` (`organisationOf` in `AccountController`).
   `GET /api/organisations/{id}` names what to read, not who acts; a tenant naming another gets a
   404. Nothing reads `X-User`, `X-Role`, `X-Organisation` or `X-Employee`; never bring them back.
-- **Tenancy is in every signature.** Repository lookups take an `OrganisationId`; there is no
-  `findById(EmployeeId)`. Use cases take an `Actor` and call `requireAccessTo` first. A
-  cross-tenant attempt is a 404, never a 403 — a 403 confirms the resource exists.
+- **Tenancy is in every signature.** Repository methods but a save take an `OrganisationId`; there
+  is no `findById(EmployeeId)`. The exceptions are the access context's credential reads and
+  session writes, and its register of organisations, which ADR-055 lists with its reasons. Use
+  cases take an `Actor` and call `requireAccessTo` first. A cross-tenant attempt is a 404, never a
+  403 — a 403 confirms the resource exists.
 - **`UserId` and `EmployeeId` are never compared.** They are different identities on purpose. To
   ask whether an actor is the person being acted on, use `TenantActor.isThemself` — the link is
   carried, not inferred from matching UUIDs (ADR-012).
@@ -98,16 +101,19 @@ fails the architecture test.
 ## Persistence
 
 Persistence is settled (ADR-004): PostgreSQL, hand-written SQL through `JdbcClient`, Flyway, one
-schema with `organisation_id` on every aggregate root (child tables are reached only through their
-root). The domain may not carry `jakarta.persistence` annotations — the architecture test fails on
-them — so JPA would need a parallel annotated model, buying only what an adapter must not leak.
+schema with `organisation_id` on every aggregate root, bar the operator's account row (ADR-029) and
+the session tables, which carry none (ADR-055); child tables are reached only through their root.
+The domain may not carry `jakarta.persistence` annotations — the architecture test fails on them —
+so JPA would need a parallel annotated model, buying only what an adapter must not leak.
 
 - **Migrations** in `src/main/resources/db/migration/` are the only way the schema changes. Name
   one `V<n>__<rule_in_snake_case>.sql`, opening with a comment giving the rule, ADR and reasoning.
   **Never edit an applied migration**; correct it in the next, as V6 and V8 do. A backfill is
   explicit and invents nothing. An index on a root leads with `organisation_id`; a foreign key
-  stays inside one context. A migration rewriting stored rows gets a test that migrates to the
-  version before, inserts rows as it stored them, then migrates on (see
+  stays inside one context, bar the one every root table carrying an `organisation_id` has to
+  `organisation (id)`, the tenant register `access` owns; the session tables carry none (ADR-004,
+  ADR-055). A migration rewriting stored rows gets a test that migrates to
+  the version before, inserts rows as it stored them, then migrates on (see
   `AppendOnlyRosterHistoryMigrationTest`).
 - **Conflicts come from the database, not from version columns.** A use case changing an aggregate
   reads it with `findForUpdate`, so a concurrent change waits and both apply (ADR-041). A published
@@ -178,8 +184,8 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
 
 - **Entities vs value objects.** `Shift` and `Employee` are classes with identity equality,
   because two shifts with the same period — or two people with the same name — are still
-  different things. `ShiftId`, `ShiftPeriod` and `EmployeeId` are records because they *are*
-  their values. Do not turn an entity into a record.
+  different things. `ShiftId`, `EmployeeId` and `TimeRange` (a shift's period) are records because
+  they *are* their values. Do not turn an entity into a record.
 - **Invariants live in constructors,** so illegal states cannot be represented and callers
   never have to check.
 - **No working-time threshold is a constant** — the statute rule in `.claude/CLAUDE.md`.

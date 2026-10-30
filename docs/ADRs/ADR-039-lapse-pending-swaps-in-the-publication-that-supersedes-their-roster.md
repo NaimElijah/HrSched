@@ -1,6 +1,12 @@
 # ADR-039: Lapse pending swaps in the publication that supersedes their roster
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:**
+    [ADR-052](ADR-052-record-only-after-every-write-notifications-included.md) replaces the order
+    in which publication records and tells. It now makes every write, a notification included,
+    before it records anything, so "the one refusal that can still follow a record" no longer
+    holds. Publication tells of the approval it settles, and `SwapService` records `SWAP_APPROVED`
+    once publication returns. The rest stands.
 - **Date:** 2026-10-15
 
 ## Context

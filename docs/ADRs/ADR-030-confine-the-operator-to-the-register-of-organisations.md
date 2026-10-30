@@ -1,6 +1,8 @@
 # ADR-030: Confine the platform operator to the register of organisations
 
 - **Status:** Accepted
+  - **Erratum 2026-10-30:** "Q27" for the tenant whose only Admin is locked out should read Q28.
+    Q27 is the security defaults.
 - **Date:** 2026-09-16
 
 ## Context
