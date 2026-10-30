@@ -509,13 +509,15 @@ class JdbcEmployeeRepositoryTest {
         .hasNoCause()
         .satisfies(JdbcEmployeeRepositoryTest::carriesTheNameRefusalSuppressed)
         .hasMessageContaining(ada.id().value().toString())
-        .hasMessageContaining("R2");
+        .hasMessageContaining("R2")
+        .hasMessageNotContaining(BLANK_TO_THE_DOMAIN_ONLY);
     assertThatThrownBy(() -> repository.findByOrganisation(ACME))
         .isInstanceOf(IllegalStateException.class)
         .hasNoCause()
         .satisfies(JdbcEmployeeRepositoryTest::carriesTheNameRefusalSuppressed)
         .hasMessageContaining(ada.id().value().toString())
-        .hasMessageContaining("R2");
+        .hasMessageContaining("R2")
+        .hasMessageNotContaining(BLANK_TO_THE_DOMAIN_ONLY);
   }
 
   private static void carriesTheNameRefusalSuppressed(Throwable failure) {

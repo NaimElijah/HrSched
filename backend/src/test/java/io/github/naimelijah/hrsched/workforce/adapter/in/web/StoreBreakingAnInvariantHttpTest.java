@@ -28,8 +28,9 @@ import org.springframework.test.web.servlet.MockMvc;
  * the rebuild through the aggregate refuses it as blank (R2). That refusal must not reach the
  * handler that answers a caller's own blank name with a 400 and no log line: Spring resolves a
  * handler by an exception's causes as well as its type, so the failure carries no domain exception
- * at all. No handler takes it, so it escapes the controller, which MockMvc surfaces as the
- * exception itself.
+ * as its cause, only suppressed, where Spring does not look. No handler takes it, so it escapes the
+ * controller, which MockMvc surfaces as the exception itself. Its message names the identity and
+ * the rule, never the stored name.
  *
  * <p>Overlapping unavailability was the breach this pinned until {@code V15} made it unstorable;
  * {@code JdbcEmployeeRepositoryTest} pins that the store refuses one.
@@ -81,7 +82,8 @@ class StoreBreakingAnInvariantHttpTest {
         .rootCause()
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining(ada)
-        .hasMessageContaining("R2");
+        .hasMessageContaining("R2")
+        .hasMessageNotContaining(BLANK_TO_THE_DOMAIN_ONLY);
   }
 
   /** {@code qualification_name_not_blank} trims spaces only too, and R2 covers qualifications. */
@@ -116,6 +118,7 @@ class StoreBreakingAnInvariantHttpTest {
         .rootCause()
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining(forklift)
-        .hasMessageContaining("R2");
+        .hasMessageContaining("R2")
+        .hasMessageNotContaining(BLANK_TO_THE_DOMAIN_ONLY);
   }
 }
