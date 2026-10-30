@@ -362,6 +362,9 @@ class SessionServiceTest {
             refused -> assertThat(refused.reason()).isEqualTo(RefreshRefusal.REUSED));
     assertThat(sessions.revocationOf(session.id())).contains(SessionRevocation.REFRESH_REUSED);
     assertThat(audit.of(AccessChange.REFRESH_TOKEN_REUSED)).hasSize(1);
+    assertThat(audit.of(AccessChange.REFRESH_TOKEN_REUSED).getFirst().organisation())
+        .describedAs("filed under the account's organisation, not the operator's empty one")
+        .contains(ACME);
   }
 
   @Test
@@ -398,6 +401,48 @@ class SessionServiceTest {
         .isInstanceOf(IllegalStateException.class);
 
     assertThat(audit.changes()).isEmpty();
+  }
+
+  /** The same fault on the other path that records about a session: a refresh token reused. */
+  @Test
+  void
+      GivenASessionWhoseAccountIsGone_WhenItsSpentTokenIsReused_ThenItFailsLoudlyAndRecordsNothing() {
+    SignInSession orphaned =
+        new SignInSession(
+            SignInSessionId.newId(), UserId.newId(), NOW, NOW.plus(Duration.ofHours(12)));
+    sessions.given(
+        "an-orphaned-spent-token",
+        new StoredRefreshToken(
+            orphaned, NOW.plus(Duration.ofHours(1)), Optional.of(NOW.minusSeconds(60))));
+
+    assertThatThrownBy(() -> service.refresh("an-orphaned-spent-token"))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * A sign-out is filed under the account's own organisation, made by that account, and about the
+   * session it ended. An empty organisation would read as the operator's (see {@code
+   * AuditedChange}).
+   */
+  @Test
+  void GivenALiveSession_WhenSigningOut_ThenItIsRecordedUnderTheAccountsOrganisation() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    SignInSession session =
+        new SignInSession(
+            SignInSessionId.newId(), account.id(), NOW, NOW.plus(Duration.ofHours(12)));
+    sessions.given(
+        "a-live-token",
+        new StoredRefreshToken(session, NOW.plus(Duration.ofHours(1)), Optional.empty()));
+
+    service.signOut("a-live-token");
+
+    assertThat(audit.changes()).containsExactly(AccessChange.SIGNED_OUT);
+    assertThat(audit.of(AccessChange.SIGNED_OUT))
+        .containsExactly(
+            new AuditedChange(
+                Optional.of(ACME), account.id(), AccessChange.SIGNED_OUT, session.id().value()));
   }
 
   // --- the idle limit: a refresh token that sat unused too long, and the successor's expiry -----
