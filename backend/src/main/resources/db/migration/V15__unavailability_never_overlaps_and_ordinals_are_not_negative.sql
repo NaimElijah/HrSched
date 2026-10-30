@@ -11,7 +11,8 @@
 -- tstzrange is half-open by default, [starts_at, ends_at), like TimeRange: a span beginning where
 -- another ends shares no instant with it, so spans that only abut both store, as R7 allows. A span
 -- declared beyond the microsecond is stored rounded to it (ADR-040), and rounding never reverses
--- two instants, so spans the domain holds apart are stored apart.
+-- two instants, so spans the domain holds apart are never stored overlapping; spans less than a
+-- microsecond apart may be stored abutting, which R7 allows.
 --
 -- The check is immediate rather than deferred. JdbcEmployeeRepository saves an employee by deleting
 -- their rows and inserting the new set, and each statement sees the ones before it, so a new set
@@ -23,6 +24,10 @@
 -- A database already holding an overlap fails here, deliberately: which of the spans a person meant
 -- is not something a migration can decide, and the domain already refuses to load that person.
 -- Correct their rows by hand and migrate again.
+--
+-- The exclusion builds its index under an ACCESS EXCLUSIVE lock, so every read of the table waits
+-- while it builds, and it has no non-blocking form: an EXCLUDE cannot be added NOT VALID. That is
+-- accepted while nothing is deployed; how a migration may lock a live database is #160's to decide.
 --
 -- The ordinal of both owned tables keeps the aggregate's list order and nothing else (V1). The
 -- adapter writes list positions, counted from 0, so a negative one is a row nothing of ours wrote;

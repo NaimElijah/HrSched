@@ -30,7 +30,9 @@
     alternatives table said to revisit the `EXCLUDE` for it "when the `btree_gist` extension is
     wanted for another reason", and `V2` installed `btree_gist` for the published-roster exclusion.
     The constraint is checked immediately, not deferred, and no adapter translates its violation:
-    the domain refuses an overlap before anything is written.
+    the domain refuses an overlap before anything is written. **Revisit when** a save needs the
+    check deferred, as one inserting a new span before deleting the one it replaces would, or when
+    a second database engine is to be supported, since `EXCLUDE` is PostgreSQL's alone.
 - **Date:** 2026-09-06
 
 ## Context
