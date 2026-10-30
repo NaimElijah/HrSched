@@ -33,6 +33,9 @@ import org.springframework.test.web.servlet.MockMvc;
  * half of the API, and the half where self-service makes the acting identity load-bearing rather
  * than decorative.
  *
+ * <p>Every instant and figure below is invented; contracted minutes are a term of an individual
+ * agreement, and none is taken from any statute.
+ *
  * <p>Annotated identically to {@code RosteringHttpTest} on purpose. A differing annotation set
  * would give this class its own Spring context cache key and pay a second full startup for nothing.
  */
@@ -94,10 +97,11 @@ class EmployeeHttpTest {
             as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-10-07T00:00:00Z\",\"end\":\"2026-10-08T00:00:00Z\"}"))
         .andExpect(status().isNoContent());
+    // Invented: a contracted week, a term of an individual agreement and never a statute's.
     mockMvc
         .perform(
             as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
-                .content("{\"weeklyContractedMinutes\":2100}"))
+                .content("{\"weeklyContractedMinutes\":2101}"))
         .andExpect(status().isNoContent());
 
     mockMvc
@@ -106,7 +110,7 @@ class EmployeeHttpTest {
         .andExpect(jsonPath("$[0].unavailability.length()").value(1))
         .andExpect(jsonPath("$[0].unavailability[0].start").value("2026-10-07T00:00:00Z"))
         .andExpect(jsonPath("$[0].unavailability[0].end").value("2026-10-08T00:00:00Z"))
-        .andExpect(jsonPath("$[0].weeklyContractedMinutes").value(2100));
+        .andExpect(jsonPath("$[0].weeklyContractedMinutes").value(2101));
   }
 
   @Test
@@ -234,6 +238,11 @@ class EmployeeHttpTest {
                 ours,
                 "ADMIN"))
         .andExpect(status().isNotFound());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + theirEmployee), theirs, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.qualifications.length()").value(0));
   }
 
   @Test
@@ -250,6 +259,11 @@ class EmployeeHttpTest {
                 ours,
                 "ADMIN"))
         .andExpect(status().isNotFound());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + ada), ours, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.qualifications.length()").value(0));
   }
 
   @Test
@@ -267,16 +281,76 @@ class EmployeeHttpTest {
         .andExpect(status().isNotFound());
   }
 
+  /**
+   * The security chain admits every tenant role to {@code /api/employees/**}, so the use case is
+   * all that stops somebody granting themself a qualification a shift then requires.
+   */
+  @Test
+  void GivenTheEmployeeThemself_WhenGrantingThemselvesAQualification_ThenItIsForbiddenAndNotHeld()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String forklift = defineQualification(organisation, "Forklift");
+
+    mockMvc
+        .perform(
+            asThemself(
+                mockMvc,
+                put("/api/employees/" + ada + "/qualifications/" + forklift),
+                organisation,
+                ada))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].qualifications.length()").value(0));
+  }
+
   @Test
   void GivenAnAdmin_WhenSettingContractTerms_ThenItIsAccepted() throws Exception {
     String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
 
+    // Invented: a contracted week, a term of an individual agreement and never a statute's.
     mockMvc
         .perform(
             as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
-                .content("{\"weeklyContractedMinutes\":2400}"))
+                .content("{\"weeklyContractedMinutes\":2401}"))
         .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + ada), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.weeklyContractedMinutes").value(2401));
+  }
+
+  /**
+   * The chain admits every tenant role to {@code /api/employees/**}, so the use case is all that
+   * stops somebody rewriting their own contract. Both figures are invented: contracted minutes are
+   * a term of an individual agreement, never a statute's.
+   */
+  @Test
+  void GivenTheEmployeeThemself_WhenSettingTheirOwnContract_ThenItIsForbiddenAndUnchanged()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    mockMvc
+        .perform(
+            as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
+                .content("{\"weeklyContractedMinutes\":1381}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, ada)
+                .content("{\"weeklyContractedMinutes\":571}"))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + ada), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.weeklyContractedMinutes").value(1381));
   }
 
   @Test
@@ -360,6 +434,13 @@ class EmployeeHttpTest {
                     mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, ada)
                 .content("{\"start\":\"2026-11-02T00:00:00Z\",\"end\":\"2026-11-03T00:00:00Z\"}"))
         .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            as(mockMvc, get("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].start").value("2026-11-02T00:00:00Z"));
   }
 
   @Test
@@ -375,6 +456,27 @@ class EmployeeHttpTest {
                     mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, grace)
                 .content("{\"start\":\"2026-11-04T00:00:00Z\",\"end\":\"2026-11-05T00:00:00Z\"}"))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenAColleague_WhenStatingSomebodyElsesPreference_ThenItIsForbiddenAndNothingIsStated()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String grace = addEmployee(organisation, "Grace");
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, post("/api/employees/" + ada + "/preferences"), organisation, grace)
+                .content(
+                    "{\"start\":\"2026-11-04T08:00:00Z\",\"end\":\"2026-11-04T16:00:00Z\","
+                        + "\"strength\":\"PREFERS_NOT\"}"))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + ada + "/preferences"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
   }
 
   @Test
@@ -452,6 +554,12 @@ class EmployeeHttpTest {
                     "{\"start\":\"2026-11-12T08:00:00Z\",\"end\":\"2026-11-12T16:00:00Z\","
                         + "\"strength\":\"PREFERS\"}"))
         .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + ada + "/preferences"), organisation, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].strength").value("PREFERS"));
   }
 
   @Test
@@ -537,6 +645,55 @@ class EmployeeHttpTest {
         .perform(as(mockMvc, get("/api/employees/" + theirs), anOrganisation(mockMvc), "ADMIN"))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  // --- F6: declaring on somebody's behalf (#100) -------------------------------------------
+
+  @Test
+  void GivenAScheduler_WhenDeclaringSomebodysUnavailability_ThenItIsListed() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+
+    mockMvc
+        .perform(
+            as(
+                    mockMvc,
+                    post("/api/employees/" + ada + "/unavailability"),
+                    organisation,
+                    "SCHEDULER")
+                .content("{\"start\":\"2026-11-25T00:00:00Z\",\"end\":\"2026-11-26T00:00:00Z\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            asThemself(
+                mockMvc, get("/api/employees/" + ada + "/unavailability"), organisation, ada))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].start").value("2026-11-25T00:00:00Z"))
+        .andExpect(jsonPath("$[0].end").value("2026-11-26T00:00:00Z"));
+  }
+
+  @Test
+  void GivenAScheduler_WhenStatingSomebodysPreference_ThenItIsListed() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/employees/" + ada + "/preferences"), organisation, "SCHEDULER")
+                .content(
+                    "{\"start\":\"2026-11-25T08:00:00Z\",\"end\":\"2026-11-25T16:00:00Z\","
+                        + "\"strength\":\"PREFERS\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, get("/api/employees/" + ada + "/preferences"), organisation, ada))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].start").value("2026-11-25T08:00:00Z"))
+        .andExpect(jsonPath("$[0].strength").value("PREFERS"));
   }
 
   // --- F6: reading back what somebody declared ----------------------------------------------
@@ -844,6 +1001,18 @@ class EmployeeHttpTest {
                 "ADMIN"))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                get("/api/employees/" + theirs + "/unavailability"),
+                theirOrganisation,
+                "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].start").value("2026-11-24T00:00:00Z"))
+        .andExpect(jsonPath("$[0].end").value("2026-11-25T00:00:00Z"));
   }
 
   @Test
@@ -875,6 +1044,17 @@ class EmployeeHttpTest {
                 "ADMIN"))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                get("/api/employees/" + theirs + "/preferences"),
+                theirOrganisation,
+                "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].strength").value("PREFERS"));
   }
 
   @Test
@@ -1004,19 +1184,26 @@ class EmployeeHttpTest {
    * Claiming somebody else's personnel record does not become them. The link is carried by the
    * account the token names (ADR-012), so the header is read by nothing and the request is answered
    * for whoever is really signed in.
+   *
+   * <p>Asked of Grace's unavailability, which Grace herself may read, so the refusal is decided by
+   * who the caller is. Reading a person by identity would not do: it refuses every Employee, Grace
+   * included, and so would refuse whether the header were believed or not. The span is invented.
    */
   @Test
   void
-      GivenAnEmployeeTokenAndAnXEmployeeHeaderNamingSomebodyElse_WhenReadingAPerson_ThenItIsStillTheirOwnRefusal()
+      GivenAnEmployeeTokenAndAnXEmployeeHeaderNamingSomebodyElse_WhenReadingTheirAbsence_ThenItIsStillTheirOwnRefusal()
           throws Exception {
     String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada Lovelace");
     String grace = addEmployee(organisation, "Grace Hopper");
+    declareUnavailability(organisation, grace, "2026-12-07T00:00:00Z", "2026-12-08T00:00:00Z");
 
     mockMvc
         .perform(
-            asThemself(mockMvc, get("/api/employees/" + grace), organisation, ada)
+            asThemself(
+                    mockMvc, get("/api/employees/" + grace + "/unavailability"), organisation, ada)
                 .header("X-Employee", grace))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isForbidden())
+        .andExpect(content().string(not(containsString("2026-12-07"))));
   }
 }

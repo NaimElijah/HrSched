@@ -25,6 +25,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * the {@code Qualification} entity behind it is not: the entity compares by identity because a
  * renamed qualification is the same qualification, whereas the published copy is a snapshot and
  * compares by everything it carries.
+ *
+ * <p>Every instant and figure below is invented. None is taken from any statute.
  */
 class PublishedLanguageTest {
 
@@ -124,11 +126,11 @@ class PublishedLanguageTest {
             "Ada",
             Set.of(),
             List.of(),
-            Optional.of(Duration.ofMinutes(2400)),
+            Optional.of(Duration.ofMinutes(2401)),
             List.of(),
             List.of()); // invented
 
-    assertThat(contracted.weeklyContractedHours()).contains(Duration.ofMinutes(2400));
+    assertThat(contracted.weeklyContractedHours()).contains(Duration.ofMinutes(2401));
   }
 
   @Test

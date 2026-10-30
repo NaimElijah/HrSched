@@ -2,6 +2,10 @@ package io.github.naimelijah.hrsched.workforce.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
@@ -21,11 +25,16 @@ import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationE
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpStatus;
@@ -43,11 +52,44 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
  * returning nothing, which becomes an unknown-record 404. {@link CrossTenantAccessException} still
  * guards every direct caller and would guard a second adapter, but the branch that translates it is
  * unreachable from any HTTP test -- so it is reachable only from here.
+ *
+ * <p>The three refusals are also logged, at WARN, and those lines are asserted against Logback
+ * rather than the rendered JSON: the fields are this class's, the encoding is Spring Boot's. This
+ * is the context holding names, absence and contracted hours, so every value logged must be an
+ * identifier or a role, and every message a constant.
  */
 class WorkforceExceptionHandlerTest {
 
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private final WorkforceExceptionHandler handler = new WorkforceExceptionHandler(meters);
+
+  private ch.qos.logback.classic.Logger logger;
+  private ListAppender<ILoggingEvent> captured;
+
+  @BeforeEach
+  void captureTheLog() {
+    logger =
+        ((LoggerContext) LoggerFactory.getILoggerFactory())
+            .getLogger(WorkforceExceptionHandler.class.getName());
+    captured = new ListAppender<>();
+    captured.start();
+    logger.addAppender(captured);
+  }
+
+  @AfterEach
+  void releaseTheLog() {
+    logger.detachAppender(captured);
+  }
+
+  private ILoggingEvent onlyEvent() {
+    assertThat(captured.list).hasSize(1);
+    return captured.list.getFirst();
+  }
+
+  private static Map<String, Object> fieldsOf(ILoggingEvent event) {
+    return event.getKeyValuePairs().stream()
+        .collect(Collectors.toMap(pair -> pair.key, pair -> pair.value));
+  }
 
   private double denied(String kind) {
     var counter = meters.find("hrsched.access.denied").tag("kind", kind).counter();
@@ -230,5 +272,58 @@ class WorkforceExceptionHandlerTest {
     assertThat(problem.getDetail())
         .isEqualTo("The platform operator may not act inside an organisation.");
     assertThat(denied("operator_confined")).isEqualTo(1.0);
+  }
+
+  // --- what each refusal leaves in the log (ADR-018) ----------------------------------------
+
+  @Test
+  void GivenARoleRefusal_WhenTranslated_ThenOneWarningNamesOnlyTheActorAndTheirRole() {
+    UserId actor = UserId.newId();
+
+    handler.handleNotPermitted(new NotPermittedException(actor, Role.EMPLOYEE, Set.of(Role.ADMIN)));
+
+    ILoggingEvent event = onlyEvent();
+    assertThat(event.getLevel()).isEqualTo(Level.WARN);
+    assertThat(event.getFormattedMessage())
+        .describedAs("the message is a constant; everything variable belongs in a field")
+        .isEqualTo("Refused: the actor's role does not permit this");
+    assertThat(fieldsOf(event))
+        .containsOnly(Map.entry("actor", actor.value()), Map.entry("role", Role.EMPLOYEE));
+  }
+
+  @Test
+  void GivenACrossTenantAttempt_WhenTranslated_ThenOneWarningNamesOnlyTheActorAndTheOrganisation() {
+    UserId actor = UserId.newId();
+    OrganisationId theirs = OrganisationId.newId();
+
+    handler.handleCrossTenant(new CrossTenantAccessException(actor, theirs));
+
+    ILoggingEvent event = onlyEvent();
+    assertThat(event.getLevel()).isEqualTo(Level.WARN);
+    assertThat(event.getFormattedMessage())
+        .isEqualTo("Refused: an actor reached for another organisation's data");
+    assertThat(fieldsOf(event))
+        .containsOnly(Map.entry("actor", actor.value()), Map.entry("organisation", theirs.value()));
+  }
+
+  @Test
+  void GivenTheOperatorActingInsideAnOrganisation_WhenTranslated_ThenOneWarningNamesOnlyThem() {
+    UserId operator = UserId.newId();
+
+    handler.handleOperatorConfined(new NotATenantMemberException(operator));
+
+    ILoggingEvent event = onlyEvent();
+    assertThat(event.getLevel()).isEqualTo(Level.WARN);
+    assertThat(event.getFormattedMessage())
+        .isEqualTo("Refused: the platform operator reached inside an organisation");
+    assertThat(fieldsOf(event)).containsOnly(Map.entry("actor", operator.value()));
+  }
+
+  /** An ordinary miss is not a refusal, and leaves no line behind. */
+  @Test
+  void GivenAnOrdinaryUnknownRecord_WhenTranslated_ThenNothingIsLogged() {
+    handler.handleUnknown(new UnknownEmployeeException(EmployeeId.newId()));
+
+    assertThat(captured.list).isEmpty();
   }
 }

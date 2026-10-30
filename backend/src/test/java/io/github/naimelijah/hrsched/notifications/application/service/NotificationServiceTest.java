@@ -33,6 +33,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * Specification of the notification use cases, driven without Spring.
@@ -94,6 +96,23 @@ class NotificationServiceTest {
             new PublishedNotification(raised, NotifiableEvent.SWAP_LAPSED, subject, NOON, false));
   }
 
+  /**
+   * Every event a caller may raise comes back out of the inbox as that event: the two enums are
+   * translated into one another (ADR-008), and a translation that crossed two of them would tell
+   * somebody the opposite of what happened.
+   */
+  @ParameterizedTest
+  @EnumSource(NotifiableEvent.class)
+  void GivenAnyEvent_WhenSomebodyIsNotifiedOfIt_ThenTheirInboxCarriesThatEvent(
+      NotifiableEvent event) {
+    service.notify(themself(ACME, GRACE), new NotifyCommand(ACME, ADA, event, UUID.randomUUID()));
+
+    assertThat(service.findMine(themself(ACME, ADA), ACME))
+        .singleElement()
+        .extracting(PublishedNotification::kind)
+        .isEqualTo(event);
+  }
+
   /** The clock is injected, so this is a fact the test states rather than one it tolerates. */
   @Test
   void GivenAFixedClock_WhenSomebodyIsNotified_ThenTheNotificationCarriesThatMoment() {
@@ -110,7 +129,7 @@ class NotificationServiceTest {
    * identity, so a colleague's notifications are not so much refused as unrepresentable.
    */
   @Test
-  void GivenANotificationForSomebodyElse_WhenReadingOursOwn_ThenItIsNotThere() {
+  void GivenANotificationForSomebodyElse_WhenReadingOurOwn_ThenItIsNotThere() {
     notifyAda(UUID.randomUUID());
 
     assertThat(service.findMine(themself(ACME, GRACE), ACME)).isEmpty();
@@ -142,6 +161,74 @@ class NotificationServiceTest {
                     new NotifyCommand(
                         ACME, ADA, NotifiableEvent.SWAP_REQUESTED, UUID.randomUUID())))
         .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(service.findMine(themself(ACME, ADA), ACME)).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The platform operator belongs to no organisation, so has nobody to tell anything to (ADR-030).
+   * Refused before anything is stored, and nothing recorded.
+   */
+  @Test
+  void GivenTheOperator_WhenNotifyingSomebody_ThenItIsRefusedAndNothingIsStored() {
+    assertThatThrownBy(
+            () ->
+                service.notify(
+                    new Operator(UserId.newId()),
+                    new NotifyCommand(
+                        ACME, ADA, NotifiableEvent.SWAP_REQUESTED, UUID.randomUUID())))
+        .isInstanceOf(NotATenantMemberException.class);
+    assertThat(service.findMine(themself(ACME, ADA), ACME)).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The actor is linked to Ada's own record, so the inbox lookup alone would find her notification:
+   * only the check of the actor against the organisation named refuses. Over HTTP the organisation
+   * comes from the token, so only the port can be handed a mismatched one.
+   */
+  @Test
+  void
+      GivenAnActorOfAnotherOrganisation_WhenAcknowledgingOneOfOurs_ThenItIsRefusedAndStaysUnread() {
+    NotificationId adas = notifyAda(UUID.randomUUID());
+
+    assertThatThrownBy(() -> service.markRead(themself(RIVAL, ADA), ACME, adas))
+        .isInstanceOf(CrossTenantAccessException.class);
+    assertThat(service.findMine(themself(ACME, ADA), ACME))
+        .singleElement()
+        .extracting(PublishedNotification::read)
+        .isEqualTo(false);
+    assertThat(audit.of(NotificationChange.NOTIFICATION_READ)).isEmpty();
+  }
+
+  /** Nobody without a personnel record has an inbox to acknowledge anything in. */
+  @Test
+  void GivenAnActorWithNoPersonnelRecord_WhenAcknowledging_ThenItIsRefusedAndNothingIsRecorded() {
+    NotificationId adas = notifyAda(UUID.randomUUID());
+
+    assertThatThrownBy(
+            () -> service.markRead(new TenantActor(UserId.newId(), ACME, Role.ADMIN), ACME, adas))
+        .isInstanceOf(NotAddressableException.class);
+    assertThat(service.findMine(themself(ACME, ADA), ACME))
+        .singleElement()
+        .extracting(PublishedNotification::read)
+        .isEqualTo(false);
+    assertThat(audit.of(NotificationChange.NOTIFICATION_READ)).isEmpty();
+  }
+
+  /**
+   * F16 opens an inbox to any member linked to a personnel record, whatever their role: a Scheduler
+   * who also works shifts is told about a swap as anybody else is.
+   */
+  @Test
+  void GivenASchedulerLinkedToTheirRecord_WhenReadingTheirInbox_ThenTheirNotificationsAreThere() {
+    NotificationId raised = notifyAda(UUID.randomUUID());
+    TenantActor adaAsScheduler =
+        new TenantActor(UserId.newId(), ACME, Role.SCHEDULER, Optional.of(ADA));
+
+    assertThat(service.findMine(adaAsScheduler, ACME))
+        .extracting(PublishedNotification::id)
+        .containsExactly(raised);
   }
 
   @Test

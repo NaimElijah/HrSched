@@ -213,7 +213,7 @@ class UnrepresentableValueHttpTest {
     String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation);
     // Invented: contracted hours are a term of an individual agreement, never a statutory figure.
-    long ordinaryMinutes = 1500;
+    long ordinaryMinutes = 1501;
     mockMvc
         .perform(
             as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")

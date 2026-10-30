@@ -12,7 +12,11 @@ import java.time.Instant;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
-/** Specification of the employee aggregate. */
+/**
+ * Specification of the employee aggregate.
+ *
+ * <p>Every instant and figure below is invented. None is taken from any jurisdiction.
+ */
 class EmployeeTest {
 
   private static final OrganisationId ACME = OrganisationId.newId();
@@ -135,6 +139,33 @@ class EmployeeTest {
     assertThat(away.unavailability()).hasSize(2);
   }
 
+  /**
+   * R7 refuses overlap, and a span ending at the instant the next begins shares no instant with it:
+   * somebody away until four may also be away from four. Invented, as Monday is.
+   */
+  @Test
+  void GivenASpanBeginningWhereAnotherEnds_WhenDeclaringBoth_ThenBothAreHeld() {
+    TimeRange mondayFromFour =
+        new TimeRange(Instant.parse("2026-09-07T16:00:00Z"), Instant.parse("2026-09-07T18:00:00Z"));
+
+    Employee away = ada().unavailableFor(MONDAY_DAY).unavailableFor(mondayFromFour);
+
+    assertThat(away.unavailability()).containsExactly(MONDAY_DAY, mondayFromFour);
+  }
+
+  /**
+   * The same meeting point from the other side: a span ending where one already declared begins.
+   */
+  @Test
+  void GivenASpanEndingWhereAnotherBegins_WhenDeclaringBoth_ThenBothAreHeld() {
+    TimeRange mondayUntilEight =
+        new TimeRange(Instant.parse("2026-09-07T06:00:00Z"), Instant.parse("2026-09-07T08:00:00Z"));
+
+    Employee away = ada().unavailableFor(MONDAY_DAY).unavailableFor(mondayUntilEight);
+
+    assertThat(away.unavailability()).containsExactly(MONDAY_DAY, mondayUntilEight);
+  }
+
   @Test
   void GivenAnEmployee_WhenStatingAPreference_ThenItIsHeldAndNeverBlocksAvailability() {
     Employee choosy =
@@ -219,11 +250,12 @@ class EmployeeTest {
 
   @Test
   void GivenAnEmployee_WhenContracted_ThenTheTermsAreHeld() {
-    Employee parttime = ada().contractedTo(new ContractTerms(Duration.ofHours(20)));
+    // Invented: contracted hours are a term of an individual agreement, never a statute's.
+    Employee parttime = ada().contractedTo(new ContractTerms(Duration.ofMinutes(1201)));
 
     assertThat(parttime.contractTerms())
         .map(ContractTerms::weeklyContractedHours)
-        .contains(Duration.ofHours(20));
+        .contains(Duration.ofMinutes(1201));
   }
 
   @Test
