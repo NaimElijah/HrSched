@@ -1,6 +1,13 @@
 # ADR-053: Bound a request body in bytes, and accept nothing but UTF-8 JSON
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** A limit above `Integer.MAX_VALUE` in
+    `hrsched.web.max-json-document-bytes` fails startup too. The same value is
+    `server.tomcat.max-http-form-post-size`, which Boot narrows to an `int` without checking, so a
+    larger one wrapped to a negative number, which Tomcat reads as no limit, or to zero, which Boot
+    skips ([#254](https://github.com/NaimElijah/HrSched/issues/254)). Neither Tomcat's key nor
+    Jackson's is checked when set directly, for instance by an environment override such as
+    `SERVER_TOMCAT_MAXHTTPFORMPOSTSIZE=-1`.
 - **Date:** 2026-10-30
 
 ## Context
