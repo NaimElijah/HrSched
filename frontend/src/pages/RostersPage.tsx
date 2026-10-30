@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, type Violation } from '../api/problem';
-import { scheduling, type Generation } from '../api/scheduling';
+import {
+  isGenerationStatus,
+  scheduling,
+  type Generation,
+  type GenerationStatus,
+} from '../api/scheduling';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure, Violations } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
 import { ApprovingRules } from './ApprovingRules';
 import { RosterBoard } from './RosterBoard';
+
+/** How a generation stands while it is still running, typed so that a misspelling fails to compile. */
+const PENDING: GenerationStatus = 'PENDING';
 
 /** How long to wait between asking whether a generation has ended (ADR-046). */
 const GENERATION_POLL_MS = 1000;
@@ -115,27 +123,30 @@ export function RostersPage({
    */
   function ended(generation: Generation) {
     onWaitingFor(null);
-    if (generation.status === 'SUCCEEDED') {
+    const status = generation.status;
+    if (!isGenerationStatus(status)) {
+      rosters.reload();
+      setFailure(
+        new Error(
+          `The generation ended as ${status}, which this version of HrSched cannot describe. Check the rosters below for its draft before generating again.`,
+        ),
+      );
+      return;
+    }
+    if (status === 'SUCCEEDED') {
       rosters.reload();
       setRevision((previous) => previous + 1);
       // Waited for, often for minutes, so it opens rather than waiting to be found in the list.
       setSelected(generation.roster);
-    } else if (generation.status === 'REFUSED') {
+    } else if (status === 'REFUSED') {
       setFailure(new GenerationRefused(generation.violations));
-    } else if (generation.status === 'LOST') {
+    } else if (status === 'LOST') {
       setFailure(
         new Error('The generation was lost: the server running it stopped. Generate again.'),
       );
-    } else if (generation.status === 'FAILED') {
+    } else if (status === 'FAILED') {
       setFailure(
         new Error('The generation failed. Generate again, and report it if it fails again.'),
-      );
-    } else {
-      rosters.reload();
-      setFailure(
-        new Error(
-          `The generation ended as ${generation.status}, which this version of HrSched cannot describe. Check the rosters below for its draft before generating again.`,
-        ),
       );
     }
   }
@@ -179,7 +190,7 @@ export function RostersPage({
           return;
         }
         setAskingFailed(null);
-        if (generation.status !== 'PENDING') {
+        if (generation.status !== PENDING) {
           end.current(generation);
           return;
         }
@@ -203,7 +214,7 @@ export function RostersPage({
     setStarting(true);
     try {
       const started = await scheduling.startGeneration(span.from, span.to);
-      if (started.status === 'PENDING') {
+      if (started.status === PENDING) {
         onWaitingFor(started.id);
       } else {
         ended(started);

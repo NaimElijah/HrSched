@@ -67,14 +67,28 @@ export interface Roster {
   readonly validatedAgainstConstraintVersion: number | null;
 }
 
+/** The ways a generation can stand that this build knows how to put into words. */
+const GENERATION_STATUSES = ['PENDING', 'SUCCEEDED', 'REFUSED', 'FAILED', 'LOST'] as const;
+
+/** One of the {@link GENERATION_STATUSES}, so a comparison against a misspelt one does not compile. */
+export type GenerationStatus = (typeof GENERATION_STATUSES)[number];
+
+/**
+ * @param status how a generation stands, as the server sent it
+ * @returns whether this build knows that status
+ */
+export function isGenerationStatus(status: string): status is GenerationStatus {
+  return (GENERATION_STATUSES as readonly string[]).includes(status);
+}
+
 /**
  * How a draft's generation stands. Mirrors GenerationResponse (ADR-046).
  *
  * A solve at the largest stated size takes minutes, so asking for a draft starts a generation, and
  * the draft is read once it has ended. `PENDING` is one still running, then `SUCCEEDED`, `REFUSED`
  * or `FAILED`; `LOST` is one still pending when it should long since have ended: the server solving
- * it stopped. `status` is a plain string because a newer server may send one this build has never
- * heard of, and waiting must not stop without saying so.
+ * it stopped. `status` is a plain string rather than `GenerationStatus` because a newer server may
+ * send one this build has never heard of, and waiting must not stop without saying so.
  */
 export interface Generation {
   readonly id: string;

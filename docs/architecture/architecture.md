@@ -565,8 +565,10 @@ are not audited. Nothing at runtime depends on any of it.
   `Inbox` turns each kind into a sentence through a `Record` over the kinds it knows, so a kind added
   to the client's type cannot compile without its words, and a kind the server sends that this build
   does not know is shown as unknown rather than guessed at. A swap's status is worded the same way,
-  by `swapStatus`, for the inbox and the Scheduler's queue alike. Opening the inbox marks nothing
-  read; the reader does.
+  by `swapStatus`, for the inbox and the Scheduler's queue alike. So are a generation's status and
+  a draft's objectives: one the build does not know is named by its raw value, a generation ending
+  in one is reported as a failure rather than waited on, and an unknown objective is listed rather
+  than dropped from the weighted total. Opening the inbox marks nothing read; the reader does.
 - **The rules screen offers no default values.** Not a styling choice: a number suggested by the UI
   would be a working-time threshold chosen by a developer, which is exactly what this system
   refuses to contain.
