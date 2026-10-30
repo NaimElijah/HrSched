@@ -8,21 +8,6 @@ import { useSessionKey } from '../auth/SessionProvider';
 import { ApprovingRules } from './ApprovingRules';
 import { RosterBoard } from './RosterBoard';
 
-/**
- * Scheduler: generate a draft, change it by hand, publish it.
- *
- * Publication is the part that matters. A roster breaking the rules is refused with every violation
- * listed and there is no override, so the refusal is rendered inline as a first-class outcome
- * rather than as an error toast to dismiss.
- *
- * Generation fills every place the rules allow and only then weighs the objectives (ADR-044),
- * which this page says plainly rather than letting a scheduler assume more than that. It runs in the
- * background, for minutes at the largest size (ADR-046), so the page starts it and asks once a second
- * whether it has ended.
- *
- * The people come from the shell, which already loads them and already decides which refusal of
- * that listing to keep quiet about; asking again here doubled the request and repeated its failure.
- */
 /** How long to wait between asking whether a generation has ended (ADR-046). */
 const GENERATION_POLL_MS = 1000;
 
@@ -53,6 +38,21 @@ class GenerationRefused extends Error {
   }
 }
 
+/**
+ * Scheduler: generate a draft, change it by hand, publish it.
+ *
+ * Publication is the part that matters. A roster breaking the rules is refused with every violation
+ * listed and there is no override, so the refusal is rendered inline as a first-class outcome
+ * rather than as an error toast to dismiss.
+ *
+ * Generation fills every place the rules allow and only then weighs the objectives (ADR-044),
+ * which this page says plainly rather than letting a scheduler assume more than that. It runs in the
+ * background, for minutes at the largest size (ADR-046), so the page starts it and asks once a second
+ * whether it has ended.
+ *
+ * The people come from the shell, which already loads them and already decides which refusal of
+ * that listing to keep quiet about; asking again here doubled the request and repeated its failure.
+ */
 export function RostersPage({
   span,
   people,
