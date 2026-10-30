@@ -145,7 +145,9 @@ class NotificationExceptionHandlerTest {
   void GivenAnUnknownNotification_WhenTranslated_ThenNothingIsCountedOrLogged() {
     handler.handleUnknown(new UnknownNotificationException(NotificationId.newId()));
 
-    assertThat(denied("cross_tenant")).isZero();
+    assertThat(meters.getMeters())
+        .describedAs("no meter of any name or kind, so a typo never inflates hrsched.access.denied")
+        .isEmpty();
     assertThat(captured.list).isEmpty();
   }
 
