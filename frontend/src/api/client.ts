@@ -89,11 +89,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     return interpret<T>(path, first);
   }
   // One renewal, then one retry, and never more. A second 401 means the session is genuinely over,
-  // and retrying past that would be a loop that looks like an outage.
+  // and retrying past that would be a loop that looks like an outage, so this tab forgets it: the
+  // backend has refused a token it issued a moment ago. A session that ended or changed hands while
+  // the retry was out is not this request's to forget.
   if (!(await refreshOnce(sentAs))) {
     return interpret<T>(path, first);
   }
-  return interpret<T>(path, await send(path, init));
+  const retried = await send(path, init);
+  if (retried.status === 401 && currentSession()?.userId === sentAs.userId) {
+    forgetSessionHere();
+  }
+  return interpret<T>(path, retried);
 }
 
 interface Answered {

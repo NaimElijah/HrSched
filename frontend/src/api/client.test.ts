@@ -531,6 +531,43 @@ describe('renewing a session', () => {
     expect(stub.mock.calls.filter(([called]) => called === '/api/shifts')).toHaveLength(2);
   });
 
+  /**
+   * A token issued a moment ago and refused anyway means the backend no longer believes this
+   * session. Left signed in, the shell would keep offering screens whose every request is refused.
+   * Only this tab forgets: the cookie was accepted a moment ago, and the other tabs learn of it
+   * through their own renewals (ADR-048).
+   */
+  it('GivenARetryThatIsRefusedAgain_WhenRequesting_ThenTheSessionEndsInThisTab', async () => {
+    signedIn();
+    const posted = vi.spyOn(BroadcastChannel.prototype, 'postMessage');
+    const endings: string[] = [];
+    const stopListening = onSessionEnded((how) => endings.push(how));
+    answering((path) =>
+      path === '/api/auth/refresh'
+        ? {
+            status: 200,
+            body: {
+              accessToken: 'token-2',
+              tokenType: 'Bearer',
+              expiresIn: 600,
+              session: A_SESSION,
+            },
+          }
+        : { status: 401, body: {} },
+    );
+
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+    stopListening();
+    const toOtherTabs = posted.mock.calls.length;
+    posted.mockRestore();
+
+    expect(error.isUnauthenticated).toBe(true);
+    expect(endings).toEqual(['ended']);
+    expect(currentSession()).toBeNull();
+    expect(currentAccessToken()).toBeNull();
+    expect(toOtherTabs).toBe(0);
+  });
+
   it('GivenARefresh_WhenSent_ThenItCarriesTheRequestedWithHeader', async () => {
     signedIn();
     const stub = answering((path) =>

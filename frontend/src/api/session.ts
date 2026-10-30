@@ -103,10 +103,9 @@ export function holdSession(signedIn: SignedIn): void {
 /**
  * Forgets everything, and tells anybody watching — in this tab and in every other.
  *
- * Called when a refresh is refused, when a sign-out is confirmed, and whenever the backend stops
- * believing us. The notification is what lets the shell fall back to the sign-in screen from
- * anywhere, including from inside a request a page made. Every other tab of this app hears it too,
- * and ends its own session the same way.
+ * Called when a refresh is refused and when a sign-out is confirmed. The notification is what lets
+ * the shell fall back to the sign-in screen from anywhere, including from inside a request a page
+ * made. Every other tab of this app hears it too, and ends its own session the same way.
  */
 export function endSession(): void {
   forget(ENDED);
@@ -118,7 +117,9 @@ export function endSession(): void {
  *
  * For a session this tab may no longer act as, when the session the cookie now belongs to is
  * somebody else's and live: telling the other tabs would sign that account out of every tab it is
- * using.
+ * using. And for a request refused again with the token a renewal has just issued: the backend no
+ * longer believes this session, but it accepted the cookie a moment ago, so the other tabs learn
+ * of it through their own renewals, as they do of a renewal for another account (ADR-048).
  */
 export function forgetSessionHere(): void {
   forget(ENDED);
