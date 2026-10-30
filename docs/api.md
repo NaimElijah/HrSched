@@ -198,6 +198,11 @@ rules`, as publishing it would. With invented identifiers and weights:
 - **A JSON body that is too large.** One over `hrsched.web.max-json-document-bytes` (1048576 bytes
   by default) answers `413` titled `Request too large`, before any use case runs. Its detail repeats
   nothing that was sent.
+- **A fraction where a whole number is bound.** A number written with a fraction part or an
+  exponent, `2.0` included, sent for a headcount, a working-time threshold, an objective weight or
+  contracted minutes answers `400` titled `Malformed request`. Nothing is stored, and the detail
+  repeats nothing that was sent
+  ([ADR-056](ADRs/ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md)).
 - **A body that is not read.** JSON declared in any charset but UTF-8, UTF-16 and UTF-32 included,
   answers `415` titled `Unsupported media type` before it is read; `application/json` with no
   charset, or with `charset=UTF-8`, is accepted. A multipart request answers `415` and is never
