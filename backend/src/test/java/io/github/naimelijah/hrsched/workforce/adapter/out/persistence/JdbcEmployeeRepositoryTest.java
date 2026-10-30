@@ -14,6 +14,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import io.github.naimelijah.hrsched.workforce.domain.model.ContractTerms;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
+import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
 import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
@@ -299,8 +300,9 @@ class JdbcEmployeeRepositoryTest {
    * <p>Loudly means as our defect, not as the domain's refusal: that refusal is how a caller is
    * told their own request overlaps, and is answered 400 without a log line, so a store breaking R7
    * would read as the caller's mistake and leave the operator nothing. It carries no cause either,
-   * because Spring resolves a handler by an exception's causes too, and would find that one's. The
-   * message names the identity and the rule only, never the name or a span.
+   * because Spring resolves a handler by an exception's causes too, and would find that one's; the
+   * refusal travels suppressed instead, which Spring does not walk, so its stack still reaches the
+   * log. The message names the identity and the rule only, never the name or a span.
    */
   @Test
   void GivenOverlappingUnavailabilityInTheStore_WhenLoaded_ThenItFailsAsADefect() {
@@ -315,6 +317,7 @@ class JdbcEmployeeRepositoryTest {
     assertThatThrownBy(() -> repository.findById(ACME, ada.id()))
         .isInstanceOf(IllegalStateException.class)
         .hasNoCause()
+        .satisfies(JdbcEmployeeRepositoryTest::carriesTheRefusalSuppressed)
         .hasMessageContaining(ada.id().value().toString())
         .hasMessageContaining("R7")
         .message()
@@ -322,10 +325,17 @@ class JdbcEmployeeRepositoryTest {
     assertThatThrownBy(() -> repository.findByOrganisation(ACME))
         .isInstanceOf(IllegalStateException.class)
         .hasNoCause()
+        .satisfies(JdbcEmployeeRepositoryTest::carriesTheRefusalSuppressed)
         .hasMessageContaining(ada.id().value().toString())
         .hasMessageContaining("R7")
         .message()
         .doesNotContain(ada.name());
+  }
+
+  private static void carriesTheRefusalSuppressed(Throwable failure) {
+    assertThat(failure.getSuppressed())
+        .singleElement()
+        .isInstanceOf(OverlappingUnavailabilityException.class);
   }
 
   /** Writes past the adapter, because no {@code Employee} can carry what this stores. */

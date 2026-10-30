@@ -243,7 +243,8 @@ public class JdbcEmployeeRepository implements EmployeeRepository {
    *
    * <p>The refusal is deliberately not attached as the cause. Spring resolves an exception handler
    * by an exception's causes when none takes its own type, so a cause would route this straight
-   * back to the 400 it exists to avoid. The message says everything the refusal did.
+   * back to the 400 it exists to avoid. It travels suppressed instead, which Spring does not walk,
+   * so its stack still reaches the log; its message is a constant naming no span.
    */
   private static Employee withStoredUnavailability(Employee employee, List<TimeRange> periods) {
     Employee rebuilt = employee;
@@ -252,9 +253,12 @@ public class JdbcEmployeeRepository implements EmployeeRepository {
         rebuilt = rebuilt.unavailableFor(period);
       }
     } catch (OverlappingUnavailabilityException refusal) {
-      throw new IllegalStateException(
-          "Stored unavailability of employee %s overlaps, which breaks R7"
-              .formatted(employee.id().value()));
+      IllegalStateException defect =
+          new IllegalStateException(
+              "Stored unavailability of employee %s overlaps, which breaks R7"
+                  .formatted(employee.id().value()));
+      defect.addSuppressed(refusal);
+      throw defect;
     }
     return rebuilt;
   }
