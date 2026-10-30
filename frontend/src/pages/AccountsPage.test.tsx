@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AccountsPage } from './AccountsPage';
-import { callsTo, routeTo } from '../test-support/routeTo';
+import { callsTo, holdingWrites, routeTo, writes } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import type { Session } from '../api/session';
@@ -284,12 +284,60 @@ describe('creating an account', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('That sign-in name is already in use.'),
     );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Create account' })).toBeEnabled(),
+    );
+  });
+
+  /** A second creation sent meanwhile is refused for the name the first took, beside its success. */
+  it('GivenACreationInFlight_WhenCreatedAgain_ThenOnlyOneIsSent', async () => {
+    const routed = theOrganisation({ 'POST /api/accounts': { status: 201, body: null } });
+    const release = holdingWrites(routed);
+    show();
+    await fillIn('robin@example.com', 'SCHEDULER', A_PASSWORD);
+    const create = screen.getByRole('button', { name: 'Create account' });
+
+    await userEvent.click(create);
+    await userEvent.click(create);
+
+    expect(create).toBeDisabled();
+    release();
+    await screen.findByText('Created robin@example.com.');
+    expect(writes(routed)).toHaveLength(1);
+    await waitFor(() => expect(create).toBeEnabled());
   });
 });
 
 describe('changing an account', () => {
   function rowFor(signInName: string) {
     return screen.getByRole('cell', { name: signInName }).closest('tr') as HTMLElement;
+  }
+
+  /** The organisation, accepting a password reset for Ada, with the list it reads back editable. */
+  function resettingAdasPassword() {
+    const server: Record<string, Answer> = {
+      '/api/accounts': { status: 200, body: [ADA, GRACE] },
+      '/api/employees': { status: 200, body: [GRACE_HOPPER, ROBIN] },
+      [`POST /api/accounts/${ADA.id}/password`]: { status: 204, body: null },
+    };
+    return { routed: routeTo(server), server };
+  }
+
+  /** Resets Ada's password from her row, and waits until the list has been read back after it. */
+  async function resetAdasPassword({ routed }: ReturnType<typeof resettingAdasPassword>) {
+    const listedBefore = callsTo(routed, 'GET', '/api/accounts').length;
+    await userEvent.type(
+      screen.getByLabelText('New temporary password for ada@example.com'),
+      A_PASSWORD,
+      WITHOUT_PAUSES,
+    );
+    await userEvent.click(
+      within(rowFor('ada@example.com')).getByRole('button', { name: 'Reset password' }),
+    );
+    await screen.findByText('Reset the password of ada@example.com.');
+    await waitFor(() =>
+      expect(callsTo(routed, 'GET', '/api/accounts').length).toBeGreaterThan(listedBefore),
+    );
   }
 
   it('GivenAnAccount_WhenItsRoleIsChanged_ThenTheMembershipIsSent', async () => {
@@ -305,6 +353,9 @@ describe('changing an account', () => {
     await userEvent.selectOptions(
       within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com'),
       'EMPLOYEE',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the role of grace@example.com' }),
     );
 
     await waitFor(() =>
@@ -355,6 +406,9 @@ describe('changing an account', () => {
       within(rowFor('ada@example.com')).getByLabelText('Employee for ada@example.com'),
       ROBIN.id,
     );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the employee of ada@example.com' }),
+    );
 
     await waitFor(() =>
       expect(
@@ -384,6 +438,9 @@ describe('changing an account', () => {
     );
     await waitFor(() => expect(choice).toHaveValue(GRACE_HOPPER.id));
     await userEvent.selectOptions(choice, '');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the employee of grace@example.com' }),
+    );
 
     await waitFor(() =>
       expect(
@@ -459,12 +516,253 @@ describe('changing an account', () => {
       within(rowFor('ada@example.com')).getByLabelText('Role for ada@example.com'),
       'SCHEDULER',
     );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the role of ada@example.com' }),
+    );
 
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
         'An organisation must keep at least one active Admin.',
       ),
     );
+  });
+
+  /**
+   * With the keyboard, a closed select changes on every arrow key in some browsers, so a change
+   * sent on choosing would let an Admin demote themselves in one keystroke. Choosing sends nothing.
+   */
+  it('GivenARoleChosen_WhenNotYetSubmitted_ThenNothingIsSent', async () => {
+    const stub = theOrganisation();
+    show();
+
+    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await userEvent.selectOptions(
+      within(rowFor('ada@example.com')).getByLabelText('Role for ada@example.com'),
+      'EMPLOYEE',
+    );
+
+    expect(writes(stub)).toHaveLength(0);
+  });
+
+  it('GivenAnEmployeeChosen_WhenNotYetSubmitted_ThenNothingIsSent', async () => {
+    const stub = theOrganisation();
+    show();
+
+    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await within(rowFor('ada@example.com')).findByRole('option', {
+      name: `Robin Example · ${ROBIN.id}`,
+    });
+    await userEvent.selectOptions(
+      within(rowFor('ada@example.com')).getByLabelText('Employee for ada@example.com'),
+      ROBIN.id,
+    );
+
+    expect(writes(stub)).toHaveLength(0);
+  });
+
+  /**
+   * The membership is one value, so a change resends the field it does not change. Sent from the
+   * copy of the account read before the last change was stored, it would put back what that change
+   * replaced: the row waits until the list has been read again.
+   */
+  it('GivenAChangeStoredButNotYetReadBack_WhenTheRowIsUsedAgain_ThenItWaitsForTheReadBack', async () => {
+    const membership = `/api/accounts/${GRACE.id}/membership`;
+    const server: Record<string, Answer> = {
+      '/api/accounts': { status: 200, body: [ADA, GRACE] },
+      '/api/employees': { status: 200, body: [GRACE_HOPPER, ROBIN] },
+      [`PUT ${membership}`]: { status: 204, body: null },
+    };
+    const routed = routeTo(server);
+    let readBack!: () => void;
+    const readingBack = new Promise<void>((resolve) => {
+      readBack = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        path === '/api/accounts' && callsTo(routed, 'PUT', membership).length > 0
+          ? readingBack.then(() => routed(path, init))
+          : routed(path, init),
+      ),
+    );
+    show();
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await within(rowFor('grace@example.com')).findByRole('option', {
+      name: `Robin Example · ${ROBIN.id}`,
+    });
+    await userEvent.selectOptions(
+      within(rowFor('grace@example.com')).getByLabelText('Employee for grace@example.com'),
+      ROBIN.id,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the employee of grace@example.com' }),
+    );
+    await screen.findByText('Changed who grace@example.com is.');
+
+    const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
+    const changeRole = screen.getByRole('button', { name: 'Change the role of grace@example.com' });
+    expect(role).toBeDisabled();
+    expect(changeRole).toBeDisabled();
+    expect(
+      within(rowFor('grace@example.com')).getByRole('button', { name: 'Reset password' }),
+    ).toBeDisabled();
+    server['/api/accounts'] = { status: 200, body: [ADA, { ...GRACE, employee: ROBIN.id }] };
+    readBack();
+    await waitFor(() => expect(role).toBeEnabled());
+    await userEvent.selectOptions(role, 'EMPLOYEE');
+    await userEvent.click(changeRole);
+
+    await waitFor(() => expect(callsTo(routed, 'PUT', membership)).toHaveLength(2));
+    const second = callsTo(routed, 'PUT', membership)[1]?.[1];
+    expect(JSON.parse(String(second?.body))).toEqual({ role: 'EMPLOYEE', employee: ROBIN.id });
+  });
+
+  /**
+   * Another row's change reads the list back too, and that copy says nothing about a change still
+   * on its way. The row waits for its own request, then for the read-back that request started.
+   */
+  it('GivenAChangeInFlight_WhenAnotherRowsChangeIsReadBack_ThenTheRowStillWaits', async () => {
+    const membership = `/api/accounts/${GRACE.id}/membership`;
+    const server: Record<string, Answer> = {
+      '/api/accounts': { status: 200, body: [ADA, GRACE] },
+      '/api/employees': { status: 200, body: [GRACE_HOPPER, ROBIN] },
+      [`PUT ${membership}`]: { status: 204, body: null },
+      [`POST /api/accounts/${ADA.id}/password`]: { status: 204, body: null },
+    };
+    const routed = routeTo(server);
+    let answer!: () => void;
+    const answering = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        path === membership ? answering.then(() => routed(path, init)) : routed(path, init),
+      ),
+    );
+    show();
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
+    await userEvent.selectOptions(role, 'EMPLOYEE');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the role of grace@example.com' }),
+    );
+    const listedBefore = callsTo(routed, 'GET', '/api/accounts').length;
+
+    await userEvent.type(
+      screen.getByLabelText('New temporary password for ada@example.com'),
+      A_PASSWORD,
+      WITHOUT_PAUSES,
+    );
+    await userEvent.click(
+      within(rowFor('ada@example.com')).getByRole('button', { name: 'Reset password' }),
+    );
+    await screen.findByText('Reset the password of ada@example.com.');
+    await waitFor(() =>
+      expect(callsTo(routed, 'GET', '/api/accounts').length).toBeGreaterThan(listedBefore),
+    );
+
+    const changeEmployee = screen.getByRole('button', {
+      name: 'Change the employee of grace@example.com',
+    });
+    expect(role).toBeDisabled();
+    expect(changeEmployee).toBeDisabled();
+    server['/api/accounts'] = { status: 200, body: [ADA, { ...GRACE, role: 'EMPLOYEE' }] };
+    answer();
+    await screen.findByText('Changed the role of grace@example.com.');
+    await waitFor(() => expect(role).toBeEnabled());
+    expect(role).toHaveValue('EMPLOYEE');
+  });
+
+  /**
+   * The backend stores and audits a membership change whether or not anything differs, so a
+   * Change pressed with the stored value still chosen would record a change nobody made.
+   */
+  it('GivenTheStoredRoleStillChosen_WhenChangeIsPressed_ThenNothingIsSentOrSaid', async () => {
+    const stub = theOrganisation();
+    show();
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
+    const change = screen.getByRole('button', { name: 'Change the role of grace@example.com' });
+
+    await userEvent.click(change);
+    await userEvent.selectOptions(role, 'ADMIN');
+    await userEvent.selectOptions(role, 'SCHEDULER');
+    await userEvent.click(change);
+
+    expect(writes(stub)).toHaveLength(0);
+    expect(screen.queryByText(/^Changed/)).not.toBeInTheDocument();
+    expect(change).toBeDisabled();
+  });
+
+  it('GivenTheStoredEmployeeStillChosen_WhenChangeIsPressed_ThenNothingIsSentOrSaid', async () => {
+    const stub = theOrganisation();
+    show();
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const change = screen.getByRole('button', {
+      name: 'Change the employee of grace@example.com',
+    });
+
+    await userEvent.click(change);
+
+    expect(writes(stub)).toHaveLength(0);
+    expect(screen.queryByText(/^Changed/)).not.toBeInTheDocument();
+    expect(change).toBeDisabled();
+  });
+
+  /**
+   * Another row's change reads the whole list back. A choice made here and not yet sent was made
+   * against a value that has not changed, so it stays rather than reverting under the Admin's hand.
+   */
+  it('GivenARoleChosenButNotSent_WhenAnotherRowsChangeIsReadBack_ThenTheChoiceIsKept', async () => {
+    const stub = resettingAdasPassword();
+    show();
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
+    await userEvent.selectOptions(role, 'EMPLOYEE');
+
+    await resetAdasPassword(stub);
+
+    expect(role).toHaveValue('EMPLOYEE');
+    expect(
+      screen.getByRole('button', { name: 'Change the role of grace@example.com' }),
+    ).toBeEnabled();
+  });
+
+  /** A choice made against a value that has since changed would be a decision about the past. */
+  it('GivenARoleChosenButNotSent_WhenTheStoredRoleChangesUnderIt_ThenTheStoredRoleIsShown', async () => {
+    const stub = resettingAdasPassword();
+    show();
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
+    await userEvent.selectOptions(role, 'EMPLOYEE');
+    stub.server['/api/accounts'] = { status: 200, body: [ADA, { ...GRACE, role: 'ADMIN' }] };
+
+    await resetAdasPassword(stub);
+
+    await waitFor(() => expect(role).toHaveValue('ADMIN'));
+  });
+
+  /** A refusal reads nothing back, so the row must not wait for a read that never comes. */
+  it('GivenAChangeRefused_WhenShown_ThenTheRowCanBeUsedAgain', async () => {
+    theOrganisation({
+      'PUT /api/accounts/11111111-1111-4111-8111-111111111111/membership': {
+        status: 409,
+        body: { detail: 'An organisation must keep at least one active Admin.' },
+      },
+    });
+    show();
+    await screen.findByRole('cell', { name: 'ada@example.com' });
+    const role = within(rowFor('ada@example.com')).getByLabelText('Role for ada@example.com');
+
+    await userEvent.selectOptions(role, 'SCHEDULER');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the role of ada@example.com' }),
+    );
+
+    await screen.findByRole('alert');
+    expect(role).toBeEnabled();
+    expect(role).toHaveValue('SCHEDULER');
   });
 
   it('GivenAnActiveAccount_WhenDisabled_ThenTheActivationIsSent', async () => {

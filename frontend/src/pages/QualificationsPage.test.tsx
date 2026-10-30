@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { callsTo, routeTo } from '../test-support/routeTo';
+import { callsTo, holdingWrites, routeTo, writes } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
 import type { Session } from '../api/session';
 import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
@@ -112,6 +112,7 @@ describe('defining one', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
     );
     expect(screen.getByLabelText('Name')).toHaveValue('Forklift');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Define' })).toBeEnabled());
   });
 
   it('GivenADefinitionSucceeds_WhenItReturns_ThenTheListingIsAskedForAgain', async () => {
@@ -126,5 +127,23 @@ describe('defining one', () => {
     await waitFor(() => {
       expect(callsTo(stub, 'GET', '/api/qualifications').length).toBeGreaterThan(before);
     });
+  });
+
+  /** Each definition is a qualification of its own, and none can be deleted afterwards. */
+  it('GivenADefinitionInFlight_WhenDefinedAgain_ThenOnlyOneIsPosted', async () => {
+    const routed = theOrganisation(NONE_DEFINED);
+    const release = holdingWrites(routed);
+    show();
+    await userEvent.type(screen.getByLabelText('Name'), 'Nursing', WITHOUT_PAUSES);
+    const define = screen.getByRole('button', { name: 'Define' });
+
+    await userEvent.click(define);
+    await userEvent.click(define);
+
+    expect(define).toBeDisabled();
+    release();
+    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue(''));
+    expect(writes(routed)).toHaveLength(1);
+    await waitFor(() => expect(define).toBeEnabled());
   });
 });

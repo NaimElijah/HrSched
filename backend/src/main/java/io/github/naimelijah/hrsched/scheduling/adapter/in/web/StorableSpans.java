@@ -16,12 +16,12 @@ import java.time.temporal.ChronoUnit;
  * microseconds and stores it at the microsecond. Only a span that no longer ends after it starts
  * once stored is refused, because the table would refuse it.
  *
- * <p>One limit is the solver's, not the store's: generation counts each shift's length and position
- * in nanoseconds, as a {@code long} ({@code RosterModel.ticksFor}, {@code Ticks}), so a span longer
- * than that counts could be stored and then fail every generation overlapping it. It is the same
- * kind of bound as the one {@code ConstraintSetRequest} holds working-time minutes to, and says
- * nothing about how long a shift may sensibly be; a business ceiling on that is the owner's to set
- * (#262).
+ * <p>One limit is the solver's, not the store's: generation counts each shift's length, never its
+ * position, in nanoseconds, as a {@code long} ({@code RosterModel.ticksFor}, {@code Ticks}), so a
+ * span longer than that counts could be stored and then fail every generation overlapping it. It is
+ * the same kind of bound as the one {@code ConstraintSetRequest} holds working-time minutes to, and
+ * says nothing about how long a shift may sensibly be; a business ceiling on that is the owner's to
+ * set (#262).
  *
  * <p>Workforce's web adapter holds the same storage check. It is copied rather than shared because
  * a context may reach another only through its published ports (ADR-008), and this is adapter

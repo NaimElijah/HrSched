@@ -154,8 +154,8 @@ class SwapServiceTest {
             notifier,
             audit,
             Clock.fixed(RAISED_AT, ZoneOffset.UTC));
-    ada = available(ACME, "Ada", Set.of());
-    grace = available(ACME, "Grace", Set.of());
+    ada = available(ACME, Set.of());
+    grace = available(ACME, Set.of());
   }
 
   private static TenantActor scheduler(OrganisationId organisation) {
@@ -170,11 +170,10 @@ class SwapServiceTest {
     return new TenantActor(UserId.newId(), organisation, Role.EMPLOYEE, Optional.of(employee));
   }
 
-  private EmployeeId available(
-      OrganisationId organisation, String name, Set<QualificationId> holds) {
+  private EmployeeId available(OrganisationId organisation, Set<QualificationId> holds) {
     EmployeeId id = EmployeeId.newId();
     workforce.add(
-        organisation, new RosterCandidate(id, name, holds, List.of(), StatedPreferences.none()));
+        organisation, new RosterCandidate(id, holds, List.of(), StatedPreferences.none()));
     return id;
   }
 
@@ -366,7 +365,7 @@ class SwapServiceTest {
    */
   @Test
   void GivenAColleagueFromAnotherOrganisation_WhenApprovingTheSwap_ThenItIsRefused() {
-    EmployeeId stranger = available(RIVAL, "Their Employee", Set.of());
+    EmployeeId stranger = available(RIVAL, Set.of());
     ShiftId shift = aShift(Set.of());
     Roster published = publishedWith(ada, shift);
     SwapRequestId request =
@@ -383,7 +382,7 @@ class SwapServiceTest {
   void GivenAColleagueWhoLacksTheQualification_WhenApprovingTheSwap_ThenItIsRefused() {
     QualificationId forklift = QualificationId.newId();
     workforce.define(ACME, forklift);
-    EmployeeId qualifiedAda = available(ACME, "Ada", Set.of(forklift));
+    EmployeeId qualifiedAda = available(ACME, Set.of(forklift));
     ShiftId shift = aShift(Set.of(forklift));
     Roster published = publishedWith(qualifiedAda, shift);
     SwapRequestId request =
@@ -615,8 +614,7 @@ class SwapServiceTest {
   void GivenAColleagueWhoCannotWorkThen_WhenApprovingTheSwap_ThenItIsRefused() {
     EmployeeId busy = EmployeeId.newId();
     workforce.add(
-        ACME,
-        new RosterCandidate(busy, "Busy", Set.of(), List.of(MONDAY_DAY), StatedPreferences.none()));
+        ACME, new RosterCandidate(busy, Set.of(), List.of(MONDAY_DAY), StatedPreferences.none()));
     ShiftId shift = aShift(Set.of());
     Roster published = publishedWith(ada, shift);
     SwapRequestId request =
@@ -729,7 +727,7 @@ class SwapServiceTest {
   @Test
   void
       GivenSomebodyElseOnTheRosterWhoHasSinceDeclaredAbsence_WhenApprovingASwap_ThenItIsRefusedAndNothingChanges() {
-    EmployeeId linus = available(ACME, "Linus", Set.of());
+    EmployeeId linus = available(ACME, Set.of());
     ShiftId adasDay = aShift(Set.of());
     TimeRange tuesday =
         new TimeRange(Instant.parse("2026-10-06T08:00:00Z"), Instant.parse("2026-10-06T16:00:00Z"));
@@ -833,7 +831,7 @@ class SwapServiceTest {
    */
   @Test
   void GivenSwapsBetweenOtherPeople_WhenAnEmployeeLists_ThenTheyOnlySeeTheirOwn() {
-    EmployeeId hopper = available(ACME, "Hopper", Set.of());
+    EmployeeId hopper = available(ACME, Set.of());
     ShiftId mine = aShift(Set.of());
     ShiftId theirs = aShift(Set.of());
     Roster draft =
@@ -872,7 +870,7 @@ class SwapServiceTest {
   /** Reading one must not reveal what the listing withholds. */
   @Test
   void GivenAnEmployeeNotPartyToTheSwap_WhenReadingIt_ThenItIsAbsent() {
-    EmployeeId hopper = available(ACME, "Hopper", Set.of());
+    EmployeeId hopper = available(ACME, Set.of());
     ShiftId shift = aShift(Set.of());
     Roster published = publishedWith(ada, shift);
     SwapRequestId request =
@@ -1147,7 +1145,7 @@ class SwapServiceTest {
 
   /** Ada on Monday and Alan on Tuesday, each asking Grace, on one published roster. */
   private TwoPending twoPendingOnOneRoster() {
-    EmployeeId alan = available(ACME, "Alan", Set.of());
+    EmployeeId alan = available(ACME, Set.of());
     ShiftId monday = aShift(Set.of());
     ShiftId tuesday =
         scheduling.defineShift(
@@ -1241,7 +1239,7 @@ class SwapServiceTest {
   /** The stored request is the one asked; approving it with other parties would rewrite it. */
   @Test
   void GivenARequestWithOtherPartiesThanStored_WhenPublishedAsApproved_ThenItIsRefused() {
-    EmployeeId alan = available(ACME, "Alan", Set.of());
+    EmployeeId alan = available(ACME, Set.of());
     ShiftId shift = aShift(Set.of());
     Roster original = publishedWith(ada, shift);
     SwapRequestId request =
@@ -1486,7 +1484,7 @@ class SwapServiceTest {
    */
   @Test
   void GivenAPendingSwap_WhenTheSameShiftIsAskedOfAnotherColleague_ThenItIsStillRefused() {
-    EmployeeId alan = available(ACME, "Alan", Set.of());
+    EmployeeId alan = available(ACME, Set.of());
     ShiftId shift = aShift(Set.of());
     Roster original = publishedWith(ada, shift);
     service.requestSwap(

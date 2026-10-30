@@ -38,7 +38,7 @@ const TENANT_TABS = [
  */
 const OPERATOR_TABS = ['Organisations', 'Password'] as const;
 
-type Tab = (typeof TENANT_TABS)[number] | (typeof OPERATOR_TABS)[number] | 'Organisations';
+type Tab = (typeof TENANT_TABS)[number] | (typeof OPERATOR_TABS)[number];
 
 /**
  * The shell: who is signed in, tab navigation, and the planning span the scheduling pages share.

@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { auth } from '../api/client';
-import { onSessionEnded } from '../api/session';
+import { forgetSessionHere, onSessionEnded, onSessionHeld } from '../api/session';
 import type { Session } from '../api/session';
 
 /**
@@ -65,7 +65,7 @@ interface SessionContextValue {
   readonly restoreFailure: unknown;
   /** Runs the whole restore again, from the refresh onwards. */
   readonly retryRestore: () => void;
-  /** Changes whenever who is signed in changes, so loaded answers are asked again. */
+  /** Changes whenever who is signed in, or their role, changes, so loaded answers are asked again. */
   readonly key: string;
   readonly signIn: (signInName: string, password: string) => Promise<void>;
   /**
@@ -91,6 +91,17 @@ interface SessionContextValue {
 export const SessionContext = createContext<SessionContextValue | null>(null);
 
 export type { SessionContextValue };
+
+/**
+ * The reload key for a session: who it is, what role they hold, and whether a password change is
+ * pending. Exported so a test that supplies a session directly keys it the way the provider does.
+ *
+ * @param session who is signed in
+ * @returns the key every loaded answer belongs to
+ */
+export function sessionKeyOf(session: Session): string {
+  return `${session.userId}|${String(session.role)}|${String(session.passwordChangeRequired)}`;
+}
 
 function stateOf(session: Session | null): SessionState {
   if (session === null) {
@@ -151,8 +162,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // effect, so it is current from the commit that draws the screen: a passive one can still be
   // pending when a session ends.
   const somethingOnScreen = useRef(false);
+  const sessionOnScreen = useRef<Session | null>(null);
   useLayoutEffect(() => {
     somethingOnScreen.current = session !== null || signOutUnconfirmed;
+    sessionOnScreen.current = session;
   }, [session, signOutUnconfirmed]);
 
   useEffect(
@@ -166,6 +179,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           if (somethingOnScreen.current) {
             setSessionEnded(true);
           }
+        }
+      }),
+    [],
+  );
+
+  // A session held for the account on screen is that session renewed, and carries its role,
+  // employee link and password flag as the backend holds them now (#254). One held while nothing is
+  // on screen is left alone: a sign-in sets the session it was answered with, and a restore the one
+  // it reads back. One held for another account while this one is on screen is refused before it
+  // is held today; were it held, the client would act as that account under a shell naming this
+  // one (#250), so this tab forgets its session instead.
+  useEffect(
+    () =>
+      onSessionHeld((held) => {
+        const shown = sessionOnScreen.current;
+        if (shown === null) {
+          return;
+        }
+        if (shown.userId === held.userId) {
+          setSession(held);
+        } else {
+          forgetSessionHere();
         }
       }),
     [],
@@ -211,8 +246,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       restoreFailure,
       retryRestore,
       // The password flag is in the key on purpose: clearing it is a different app, and everything
-      // loaded while it was set was loaded by somebody who could not reach any of it.
-      key: session === null ? '' : `${session.userId}|${String(session.passwordChangeRequired)}`,
+      // loaded while it was set was loaded by somebody who could not reach any of it. The role is
+      // too: what was loaded under one role may be refused to the next, so a renewal that changes
+      // it reads everything on screen again.
+      key: session === null ? '' : sessionKeyOf(session),
       signIn,
       signOut,
       signOutProgress,

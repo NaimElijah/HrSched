@@ -120,7 +120,7 @@ public final class RosterGeneration {
 
   /**
    * @param draft the draft it produced
-   * @param at when it ended
+   * @param at when it ended, by the clock; recorded as when it was asked for if earlier
    * @return it, ended with that draft
    * @throws IllegalStateException if it has already ended, or is lost by {@code at}
    */
@@ -132,7 +132,7 @@ public final class RosterGeneration {
 
   /**
    * @param broken every rule the work carried over breaks, at least one
-   * @param at when it ended
+   * @param at when it ended, by the clock; recorded as when it was asked for if earlier
    * @return it, refused
    * @throws IllegalStateException if it has already ended, is lost by {@code at}, or nothing was
    *     broken
@@ -143,7 +143,7 @@ public final class RosterGeneration {
   }
 
   /**
-   * @param at when it ended
+   * @param at when it ended, by the clock; recorded as when it was asked for if earlier
    * @return it, failed
    * @throws IllegalStateException if it has already ended, or is lost by {@code at}
    */
@@ -152,13 +152,26 @@ public final class RosterGeneration {
     return ended(GenerationStatus.FAILED, null, List.of(), at);
   }
 
+  /**
+   * Ends it at {@code at}, or at {@link #requestedAt()} if the clock was stepped back to before it
+   * while the solve ran: an ending is never recorded before its request, as a publication is never
+   * recorded before the history it follows (R37), and refusing would lose the outcome instead.
+   */
   private RosterGeneration ended(
       GenerationStatus outcome, RosterId draft, List<ConstraintViolation> broken, Instant at) {
+    Instant finished = at.isBefore(requestedAt) ? requestedAt : at;
     return new RosterGeneration(
-        id, organisation, period, requestedAt, lostAt, outcome, draft, broken, at);
+        id, organisation, period, requestedAt, lostAt, outcome, draft, broken, finished);
   }
 
-  private void requireEndableAt(Instant at) {
+  /**
+   * Whether it could still end at {@code at}, for a caller that must not start writing toward an
+   * ending that would be refused. Each ending checks again when it is made.
+   *
+   * @param at what the clock reads now
+   * @throws IllegalStateException if it has already ended, or is lost by {@code at}
+   */
+  public void requireEndableAt(Instant at) {
     Objects.requireNonNull(at, "at must not be null");
     if (status != GenerationStatus.PENDING) {
       throw new IllegalStateException(

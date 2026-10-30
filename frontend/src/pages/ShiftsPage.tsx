@@ -2,18 +2,30 @@ import { useState } from 'react';
 import { scheduling } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
+import { spanLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
 
-/** Scheduler: what needs covering, over an explicit span. */
+/** What the headcount field holds before anything is typed: a shift needs somebody. */
+const ONE_PERSON = '1';
+
+/**
+ * Scheduler: what needs covering, over an explicit span.
+ *
+ * A shift cannot be deleted, so each definition is sent once: the button waits for the answer, and
+ * a definition stored empties the form and says so. Without that word a shift outside the span,
+ * which the list below does not show, would look as if it had never been stored.
+ */
 export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
   const sessionKey = useSessionKey();
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
-  const [headcount, setHeadcount] = useState('1');
+  const [headcount, setHeadcount] = useState(ONE_PERSON);
   const [required, setRequired] = useState<string[]>([]);
   const [unpopular, setUnpopular] = useState(false);
   const [failure, setFailure] = useState<unknown>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [defining, setDefining] = useState(false);
 
   const shifts = useAsync(
     () => scheduling.findShifts(span.from, span.to),
@@ -26,17 +38,24 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
 
   async function define(event: React.FormEvent) {
     event.preventDefault();
+    if (defining) {
+      return;
+    }
     setFailure(null);
+    setDone(null);
     const from = new Date(start);
     const to = new Date(end);
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
       setFailure(new Error('Give both a start and an end.'));
       return;
     }
+    const startsAt = from.toISOString();
+    const endsAt = to.toISOString();
+    setDefining(true);
     try {
       await scheduling.defineShift({
-        start: from.toISOString(),
-        end: to.toISOString(),
+        start: startsAt,
+        end: endsAt,
         // The zone `new Date` just read the inputs in, so the one these times mean. The backend
         // counts the shift's working-time days in it (R36).
         zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -44,9 +63,19 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
         requiredQualifications: required,
         unpopular,
       });
+      setStart('');
+      setEnd('');
+      setHeadcount(ONE_PERSON);
+      setRequired([]);
+      setUnpopular(false);
+      setDone(
+        `Defined the shift ${spanLabel(startsAt, endsAt)}. The list shows only the planning span.`,
+      );
       shifts.reload();
     } catch (error) {
       setFailure(error);
+    } finally {
+      setDefining(false);
     }
   }
 
@@ -117,10 +146,15 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
           />
           Unpopular
         </label>
-        <button type="submit">Define shift</button>
+        <button type="submit" disabled={defining}>
+          Define shift
+        </button>
       </form>
 
       <Failure error={failure} />
+      <p className="done" role="status">
+        {done}
+      </p>
       <Failure error={shifts.error} />
       <Busy busy={shifts.busy} />
 

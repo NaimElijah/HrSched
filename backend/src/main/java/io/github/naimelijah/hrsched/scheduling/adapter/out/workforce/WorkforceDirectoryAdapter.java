@@ -56,7 +56,6 @@ public class WorkforceDirectoryAdapter implements WorkforceDirectory {
   private static RosterCandidate translate(RosterableEmployee employee) {
     return new RosterCandidate(
         employee.id(),
-        employee.name(),
         employee.qualifications(),
         employee.unavailability(),
         new StatedPreferences(employee.wouldLikeToWork(), employee.wouldRatherNotWork()));
