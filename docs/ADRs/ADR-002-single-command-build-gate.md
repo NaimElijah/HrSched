@@ -4,6 +4,12 @@
   - **Amended 2026-10-30:** Spotless is no longer 2.44.5: its version is `spotless.version` in
     `backend/pom.xml`. Dependabot covers npm as well as Maven and GitHub Actions
     (`.github/dependabot.yml`).
+  - **Amended 2026-10-30:** "Until a scanning step exists" has ended.
+    [ADR-047](ADR-047-audit-dependencies-in-ci-with-osv-scanner.md) adds a vulnerability scan to CI
+    as a job beside the gate, and the gate itself is unchanged. A red scan does not block a merge
+    yet: required status checks wait on
+    [#217](https://github.com/NaimElijah/HrSched/issues/217) and
+    [#148](https://github.com/NaimElijah/HrSched/issues/148).
 - **Date:** 2026-08-29
 
 ## Context

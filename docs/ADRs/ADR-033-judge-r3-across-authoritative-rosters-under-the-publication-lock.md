@@ -1,6 +1,12 @@
 # ADR-033: Judge R3 across authoritative rosters in the application, under the publication lock
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:**
+    [ADR-042](ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md) amends two
+    things this record states: a person's own shifts are compared in every pair, not only as
+    neighbours by start time, and an overlap found at publication arrives in the list of
+    violations rather than as a 422. The rule, R3 judged across every authoritative roster under
+    the publication lock, stands.
 - **Date:** 2026-10-10
 
 ## Context

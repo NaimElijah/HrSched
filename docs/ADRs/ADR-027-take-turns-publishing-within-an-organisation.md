@@ -1,6 +1,12 @@
 # ADR-027: Make publications within one organisation take turns, with a transaction-scoped advisory lock
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:**
+    [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md) replaces the constraint "ADR-026's
+    constraint stays" names, and records that the revisit trigger "when roster history becomes
+    append-only" has fired and the lock stands.
+    [ADR-039](ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md)
+    extends the lock beyond publishing: raising and rejecting a swap take it too.
 - **Date:** 2026-09-14
 
 ## Context

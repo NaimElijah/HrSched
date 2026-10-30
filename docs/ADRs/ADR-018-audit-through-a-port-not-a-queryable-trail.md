@@ -4,8 +4,8 @@
   - **Amended 2026-10-30:**
     [ADR-052](ADR-052-record-only-after-every-write-notifications-included.md) replaces where
     `ROSTER_SUPERSEDED` is recorded: after every write, not "inside the supersede loop". The
-    decision otherwise stands. Two counts have moved: "the two ports" are now four, one
-    `AuditTrail` per context, and "the ten that exist" is out of date. Everything the application
+    decision otherwise stands. Two counts have moved, "the two ports" and "the ten that exist":
+    each context has its own `AuditTrail`, and `architecture.md` lists them. Everything the application
     stores is now in PostgreSQL ([ADR-004](ADR-004-postgresql-behind-the-driven-ports.md)), so
     "nothing survives a restart" holds only for the trail itself, which is still a log stream. The
     durable one is Q20, #31.

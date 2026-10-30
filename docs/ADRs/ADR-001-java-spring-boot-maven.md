@@ -1,6 +1,8 @@
 # ADR-001: Build HrSched on Java 21, Spring Boot, and Maven
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** "Spring Boot 4.1.1" has moved. The version in use is the parent in
+    `backend/pom.xml`.
 - **Date:** 2026-08-29
 
 ## Context

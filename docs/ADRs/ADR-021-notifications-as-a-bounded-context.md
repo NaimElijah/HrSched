@@ -4,6 +4,9 @@
   - **Amended 2026-10-30:** The notification store is in PostgreSQL
     ([ADR-004](ADR-004-postgresql-behind-the-driven-ports.md)), so "nothing survives a restart" no
     longer holds. Delivery is still pull-only, which is Q21.
+  - **Amended 2026-10-30:** "The same identity placeholder" and "a fourth `ActorFromHeaders`" no
+    longer describe the code: the actor comes from the access token
+    ([ADR-011](ADR-011-issue-our-own-access-tokens.md)), and no `ActorFromHeaders` remains.
   - **Erratum 2026-10-30:** "Q22" in the consequences and in the last alternative should read Q21,
     the question about the notification channel. Q22 is whether a swap is a transfer or an
     exchange.

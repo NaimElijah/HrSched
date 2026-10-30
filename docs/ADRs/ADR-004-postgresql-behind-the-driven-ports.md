@@ -6,8 +6,19 @@
     the moments it was published and superseded, each written once, so superseding a roster no
     longer changes it in place. "Last writer still wins" is replaced by
     [ADR-041](ADR-041-make-concurrent-changes-take-turns-on-the-row.md): a use case that changes an
-    aggregate reads it with `findForUpdate`, so a concurrent change waits and both apply. The rest
-    stands.
+    aggregate reads it with `findForUpdate`, so a concurrent change waits and both apply.
+  - **Amended 2026-10-30:** More of this record has been overtaken, and the decision stands.
+    - "Every lookup takes an `OrganisationId`" (the schema paragraph) has exceptions, and "every
+      table does carry a foreign key to `organisation`" does not hold for the session tables:
+      [ADR-055](ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md)
+      lists both.
+    - Row-level security, rejected "for now", had its trigger fire and was rejected again in
+      [ADR-011](ADR-011-issue-our-own-access-tokens.md).
+    - `EXCLUDE` constraints, rejected "in this change", have been adopted:
+      [ADR-026](ADR-026-make-overlapping-published-rosters-unrepresentable.md) and
+      [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md).
+    - The count of adapters ("Eight") has moved. `Jdbc*Repository` classes in each context's
+      `adapter.out.persistence` package are the current set.
 - **Date:** 2026-09-06
 
 ## Context

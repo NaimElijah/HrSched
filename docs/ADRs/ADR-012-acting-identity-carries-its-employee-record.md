@@ -1,6 +1,12 @@
 # ADR-012: The acting identity carries the employee record it is
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** The `X-Employee` header transport is gone. The actor is now built from
+    the stored account and the verified token
+    ([ADR-011](ADR-011-issue-our-own-access-tokens.md)), and the organisation comes from the
+    account ([ADR-031](ADR-031-take-the-organisation-from-the-account.md)). The link `isThemself`
+    reads is therefore established by the system rather than claimed by the caller, so "insecure by
+    design" no longer holds. The decision to carry the employee record in the actor stands.
 - **Date:** 2026-08-30
 
 ## Context
