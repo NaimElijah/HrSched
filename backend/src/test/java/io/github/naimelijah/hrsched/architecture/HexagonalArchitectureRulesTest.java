@@ -31,6 +31,9 @@ import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.Ke
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -253,13 +256,7 @@ class HexagonalArchitectureRulesTest {
   @Test
   void
       GivenTheImportHexagonalArchitectureTestDeclares_WhenTheClassesAreImported_ThenNoFixtureIsAmongThem() {
-    AnalyzeClasses analysed = HexagonalArchitectureTest.class.getAnnotation(AnalyzeClasses.class);
-    ClassFileImporter importer = new ClassFileImporter();
-    for (Class<? extends ImportOption> option : analysed.importOptions()) {
-      importer = importer.withImportOption(instantiate(option));
-    }
-
-    JavaClasses classes = importer.importPackages(analysed.packages());
+    JavaClasses classes = theBuildsAnalysis();
 
     assertThat(classes.contain(HrSchedApplication.class))
         .as("the build's analysis imports the production classes")
@@ -270,6 +267,34 @@ class HexagonalArchitectureRulesTest {
             .filter(name -> name.startsWith(FIXTURE_ROOT + "."))
             .toList();
     assertThat(fixtures).as("fixture classes in the build's own analysis").isEmpty();
+  }
+
+  /**
+   * Every fixture test above roots its rules at the fixtures, so none of them would notice the
+   * build's own root drifting from the real base package. Both the cross-context and the kernel
+   * rule would then see no context at all, and pass while checking nothing.
+   */
+  @Test
+  void GivenTheClassesTheBuildAnalyses_WhenEachIsMappedToItsContext_ThenEveryRealContextIsFound() {
+    Set<String> contexts =
+        theBuildsAnalysis().stream()
+            .map(ContextPackages.HRSCHED::contextOf)
+            .flatMap(Optional::stream)
+            .collect(Collectors.toSet());
+
+    assertThat(contexts)
+        .as("the contexts ContextPackages.HRSCHED finds in the build's analysis")
+        .contains("scheduling", "workforce", "access", "notifications");
+  }
+
+  /** The classes {@code HexagonalArchitectureTest} analyses, read from its own annotation. */
+  private static JavaClasses theBuildsAnalysis() {
+    AnalyzeClasses analysed = HexagonalArchitectureTest.class.getAnnotation(AnalyzeClasses.class);
+    ClassFileImporter importer = new ClassFileImporter();
+    for (Class<? extends ImportOption> option : analysed.importOptions()) {
+      importer = importer.withImportOption(instantiate(option));
+    }
+    return importer.importPackages(analysed.packages());
   }
 
   private static EvaluationResult evaluate(ArchRule rule, Class<?>... classes) {
