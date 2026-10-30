@@ -15,6 +15,7 @@ import io.github.naimelijah.hrsched.access.domain.model.UnlinkedEmployeeAccountE
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
+import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -265,6 +266,24 @@ public class AccessExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "Only the platform operator may do this.");
+    problem.setTitle("Not permitted");
+    return problem;
+  }
+
+  /**
+   * A use case refusing the role its actor holds, as account administration refuses anybody but an
+   * Admin. The URL rules refuse such a caller first today; this keeps the use case's own refusal a
+   * 403 rather than a 500 if a rule is ever loosened. The answer never names the role required.
+   */
+  @ExceptionHandler(NotPermittedException.class)
+  public ProblemDetail handleNotPermitted(NotPermittedException exception) {
+    log.atWarn()
+        .addKeyValue("actor", exception.actor().value())
+        .addKeyValue("role", exception.held())
+        .log("Refused: the actor's role does not permit this");
+    denied("role");
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your role does not permit this.");
     problem.setTitle("Not permitted");
     return problem;
   }
