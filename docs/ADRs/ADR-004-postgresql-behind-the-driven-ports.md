@@ -29,7 +29,11 @@
     `working_time_constraint_one_of_each_kind`, so a set with two constraints of one kind can no
     longer be stored, and the earlier note's "the schema still permits it" no longer holds. A
     database already holding such a set fails that migration, and the row that is wrong is deleted
-    by hand ([#255](https://github.com/NaimElijah/HrSched/issues/255)).
+    by hand ([#255](https://github.com/NaimElijah/HrSched/issues/255)). `V14` also makes a
+    reference to `roster` carry its organisation: a generation and a swap request name a roster by
+    `(organisation_id, id)`, so neither can name another organisation's. The count of child tables
+    carrying no `organisation_id` that `V1` and this record give has moved; `V14`'s header
+    corrects it.
 - **Date:** 2026-09-06
 
 ## Context

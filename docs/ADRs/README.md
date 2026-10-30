@@ -43,7 +43,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-032](ADR-032-close-the-security-chain-by-default.md) | Close the security chain by default, and name every route that is open | Accepted, amended by [ADR-049](ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md) | 2026-09-21 |
 | [ADR-033](ADR-033-judge-r3-across-authoritative-rosters-under-the-publication-lock.md) | Judge R3 across authoritative rosters in the application, under the publication lock | Accepted, amended by [ADR-042](ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md) | 2026-10-10 |
 | [ADR-034](ADR-034-count-working-days-in-each-shifts-own-time-zone.md) | Count working days in each shift's own time zone | Accepted | 2026-10-10 |
-| [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md) | Keep roster history as a record of when each roster governed, written once | Accepted | 2026-10-14 |
+| [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md) | Keep roster history as a record of when each roster governed, written once | Accepted, amended | 2026-10-14 |
 | [ADR-038](ADR-038-read-a-constraint-version-back-by-its-number.md) | Read a constraint version back by its number, and answer version one from the domain | Accepted | 2026-10-15 |
 | [ADR-039](ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md) | Lapse pending swaps in the publication that supersedes their roster | Accepted, amended by [ADR-052](ADR-052-record-only-after-every-write-notifications-included.md) | 2026-10-15 |
 | [ADR-040](ADR-040-withdraw-a-declaration-by-what-it-says.md) | Withdraw a declaration by what it says, and keep nothing of it | Accepted | 2026-10-18 |

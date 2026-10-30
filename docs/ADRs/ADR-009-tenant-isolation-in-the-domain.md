@@ -10,6 +10,11 @@
   - **Amended 2026-10-30:** Not every repository lookup takes an `OrganisationId`: the reads that
     run before an organisation is known, and the register itself, are listed in
     [ADR-055](ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md).
+  - **Amended 2026-10-31:** "Enforcement is not database-level" is now partly overtaken.
+    References between scheduling rows are also held by the schema: since migration `V14`, a
+    generation and a swap request name their roster together with its organisation, so neither can
+    be stored naming another organisation's roster. Reads are still enforced by the adapters alone,
+    each scoped to its organisation ([#255](https://github.com/NaimElijah/HrSched/issues/255)).
 - **Date:** 2026-08-30
 
 ## Context
