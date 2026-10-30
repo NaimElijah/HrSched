@@ -35,6 +35,12 @@ the read-only flag from the name alone.
 - **A query is named `find…`, and a method named `find…` only reads.**
 - **A query named otherwise still works.** It gets a read-write transaction, so the name is the
   only thing that makes a read cheap.
+- **One read is known not to be named `find…`:
+  `ConfigureConstraintsUseCase.currentConstraints`.** It only reads, serves
+  `GET /api/constraints`, which the Rules tab calls on every load, and so runs read-write today.
+  It is the only one of the driving-port methods not named `find…` that reads. The rename is a
+  scheduling change, tracked in [#254](https://github.com/NaimElijah/HrSched/issues/254), which
+  also removes this exception.
 - **One method is left outside any transaction: `PlanRostersUseCase.startGeneration`.**
   `TransactionalUseCases.transactional` takes the methods to leave alone, and for those it answers
   no transaction attribute at all (ADR-045). `UseCaseConfiguration.startingAGeneration()` picks the
@@ -77,6 +83,7 @@ the read-only flag from the name alone.
 | **`@Transactional(readOnly = true)` on the service methods** | The idiomatic answer. Rejected for ADR-023's reason: it puts the framework inside `..application..`, which the architecture test fails on. **Revisit if** that rule is ever deliberately relaxed. |
 | **`NEVER` or `SUPPORTS` propagation for generation** | Rejected by ADR-045: both open an empty transaction scope, and the first repository call inside would bind a connection to the thread for the whole solve. |
 
-**Revisit when** a method named `find…` is first found to write, or a read use case not named
-`find…` is found holding a read-write transaction on a request path. Either means the name is no
-longer enough, and a check on the name or a marker the proxy can read is worth its cost.
+**Revisit when** a method named `find…` is first found to write, or a second read use case not
+named `find…`, beyond `currentConstraints` above, is found holding a read-write transaction on a
+request path. Either means the name is no longer enough, and a check on the name or a marker the
+proxy can read is worth its cost.
