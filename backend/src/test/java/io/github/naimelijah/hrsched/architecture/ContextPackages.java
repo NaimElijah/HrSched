@@ -19,12 +19,18 @@ final class ContextPackages {
   /** HrSched's own packages: every rule the build enforces is built from this. */
   static final ContextPackages HRSCHED = new ContextPackages("io.github.naimelijah.hrsched");
 
+  /** The top-level package that wires every context into Spring. */
+  private static final String COMPOSITION_ROOT = "configuration";
+
   /**
    * Top-level packages that are not bounded contexts: the composition root, the architecture tests
    * themselves, and the shared kernel every context is allowed to depend on.
+   *
+   * <p>Not being a context exempts the composition root from the cross-context rule only. What it
+   * may see inside a context is a rule of its own, which exempts its wiring and nothing else.
    */
   private static final Set<String> NOT_A_CONTEXT =
-      Set.of("configuration", "architecture", "shared");
+      Set.of(COMPOSITION_ROOT, "architecture", "shared");
 
   /** The only part of a context other contexts may reference: its driving ports. */
   private static final String PUBLISHED = ".application.port.in.";
@@ -62,6 +68,14 @@ final class ContextPackages {
     int dot = rest.indexOf('.');
     String head = dot < 0 ? rest : rest.substring(0, dot);
     return head.isEmpty() || NOT_A_CONTEXT.contains(head) ? Optional.empty() : Optional.of(head);
+  }
+
+  /**
+   * @param clazz any class
+   * @return whether it sits in the composition root, or a package beneath it
+   */
+  boolean isInTheCompositionRoot(JavaClass clazz) {
+    return (clazz.getPackageName() + ".").startsWith(rootPrefix + COMPOSITION_ROOT + ".");
   }
 
   /**

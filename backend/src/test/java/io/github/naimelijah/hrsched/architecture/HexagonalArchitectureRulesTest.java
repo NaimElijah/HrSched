@@ -17,6 +17,9 @@ import io.github.naimelijah.hrsched.architecture.fixtures.actors.BuildsATenantAc
 import io.github.naimelijah.hrsched.architecture.fixtures.actors.BuildsAnOperator;
 import io.github.naimelijah.hrsched.architecture.fixtures.actors.ReferencesAccountActor;
 import io.github.naimelijah.hrsched.architecture.fixtures.actors.ReferencesTheOperatorConstructor;
+import io.github.naimelijah.hrsched.architecture.fixtures.configuration.HelperReachingAPublishedPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.configuration.HelperReachingIntoADomain;
+import io.github.naimelijah.hrsched.architecture.fixtures.configuration.WiringReachingIntoContexts;
 import io.github.naimelijah.hrsched.architecture.fixtures.notifications.adapter.out.payroll.ReachesBackThroughPayrollsPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.notifications.application.port.in.FixtureNotifyUseCase;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDomain;
@@ -33,6 +36,8 @@ import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.Ke
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoAnUnlistedContext;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoConfiguration;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoNotifications;
+import io.github.naimelijah.hrsched.architecture.fixtures.stereotypes.FixtureConfiguration;
+import io.github.naimelijah.hrsched.configuration.UseCaseConfiguration;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import java.util.List;
@@ -40,6 +45,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
 
 /**
  * The failure tests of {@link HexagonalArchitectureTest}: each rule whose logic is ours, rather
@@ -134,6 +141,59 @@ class HexagonalArchitectureRulesTest {
             ReachesThroughThePublishedPort.class,
             FixtureNotifyUseCase.class,
             FixturePayUseCase.class);
+
+    assertHolds(result);
+  }
+
+  /** Evaluated with the annotation the build passes, which this helper does not carry. */
+  @Test
+  void
+      GivenACompositionRootClassThatIsNotWiringReachingADomain_WhenTheCompositionRootRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.onlyTheWiringSeesInsideAContext(
+                FIXTURES, Configuration.class),
+            HelperReachingIntoADomain.class);
+
+    assertViolatedNaming(result, "FixturePayslip");
+  }
+
+  @Test
+  void
+      GivenACompositionRootClassThatIsNotWiringReachingAPublishedPort_WhenTheCompositionRootRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.onlyTheWiringSeesInsideAContext(
+                FIXTURES, Configuration.class),
+            HelperReachingAPublishedPort.class);
+
+    assertHolds(result);
+  }
+
+  /** The stand-in annotation, for the reason {@link FixtureConfiguration} gives. */
+  @Test
+  void
+      GivenWiringAndAClassNestedInItReachingIntoContexts_WhenTheCompositionRootRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.onlyTheWiringSeesInsideAContext(
+                FIXTURES, FixtureConfiguration.class),
+            WiringReachingIntoContexts.class,
+            WiringReachingIntoContexts.Nested.class);
+
+    assertHolds(result);
+  }
+
+  /**
+   * The build's own rule, on the one class that reaches into every context today: the proof that it
+   * recognises Spring's {@code @Configuration}, which no fixture may carry.
+   */
+  @Test
+  void GivenUseCaseConfiguration_WhenTheBuildsCompositionRootRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.only_the_wiring_sees_inside_a_context,
+            UseCaseConfiguration.class);
 
     assertHolds(result);
   }
@@ -329,6 +389,27 @@ class HexagonalArchitectureRulesTest {
             .filter(name -> name.startsWith(FIXTURE_ROOT + "."))
             .toList();
     assertThat(fixtures).as("fixture classes in the build's own analysis").isEmpty();
+  }
+
+  /**
+   * The fixtures sit under {@code @SpringBootApplication}'s component-scan base, and the test
+   * classes are on the classpath of every {@code @SpringBootTest}, so a fixture carrying a Spring
+   * stereotype would join the shared test context, and a final one carrying {@code @Configuration}
+   * would fail its startup. The rules that need one take the annotation as a parameter instead.
+   */
+  @Test
+  void GivenTheFixtures_WhenTheirAnnotationsAreRead_ThenNoneIsASpringStereotype() {
+    List<String> stereotyped =
+        new ClassFileImporter()
+            .importPackages(FIXTURE_ROOT).stream()
+                .filter(
+                    fixture ->
+                        fixture.isAnnotatedWith(Component.class)
+                            || fixture.isMetaAnnotatedWith(Component.class))
+                .map(JavaClass::getName)
+                .toList();
+
+    assertThat(stereotyped).as("fixtures a component scan would pick up").isEmpty();
   }
 
   /**

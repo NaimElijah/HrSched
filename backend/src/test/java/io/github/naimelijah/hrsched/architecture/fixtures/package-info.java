@@ -7,5 +7,9 @@
  * rule names), {@code shared} for the kernel and {@code configuration} for the composition root.
  * They live in the test sources, which {@code HexagonalArchitectureTest} does not import, so they
  * can never fail or satisfy the rules the build enforces.
+ *
+ * <p>No fixture carries a Spring stereotype, as this package is inside the application's
+ * component-scan base. {@code stereotypes} holds the stand-ins, for the rules that take the
+ * annotation they look for as a parameter.
  */
 package io.github.naimelijah.hrsched.architecture.fixtures;

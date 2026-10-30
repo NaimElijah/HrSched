@@ -21,8 +21,10 @@ import com.tngtech.archunit.lang.SimpleConditionEvent;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
+import java.lang.annotation.Annotation;
 import java.util.Optional;
 import java.util.Set;
+import org.springframework.context.annotation.Configuration;
 
 /**
  * Executable specification of the hexagon.
@@ -129,6 +131,68 @@ class HexagonalArchitectureTest {
         .because(
             "a context may use another context's published driving ports, from a driven adapter,"
                 + " and nothing else");
+  }
+
+  /**
+   * Only the wiring sees inside a context: in {@code configuration}, a class annotated
+   * {@code @Configuration}, and the classes nested in one.
+   *
+   * <p>Building a context's services means naming them, and their driven ports, so the composition
+   * root cannot be held to published ports as a context is. But the exemption belongs to the
+   * wiring, not to the package: exempting every class under {@code configuration} would leave a
+   * sanctioned back door, where translation logic between contexts accretes in an ordinary class
+   * that merely lives there, the one place no rule inspects (ADR-008). Any other class there may
+   * use a context's published ports, as a context may, and nothing else of it.
+   *
+   * <p>The annotation is a parameter because a fixture cannot carry Spring's: see {@code
+   * FixtureConfiguration}. {@code HexagonalArchitectureRulesTest} watches the rule reject a helper
+   * beside the wiring reaching a domain, permit its reaching a published port, permit the wiring
+   * and a class nested in it, and permit {@code UseCaseConfiguration} under the build's own rule.
+   */
+  @ArchTest
+  static final ArchRule only_the_wiring_sees_inside_a_context =
+      onlyTheWiringSeesInsideAContext(ContextPackages.HRSCHED, Configuration.class);
+
+  /**
+   * @param packages where the contexts and the composition root are; {@link
+   *     ContextPackages#HRSCHED} for the build's rule
+   * @param wiring the annotation that marks wiring; {@code @Configuration} for the build's rule
+   * @return the composition-root rule over those packages
+   */
+  static ArchRule onlyTheWiringSeesInsideAContext(
+      ContextPackages packages, Class<? extends Annotation> wiring) {
+    return classes()
+        .that(
+            DescribedPredicate.describe(
+                "are in the composition root", packages::isInTheCompositionRoot))
+        .should(reachContextsOnlyThroughTheirPublishedPortsUnlessWiring(packages, wiring))
+        .because("only the wiring builds a context, so only the wiring may see inside one");
+  }
+
+  private static ArchCondition<JavaClass> reachContextsOnlyThroughTheirPublishedPortsUnlessWiring(
+      ContextPackages packages, Class<? extends Annotation> wiring) {
+    return new ArchCondition<>(
+        "reach contexts only through their published driving ports, unless annotated @"
+            + wiring.getSimpleName()) {
+      @Override
+      public void check(JavaClass origin, ConditionEvents events) {
+        if (isWiring(origin, wiring)) {
+          return;
+        }
+        for (Dependency dependency : origin.getDirectDependenciesFromSelf()) {
+          JavaClass target = dependency.getTargetClass();
+          if (packages.contextOf(target).isPresent() && !packages.isPublished(target)) {
+            events.add(SimpleConditionEvent.violated(origin, dependency.getDescription()));
+          }
+        }
+      }
+    };
+  }
+
+  /** A nested or anonymous class of the wiring is part of it, as a lambda inside it would be. */
+  private static boolean isWiring(JavaClass clazz, Class<? extends Annotation> wiring) {
+    return clazz.isAnnotatedWith(wiring)
+        || clazz.getEnclosingClass().map(enclosing -> isWiring(enclosing, wiring)).orElse(false);
   }
 
   private static ArchCondition<JavaClass> onlyReachOtherContextsThroughTheirPublishedPorts(
