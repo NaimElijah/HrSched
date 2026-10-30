@@ -74,6 +74,14 @@ final class ContextPackages {
   }
 
   /**
+   * @param context a context, as {@link #contextOf} names it
+   * @return the fully qualified name of its package
+   */
+  String packageOf(String context) {
+    return rootPrefix + context;
+  }
+
+  /**
    * @param clazz any class
    * @return whether it sits in the composition root, or a package beneath it
    */

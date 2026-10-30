@@ -18,4 +18,13 @@ public @interface FixtureExceptionHandler {
    * reads the attribute by that name.
    */
   Class<?>[] assignableTypes() default {};
+
+  /** The packages whose controllers it translates for, named as Spring's attribute is. */
+  String[] basePackages() default {};
+
+  /**
+   * Classes whose packages are those whose controllers it translates for, named as Spring's
+   * attribute is.
+   */
+  Class<?>[] basePackageClasses() default {};
 }

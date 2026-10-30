@@ -14,6 +14,7 @@ import com.tngtech.archunit.core.domain.JavaAnnotation;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaConstructor;
 import com.tngtech.archunit.core.domain.JavaMethod;
+import com.tngtech.archunit.core.domain.JavaPackage;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -56,6 +57,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import java.util.zip.ZipFile;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.bind.annotation.RestController;
@@ -634,17 +636,32 @@ class HexagonalArchitectureTest {
   private static final String HANDLED_CONTROLLERS = "assignableTypes";
 
   /**
-   * Every controller in a context is listed by an exception handler of that context.
+   * The attribute of an exception handler naming the packages whose controllers it translates for.
+   */
+  private static final String HANDLED_PACKAGES = "basePackages";
+
+  /**
+   * The attribute of an exception handler naming classes whose packages are those whose controllers
+   * it translates for.
+   */
+  private static final String HANDLED_PACKAGE_CLASSES = "basePackageClasses";
+
+  /**
+   * Every {@code @RestController} in a context is handled by an exception handler of that context.
    *
    * <p>Each context translates its own domain exceptions in a {@code @RestControllerAdvice} limited
-   * by {@code assignableTypes} to its own controllers, so that one context's handler never answers
-   * for another's exception. The cost of that limit is a failure nothing reports: a controller left
+   * to its own controllers, so that one context's handler never answers for another's exception.
+   * Limited by {@code assignableTypes}, the cost is a failure nothing reports: a controller left
    * off the list compiles, starts and serves, and its domain exceptions are simply never
-   * translated. {@code HexagonalArchitectureRulesTest} watches it reject a fixture controller its
-   * handler does not list, and permit one it does.
+   * translated. A handler limited instead by {@code basePackages} or {@code basePackageClasses} to
+   * a package holding the controller cannot forget it, and the rule accepts that too. Only a
+   * handler in the controller's own context counts, as another context's translates other
+   * exceptions. {@code HexagonalArchitectureRulesTest} watches it reject a fixture controller its
+   * handler does not list, one listed only by another context's handler, and one outside its
+   * handler's packages, and permit one listed and two inside their handlers' packages.
    *
    * <p>The annotations are parameters for the reason {@link #onlyTheWiringSeesInsideAContext}'s is;
-   * the handler's is read by the attribute name Spring gives it.
+   * the handler's is read by the attribute names Spring gives it.
    */
   @ArchTest
   static final ArchRule every_controller_is_listed_by_its_contexts_handler =
@@ -655,8 +672,9 @@ class HexagonalArchitectureTest {
    * @param packages where the contexts are; {@link ContextPackages#HRSCHED} for the build's rule
    * @param controller the annotation that marks a controller; {@code @RestController} for the
    *     build's rule
-   * @param handler the annotation that marks an exception handler, with an {@code assignableTypes}
-   *     attribute; {@code @RestControllerAdvice} for the build's rule
+   * @param handler the annotation that marks an exception handler, with {@code assignableTypes},
+   *     {@code basePackages} and {@code basePackageClasses} attributes;
+   *     {@code @RestControllerAdvice} for the build's rule
    * @return the exception-handler rule over those contexts
    */
   static ArchRule everyControllerIsListedByItsContextsHandler(
@@ -678,14 +696,22 @@ class HexagonalArchitectureTest {
   private static ArchCondition<JavaClass> beListedByAHandlerOfTheirContext(
       ContextPackages packages, Class<? extends Annotation> handler) {
     return new ArchCondition<>(
-        "be listed in the " + HANDLED_CONTROLLERS + " of a @" + handler.getSimpleName()) {
+        "be listed in the "
+            + HANDLED_CONTROLLERS
+            + ", or inside the "
+            + HANDLED_PACKAGES
+            + " or "
+            + HANDLED_PACKAGE_CLASSES
+            + ", of a @"
+            + handler.getSimpleName()
+            + " in their context") {
       @Override
       public void check(JavaClass controller, ConditionEvents events) {
-        Optional<String> context = packages.contextOf(controller);
+        String context = packages.contextOf(controller).orElseThrow();
         boolean listed =
-            controller.getDirectDependenciesToSelf().stream()
-                .map(Dependency::getOriginClass)
-                .filter(origin -> packages.contextOf(origin).equals(context))
+            contextPackage(controller, packages.packageOf(context))
+                .getClassesInPackageTree()
+                .stream()
                 .flatMap(origin -> origin.tryGetAnnotationOfType(handler.getName()).stream())
                 .anyMatch(annotation -> lists(annotation, controller));
         if (!listed) {
@@ -693,21 +719,44 @@ class HexagonalArchitectureTest {
               SimpleConditionEvent.violated(
                   controller,
                   controller.getName()
-                      + " is in the "
-                      + HANDLED_CONTROLLERS
-                      + " of no @"
+                      + " is handled by no @"
                       + handler.getSimpleName()
                       + " in "
-                      + context.orElseThrow()));
+                      + context));
         }
       }
     };
   }
 
+  /**
+   * The package of the context a class belongs to, as the imported classes' package tree has it.
+   */
+  private static JavaPackage contextPackage(JavaClass clazz, String contextPackage) {
+    JavaPackage enclosing = clazz.getPackage();
+    while (!enclosing.getName().equals(contextPackage)) {
+      enclosing = enclosing.getParent().orElseThrow();
+    }
+    return enclosing;
+  }
+
   private static boolean lists(JavaAnnotation<?> handler, JavaClass controller) {
-    return handler.get(HANDLED_CONTROLLERS).map(JavaClass[].class::cast).stream()
-        .flatMap(Arrays::stream)
-        .anyMatch(listed -> listed.getName().equals(controller.getName()));
+    String controllerPackage = controller.getPackageName();
+    return classesIn(handler, HANDLED_CONTROLLERS)
+            .anyMatch(listed -> listed.getName().equals(controller.getName()))
+        || handler.get(HANDLED_PACKAGES).map(String[].class::cast).stream()
+            .flatMap(Arrays::stream)
+            .anyMatch(base -> isWithin(controllerPackage, base))
+        || classesIn(handler, HANDLED_PACKAGE_CLASSES)
+            .anyMatch(marker -> isWithin(controllerPackage, marker.getPackageName()));
+  }
+
+  private static Stream<JavaClass> classesIn(JavaAnnotation<?> handler, String attribute) {
+    return handler.get(attribute).map(JavaClass[].class::cast).stream().flatMap(Arrays::stream);
+  }
+
+  /** Whether a package is the base package or beneath it, as Spring matches a base package. */
+  private static boolean isWithin(String candidate, String base) {
+    return candidate.equals(base) || candidate.startsWith(base + ".");
   }
 
   /**

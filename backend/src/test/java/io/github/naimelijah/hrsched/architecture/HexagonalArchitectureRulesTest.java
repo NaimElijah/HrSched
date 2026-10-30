@@ -21,12 +21,18 @@ import io.github.naimelijah.hrsched.architecture.fixtures.actors.ReferencesTheOp
 import io.github.naimelijah.hrsched.architecture.fixtures.configuration.HelperReachingAPublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.configuration.HelperReachingIntoADomain;
 import io.github.naimelijah.hrsched.architecture.fixtures.configuration.WiringReachingIntoContexts;
+import io.github.naimelijah.hrsched.architecture.fixtures.notifications.adapter.in.web.NotificationsExceptionHandler;
 import io.github.naimelijah.hrsched.architecture.fixtures.notifications.adapter.out.payroll.ReachesBackThroughPayrollsPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.notifications.application.port.in.FixtureNotifyUseCase;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.ControllerListedByAnotherContext;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.PayrollController;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.PayrollExceptionHandler;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.UnhandledPayrollController;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.WebAdapterReachingAPublishedPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.payruns.PayRunController;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.payruns.PayRunsExceptionHandler;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.payslips.PayslipController;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.payslips.PayslipsExceptionHandler;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDomain;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDrivenPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesThroughThePublishedPort;
@@ -439,6 +445,52 @@ class HexagonalArchitectureRulesTest {
             PayrollExceptionHandler.class);
 
     assertViolatedNaming(result, "UnhandledPayrollController");
+  }
+
+  /**
+   * Notifications' handler translates notifications' exceptions, so listing a payroll controller
+   * there leaves payroll's own exceptions untranslated.
+   */
+  @Test
+  void
+      GivenAControllerListedOnlyByAnotherContextsHandler_WhenTheExceptionHandlerRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyControllerIsListedByItsContextsHandler(
+                FIXTURES, FixtureController.class, FixtureExceptionHandler.class),
+            ControllerListedByAnotherContext.class,
+            NotificationsExceptionHandler.class);
+
+    assertViolatedNaming(result, "ControllerListedByAnotherContext");
+  }
+
+  @Test
+  void
+      GivenAControllerOutsideTheBasePackagesOfItsContextsHandler_WhenTheExceptionHandlerRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyControllerIsListedByItsContextsHandler(
+                FIXTURES, FixtureController.class, FixtureExceptionHandler.class),
+            PayslipController.class,
+            PayRunsExceptionHandler.class);
+
+    assertViolatedNaming(result, "PayslipController");
+  }
+
+  /** A handler scoped to a package cannot forget a controller added to it. */
+  @Test
+  void
+      GivenControllersInsideTheBasePackagesOrBasePackageClassesOfTheirContextsHandlers_WhenTheExceptionHandlerRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyControllerIsListedByItsContextsHandler(
+                FIXTURES, FixtureController.class, FixtureExceptionHandler.class),
+            PayslipController.class,
+            PayslipsExceptionHandler.class,
+            PayRunController.class,
+            PayRunsExceptionHandler.class);
+
+    assertHolds(result);
   }
 
   @Test
