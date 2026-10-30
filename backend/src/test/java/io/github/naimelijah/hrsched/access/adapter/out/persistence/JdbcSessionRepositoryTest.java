@@ -16,6 +16,8 @@ import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,9 +51,15 @@ class JdbcSessionRepositoryTest {
   /** PostgreSQL's {@code check_violation}: a {@code CHECK} constraint refused the row. */
   private static final String CHECK_VIOLATION = "23514";
 
+  /**
+   * Invented: less than half the store's precision, so the store rounds an instant this far before
+   * a whole microsecond up to it, as the driver's rounding to the nearest does.
+   */
+  private static final Duration UNDER_HALF_A_MICROSECOND = Duration.ofNanos(400);
+
   /** The constraint {@code V16} gives a token's lifetime. */
-  private static final String TOKEN_EXPIRES_AFTER_ISSUE =
-      "refresh_token_expires_after_it_is_issued";
+  private static final String TOKEN_DOES_NOT_EXPIRE_BEFORE_ISSUE =
+      "refresh_token_does_not_expire_before_it_is_issued";
 
   private final JdbcAccountRepository accounts =
       new JdbcAccountRepository(PostgresDatabase.jdbcClient());
@@ -250,25 +258,47 @@ class JdbcSessionRepositoryTest {
 
   /**
    * A token is good for a span that starts when it is issued, and the service always gives it one.
-   * The schema refuses, for a writer that skipped the service, a token that would be dead on
-   * arrival.
+   * The schema refuses, for a writer that skipped the service, a token that expires before it is
+   * issued.
    */
   @Test
-  void GivenATokenExpiringAsItIsIssued_WhenIssued_ThenTheSchemaRefusesIt() {
+  void GivenATokenExpiringBeforeItIsIssued_WhenIssued_ThenTheSchemaRefusesIt() {
     SignInSession session = sessionFor(anAccount());
     repository.start(session, digest("first"), NOW.plus(Duration.ofHours(1)));
     Instant issuedAt = NOW.plusSeconds(60);
 
     assertThatThrownBy(
-            () -> repository.issueSuccessor(session.id(), digest("second"), issuedAt, issuedAt))
+            () ->
+                repository.issueSuccessor(
+                    session.id(), digest("second"), issuedAt, issuedAt.minus(ONE_MICROSECOND)))
         .isInstanceOf(DataIntegrityViolationException.class)
         .rootCause()
         .isInstanceOfSatisfying(
             SQLException.class,
             refused -> {
               assertThat(refused.getSQLState()).isEqualTo(CHECK_VIOLATION);
-              assertThat(refused.getMessage()).contains(TOKEN_EXPIRES_AFTER_ISSUE);
+              assertThat(refused.getMessage()).contains(TOKEN_DOES_NOT_EXPIRE_BEFORE_ISSUE);
             });
+  }
+
+  /**
+   * A renewal moments before its session ends is one the service makes: it reads its clock in
+   * nanoseconds, while the store keeps microseconds and rounds to the nearest. Issued less than
+   * half a microsecond before the session's end, which caps the token's expiry, the token is stored
+   * issued at the instant it expires, and must still be stored rather than refused with a 500.
+   */
+  @Test
+  void GivenATokenIssuedWithinHalfAMicrosecondOfItsExpiry_WhenIssued_ThenItIsStoredAtThatInstant() {
+    SignInSession session = sessionFor(anAccount());
+    repository.start(session, digest("first"), NOW.plus(Duration.ofHours(1)));
+    Instant expiresAt = NOW.plus(Duration.ofHours(1));
+
+    repository.issueSuccessor(
+        session.id(), digest("second"), expiresAt.minus(UNDER_HALF_A_MICROSECOND), expiresAt);
+
+    assertThat(storedIssueAndExpiryOf(digest("second")))
+        .describedAs("the store rounded the issue up to the expiry, and kept the token")
+        .containsExactly(expiresAt, expiresAt);
   }
 
   @Test
@@ -338,6 +368,19 @@ class JdbcSessionRepositoryTest {
         .query((row, rowNumber) -> Optional.ofNullable(row.getString("revocation")))
         .single()
         .orElse(null);
+  }
+
+  /** A token's issue and expiry, as the store holds them. */
+  private static List<Instant> storedIssueAndExpiryOf(byte[] digest) {
+    return PostgresDatabase.jdbcClient()
+        .sql("SELECT issued_at, expires_at FROM refresh_token WHERE digest = :digest")
+        .param("digest", digest)
+        .query(
+            (row, rowNumber) ->
+                List.of(
+                    row.getObject("issued_at", OffsetDateTime.class).toInstant(),
+                    row.getObject("expires_at", OffsetDateTime.class).toInstant()))
+        .single();
   }
 
   private static UUID sessionOfRefreshToken(byte[] digest) {

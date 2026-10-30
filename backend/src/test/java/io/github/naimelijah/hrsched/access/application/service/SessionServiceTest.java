@@ -1001,9 +1001,13 @@ class SessionServiceTest {
       return !exchangeAlreadyTaken;
     }
 
+    /** Refuses a token expiring before it is issued, as {@code V16}'s check does. */
     @Override
     public void issueSuccessor(
         SignInSessionId session, byte[] refreshDigest, Instant issuedAt, Instant expiresAt) {
+      if (expiresAt.isBefore(issuedAt)) {
+        throw new IllegalStateException("A refresh token may not expire before it is issued");
+      }
       successorExpiries.put(session, expiresAt);
     }
 
