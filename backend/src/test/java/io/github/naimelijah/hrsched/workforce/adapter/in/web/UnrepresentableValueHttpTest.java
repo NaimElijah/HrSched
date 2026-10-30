@@ -516,13 +516,22 @@ class UnrepresentableValueHttpTest {
     addingAnEmployeeIsRefusedUnstored(name, whatALongNameMustNotRepeat(name));
   }
 
+  /** The refusing edge, pinned as exactly as the accepting one. */
+  @Test
+  void GivenANameOneBytePastTheBound_WhenAnAdminAddsAnEmployee_ThenRefusedUnstored()
+      throws Exception {
+    String name = incompressibleName(StorableNames.MOST_BYTES + 1);
+
+    addingAnEmployeeIsRefusedUnstored(name, whatALongNameMustNotRepeat(name));
+  }
+
   /** The bound counts bytes, as the index does, not characters. */
   @Test
   void GivenANameWithinTheBoundInLettersButPastItInBytes_WhenAddingAnEmployee_ThenRefused()
       throws Exception {
     String name = TWO_BYTE_LETTER.repeat(StorableNames.MOST_BYTES / 2 + 1);
 
-    addingAnEmployeeIsRefusedUnstored(name, name);
+    addingAnEmployeeIsRefusedUnstored(name, whatALongNameMustNotRepeat(name));
   }
 
   /** The bound sits safely under the index entry: a name at it is stored, uncompressed. */
@@ -542,6 +551,22 @@ class UnrepresentableValueHttpTest {
   void GivenANamePastAnIndexEntry_WhenAnAdminDefinesAQualification_ThenRefusedUnstored()
       throws Exception {
     String name = incompressibleName(PAST_AN_INDEX_ENTRY_BYTES);
+
+    definingAQualificationIsRefusedUnstored(name, whatALongNameMustNotRepeat(name));
+  }
+
+  @Test
+  void GivenANameOneBytePastTheBound_WhenAnAdminDefinesAQualification_ThenRefusedUnstored()
+      throws Exception {
+    String name = incompressibleName(StorableNames.MOST_BYTES + 1);
+
+    definingAQualificationIsRefusedUnstored(name, whatALongNameMustNotRepeat(name));
+  }
+
+  @Test
+  void GivenANameWithinTheBoundInLettersButPastItInBytes_WhenDefiningAQualification_ThenRefused()
+      throws Exception {
+    String name = TWO_BYTE_LETTER.repeat(StorableNames.MOST_BYTES / 2 + 1);
 
     definingAQualificationIsRefusedUnstored(name, whatALongNameMustNotRepeat(name));
   }
