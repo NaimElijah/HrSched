@@ -77,8 +77,9 @@ CP-SAT solver ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat
 ## Architecture
 
 The backend is one Spring Boot process, organised by bounded context, and each context is a
-complete hexagon: the domain imports nothing but the JDK, the application layer knows nothing about
-adapters or Spring, and every dependency points inward. A small shared kernel holds the identities
+complete hexagon: the domain imports the JDK and HrSched's own `domain` packages, its context's and
+the kernel's, and nothing else; the application layer knows nothing about adapters or Spring; and
+every dependency points inward. A small shared kernel holds the identities
 and value types that cross contexts. A context may use another only through that context's
 `application.port.in` package, and the three adapters on the diagram are the only places that do
 ([ADR-008](docs/ADRs/ADR-008-context-integration.md)).
