@@ -5,9 +5,8 @@
     Q27 is the security defaults.
   - **Amended 2026-10-30:** `inboxOf` no longer keeps an `instanceof`. Its operator branch could
     not be reached, because `requireAccessTo` refuses an operator first, so it now takes the
-    `TenantActor` that guard hands back
-    ([#254](https://github.com/NaimElijah/HrSched/issues/254)). `personalRecordOf` is the one that
-    still does. The decision stands.
+    `TenantActor` that guard hands back ([#254](https://github.com/NaimElijah/HrSched/issues/254)).
+    The decision stands.
 - **Date:** 2026-09-16
 
 ## Context

@@ -612,16 +612,15 @@ are not audited. Nothing at runtime depends on any of it.
   anything, `SchedulingService.publish` reads `findPendingNaming` for each roster it supersedes and
   saves each request `LAPSED`. Once the published roster is stored, it tells both parties of each
   lapse, then, when a swap approval is what publishes, both parties of the approval (an inbox lists
-  what was told at one instant last told first, by the order `notification.sequence` records,
-  `V13`, so the approval tops it), and only then
-  records one `ROSTER_SUPERSEDED` per roster it supersedes, `ROSTER_PUBLISHED`, and one
-  `SWAP_LAPSED` per lapse - all in the publication's transaction; `SwapService` records
-  `SWAP_APPROVED` once it returns. A swap approval stores its own request as approved before that
-  read, so it is never lapsed with the others; every other request on that roster is. The swap
-  upsert only ever changes a request still `REQUESTED`, so no decision is written over another.
-  The same lookup keeps an assignment - roster, shift and person - to one pending request when one
-  is raised (R32), and the partial unique index `swap_request_one_pending_per_assignment` refuses a
-  writer that skipped the publication lock
+  what was told at one instant last told first, by the order `notification.sequence` records since
+  `V13`, so the approval tops it), and only then records one `ROSTER_SUPERSEDED` per roster it
+  supersedes, `ROSTER_PUBLISHED`, and one `SWAP_LAPSED` per lapse - all in the publication's
+  transaction; `SwapService` records `SWAP_APPROVED` once it returns. A swap approval stores its own
+  request as approved before that read, so it is never lapsed with the others; every other request
+  on that roster is. The swap upsert only ever changes a request still `REQUESTED`, so no decision
+  is written over another. The same lookup keeps an assignment - roster, shift and person - to one
+  pending request when one is raised (R32), and the partial unique index
+  `swap_request_one_pending_per_assignment` refuses a writer that skipped the publication lock
   ([ADR-039](../ADRs/ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md)).
 - **Whether a colleague may cover a swapped shift is decided at approval, not at request.** Deciding
   it means listing colleagues, which discloses their unavailability, and an Employee may not. So a

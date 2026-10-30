@@ -25,8 +25,8 @@ public interface NotificationRepository {
   /**
    * @param organisation whose notifications
    * @param recipient whose inbox
-   * @return their notifications, newest first, and of those raised at one instant, the one first
-   *     saved last comes first; saving one again, marked read, leaves it where it was
+   * @return their notifications, newest first, and of those raised at one instant, the last raised
+   *     first; one saved again, marked read, keeps its place
    */
   List<Notification> findFor(OrganisationId organisation, EmployeeId recipient);
 }
