@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.workforce.adapter.in.web;
 import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHttpRequests.anOrganisation;
 import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHttpRequests.as;
 import static io.github.naimelijah.hrsched.workforce.adapter.in.web.WorkforceHttpRequests.asThemself;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -16,10 +17,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
-import java.util.ArrayList;
-import java.util.Collections;
+import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -205,19 +206,23 @@ class EmployeeHttpTest {
 
   /**
    * The qualifications held are a set, which has no order of its own, so the response gives them
-   * one: by identity, as text, the order PostgreSQL sorts a {@code uuid} in. Six, so a set's own
-   * order matching it by chance is one in 720.
+   * one: by identity, as text, the order PostgreSQL sorts a {@code uuid} in. The identities lie on
+   * both sides of the sign bit, where {@link UUID#compareTo}, comparing signed halves, puts those
+   * beginning {@code 8} to {@code f} first; random identities would tell the two orders apart only
+   * about 31 times in 32. Six of them, so a set's own order matching by chance is one in 720.
    */
   @Test
   void GivenSeveralQualificationsHeld_WhenReadingTheEmployee_ThenTheyComeInIdentityOrder()
       throws Exception {
     String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
-    List<String> held = new ArrayList<>();
-    for (String name :
-        List.of("Crane", "Forklift", "Rigging", "Welding", "First Aid", "Scaffold")) {
-      String qualification = defineQualification(organisation, name);
-      held.add(qualification);
+    // Invented: leading digits chosen for their order, the rest random so no run collides.
+    List<String> inTextOrder =
+        Stream.of("10000000", "3fffffff", "7fffffff", "80000000", "c0000000", "f0000000")
+            .map(leading -> leading + UUID.randomUUID().toString().substring(leading.length()))
+            .toList();
+    for (String qualification : inTextOrder.reversed()) {
+      defineQualificationDirectly(organisation, qualification);
       mockMvc
           .perform(
               as(
@@ -227,12 +232,25 @@ class EmployeeHttpTest {
                   "ADMIN"))
           .andExpect(status().isNoContent());
     }
-    Collections.sort(held);
 
     mockMvc
         .perform(as(mockMvc, get("/api/employees/" + ada), organisation, "ADMIN"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.qualifications").value(held));
+        .andExpect(jsonPath("$.qualifications").value(contains(inTextOrder.toArray())));
+  }
+
+  /**
+   * Writes past the API, which mints identities itself and so cannot place one on a chosen side of
+   * the sign bit.
+   */
+  private static void defineQualificationDirectly(String organisation, String id) {
+    PostgresDatabase.jdbcClient()
+        .sql(
+            "INSERT INTO qualification (id, organisation_id, name) VALUES (:id, :organisation, :name)")
+        .param("id", UUID.fromString(id))
+        .param("organisation", UUID.fromString(organisation))
+        .param("name", "Qualification " + id)
+        .update();
   }
 
   @Test
