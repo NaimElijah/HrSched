@@ -13,10 +13,12 @@ import org.springframework.stereotype.Component;
 /**
  * Anti-corruption layer between scheduling and notifications.
  *
- * <p>ONE OF TWO CLASSES IN SCHEDULING PERMITTED TO NAME ANOTHER CONTEXT, the other being {@code
- * WorkforceDirectoryAdapter}, and like it this touches only a published driving port (ADR-008).
- * Nothing inward of the {@link Notifier} port knows that a {@code notifications} context exists, so
- * replacing an in-app inbox with email is a change to this file and nothing else.
+ * <p>ONE OF TWO CLASSES IN SCHEDULING THAT NAME ANOTHER CONTEXT, the other being {@code
+ * WorkforceDirectoryAdapter}, and like it this touches only a published driving port. The
+ * architecture rules let only a class in a context's {@code adapter.out} name another context, and
+ * only that port (ADR-008). Nothing inward of the {@link Notifier} port knows that a {@code
+ * notifications} context exists, so replacing an in-app inbox with email is a change to this file
+ * and nothing else.
  *
  * <p>The translation it performs is the whole point: scheduling says "a swap was approved", and
  * this decides that the other context's word for that is {@link NotifiableEvent#SWAP_APPROVED}. Two

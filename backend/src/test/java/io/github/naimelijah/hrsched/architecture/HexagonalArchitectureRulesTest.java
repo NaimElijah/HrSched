@@ -12,23 +12,65 @@ import com.tngtech.archunit.lang.EvaluationResult;
 import io.github.naimelijah.hrsched.HrSchedApplication;
 import io.github.naimelijah.hrsched.access.application.service.SessionService;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
-import io.github.naimelijah.hrsched.architecture.fixtures.actors.AsksAnAccountForItsActor;
-import io.github.naimelijah.hrsched.architecture.fixtures.actors.BuildsATenantActor;
-import io.github.naimelijah.hrsched.architecture.fixtures.actors.BuildsAnOperator;
-import io.github.naimelijah.hrsched.architecture.fixtures.actors.ReferencesAccountActor;
-import io.github.naimelijah.hrsched.architecture.fixtures.actors.ReferencesTheOperatorConstructor;
+import io.github.naimelijah.hrsched.architecture.HexagonalArchitectureTest.UnscopedMethod;
+import io.github.naimelijah.hrsched.architecture.actors.AsksAnAccountForItsActor;
+import io.github.naimelijah.hrsched.architecture.actors.BuildsATenantActor;
+import io.github.naimelijah.hrsched.architecture.actors.BuildsAnOperator;
+import io.github.naimelijah.hrsched.architecture.actors.ReferencesAccountActor;
+import io.github.naimelijah.hrsched.architecture.actors.ReferencesTheOperatorConstructor;
+import io.github.naimelijah.hrsched.architecture.fixtures.FixtureApplication;
+import io.github.naimelijah.hrsched.architecture.fixtures.RosterTranslator;
+import io.github.naimelijah.hrsched.architecture.fixtures.configuration.HelperReachingAPublishedPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.configuration.HelperReachingIntoADomain;
+import io.github.naimelijah.hrsched.architecture.fixtures.configuration.WiringReachingIntoContexts;
+import io.github.naimelijah.hrsched.architecture.fixtures.notifications.adapter.in.web.NotificationsExceptionHandler;
+import io.github.naimelijah.hrsched.architecture.fixtures.notifications.adapter.out.payroll.ReachesBackThroughPayrollsPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.notifications.application.port.in.FixtureNotifyUseCase;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.PayrollRules;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.ControllerListedByAnotherContext;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.PayrollController;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.PayrollExceptionHandler;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.UnhandledPayrollController;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.WebAdapterReachingAPublishedPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.payruns.PayRunController;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.payruns.PayRunsExceptionHandler;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.payslips.PayslipController;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.payslips.PayslipsExceptionHandler;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDomain;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDrivenPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesThroughThePublishedPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.in.FixturePayUseCase;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.out.ScopedPayslipRepository;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.out.UnscopedPayeeDirectory;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.out.UnscopedPayslipRepository;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.FixturePayrollService;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceCallingARemoteObject;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceCallingOverHttp;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceHoldingAConnection;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceKnowingTheEntryPoint;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceLoggingThroughSlf4j;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceReachingAPublishedPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceStartingAProcess;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceWithAWireFormat;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainHoldingABufferedReader;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainKnowingTheEntryPoint;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainReadingAFile;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainReadingAnArchive;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainUsingInMemoryText;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainUsingSpring;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainWithAWireFormat;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.FixturePayslip;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.SerializablePayslip;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.util.PayslipFormatting;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.FixtureKernelValue;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoAPublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoAnUnlistedContext;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoConfiguration;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoNotifications;
+import io.github.naimelijah.hrsched.architecture.stereotypes.FixtureConfiguration;
+import io.github.naimelijah.hrsched.architecture.stereotypes.FixtureController;
+import io.github.naimelijah.hrsched.architecture.stereotypes.FixtureExceptionHandler;
+import io.github.naimelijah.hrsched.configuration.UseCaseConfiguration;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import java.util.List;
@@ -36,6 +78,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
 
 /**
  * The failure tests of {@link HexagonalArchitectureTest}: each rule whose logic is ours, rather
@@ -51,7 +96,14 @@ import org.junit.jupiter.api.Test;
  */
 class HexagonalArchitectureRulesTest {
 
-  private static final String FIXTURE_ROOT = "io.github.naimelijah.hrsched.architecture.fixtures";
+  /** The architecture tests' own package: the fixtures, their stand-ins and these tests. */
+  private static final String ARCHITECTURE_TESTS = "io.github.naimelijah.hrsched.architecture";
+
+  /**
+   * Where the fixture contexts are rooted. Every subpackage is read as a context there, so the
+   * stand-ins and the actor rules' fixtures live beside it rather than in it.
+   */
+  private static final String FIXTURE_ROOT = ARCHITECTURE_TESTS + ".fixtures";
 
   private static final ContextPackages FIXTURES = new ContextPackages(FIXTURE_ROOT);
 
@@ -77,13 +129,145 @@ class HexagonalArchitectureRulesTest {
     assertViolatedNaming(result, "FixtureNoticeStore");
   }
 
+  /**
+   * The published port is the right target, but a use case is the wrong origin: consuming another
+   * context belongs in an adapter, so the core never names it (ADR-008).
+   */
   @Test
   void
-      GivenAContextReferencingAPublishedPortItsOwnDomainAndTheKernel_WhenTheCrossContextRuleIsEvaluated_ThenItHolds() {
+      GivenAUseCaseReferencingAnotherContextsPublishedPort_WhenTheCrossContextRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.contextsTouchOnlyPublishedPortsOfOtherContexts(FIXTURES),
+            ServiceReachingAPublishedPort.class);
+
+    assertViolatedNaming(result, "FixtureNotifyUseCase");
+  }
+
+  /**
+   * An adapter, but a driving one: what a controller needs of another context, it asks of its own
+   * use case, which reaches the other context through a driven port (ADR-008).
+   */
+  @Test
+  void
+      GivenADrivingAdapterReferencingAnotherContextsPublishedPort_WhenTheCrossContextRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.contextsTouchOnlyPublishedPortsOfOtherContexts(FIXTURES),
+            WebAdapterReachingAPublishedPort.class);
+
+    assertViolatedNaming(result, "FixtureNotifyUseCase");
+  }
+
+  @Test
+  void
+      GivenADrivenAdapterReferencingAPublishedPortItsOwnDomainAndTheKernel_WhenTheCrossContextRuleIsEvaluated_ThenItHolds() {
     EvaluationResult result =
         evaluate(
             HexagonalArchitectureTest.contextsTouchOnlyPublishedPortsOfOtherContexts(FIXTURES),
             ReachesThroughThePublishedPort.class);
+
+    assertHolds(result);
+  }
+
+  /**
+   * Each reference is legal alone, as the cross-context rule permits a published port; together
+   * they make two contexts that can no longer change, or be extracted, one without the other.
+   */
+  @Test
+  void
+      GivenTwoContextsEachReachingTheOthersPublishedPort_WhenTheContextCycleRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.contextsAreFreeOfCycles(FIXTURES),
+            ReachesThroughThePublishedPort.class,
+            FixtureNotifyUseCase.class,
+            ReachesBackThroughPayrollsPort.class,
+            FixturePayUseCase.class);
+
+    assertViolatedNaming(result, "ReachesBackThroughPayrollsPort");
+  }
+
+  /**
+   * The rule slices every top-level package, not only the contexts, so a kernel that knows a
+   * context which uses the kernel is a cycle too.
+   */
+  @Test
+  void
+      GivenTheKernelAndAContextReachingEachOther_WhenTheContextCycleRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.contextsAreFreeOfCycles(FIXTURES),
+            KernelReachingIntoAnUnlistedContext.class,
+            FixturePayslip.class,
+            FixturePayrollService.class,
+            FixtureKernelValue.class);
+
+    assertViolatedNaming(result, "KernelReachingIntoAnUnlistedContext");
+  }
+
+  @Test
+  void
+      GivenOneContextReachingAnothersPublishedPort_WhenTheContextCycleRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.contextsAreFreeOfCycles(FIXTURES),
+            ReachesThroughThePublishedPort.class,
+            FixtureNotifyUseCase.class,
+            FixturePayUseCase.class);
+
+    assertHolds(result);
+  }
+
+  /** Evaluated with the annotation the build passes, which this helper does not carry. */
+  @Test
+  void
+      GivenACompositionRootClassThatIsNotWiringReachingADomain_WhenTheCompositionRootRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.onlyTheWiringSeesInsideAContext(
+                FIXTURES, Configuration.class),
+            HelperReachingIntoADomain.class);
+
+    assertViolatedNaming(result, "FixturePayslip");
+  }
+
+  @Test
+  void
+      GivenACompositionRootClassThatIsNotWiringReachingAPublishedPort_WhenTheCompositionRootRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.onlyTheWiringSeesInsideAContext(
+                FIXTURES, Configuration.class),
+            HelperReachingAPublishedPort.class);
+
+    assertHolds(result);
+  }
+
+  /** The stand-in annotation, for the reason {@link FixtureConfiguration} gives. */
+  @Test
+  void
+      GivenWiringAndAClassNestedInItReachingIntoContexts_WhenTheCompositionRootRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.onlyTheWiringSeesInsideAContext(
+                FIXTURES, FixtureConfiguration.class),
+            WiringReachingIntoContexts.class,
+            WiringReachingIntoContexts.Nested.class);
+
+    assertHolds(result);
+  }
+
+  /**
+   * The build's own rule, on the one class that reaches into every context today: the proof that it
+   * recognises Spring's {@code @Configuration}, which no fixture may carry.
+   */
+  @Test
+  void GivenUseCaseConfiguration_WhenTheBuildsCompositionRootRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.only_the_wiring_sees_inside_a_context,
+            UseCaseConfiguration.class);
 
     assertHolds(result);
   }
@@ -183,6 +367,407 @@ class HexagonalArchitectureRulesTest {
   }
 
   @Test
+  void GivenAUseCaseUsingALibrary_WhenTheApplicationRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.application_is_free_of_the_framework,
+            ServiceWithAWireFormat.class);
+
+    assertViolatedNaming(result, "tools.jackson.databind.ObjectMapper");
+  }
+
+  @Test
+  void
+      GivenAUseCaseReferencingAnHrSchedClassOutsideTheCore_WhenTheApplicationRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.application_is_free_of_the_framework,
+            ServiceKnowingTheEntryPoint.class);
+
+    assertViolatedNaming(result, "io.github.naimelijah.hrsched.HrSchedApplication");
+  }
+
+  /** The allow-list takes no position on logging in a use case, so SLF4J is as allowed as JUL. */
+  @Test
+  void GivenAUseCaseLoggingThroughSlf4j_WhenTheApplicationRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.application_is_free_of_the_framework,
+            ServiceLoggingThroughSlf4j.class);
+
+    assertHolds(result);
+  }
+
+  @Test
+  void
+      GivenAUseCaseKnowingTheJdkItsPortsItsDomainAndTheKernel_WhenTheApplicationRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.application_is_free_of_the_framework,
+            FixturePayrollService.class);
+
+    assertHolds(result);
+  }
+
+  @Test
+  void GivenADomainClassHoldingAFile_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, DomainReadingAFile.class);
+
+    assertViolatedNaming(result, "java.io.File");
+  }
+
+  /** The rule names {@code Reader}; a reader that merely extends it is refused with it. */
+  @Test
+  void GivenADomainClassHoldingASubtypeOfAnIoType_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, DomainHoldingABufferedReader.class);
+
+    assertViolatedNaming(result, "java.io.BufferedReader");
+  }
+
+  @Test
+  void GivenAUseCaseHoldingADatabaseConnection_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, ServiceHoldingAConnection.class);
+
+    assertViolatedNaming(result, "java.sql.Connection");
+  }
+
+  @Test
+  void GivenAUseCaseHoldingAnHttpClient_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, ServiceCallingOverHttp.class);
+
+    assertViolatedNaming(result, "java.net.http.HttpClient");
+  }
+
+  @Test
+  void GivenAUseCaseHoldingAProcess_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, ServiceStartingAProcess.class);
+
+    assertViolatedNaming(result, "java.lang.ProcessBuilder");
+    assertViolatedNaming(result, "<java.lang.Process>");
+    assertViolatedNaming(result, "java.lang.Runtime");
+  }
+
+  @Test
+  void GivenAUseCaseHoldingARemoteObjectRegistry_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, ServiceCallingARemoteObject.class);
+
+    assertViolatedNaming(result, "java.rmi.registry.Registry");
+  }
+
+  @Test
+  void GivenADomainClassHoldingAnArchive_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, DomainReadingAnArchive.class);
+
+    assertViolatedNaming(result, "java.util.zip.ZipFile");
+  }
+
+  /**
+   * A location is a value, and a reader, writer or stream over memory reaches nothing outside the
+   * process, though each is in a package or a type hierarchy the rule otherwise refuses.
+   */
+  @Test
+  void
+      GivenADomainClassUsingAUriAndInMemoryReadersWritersAndStreams_WhenTheIoRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, DomainUsingInMemoryText.class);
+
+    assertHolds(result);
+  }
+
+  /** {@code java.io} is a package, not a verdict: its exceptions and markers do no I/O. */
+  @Test
+  void GivenCoreClassesUsingOnlyJavaIoNamesThatDoNoIo_WhenTheIoRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.the_core_does_no_io,
+            SerializablePayslip.class,
+            FixturePayrollService.class);
+
+    assertHolds(result);
+  }
+
+  @Test
+  void
+      GivenAControllerItsContextsHandlerDoesNotList_WhenTheExceptionHandlerRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyControllerIsListedByItsContextsHandler(
+                FIXTURES, FixtureController.class, FixtureExceptionHandler.class),
+            PayrollController.class,
+            UnhandledPayrollController.class,
+            PayrollExceptionHandler.class);
+
+    assertViolatedNaming(result, "UnhandledPayrollController");
+  }
+
+  /**
+   * Notifications' handler translates notifications' exceptions, so listing a payroll controller
+   * there leaves payroll's own exceptions untranslated.
+   */
+  @Test
+  void
+      GivenAControllerListedOnlyByAnotherContextsHandler_WhenTheExceptionHandlerRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyControllerIsListedByItsContextsHandler(
+                FIXTURES, FixtureController.class, FixtureExceptionHandler.class),
+            ControllerListedByAnotherContext.class,
+            NotificationsExceptionHandler.class);
+
+    assertViolatedNaming(result, "ControllerListedByAnotherContext");
+  }
+
+  @Test
+  void
+      GivenAControllerOutsideTheBasePackagesOfItsContextsHandler_WhenTheExceptionHandlerRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyControllerIsListedByItsContextsHandler(
+                FIXTURES, FixtureController.class, FixtureExceptionHandler.class),
+            PayslipController.class,
+            PayRunsExceptionHandler.class);
+
+    assertViolatedNaming(result, "PayslipController");
+  }
+
+  /** A handler scoped to a package cannot forget a controller added to it. */
+  @Test
+  void
+      GivenControllersInsideTheBasePackagesOrBasePackageClassesOfTheirContextsHandlers_WhenTheExceptionHandlerRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyControllerIsListedByItsContextsHandler(
+                FIXTURES, FixtureController.class, FixtureExceptionHandler.class),
+            PayslipController.class,
+            PayslipsExceptionHandler.class,
+            PayRunController.class,
+            PayRunsExceptionHandler.class);
+
+    assertHolds(result);
+  }
+
+  @Test
+  void
+      GivenAControllerItsContextsHandlerLists_WhenTheExceptionHandlerRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyControllerIsListedByItsContextsHandler(
+                FIXTURES, FixtureController.class, FixtureExceptionHandler.class),
+            PayrollController.class,
+            PayrollExceptionHandler.class);
+
+    assertHolds(result);
+  }
+
+  @Test
+  void GivenAContextClassOutsideEveryLayer_WhenTheLayerRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyClassInAContextIsInALayer(FIXTURES),
+            PayslipFormatting.class);
+
+    assertViolatedNaming(result, "PayslipFormatting");
+  }
+
+  @Test
+  void GivenAClassDirectlyInAContextsRoot_WhenTheLayerRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyClassInAContextIsInALayer(FIXTURES), PayrollRules.class);
+
+    assertViolatedNaming(result, "PayrollRules");
+  }
+
+  /** A {@code package-info} is no class to put in a layer, annotated or not. */
+  @Test
+  void GivenAnAnnotatedPackageInfoAtAContextsRoot_WhenTheLayerRuleIsEvaluated_ThenItHolds()
+      throws ClassNotFoundException {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyClassInAContextIsInALayer(FIXTURES),
+            Class.forName(FIXTURE_ROOT + ".payroll.package-info"),
+            FixturePayslip.class);
+
+    assertHolds(result);
+  }
+
+  @Test
+  void
+      GivenAClassBesideTheEntryPointInTheRootPackage_WhenTheRootPackageRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.onlyTheEntryPointResidesInTheRootPackage(
+                FIXTURES, FixtureApplication.class),
+            FixtureApplication.class,
+            RosterTranslator.class);
+
+    assertViolatedNaming(result, "RosterTranslator");
+  }
+
+  @Test
+  void GivenTheEntryPointAloneInTheRootPackage_WhenTheRootPackageRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.onlyTheEntryPointResidesInTheRootPackage(
+                FIXTURES, FixtureApplication.class),
+            FixtureApplication.class,
+            FixturePayslip.class);
+
+    assertHolds(result);
+  }
+
+  /** One class from each layer, and a kernel class the rule does not ask about. */
+  @Test
+  void GivenContextClassesInTheirLayersAndAKernelClass_WhenTheLayerRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyClassInAContextIsInALayer(FIXTURES),
+            FixturePayslip.class,
+            FixturePayUseCase.class,
+            ReachesThroughThePublishedPort.class,
+            FixtureKernelValue.class);
+
+    assertHolds(result);
+  }
+
+  @Test
+  void
+      GivenARepositoryLookupWithoutAnOrganisation_WhenTheTenancyRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repository_methods_take_an_organisation,
+            UnscopedPayslipRepository.class);
+
+    assertViolatedNaming(result, "UnscopedPayslipRepository.findByReference");
+  }
+
+  /**
+   * An unscoped {@code exists…} is an oracle that a record exists in some organisation, and a name
+   * pattern for lookups would never have asked about it.
+   */
+  @Test
+  void
+      GivenARepositoryMethodNamedLikeNoLookupWithoutAnOrganisation_WhenTheTenancyRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repository_methods_take_an_organisation,
+            UnscopedPayslipRepository.class);
+
+    assertViolatedNaming(result, "UnscopedPayslipRepository.existsByReference");
+  }
+
+  @Test
+  void GivenARepositoryLockWithoutAnOrganisation_WhenTheTenancyRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repository_methods_take_an_organisation,
+            UnscopedPayslipRepository.class);
+
+    assertViolatedNaming(result, "UnscopedPayslipRepository.lockPayroll");
+  }
+
+  /**
+   * The build allows {@code OrganisationRepository.findAll()}, the register of tenants; the same
+   * signature on any other port is a listing across tenants.
+   */
+  @Test
+  void
+      GivenAnAllowedSignatureOnAPortTheAllowListDoesNotName_WhenTheTenancyRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repository_methods_take_an_organisation,
+            UnscopedPayslipRepository.class);
+
+    assertViolatedNaming(result, "UnscopedPayslipRepository.findAll()");
+  }
+
+  @Test
+  void GivenADirectoryReadWithoutAnOrganisation_WhenTheTenancyRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repository_methods_take_an_organisation,
+            UnscopedPayeeDirectory.class);
+
+    assertViolatedNaming(result, "UnscopedPayeeDirectory.payeesNamed");
+  }
+
+  @Test
+  void
+      GivenARepositoryWhoseLookupAndLockTakeAnOrganisation_WhenTheTenancyRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repository_methods_take_an_organisation,
+            ScopedPayslipRepository.class);
+
+    assertHolds(result);
+  }
+
+  /**
+   * An entry allows one signature, not a name: an overload added beside an allowed method, with no
+   * organisation and none of the reason the entry gives, is reported.
+   */
+  @Test
+  void
+      GivenAnOverloadOfAnAllowedMethod_WhenTheTenancyRuleIsEvaluated_ThenOnlyTheOverloadIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repositoryMethodsTakeAnOrganisation(
+                List.of(
+                    new UnscopedMethod(
+                        UnscopedPayslipRepository.class,
+                        "findByReference",
+                        List.of(String.class),
+                        "an invented reason, for this test alone"))),
+            UnscopedPayslipRepository.class);
+
+    assertViolatedNaming(result, "findByReference(java.lang.String, int)");
+    assertThat(result.getFailureReport().getDetails())
+        .as("violations of the allowed signature itself")
+        .noneMatch(detail -> detail.contains("findByReference(java.lang.String) "));
+  }
+
+  /**
+   * The allow-list names methods by string, so a renamed or deleted method would leave an entry
+   * that exempts nothing, and a method that later gains an {@code OrganisationId} would keep an
+   * entry it no longer needs. Each is looked up by its whole signature, so either fails here. A
+   * reason is what makes an entry a decision rather than an omission, so none may be blank.
+   */
+  @Test
+  void
+      GivenTheUnscopedMethodsAllowed_WhenEachIsLookedUpOnItsPort_ThenEveryOneIsASignatureItDeclaresWithAReason() {
+    assertThat(HexagonalArchitectureTest.UNSCOPED_METHODS)
+        .as("allowed unscoped methods")
+        .isNotEmpty()
+        .allSatisfy(
+            entry -> {
+              assertThat(declares(entry))
+                  .as(
+                      "%s declares %s%s",
+                      entry.port().getSimpleName(), entry.method(), entry.parameters())
+                  .isTrue();
+              assertThat(entry.reason())
+                  .as("the reason %s is allowed", entry.method())
+                  .isNotBlank();
+            });
+  }
+
+  private static boolean declares(UnscopedMethod entry) {
+    try {
+      entry.port().getDeclaredMethod(entry.method(), entry.parameters().toArray(Class<?>[]::new));
+      return true;
+    } catch (NoSuchMethodException absent) {
+      return false;
+    }
+  }
+
+  @Test
   void GivenAClassCallingTheOperatorConstructor_WhenTheActorRuleIsEvaluated_ThenItIsViolated() {
     EvaluationResult result =
         evaluate(HexagonalArchitectureTest.only_an_account_makes_an_actor, BuildsAnOperator.class);
@@ -260,10 +845,10 @@ class HexagonalArchitectureRulesTest {
   }
 
   /**
-   * The fixtures break the rules on purpose, so the build's own analysis must never see them: if it
-   * did, they would fail it, or a rule loosened to let them pass would let production pass too.
-   * Read from {@code HexagonalArchitectureTest}'s own annotation, so a change there is a change
-   * here.
+   * The fixtures break the rules on purpose, so the build's own analysis must never see them, nor
+   * anything else of the architecture tests': if it did, they would fail it, or a rule loosened to
+   * let them pass would let production pass too. Read from {@code HexagonalArchitectureTest}'s own
+   * annotation, so a change there is a change here.
    */
   @Test
   void
@@ -276,9 +861,37 @@ class HexagonalArchitectureRulesTest {
     List<String> fixtures =
         classes.stream()
             .map(JavaClass::getName)
-            .filter(name -> name.startsWith(FIXTURE_ROOT + "."))
+            .filter(name -> name.startsWith(ARCHITECTURE_TESTS + "."))
             .toList();
-    assertThat(fixtures).as("fixture classes in the build's own analysis").isEmpty();
+    assertThat(fixtures).as("architecture test classes in the build's own analysis").isEmpty();
+  }
+
+  /**
+   * The fixtures and their stand-ins sit under {@code @SpringBootApplication}'s component-scan
+   * base, and the test classes are on the classpath of every {@code @SpringBootTest}, so a fixture
+   * carrying a Spring stereotype would join the shared test context, and a final one carrying
+   * {@code @Configuration} would fail its startup. {@code HrSchedApplication}'s
+   * {@code @ConfigurationPropertiesScan} has the same base, so a fixture carrying
+   * {@code @ConfigurationProperties} would be bound as well. The rules that need a stereotype take
+   * the annotation as a parameter instead. The import is checked for a known fixture first, so a
+   * package that moved, or an import that found nothing, cannot pass this as an empty list.
+   */
+  @Test
+  void
+      GivenTheFixtures_WhenTheirAnnotationsAreRead_ThenNoneIsASpringStereotypeOrConfigurationProperties() {
+    JavaClasses fixtures = new ClassFileImporter().importPackages(ARCHITECTURE_TESTS);
+
+    assertThat(fixtures.contain(FixturePayslip.class)).as("the import holds the fixtures").isTrue();
+    List<String> picked =
+        fixtures.stream()
+            .filter(
+                fixture ->
+                    fixture.isMetaAnnotatedWith(Component.class)
+                        || fixture.isAnnotatedWith(Component.class)
+                        || fixture.isAnnotatedWith(ConfigurationProperties.class))
+            .map(JavaClass::getName)
+            .toList();
+    assertThat(picked).as("fixtures a component or properties scan would pick up").isEmpty();
   }
 
   /**

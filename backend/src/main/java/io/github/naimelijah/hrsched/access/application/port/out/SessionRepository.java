@@ -10,11 +10,13 @@ import java.util.Optional;
 /**
  * Driven port: storing sign-in sessions and the refresh tokens that renew them.
  *
- * <p>Deliberately not scoped by organisation, unlike every other repository here. A session belongs
- * to an account rather than to a tenant, and the operator's sessions belong to no tenant at all;
- * scoping would be a filter that could not be written for half the rows. What keeps it safe is that
- * a session is only ever reached by an identifier that came out of a verified token, or by the
- * account it belongs to.
+ * <p>Deliberately not scoped by organisation. A session belongs to an account rather than to a
+ * tenant, and the operator's sessions belong to no tenant at all; scoping would be a filter that
+ * could not be written for half the rows. What keeps it safe is that a session is only ever reached
+ * by an identifier that came out of a verified token, or by the account it belongs to. Its methods
+ * are not the only ones without a scope: {@code OrganisationRepository}'s reads, whose {@code
+ * findById} takes the organisation it reads rather than one to scope by, and two of {@code
+ * AccountRepository}'s reads have none either. ADR-055 lists them all, with why.
  */
 public interface SessionRepository {
 
