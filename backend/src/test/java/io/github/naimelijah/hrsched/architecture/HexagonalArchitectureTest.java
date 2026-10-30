@@ -204,9 +204,10 @@ class HexagonalArchitectureTest {
   /**
    * The domain does not log.
    *
-   * <p>{@link #domain_depends_on_nothing_but_the_jdk} does not cover this, and that is not an
-   * oversight to leave alone: SLF4J is not Spring, so a domain logger passes it, and {@code
-   * java.util.logging} genuinely <em>is</em> the JDK. A domain class that logs is a domain class
+   * <p>{@link #domain_depends_on_nothing_but_the_jdk} already rejects SLF4J and Logback, as it
+   * rejects every library, but not {@code java.util.logging}, which genuinely <em>is</em> the JDK.
+   * That one is this rule's alone, and the other two are named here as well so that the reason
+   * stays written down if the allow-list ever changes. A domain class that logs is a domain class
    * with a side effect, which is the property that makes the rest of it worth testing without a
    * framework.
    *
@@ -249,9 +250,10 @@ class HexagonalArchitectureTest {
    * <p>OR-Tools is native code with a modelling discipline of its own, a version held back for one
    * platform's runtime, and a crash that takes the JVM with it. Confined to {@code
    * scheduling.adapter.out.generation}, it can be replaced, upgraded or moved into a process of its
-   * own by changing one package. The rules that keep frameworks out of the domain and the
-   * application name packages; none of them names this library, so without this rule a model type
-   * could reach a use case unnoticed.
+   * own by changing one package. The domain's allow-list already rejects this library there, but
+   * the rule for the application layer names the packages it forbids, and this library is not among
+   * them, so without this rule a model type could reach a use case, or any adapter but this one,
+   * unnoticed.
    */
   @ArchTest
   static final ArchRule the_solver_stays_in_its_adapter =
