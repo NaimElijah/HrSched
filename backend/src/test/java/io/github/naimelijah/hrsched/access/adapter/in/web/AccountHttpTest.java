@@ -693,6 +693,39 @@ class AccountHttpTest {
         .andExpect(status().isOk());
   }
 
+  /**
+   * R16 on the routes every member uses, which a separate rule guards from account administration.
+   * The Actor behind a pending password change still carries its role, and only the authority the
+   * URL rule reads is withheld, so this rule is the one thing between whoever knows the password an
+   * Admin chose and acting as that Scheduler. Listing qualifications is open to every member, so
+   * the same request answers once the Scheduler has chosen their own password.
+   */
+  @Test
+  void
+      GivenASchedulerOnThePasswordAnAdminChose_WhenCallingATenantRoute_ThenItIsForbiddenUntilTheyChooseTheirOwn()
+          throws Exception {
+    String signInName = anInventedSignInName();
+    create(admin(anOrganisation()), signInName, Role.SCHEDULER);
+    String pending = tokenFromSignIn(signInName, A_PASSWORD);
+
+    mockMvc.perform(with(get("/api/qualifications"), pending)).andExpect(status().isForbidden());
+
+    String changed =
+        mockMvc
+            .perform(
+                with(post("/api/auth/password"), pending)
+                    .content(
+                        "{\"currentPassword\":\"%s\",\"newPassword\":\"%s\"}"
+                            .formatted(A_PASSWORD, THEIR_OWN_PASSWORD)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    mockMvc
+        .perform(with(get("/api/qualifications"), JsonPath.read(changed, "$.accessToken")))
+        .andExpect(status().isOk());
+  }
+
   // Disabling, restoring and resetting
 
   /** A token already issued would otherwise keep working until it expired. */
