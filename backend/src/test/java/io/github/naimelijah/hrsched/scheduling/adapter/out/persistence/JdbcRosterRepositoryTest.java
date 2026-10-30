@@ -8,6 +8,7 @@ import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
@@ -32,6 +33,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -761,6 +763,40 @@ class JdbcRosterRepositoryTest {
         .isInstanceOfSatisfying(
             SQLException.class,
             cause -> assertThat(cause.getSQLState()).isEqualTo(DEADLOCK_DETECTED));
+  }
+
+  /**
+   * Only {@code roster_one_published_per_moment}'s exclusion violation is a publication collision.
+   * Any other exclusion constraint on the table, which none is today but a later migration may add,
+   * is broken by something reloading and publishing again cannot cure, so its violation surfaces as
+   * the store reported it. The constraint is invented for this test, allowing an organisation one
+   * publication ever, and lives only in a transaction that is rolled back, so no other test sees
+   * it.
+   */
+  @Test
+  void GivenAnotherExclusionConstraintBroken_WhenPublishing_ThenItIsNotTakenForACollision() {
+    TransactionTemplate transaction = new TransactionTemplate(PostgresDatabase.transactions());
+
+    Throwable refused =
+        transaction.execute(
+            status -> {
+              status.setRollbackOnly();
+              PostgresDatabase.jdbcClient()
+                  .sql(
+                      "ALTER TABLE roster ADD CONSTRAINT roster_invented_one_publication_ever"
+                          + " EXCLUDE USING gist (organisation_id WITH =)"
+                          + " WHERE (published_at IS NOT NULL)")
+                  .update();
+              repository.save(published(ACME, THE_WEEK));
+              Roster nextWeek =
+                  new Roster(RosterId.newId(), ACME, THE_NEXT_WEEK)
+                      .publishedUnder(A_CONSTRAINT_VERSION, SUPERSEDED_AT);
+              return catchThrowable(() -> repository.save(nextWeek));
+            });
+
+    assertThat(refused)
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("roster_invented_one_publication_ever");
   }
 
   /** Saves one draft, waits until the other writer has saved one too, then saves another. */

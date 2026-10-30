@@ -666,7 +666,9 @@ are not audited. Nothing at runtime depends on any of it.
   by PostgreSQL rather than leaving two rosters authoritative, and so is one that would record the
   past as having had two. PostgreSQL reports that as an exclusion violation, or, when two such
   writers wait on each other, by aborting one as a deadlock victim. `JdbcRosterRepository` turns
-  either into `RosterPublicationConflictException`, which is answered 409
+  either into `RosterPublicationConflictException`, which is answered 409: the exclusion violation
+  only when it names this constraint, so another a later migration adds surfaces as the store
+  reported it, and the deadlock, which names no constraint, by its SQLSTATE
   ([ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md), which widened the
   constraint and kept that translation; the constraint began under
   [ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md), which it
