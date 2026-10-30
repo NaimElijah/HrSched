@@ -782,7 +782,14 @@ are not audited. Nothing at runtime depends on any of it.
 - **Contracted hours are stored in whole seconds, exactly or not at all.** A request carries them
   as whole minutes. `JdbcEmployeeRepository` refuses a `ContractTerms` with a part smaller than a
   second with an `IllegalArgumentException` before it writes anything, rather than drop the part,
-  or, for hours under a second, reach `employee_contracted_hours_positive` with 0.
+  or, for hours under a second, reach `employee_contracted_hours_positive` with 0. The refusal
+  names the employee, never the hours. Whole seconds that are not whole minutes store exactly
+  (`JdbcEmployeeRepositoryTest.GivenContractedHoursOfWholeSecondsButNotWholeMinutes_WhenReadBack_ThenTheyComeBackExactly`);
+  the refusals are pinned by
+  `JdbcEmployeeRepositoryTest.GivenContractedHoursWithASubSecondPart_WhenSaved_ThenTheyAreRefusedAndNothingIsWritten`
+  and `…GivenContractedHoursUnderASecond_WhenSaved_ThenTheyAreRefusedBeforeTheStoreSeesThem`,
+  and through the use case by
+  `EmployeeServiceTest.GivenHoursWithASubSecondPart_WhenSettingSomebodysContract_ThenItIsRefusedAndNothingIsRecorded`.
 - **A declaration is withdrawn by what it says, because it has no identity** (F26). Unavailability
   is a `TimeRange` and a preference a `ShiftPreference` value inside the `Employee` aggregate, and
   their rows are keyed by an ordinal the repository renumbers on every save. So

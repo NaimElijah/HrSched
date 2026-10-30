@@ -65,9 +65,8 @@ public class JdbcEmployeeRepository implements EmployeeRepository {
   /**
    * {@inheritDoc}
    *
-   * @throws IllegalArgumentException if the contracted hours have a part smaller than a second,
-   *     which the store, holding whole seconds, would drop; refused before anything is written
-   * @throws IllegalStateException if the identity already belongs to another organisation
+   * @throws IllegalArgumentException {@inheritDoc}
+   * @throws IllegalStateException {@inheritDoc}
    */
   @Override
   public void save(Employee employee) {

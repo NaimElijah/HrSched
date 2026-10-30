@@ -65,6 +65,13 @@ class JdbcEmployeeRepositoryTest {
   /** Blank to {@link String#isBlank}, but not to the schema's {@code btrim}, which trims spaces. */
   private static final String BLANK_TO_THE_DOMAIN_ONLY = "\t";
 
+  /**
+   * Invented, and fixed rather than random, so that a digit of the hours a refusal must not repeat
+   * cannot appear in the identity it names by chance.
+   */
+  private static final EmployeeId ADA_FIXED =
+      new EmployeeId(UUID.fromString("00000000-0000-0000-0000-00000000000a"));
+
   private final JdbcEmployeeRepository repository =
       new JdbcEmployeeRepository(PostgresDatabase.jdbcClient());
   private final JdbcQualificationRepository qualifications =
@@ -187,36 +194,58 @@ class JdbcEmployeeRepositoryTest {
   }
 
   /**
+   * The column holds whole seconds, not whole minutes, so hours of whole seconds that are not whole
+   * minutes store exactly. One second is invented, as the smallest hours the positive check lets
+   * through.
+   */
+  @Test
+  void GivenContractedHoursOfWholeSecondsButNotWholeMinutes_WhenReadBack_ThenTheyComeBackExactly() {
+    Employee ada = employee(ACME, "Ada").contractedTo(new ContractTerms(Duration.ofSeconds(1)));
+    repository.save(ada);
+
+    assertThat(repository.findById(ACME, ada.id()).orElseThrow().contractTerms())
+        .map(ContractTerms::weeklyContractedHours)
+        .contains(Duration.ofSeconds(1));
+  }
+
+  /**
    * The column holds whole seconds, so storing would drop a part smaller than one and the hours
    * read back would not be the hours agreed. The HTTP boundary sends whole minutes, so only another
    * caller of the port could pass one, and it is refused before anything is written: Ada keeps
-   * having no contract. The minutes and the nanosecond beside them are invented.
+   * having no contract. The refusal names her and never the hours, which say things about a
+   * household. The minutes and the nanosecond beside them are invented.
    */
   @Test
   void GivenContractedHoursWithASubSecondPart_WhenSaved_ThenTheyAreRefusedAndNothingIsWritten() {
-    Employee ada = employee(ACME, "Ada");
+    Employee ada = new Employee(ADA_FIXED, ACME, "Ada");
     repository.save(ada);
-    Employee withAFraction =
-        ada.contractedTo(new ContractTerms(Duration.ofMinutes(1261).plusNanos(1)));
+    Duration withAFraction = Duration.ofMinutes(1261).plusNanos(1);
 
-    assertThatThrownBy(() -> repository.save(withAFraction))
+    assertThatThrownBy(() -> repository.save(ada.contractedTo(new ContractTerms(withAFraction))))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining(ada.id().value().toString());
+        .hasMessageContaining(ADA_FIXED.value().toString())
+        .hasMessageNotContaining("1261")
+        .hasMessageNotContaining(withAFraction.toString());
     assertThat(repository.findById(ACME, ada.id()).orElseThrow().contractTerms()).isEmpty();
   }
 
   /**
    * Under a second, the whole seconds are 0, which {@code employee_contracted_hours_positive} would
    * refuse as a constraint violation nobody translates. Refused here first, for the reason the
-   * fraction is. Half a second is invented.
+   * fraction is, and again naming neither the milliseconds nor the hours. Half a second is
+   * invented.
    */
   @Test
   void GivenContractedHoursUnderASecond_WhenSaved_ThenTheyAreRefusedBeforeTheStoreSeesThem() {
-    Employee ada = employee(ACME, "Ada").contractedTo(new ContractTerms(Duration.ofMillis(500)));
+    Duration halfASecond = Duration.ofMillis(500);
+    Employee ada =
+        new Employee(ADA_FIXED, ACME, "Ada").contractedTo(new ContractTerms(halfASecond));
 
     assertThatThrownBy(() -> repository.save(ada))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining(ada.id().value().toString());
+        .hasMessageContaining(ADA_FIXED.value().toString())
+        .hasMessageNotContaining("500")
+        .hasMessageNotContaining(halfASecond.toString());
     assertThat(repository.findById(ACME, ada.id())).isEmpty();
   }
 

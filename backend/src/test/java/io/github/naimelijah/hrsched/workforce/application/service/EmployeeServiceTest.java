@@ -359,6 +359,25 @@ class EmployeeServiceTest {
     assertThat(audit.of(WorkforceChange.CONTRACT_SET)).hasSize(1);
   }
 
+  /**
+   * Hours the domain accepts but the store cannot hold exactly: the save refuses them, as {@code
+   * JdbcEmployeeRepository} does, and the use case records only after its save, so the refusal
+   * reaches the caller and nothing is stored or recorded. The nanosecond is invented.
+   */
+  @Test
+  void
+      GivenHoursWithASubSecondPart_WhenSettingSomebodysContract_ThenItIsRefusedAndNothingIsRecorded() {
+    EmployeeId ada = adaContractedByAnAdmin();
+
+    assertThatThrownBy(
+            () ->
+                service.setContractTerms(
+                    admin(ACME), new SetContractTermsCommand(ACME, ada, OTHER_HOURS.plusNanos(1))))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(contractedHoursOf(ada)).contains(AGREED_HOURS);
+    assertThat(audit.of(WorkforceChange.CONTRACT_SET)).hasSize(1);
+  }
+
   /** R7. The second span, invented as Monday is, overlaps Monday's afternoon. */
   @Test
   void GivenAnOverlappingSpan_WhenDeclaringUnavailability_ThenItIsRefusedAndNothingIsRecorded() {

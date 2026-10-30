@@ -18,6 +18,9 @@ public interface EmployeeRepository {
 
   /**
    * @param employee the employee to store, replacing any with the same identity
+   * @throws IllegalArgumentException if their contracted hours have a part smaller than a second,
+   *     which the store, holding whole seconds, would drop; refused before anything is written
+   * @throws IllegalStateException if the identity already belongs to another organisation
    */
   void save(Employee employee);
 
