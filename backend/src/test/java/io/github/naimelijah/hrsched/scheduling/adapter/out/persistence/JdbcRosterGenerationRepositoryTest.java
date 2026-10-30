@@ -15,11 +15,16 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DelegatingDataSource;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * What the generation store promises (ADR-046): a generation reads back as it was saved, ends once,
@@ -127,6 +132,56 @@ class JdbcRosterGenerationRepositoryTest {
         .isInstanceOf(IllegalStateException.class);
     assertThat(repository.findById(ACME, asked.id()).orElseThrow().status())
         .isEqualTo(GenerationStatus.FAILED);
+  }
+
+  /**
+   * A Scheduler polls while the solve's refusal commits. Under READ COMMITTED each statement reads
+   * its own snapshot, so a read made of two statements could see the row still pending and its
+   * violations not yet written, then the row refused: a refused generation with nothing broken,
+   * which cannot be loaded. The refusal is committed before every connection the read asks for
+   * after its first, so a read taking more than one statement meets it.
+   */
+  @Test
+  void GivenARefusalCommittingWhileAPollReadsTheGeneration_WhenReadBack_ThenItIsAsItStoodBefore() {
+    RosterGeneration asked = askedBy(ACME);
+    repository.save(asked);
+    RosterGeneration refused =
+        asked.refused(
+            List.of(ConstraintViolation.declaredUnavailable(EmployeeId.newId(), ShiftId.newId())),
+            ASKED.plusSeconds(1));
+    JdbcRosterGenerationRepository polling =
+        new JdbcRosterGenerationRepository(
+            JdbcClient.create(
+                new CommittingBeforeTheSecondConnection(
+                    () ->
+                        new TransactionTemplate(PostgresDatabase.transactions())
+                            .executeWithoutResult(status -> repository.save(refused)))));
+
+    RosterGeneration read = polling.findById(ACME, asked.id()).orElseThrow();
+
+    assertThat(read.status()).isEqualTo(GenerationStatus.PENDING);
+    assertThat(read.violations()).isEmpty();
+  }
+
+  /** Runs a write once, just before lending a connection to any statement after the first. */
+  private static final class CommittingBeforeTheSecondConnection extends DelegatingDataSource {
+
+    private final Runnable write;
+    private int lent;
+
+    CommittingBeforeTheSecondConnection(Runnable write) {
+      super(PostgresDatabase.dataSource());
+      this.write = write;
+    }
+
+    @Override
+    public Connection getConnection() throws SQLException {
+      lent++;
+      if (lent == 2) {
+        write.run();
+      }
+      return super.getConnection();
+    }
   }
 
   @Test

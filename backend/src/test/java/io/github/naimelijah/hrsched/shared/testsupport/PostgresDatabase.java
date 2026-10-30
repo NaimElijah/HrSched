@@ -72,6 +72,16 @@ public final class PostgresDatabase {
   }
 
   /**
+   * The pool {@link #jdbcClient()} draws from, for an adapter test that has to stand between the
+   * adapter and its connections: to see, or act between, the statements one read makes.
+   *
+   * @return the pool over the migrated schema
+   */
+  public static DataSource dataSource() {
+    return DATA_SOURCE;
+  }
+
+  /**
    * Transactions over the same pool {@link #jdbcClient()} draws from, so a statement made through
    * that client inside one of them joins it.
    *
