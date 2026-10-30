@@ -20,3 +20,8 @@
 # id = "GHSA-xxxx-xxxx-xxxx"
 # ignoreUntil = 2027-01-31
 # reason = "Needs container-managed FORM authentication, which HrSched does not use. #NNN"
+
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2026-11-30
+reason = "Needs an attacker-supplied glob pattern. minimatch is dev-only (frontend/package-lock.json), reached only by eslint and the typescript-eslint parser, whose patterns are the committed frontend/eslint.config.js; nothing in the production bundle carries it. No eslint release depends on a fixed minimatch yet. #333"
