@@ -276,7 +276,7 @@ sequenceDiagram
     S->>S: actor.requireAccessTo(organisation)
     S->>S: store the generation, PENDING; record it
     S->>B: start(the solve)
-    alt every run busy
+    alt every run busy, or the runner stopped
         S-->>C: 503, the generation stored as FAILED
     end
     S-->>C: 202, with where to read it
@@ -787,13 +787,18 @@ are not audited. Nothing at runtime depends on any of it.
   `GenerationRunner` runs each solve on a daemon thread, at most `hrsched.generation.concurrent-runs`
   at once, refusing one more with a 503
   rather than queueing it, and carries the request's logging context, trace id included, onto the
-  thread. `RosterGeneration` is stored by `JdbcRosterGenerationRepository` in `roster_generation`
-  (`V12`), so any instance can answer a poll. It ends once: SUCCEEDED naming its draft, stored in the
+  thread. Once it has stopped, as the instance shuts down, it refuses every generation with
+  `GenerationsStoppedException`, also a 503 but titled apart and not counted as saturation. Either
+  refusal stores the generation as FAILED at once. `RosterGeneration` is stored by
+  `JdbcRosterGenerationRepository` in `roster_generation` (`V12`), so any instance can answer a
+  poll. It ends once: SUCCEEDED naming its draft, stored in the
   draft's own unit of work; REFUSED with the rules the work it would carry over breaks, kept in
   `roster_generation_violation`; or FAILED. One still PENDING past its `lost_at`, fixed at
   `hrsched.generation.lost-after` after it was asked for, reads as LOST, derived from the clock on
   every read, so nothing sweeps. It stays lost: a solve ending after that instant stores no draft,
-  because `RosterGeneration` refuses to end, and the use case ends it before writing anything
+  because `RosterGeneration` refuses to end. The use case checks before writing anything, and
+  again once the draft is saved, inside the unit that saved it, so a save outlasting the instant
+  takes the draft back with it
   ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)).
 - **At the largest stated size, a solve takes minutes and gigabytes.** Measured on an 8-core, 16 GB
   development machine with `GenerationAtScaleRun` (`./mvnw spotless:apply test
