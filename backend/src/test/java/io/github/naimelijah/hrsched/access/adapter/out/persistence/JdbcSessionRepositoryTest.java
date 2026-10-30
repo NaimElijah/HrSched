@@ -42,6 +42,13 @@ class JdbcSessionRepositoryTest {
   /** PostgreSQL's {@code foreign_key_violation}. */
   private static final String FOREIGN_KEY_VIOLATION = "23503";
 
+  /** PostgreSQL's {@code check_violation}: a {@code CHECK} constraint refused the row. */
+  private static final String CHECK_VIOLATION = "23514";
+
+  /** The constraint {@code V16} gives a token's lifetime. */
+  private static final String TOKEN_EXPIRES_AFTER_ISSUE =
+      "refresh_token_expires_after_it_is_issued";
+
   private final JdbcAccountRepository accounts =
       new JdbcAccountRepository(PostgresDatabase.jdbcClient());
   private final JdbcSessionRepository repository =
@@ -224,6 +231,29 @@ class JdbcSessionRepositoryTest {
     repository.revokeEverySessionOf(account.id(), SessionRevocation.PASSWORD_RESET, NOW);
 
     assertThat(storedSessionRevocation(endingNow.id())).isNull();
+  }
+
+  /**
+   * A token is good for a span that starts when it is issued, and the service always gives it one.
+   * The schema refuses, for a writer that skipped the service, a token that would be dead on
+   * arrival.
+   */
+  @Test
+  void GivenATokenExpiringAsItIsIssued_WhenIssued_ThenTheSchemaRefusesIt() {
+    SignInSession session = sessionFor(anAccount());
+    repository.start(session, digest("first"), NOW.plus(Duration.ofHours(1)));
+    Instant issuedAt = NOW.plusSeconds(60);
+
+    assertThatThrownBy(
+            () -> repository.issueSuccessor(session.id(), digest("second"), issuedAt, issuedAt))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .rootCause()
+        .isInstanceOfSatisfying(
+            SQLException.class,
+            refused -> {
+              assertThat(refused.getSQLState()).isEqualTo(CHECK_VIOLATION);
+              assertThat(refused.getMessage()).contains(TOKEN_EXPIRES_AFTER_ISSUE);
+            });
   }
 
   @Test
