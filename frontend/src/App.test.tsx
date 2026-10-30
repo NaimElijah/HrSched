@@ -134,8 +134,8 @@ describe('what a load begins with', () => {
 });
 
 /**
- * The refresh answers with a copy of the session, which can be stale: a password reset by an Admin
- * since the cookie was issued is exactly the case. The read-back is what the shell is drawn from.
+ * The shell is drawn from the read-back, never from the copy of the session the refresh answers
+ * with; `SessionProvider.tsx` says why the two can differ.
  */
 describe('what a restore believes', () => {
   it('GivenARefreshWhoseSessionDiffersFromTheReadBack_WhenRestoring_ThenTheReadBackWins', async () => {
