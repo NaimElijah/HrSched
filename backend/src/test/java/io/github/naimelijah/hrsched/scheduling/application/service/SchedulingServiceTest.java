@@ -903,6 +903,34 @@ class SchedulingServiceTest {
   }
 
   /**
+   * A clock stepped back while the solve ran, by an hour here, which any would do: the generation
+   * still ends with its draft, rather than staying pending until it reads as lost and the draft is
+   * lost with it.
+   */
+  @Test
+  void GivenAClockSteppedBackDuringTheSolve_WhenItEnds_ThenTheGenerationEndsWithItsDraft() {
+    available(ACME, "Ada");
+    aShift(ACME, Set.of());
+    MovableClock clock = new MovableClock(NOW);
+    SchedulingService steppedBack =
+        with(
+            clock,
+            request -> {
+              clock.moveTo(NOW.minus(Duration.ofHours(1)));
+              return new FirstFitGenerator().generate(request);
+            });
+
+    Roster draft =
+        Generations.draft(steppedBack, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+
+    assertThat(draft.assignments()).hasSize(1);
+    assertThat(generations.all())
+        .singleElement()
+        .extracting(RosterGeneration::finishedAt)
+        .isEqualTo(Optional.of(NOW));
+  }
+
+  /**
    * ADR-046: whatever ends a solve unhandled ends its generation failed, so nobody polling it waits
    * until it reads as lost. An Error too: a solve at the largest stated size runs to gigabytes.
    */
