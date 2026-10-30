@@ -22,8 +22,8 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -56,6 +56,9 @@ class JdbcRosterGenerationRepositoryTest {
 
   /** Invented: a quarter of an hour. */
   private static final GenerationPolicy POLICY = new GenerationPolicy(Duration.ofMinutes(15));
+
+  /** The finest instant {@code timestamptz} holds, so the nearest one either side of a bound. */
+  private static final Duration A_MICROSECOND = Duration.of(1, ChronoUnit.MICROS);
 
   private final JdbcRosterGenerationRepository repository =
       new JdbcRosterGenerationRepository(PostgresDatabase.jdbcClient());
@@ -140,14 +143,14 @@ class JdbcRosterGenerationRepositoryTest {
    */
   @Test
   void GivenAnEndingAfterItWasLost_WhenStoredDirectly_ThenTheSchemaRefusesIt() {
-    assertThatThrownBy(() -> storedEndingAt("2026-10-01T09:15:00.000001Z"))
+    assertThatThrownBy(() -> storedEndingAt(ASKED.plus(POLICY.lostAfter()).plus(A_MICROSECOND)))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("roster_generation_finished_while_it_could");
   }
 
   @Test
   void GivenAnEndingBeforeItWasAskedFor_WhenStoredDirectly_ThenTheSchemaRefusesIt() {
-    assertThatThrownBy(() -> storedEndingAt("2026-10-01T08:59:59.999999Z"))
+    assertThatThrownBy(() -> storedEndingAt(ASKED.minus(A_MICROSECOND)))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("roster_generation_finished_while_it_could");
   }
@@ -169,8 +172,23 @@ class JdbcRosterGenerationRepositoryTest {
         .contains(asked.lostAt());
   }
 
-  /** A failed generation of ours, asked for at nine and lost at a quarter past, ended then. */
-  private static void storedEndingAt(String finishedAt) {
+  /**
+   * The clock can be stepped back while a generation runs, and {@code RosterGeneration} then ends
+   * it at the moment it was asked for rather than before it. The schema accepts that ending, the
+   * earliest it can hold.
+   */
+  @Test
+  void GivenAClockSteppedBackBeforeTheRequest_WhenAGenerationEnds_ThenItIsStoredEndingAsAsked() {
+    RosterGeneration asked = askedBy(ACME);
+    repository.save(asked);
+
+    repository.save(asked.failed(ASKED.minusSeconds(60)));
+
+    assertThat(repository.findById(ACME, asked.id()).orElseThrow().finishedAt()).contains(ASKED);
+  }
+
+  /** A failed generation of ours, asked for at {@code ASKED} and lost under the policy. */
+  private static void storedEndingAt(Instant finishedAt) {
     PostgresDatabase.jdbcClient()
         .sql(
             """
@@ -185,7 +203,7 @@ class JdbcRosterGenerationRepositoryTest {
         .param("endsAt", THE_WEEK.end().atOffset(ZoneOffset.UTC))
         .param("requestedAt", ASKED.atOffset(ZoneOffset.UTC))
         .param("lostAt", ASKED.plus(POLICY.lostAfter()).atOffset(ZoneOffset.UTC))
-        .param("finishedAt", OffsetDateTime.parse(finishedAt))
+        .param("finishedAt", finishedAt.atOffset(ZoneOffset.UTC))
         .update();
   }
 
