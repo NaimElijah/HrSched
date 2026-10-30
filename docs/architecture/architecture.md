@@ -512,7 +512,7 @@ are not audited. Nothing at runtime depends on any of it.
   reach. `Operator` reaches no organisation at all
   ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)).
 - **Aggregates are immutable.** Every change returns a new instance, so nothing is ever observed
-  half-updated and invariants are checked in exactly one place.
+  half-updated.
 - **Entities are classes, value objects are records.** `Shift`, `Roster`, `Employee`,
   `Organisation` and `Qualification` compare by identity alone; `TimeRange`, `ShiftId`,
   `ContractTerms` and the constraints are their values.

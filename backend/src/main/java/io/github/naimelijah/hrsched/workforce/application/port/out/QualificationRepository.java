@@ -17,5 +17,10 @@ public interface QualificationRepository {
 
   Optional<Qualification> findById(OrganisationId organisation, QualificationId id);
 
+  /**
+   * @param organisation whose qualifications to list
+   * @return every qualification that organisation defined, ordered by name, then by identity, so
+   *     two sharing a name come back in the same order every time
+   */
   List<Qualification> findByOrganisation(OrganisationId organisation);
 }

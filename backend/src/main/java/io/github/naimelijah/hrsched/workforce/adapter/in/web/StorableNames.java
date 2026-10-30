@@ -10,6 +10,11 @@ import java.nio.charset.StandardCharsets;
  * there as a 500, or being stored changed. Whether a name is blank is the domain's rule, and is
  * left to it.
  *
+ * <p>Both the byte bound and the surrogate refusal assume the database stores text as UTF-8, as the
+ * PostgreSQL image every environment here runs does. Nothing checks that: under another encoding a
+ * name it cannot represent would fail in the store as a 500, and the bound would count the wrong
+ * bytes.
+ *
  * <p>No message repeats the name sent (ADR-024): a name is who somebody is.
  *
  * <p>This context's own, as {@link StorableSpans} is: contexts do not share adapter code (ADR-008).

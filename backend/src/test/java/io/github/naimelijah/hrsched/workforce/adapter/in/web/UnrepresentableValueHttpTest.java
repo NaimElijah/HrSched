@@ -30,10 +30,12 @@ import org.springframework.test.web.servlet.ResultActions;
  *
  * <p>The limits are technical, not rules of the business: an instant must lie within what the store
  * holds, a span must not collapse to nothing once stored at the store's precision, a count of
- * minutes must convert to a duration without overflowing, and a name must hold no NUL and fit in an
- * index entry. Before these were checked, each reached the adapter, {@code Duration} or the
- * database unchecked and answered 500 with an ERROR log — a caller's typo reported as our defect.
- * Values just inside each limit are stored as sent, so the limits are pinned from both sides.
+ * minutes must convert to a duration without overflowing, and a name must hold no NUL and no half
+ * of a surrogate pair, and fit in an index entry. Before these were checked, most reached the
+ * adapter, {@code Duration} or the database unchecked and answered 500 with an ERROR log — a
+ * caller's typo reported as our defect. Half a surrogate pair failed more quietly: the name was
+ * stored changed, with a {@code ?} in its place, and answered 201. Values just inside each limit
+ * are stored as sent, so the limits are pinned from both sides.
  *
  * <p>No refusal repeats the value sent (ADR-024): a span says when somebody cannot work, contracted
  * hours say things about a household, and a name is who somebody is.

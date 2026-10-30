@@ -40,9 +40,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * the store rather than the refusal a caller is given, instead of quietly handing the domain a
  * state it forbids.
  *
- * <p>A read loads the employees' own rows, then each kind of owned or referenced row - their
- * qualifications, unavailability and preferences - in one query for all of them rather than one per
- * employee, so the cost is four round trips regardless of headcount.
+ * <p>A read loads the employees' own rows, then, if it found any, each kind of owned or referenced
+ * row - their qualifications, unavailability and preferences - in one query for all of them rather
+ * than one per employee, so the number of round trips does not grow with headcount.
  */
 @Repository
 public class JdbcEmployeeRepository implements EmployeeRepository {

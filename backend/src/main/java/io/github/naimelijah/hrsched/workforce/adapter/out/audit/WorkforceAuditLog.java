@@ -31,8 +31,8 @@ public class WorkforceAuditLog implements AuditTrail {
   private static final Logger log = LoggerFactory.getLogger(WorkforceAuditLog.class);
 
   /**
-   * Shared with the other three contexts' audit logs, so one query answers "what changed" across
-   * all four.
+   * Shared with every other context's audit log, so one query answers "what changed" across all of
+   * them.
    */
   private static final String CHANGES = "hrsched.changes";
 
