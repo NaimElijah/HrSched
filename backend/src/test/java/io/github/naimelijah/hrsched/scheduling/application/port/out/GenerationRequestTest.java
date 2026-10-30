@@ -54,7 +54,7 @@ class GenerationRequestTest {
   }
 
   private static RosterCandidate candidate(EmployeeId id) {
-    return new RosterCandidate(id, "Ada", Set.of(), List.of(), StatedPreferences.none());
+    return new RosterCandidate(id, Set.of(), List.of(), StatedPreferences.none());
   }
 
   private static Stream<ThrowingCallable> nullFields() {
@@ -232,5 +232,37 @@ class GenerationRequestTest {
 
     assertThat(request.shifts()).containsExactly(MONDAY);
     assertThat(request.candidates()).hasSize(1);
+  }
+
+  /**
+   * The request carries every candidate, with their absence and what they said about when they
+   * would like to work. Printed, it says how much it carries and names nobody.
+   */
+  @Test
+  void GivenACandidateWithAbsenceAndPreferences_WhenTheRequestIsPrinted_ThenItNamesNoneOfIt() {
+    TimeRange away =
+        new TimeRange(Instant.parse("2026-10-06T08:00:00Z"), Instant.parse("2026-10-06T16:00:00Z"));
+    TimeRange wished =
+        new TimeRange(Instant.parse("2026-10-07T08:00:00Z"), Instant.parse("2026-10-07T16:00:00Z"));
+    Roster draft = emptyDraft();
+    GenerationRequest request =
+        new GenerationRequest(
+            draft,
+            List.of(MONDAY),
+            List.of(
+                new RosterCandidate(
+                    EmployeeId.newId(),
+                    Set.of(),
+                    List.of(away),
+                    new StatedPreferences(List.of(wished), List.of()))),
+            ConstraintSet.initial(ACME),
+            List.of(),
+            NONE,
+            List.of());
+
+    assertThat(request.toString())
+        .contains(draft.id().value().toString())
+        .doesNotContain("2026-10-06")
+        .doesNotContain("2026-10-07");
   }
 }

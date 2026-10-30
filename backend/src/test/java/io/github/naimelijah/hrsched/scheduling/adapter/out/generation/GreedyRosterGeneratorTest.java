@@ -67,8 +67,7 @@ class GreedyRosterGeneratorTest extends RosterGeneratorContract {
     ConstraintSet tenHourDays = rules(new MaximumDailyWorkingTime(Duration.ofHours(10)));
 
     List<Assignment> added =
-        generator.generate(
-            request(List.of(morning, lateNight), List.of(anyone("Ada")), tenHourDays));
+        generator.generate(request(List.of(morning, lateNight), List.of(anyone()), tenHourDays));
 
     assertThat(added).extracting(Assignment::shift).containsExactly(lateNight.id());
   }

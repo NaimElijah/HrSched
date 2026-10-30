@@ -18,8 +18,9 @@ import java.util.Set;
  * happens to use. If workforce reshapes its aggregate, one adapter changes and nothing inward of
  * this port notices.
  *
+ * <p>It carries no name: nothing in scheduling shows one, and a person is named by identity.
+ *
  * @param id who they are
- * @param name their name, for display
  * @param qualifications what they hold
  * @param unavailability spans they cannot work
  * @param preferences what they said about when they would like to work, which never decides whether
@@ -27,14 +28,12 @@ import java.util.Set;
  */
 public record RosterCandidate(
     EmployeeId id,
-    String name,
     Set<QualificationId> qualifications,
     List<TimeRange> unavailability,
     StatedPreferences preferences) {
 
   public RosterCandidate {
     Objects.requireNonNull(id, "id must not be null");
-    Objects.requireNonNull(name, "name must not be null");
     qualifications = Set.copyOf(qualifications);
     unavailability = List.copyOf(unavailability);
     Objects.requireNonNull(preferences, "preferences must not be null");
@@ -69,5 +68,14 @@ public record RosterCandidate(
    */
   public boolean isUnavailableDuring(TimeRange period) {
     return unavailability.stream().anyMatch(period::overlaps);
+  }
+
+  /**
+   * Names only who they are: a {@code toString} ends up in places a field does not, and absence and
+   * preferences say things about a person's health and household.
+   */
+  @Override
+  public String toString() {
+    return "RosterCandidate[id=%s, qualifications=%d]".formatted(id, qualifications.size());
   }
 }

@@ -100,7 +100,6 @@ final class GenerationInstances {
       candidates.add(
           new RosterCandidate(
               new EmployeeId(uuid(random)),
-              "Person " + i,
               someOf(qualifications, random, 0.6),
               maybeASpan(random, 0.3),
               new StatedPreferences(maybeASpan(random, 0.5), maybeASpan(random, 0.5))));

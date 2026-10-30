@@ -96,12 +96,9 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
     Shift afternoon = shift("2026-10-05T12:00:00Z", "2026-10-05T20:00:00Z", 1, Set.of(ticket));
     RosterCandidate ada =
         new RosterCandidate(
-            EmployeeId.newId(), "Ada", Set.of(ticket), List.of(), StatedPreferences.none());
+            EmployeeId.newId(), Set.of(ticket), List.of(), StatedPreferences.none());
     GenerationRequest problem =
-        request(
-            List.of(morning, afternoon),
-            List.of(ada, anyone("Grace")),
-            ConstraintSet.initial(ACME));
+        request(List.of(morning, afternoon), List.of(ada, anyone()), ConstraintSet.initial(ACME));
 
     assertThat(new GreedyRosterGenerator().generate(problem)).hasSize(1);
     assertThat(generator.generate(problem))
@@ -148,8 +145,8 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
   void GivenFairnessWeighed_WhenGenerating_ThenTheUnpopularShiftsAreSpread() {
     Shift saturdayNight = unpopular("2026-10-10T22:00:00Z", "2026-10-11T06:00:00Z");
     Shift sundayNight = unpopular("2026-10-11T22:00:00Z", "2026-10-12T06:00:00Z");
-    RosterCandidate ada = anyone("Ada");
-    RosterCandidate grace = anyone("Grace");
+    RosterCandidate ada = anyone();
+    RosterCandidate grace = anyone();
     GenerationRequest problem =
         weighed(
             List.of(saturdayNight, sundayNight),
@@ -174,10 +171,9 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
   }
 
   private static RosterCandidate stating(
-      String name, List<TimeRange> wouldLikeToWork, List<TimeRange> wouldRatherNotWork) {
+      List<TimeRange> wouldLikeToWork, List<TimeRange> wouldRatherNotWork) {
     return new RosterCandidate(
         EmployeeId.newId(),
-        name,
         Set.of(),
         List.of(),
         new StatedPreferences(wouldLikeToWork, wouldRatherNotWork));
@@ -192,10 +188,10 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
   void GivenPreferencesWeighed_WhenGenerating_ThenNobodyIsPutWhereTheyWouldRatherNotBe() {
     List<Shift> days = threeDays();
     List<TimeRange> all = days.stream().map(Shift::period).toList();
-    RosterCandidate ada = stating("Ada", List.of(), all);
-    RosterCandidate grace = stating("Grace", List.of(), List.of(all.get(1), all.get(2)));
-    RosterCandidate alan = stating("Alan", List.of(), List.of(all.get(0), all.get(2)));
-    RosterCandidate edsger = stating("Edsger", List.of(), List.of(all.get(0), all.get(1)));
+    RosterCandidate ada = stating(List.of(), all);
+    RosterCandidate grace = stating(List.of(), List.of(all.get(1), all.get(2)));
+    RosterCandidate alan = stating(List.of(), List.of(all.get(0), all.get(2)));
+    RosterCandidate edsger = stating(List.of(), List.of(all.get(0), all.get(1)));
     GenerationRequest problem =
         weighed(
             days, List.of(ada, grace, alan, edsger), weighing(Objective.PREFERENCES, 1), List.of());
@@ -212,10 +208,10 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
   @Test
   void GivenPreferencesWeighed_WhenGenerating_ThenEachWhoAskedForAShiftGetsIt() {
     List<Shift> days = threeDays();
-    RosterCandidate ada = anyone("Ada");
-    RosterCandidate grace = stating("Grace", List.of(days.get(0).period()), List.of());
-    RosterCandidate alan = stating("Alan", List.of(days.get(1).period()), List.of());
-    RosterCandidate edsger = stating("Edsger", List.of(days.get(2).period()), List.of());
+    RosterCandidate ada = anyone();
+    RosterCandidate grace = stating(List.of(days.get(0).period()), List.of());
+    RosterCandidate alan = stating(List.of(days.get(1).period()), List.of());
+    RosterCandidate edsger = stating(List.of(days.get(2).period()), List.of());
     GenerationRequest problem =
         weighed(
             days, List.of(ada, grace, alan, edsger), weighing(Objective.PREFERENCES, 1), List.of());
@@ -232,10 +228,10 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
   @Test
   void GivenDisruptionWeighed_WhenRegeneratingAPublishedWeek_ThenItKeepsItsPeople() {
     List<Shift> days = threeDays();
-    RosterCandidate ada = anyone("Ada");
-    RosterCandidate grace = anyone("Grace");
-    RosterCandidate alan = anyone("Alan");
-    RosterCandidate edsger = anyone("Edsger");
+    RosterCandidate ada = anyone();
+    RosterCandidate grace = anyone();
+    RosterCandidate alan = anyone();
+    RosterCandidate edsger = anyone();
     List<Assignment> before =
         List.of(
             new Assignment(days.get(0).id(), edsger.id()),
@@ -266,7 +262,6 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
     RosterCandidate ada =
         new RosterCandidate(
             EmployeeId.newId(),
-            "Ada",
             Set.of(),
             List.of(),
             new StatedPreferences(List.of(), List.of(monday.period())));
@@ -393,7 +388,7 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
       assertThatThrownBy(
               () ->
                   generator.generate(
-                      request(List.of(), List.of(anyone("Ada")), ConstraintSet.initial(ACME))))
+                      request(List.of(), List.of(anyone()), ConstraintSet.initial(ACME))))
           .isInstanceOf(IllegalStateException.class);
     } finally {
       TransactionSynchronizationManager.clearSynchronization();
@@ -417,7 +412,7 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
     generator.generate(
         request(
             List.of(shift("2026-10-05T09:00:00Z", "2026-10-05T17:00:00Z", 1, Set.of())),
-            List.of(anyone("Ada")),
+            List.of(anyone()),
             ConstraintSet.initial(ACME)));
 
     assertThat(summary("hrsched.shifts.required").totalAmount()).isEqualTo(1.0);
@@ -429,7 +424,7 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
     generator.generate(
         request(
             List.of(shift("2026-10-05T09:00:00Z", "2026-10-05T17:00:00Z", 3, Set.of())),
-            List.of(anyone("Ada")),
+            List.of(anyone()),
             ConstraintSet.initial(ACME)));
 
     assertThat(summary("hrsched.shifts.required").totalAmount()).isEqualTo(3.0);
@@ -440,7 +435,7 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
   @Test
   void GivenAShiftFilledByPeopleCarriedOver_WhenGenerating_ThenNoGapIsRecorded() {
     Shift monday = shift("2026-10-05T09:00:00Z", "2026-10-05T17:00:00Z", 1, Set.of());
-    RosterCandidate grace = anyone("Grace");
+    RosterCandidate grace = anyone();
 
     generator.generate(carrying(monday, grace, List.of(grace), ConstraintSet.initial(ACME)));
 
@@ -454,7 +449,7 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
    */
   @Test
   void GivenNoShiftsAtAll_WhenGenerating_ThenTheGenerationIsStillCounted() {
-    generator.generate(request(List.of(), List.of(anyone("Ada")), ConstraintSet.initial(ACME)));
+    generator.generate(request(List.of(), List.of(anyone()), ConstraintSet.initial(ACME)));
 
     assertThat(summary("hrsched.shifts.required").count()).isEqualTo(1L);
     assertThat(summary("hrsched.shifts.uncovered").count()).isEqualTo(1L);
@@ -487,17 +482,15 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
 
   /**
    * The line every generation logs says how it went in counts, statuses and the organisation's
-   * identity, and nothing about anybody: a candidate's name, or when they cannot work, is personal
-   * data, and a log is copied to places a database is not. The name and the absence are invented.
+   * identity, and nothing about anybody: when a candidate cannot work is personal data, and a log
+   * is copied to places a database is not. The absence is invented.
    */
   @Test
-  void GivenCandidatesWithNamesAndAbsences_WhenGenerated_ThenTheLogLineCarriesNeitherOfThem() {
-    String name = "Ada Lovelace";
+  void GivenACandidateWithAnAbsence_WhenGenerated_ThenTheLogLineDoesNotCarryIt() {
     TimeRange away =
         new TimeRange(Instant.parse("2026-10-06T00:00:00Z"), Instant.parse("2026-10-07T00:00:00Z"));
     RosterCandidate ada =
-        new RosterCandidate(
-            EmployeeId.newId(), name, Set.of(), List.of(away), StatedPreferences.none());
+        new RosterCandidate(EmployeeId.newId(), Set.of(), List.of(away), StatedPreferences.none());
     Logger logger =
         ((LoggerContext) LoggerFactory.getILoggerFactory())
             .getLogger(CpSatRosterGenerator.class.getName());
