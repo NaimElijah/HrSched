@@ -410,6 +410,16 @@ are not audited. Nothing at runtime depends on any of it.
   so a save never moves one to another inbox or rewrites what somebody was told; the upsert only
   ever sets `read`, never clears it. The register of organisations is the exception, having no
   owner to compare.
+- **In scheduling, a reference to a roster carries its organisation.** `roster` is unique on
+  `(organisation_id, id)` as well as on `id`, and `roster_generation` and `swap_request` name a
+  roster through both columns, so neither can store a reference to another organisation's roster,
+  nor to one that does not exist (`V14`). A swap request also names the requester's assignment on
+  that roster, `swap_request_names_an_assignment_on_its_roster`, which holds because a published
+  roster's assignments are never deleted. That key's index, `swap_request_by_assignment`, is
+  deliberately not led by `organisation_id`: it answers no repository lookup, but the check
+  PostgreSQL makes on each assignment a draft save deletes, which carries no organisation because
+  `roster_assignment` has none. No adapter translates these
+  violations; each surfaces as the store reports it.
 - **A cross-tenant attempt returns 404, never 403.** A 403 would confirm the resource exists in
   another organisation.
 - **Over HTTP that 404 is produced by the repositories, not by the tenant guard.** A request acts

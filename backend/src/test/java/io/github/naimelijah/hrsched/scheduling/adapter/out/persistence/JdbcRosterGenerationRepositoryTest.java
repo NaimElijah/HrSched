@@ -32,6 +32,7 @@ import java.util.concurrent.TimeoutException;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DelegatingDataSource;
@@ -94,6 +95,25 @@ class JdbcRosterGenerationRepositoryTest {
     assertThat(read.status()).isEqualTo(GenerationStatus.SUCCEEDED);
     assertThat(read.roster()).contains(draft.id());
     assertThat(read.finishedAt()).contains(ASKED.plusSeconds(3));
+  }
+
+  /**
+   * A generation names a draft of its own organisation, and the schema refuses one naming another's
+   * (V14): read back, it would hand that roster's identity to a Scheduler who has no business with
+   * it.
+   */
+  @Test
+  void GivenADraftOfAnotherOrganisation_WhenAGenerationEndsNamingIt_ThenTheSchemaRefusesIt() {
+    Roster theirs = new Roster(RosterId.newId(), RIVAL, THE_WEEK);
+    new JdbcRosterRepository(PostgresDatabase.jdbcClient()).save(theirs);
+    RosterGeneration ours = askedBy(ACME);
+    repository.save(ours);
+
+    assertThatThrownBy(() -> repository.save(ours.succeeded(theirs.id(), ASKED.plusSeconds(3))))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("roster_generation_names_a_draft_of_its_organisation");
+    assertThat(repository.findById(ACME, ours.id()).orElseThrow().status())
+        .isEqualTo(GenerationStatus.PENDING);
   }
 
   @Test

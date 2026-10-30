@@ -109,7 +109,9 @@ so JPA would need a parallel annotated model, buying only what an adapter must n
 - **Migrations** in `src/main/resources/db/migration/` are the only way the schema changes. Name
   one `V<n>__<rule_in_snake_case>.sql`, opening with a comment giving the rule, ADR and reasoning.
   **Never edit an applied migration**; correct it in the next, as V6 and V8 do. A backfill is
-  explicit and invents nothing. An index on a root leads with `organisation_id`; a foreign key
+  explicit and invents nothing. An index on a root leads with `organisation_id`, bar one that
+  only serves the check of a foreign key from a table that has none, as
+  `swap_request_by_assignment` does (V14); a foreign key
   stays inside one context, bar the one every root table carrying an `organisation_id` has to
   `organisation (id)`, the tenant register `access` owns; the session tables carry none (ADR-004,
   ADR-055). A migration rewriting stored rows gets a test that migrates to
