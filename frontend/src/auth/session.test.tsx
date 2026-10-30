@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
@@ -179,6 +179,41 @@ describe('changing a password', () => {
       currentPassword: PASSWORD,
       newPassword: 'another invented password',
     });
+  });
+
+  /**
+   * From the Password tab nothing else changes on screen when a change is accepted: the fields
+   * empty, and without a word that reads the same as a change that did nothing.
+   */
+  it('GivenAChangeFromThePasswordTab_WhenAccepted_ThenItSaysSo', async () => {
+    serving({
+      'POST /api/auth/refresh': { status: 200, body: signedInBody() },
+      '/api/auth/session': { status: 200, body: A_TENANT },
+      'POST /api/auth/password': { status: 200, body: signedInBody() },
+    });
+    show();
+    await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
+    const heading = await screen.findByRole('heading', { name: 'Change your password' });
+    const form = within(heading.closest('section') as HTMLElement);
+
+    await userEvent.type(form.getByLabelText('Current password'), PASSWORD, WITHOUT_PAUSES);
+    await userEvent.type(
+      form.getByLabelText('New password'),
+      'another invented password',
+      WITHOUT_PAUSES,
+    );
+    await userEvent.type(
+      form.getByLabelText('New password again'),
+      'another invented password',
+      WITHOUT_PAUSES,
+    );
+    await userEvent.click(form.getByRole('button', { name: 'Change password' }));
+
+    expect(await form.findByText('Your password has been changed.')).toHaveAttribute(
+      'role',
+      'status',
+    );
+    expect(form.getByLabelText('Current password')).toHaveValue('');
   });
 
   it('GivenTwoNewPasswordsThatDiffer_WhenSubmitted_ThenNothingIsSent', async () => {
