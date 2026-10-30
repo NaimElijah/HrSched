@@ -26,10 +26,10 @@ import org.springframework.test.web.servlet.MockMvc;
 /**
  * A sign-in name that cannot be one, submitted where an account is created.
  *
- * <p>A blank name, one longer than {@code SignInName} accepts, or one carrying a NUL the database
- * could not store, is the caller's mistake: a 400 problem detail, the answer every other malformed
- * field here gets, and never a 500. A 500 says the server failed and pages whoever watches it, for
- * a request nobody should be woken for.
+ * <p>A blank name, one longer than {@code SignInName} accepts, or one carrying a NUL or a lone
+ * surrogate the database could not store as sent, is the caller's mistake: a 400 problem detail,
+ * the answer every other malformed field here gets, and never a 500. A 500 says the server failed
+ * and pages whoever watches it, for a request nobody should be woken for.
  *
  * <p>Both routes that create an account from a submitted name are driven: an Admin creating one in
  * their organisation, and the operator onboarding an organisation with its first Admin. Onboarding
@@ -61,6 +61,12 @@ class InvalidSignInNameHttpTest {
    * a name that reached the database with it answered 500.
    */
   private static final String CARRYING_A_NUL = "ada-carrying-a-nul@example.com\\u0000";
+
+  /**
+   * Invented, and carrying a lone surrogate as JSON escapes one: it has no UTF-8 form, so a name
+   * that reached the database with it was stored with a {@code ?} in its place.
+   */
+  private static final String CARRYING_A_SURROGATE = "ada-carrying-a-surrogate@example.com\\ud800";
 
   @Autowired private MockMvc mockMvc;
   @Autowired private AccountRepository accounts;
@@ -130,6 +136,24 @@ class InvalidSignInNameHttpTest {
   void GivenAFirstAdminSignInNameCarryingANul_WhenTheOperatorOnboards_ThenItIsABadRequestProblem()
       throws Exception {
     MockHttpServletResponse response = onboard(aName(), CARRYING_A_NUL);
+
+    assertBadRequestProblem(response);
+  }
+
+  @Test
+  void
+      GivenASignInNameCarryingALoneSurrogate_WhenAnAdminCreatesAnAccount_ThenItIsABadRequestProblem()
+          throws Exception {
+    MockHttpServletResponse response = create(admin(anOrganisation()), CARRYING_A_SURROGATE);
+
+    assertBadRequestProblem(response);
+  }
+
+  @Test
+  void
+      GivenAFirstAdminSignInNameCarryingALoneSurrogate_WhenTheOperatorOnboards_ThenItIsABadRequestProblem()
+          throws Exception {
+    MockHttpServletResponse response = onboard(aName(), CARRYING_A_SURROGATE);
 
     assertBadRequestProblem(response);
   }

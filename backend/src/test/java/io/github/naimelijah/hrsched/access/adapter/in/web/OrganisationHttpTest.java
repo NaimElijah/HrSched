@@ -326,6 +326,23 @@ class OrganisationHttpTest {
         .andExpect(jsonPath("$.detail").value(not(containsString("Acme"))));
   }
 
+  /**
+   * A name carrying a lone surrogate, as JSON escapes one. It has no UTF-8 form, so it reached the
+   * database and was stored with a {@code ?} in its place, a name nobody typed. It is the caller's
+   * mistake, and a problem detail that never repeats the name (ADR-024).
+   */
+  @Test
+  void GivenANameCarryingALoneSurrogate_WhenOnboarding_ThenItIsABadRequestProblem()
+      throws Exception {
+    mockMvc
+        .perform(
+            with(post("/api/organisations"), operator())
+                .content(TestTenants.onboarding("Acme carrying a surrogate\\ud800")))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail").value(not(containsString("Acme"))));
+  }
+
   @Test
   void GivenNoNameAtAll_WhenOnboarding_ThenItIsABadRequest() throws Exception {
     mockMvc

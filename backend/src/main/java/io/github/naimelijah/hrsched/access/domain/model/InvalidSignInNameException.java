@@ -13,6 +13,6 @@ public class InvalidSignInNameException extends RuntimeException {
   public InvalidSignInNameException() {
     super(
         "A sign-in name must not be blank, must not be longer than the permitted maximum, and must"
-            + " not contain a NUL character");
+            + " not contain a NUL character or an unpaired surrogate");
   }
 }

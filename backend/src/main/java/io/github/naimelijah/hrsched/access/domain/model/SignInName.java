@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.access.domain.model;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -20,7 +21,8 @@ import java.util.Objects;
  * personal data that must never reach a log by accident; a type that cannot print itself makes that
  * hard rather than merely discouraged.
  *
- * @param value the normalised name, never {@code null}, never blank, and never carrying a NUL
+ * @param value the normalised name, never {@code null}, never blank, and never carrying a NUL or a
+ *     lone surrogate
  */
 public record SignInName(String value) {
 
@@ -41,15 +43,28 @@ public record SignInName(String value) {
 
   /**
    * @throws NullPointerException if {@code value} is null
-   * @throws InvalidSignInNameException if the normalised name is empty, longer than the maximum, or
-   *     carries a NUL
+   * @throws InvalidSignInNameException if the normalised name is empty, longer than the maximum,
+   *     carries a NUL, or carries a lone surrogate
    */
   public SignInName {
     Objects.requireNonNull(value, "value must not be null");
     value = value.strip().toLowerCase(Locale.ROOT);
-    if (value.isEmpty() || value.length() > MAXIMUM_LENGTH || value.indexOf(NUL) >= 0) {
+    if (value.isEmpty()
+        || value.length() > MAXIMUM_LENGTH
+        || value.indexOf(NUL) >= 0
+        || !hasAUtf8Form(value)) {
       throw new InvalidSignInNameException();
     }
+  }
+
+  /**
+   * Whether the name can be written as UTF-8 at all. A lone surrogate cannot, and the driver writes
+   * {@code ?} in its place, so the store would hold a name other than this one and both would find
+   * it. A NUL can, which is why it is refused separately. A fresh encoder per call, because one is
+   * not safe to share between threads.
+   */
+  private static boolean hasAUtf8Form(String name) {
+    return StandardCharsets.UTF_8.newEncoder().canEncode(name);
   }
 
   @Override

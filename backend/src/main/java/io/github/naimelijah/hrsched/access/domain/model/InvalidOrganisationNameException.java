@@ -7,6 +7,8 @@ package io.github.naimelijah.hrsched.access.domain.model;
 public class InvalidOrganisationNameException extends RuntimeException {
 
   public InvalidOrganisationNameException() {
-    super("An organisation must have a name that is not blank and contains no NUL character");
+    super(
+        "An organisation must have a name that is not blank and contains no NUL character and no"
+            + " unpaired surrogate");
   }
 }

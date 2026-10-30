@@ -161,6 +161,34 @@ class AuthHttpTest {
     assertIndistinguishable(unknownName, carryingANul);
   }
 
+  /**
+   * A lone surrogate has no UTF-8 form, and the driver writes {@code ?} in its place, so a name
+   * carrying one used to be looked up as the account whose name holds a {@code ?} there, and signed
+   * in to it with that account's password. Such a name is one no account can hold, so it is refused
+   * exactly as a name nobody holds (#254).
+   */
+  @Test
+  void
+      GivenANameHoldingAQuestionMark_WhenSigningInWithALoneSurrogateInItsPlace_ThenTheAnswerIsIdenticalToAnUnknownName()
+          throws Exception {
+    String suffix = UUID.randomUUID().toString();
+    accounts.save(
+        new Account(
+            UserId.newId(),
+            new SignInName("ann-%s?@example.com".formatted(suffix)),
+            passwords.hash(RIGHT_PASSWORD),
+            new OperatorMembership(),
+            false,
+            Instant.now()));
+
+    MockHttpServletResponse unknownName =
+        signIn("nobody-%s@example.com".formatted(UUID.randomUUID()), RIGHT_PASSWORD);
+    MockHttpServletResponse carryingASurrogate =
+        signIn("ann-%s\ud800@example.com".formatted(suffix), RIGHT_PASSWORD);
+
+    assertIndistinguishable(unknownName, carryingASurrogate);
+  }
+
   @Test
   void
       GivenADisabledAccount_WhenSigningInWithTheRightPassword_ThenTheAnswerIsIdenticalToAWrongPassword()
@@ -380,8 +408,20 @@ class AuthHttpTest {
     return LoggedText.of(captured.list);
   }
 
-  /** Without escaping the NUL as JSON does, Jackson would refuse the body before sign-in ran. */
+  /** A JSON string holding exactly {@code value}, a NUL or a lone surrogate included. */
   private static String quoted(String value) {
-    return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\0", "\\u0000") + "\"";
+    StringBuilder json = new StringBuilder("\"");
+    for (char character : value.toCharArray()) {
+      if (character == '\\' || character == '"') {
+        json.append('\\').append(character);
+      } else if (character < ' ' || Character.isSurrogate(character)) {
+        // Escaped as JSON escapes it. A raw control character is refused by Jackson before sign-in
+        // runs, and a raw lone surrogate is written to the body as '?' by the UTF-8 encoder.
+        json.append("\\u%04x".formatted((int) character));
+      } else {
+        json.append(character);
+      }
+    }
+    return json.append('"').toString();
   }
 }

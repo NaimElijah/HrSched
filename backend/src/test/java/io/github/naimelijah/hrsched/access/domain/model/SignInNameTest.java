@@ -87,6 +87,23 @@ class SignInNameTest {
     assertThatThrownBy(() -> new SignInName(name)).isInstanceOf(InvalidSignInNameException.class);
   }
 
+  /**
+   * A lone surrogate has no UTF-8 form, so the driver writes {@code ?} in its place: the name would
+   * be stored as one nobody typed, and both spellings would find that row. Refused here, so the one
+   * normal form this type promises is the one the store holds. High and low surrogates both.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"ada\ud800", "\ud800ada", "a\ud800da", "\ud800", "a\udc00da"})
+  void GivenANameCarryingAnUnpairedSurrogate_WhenCreatingASignInName_ThenItIsRefused(String name) {
+    assertThatThrownBy(() -> new SignInName(name)).isInstanceOf(InvalidSignInNameException.class);
+  }
+
+  /** A surrogate pair is one character, which UTF-8 holds, so it is not refused with the lone. */
+  @Test
+  void GivenANameCarryingASurrogatePair_WhenCreatingASignInName_ThenItIsAccepted() {
+    assertThat(new SignInName("ada😀@example.com").value()).isEqualTo("ada😀@example.com");
+  }
+
   /** A refusal that quoted the name would put it in whatever log caught the exception. */
   @Test
   void GivenARefusedName_WhenReadingTheRefusal_ThenItDoesNotContainTheName() {
