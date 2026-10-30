@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { callsTo, routeTo } from '../test-support/routeTo';
+import { callsTo, routeTo, writes } from '../test-support/routeTo';
 import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { RulesPage } from './RulesPage';
 import { WITHOUT_PAUSES } from '../test-support/typing';
@@ -108,6 +108,34 @@ describe('the rules page', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Your role does not permit this.');
     expect(daily).toHaveValue(REVISED_DAILY);
+  });
+
+  /**
+   * Until the stored rules have loaded, every field is blank and reads "not enforced" while nothing
+   * is known. A revision sent then would carry only what was typed and switch every other rule off,
+   * so there is nothing to send until they have (#239).
+   */
+  it('GivenTheStoredRulesFailedToLoad_WhenTryingToRevise_ThenNothingIsSent', async () => {
+    const stub = routeTo({
+      '/api/constraints': { status: 500, body: { detail: 'Something went wrong.' } },
+      'PUT /api/constraints': { status: 200, body: CONFIGURED },
+    });
+    render(
+      <SignedIn session={A_TENANT}>
+        <RulesPage />
+      </SignedIn>,
+    );
+    await screen.findByRole('alert');
+
+    await userEvent.type(
+      screen.getByLabelText(/Maximum daily/),
+      String(REVISED_DAILY),
+      WITHOUT_PAUSES,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
+
+    expect(writes(stub)).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Revise rules' })).toBeDisabled();
   });
 
   it('GivenAClearedField_WhenRevising_ThenThatRuleIsSwitchedOff', async () => {
