@@ -520,11 +520,12 @@ are not audited. Nothing at runtime depends on any of it.
   `test-support`; test code may reach across, because a test sets up the screen it renders through
   `test-support`. `no-restricted-globals` refuses `fetch`, `XMLHttpRequest`, `EventSource` and
   `WebSocket` in every module but `src/api/client.ts`, tests included, whether bare or through
-  `window`, `self` or `globalThis`, and `no-restricted-properties` refuses `navigator.sendBeacon`: a
+  `window`, `self` or `globalThis`, `no-restricted-syntax` refuses destructuring one off those
+  (`const { fetch } = window`), and `no-restricted-properties` refuses `navigator.sendBeacon`: a
   request sent any other way carries no bearer token and is never renewed on a 401
-  ([ADR-013](../ADRs/ADR-013-react-typescript-vite-frontend.md)). Still uncaught: destructuring a
-  global object (`const { fetch } = window`), a longer path to one (`document.defaultView.fetch`,
-  `window.navigator.sendBeacon`), an alias of one, a dynamic `import()`, and an import climbing
+  ([ADR-013](../ADRs/ADR-013-react-typescript-vite-frontend.md)). Still uncaught: a longer path to
+  a global object (`document.defaultView.fetch`, `window.navigator.sendBeacon`), an alias of one,
+  a dynamic `import()`, and an import climbing
   more than one folder (`../../`). In flat config a later block setting one of these rules for the
   same files replaces its options, and lint stays green, so `src/lintBoundaries.test.ts` lints a
   snippet against each boundary through the real config and fails when one stops being refused.

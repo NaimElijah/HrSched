@@ -56,6 +56,10 @@ describe('sending a request', LINTING, () => {
     ["export const events = new EventSource('/api/x');", 'no-restricted-globals'],
     ["export const socket = new WebSocket('ws://localhost/api/x');", 'no-restricted-globals'],
     ["export const sent = navigator.sendBeacon('/api/x');", 'no-restricted-properties'],
+    ['const { fetch: send } = window; export const reply = send;', 'no-restricted-syntax'],
+    ['const { XMLHttpRequest: Request } = globalThis; export { Request };', 'no-restricted-syntax'],
+    ['const { WebSocket } = self; export { WebSocket };', 'no-restricted-syntax'],
+    ['export let events: unknown; ({ EventSource: events } = globalThis);', 'no-restricted-syntax'],
   ])('GivenARequestSentFromAPage_WhenLinted_ThenItIsRefused (%s)', async (code, ruleId) => {
     expect(await problemsIn('src/pages/Probe.tsx', code)).toContainEqual(
       refusal(ruleId, CALL_THROUGH_CLIENT),

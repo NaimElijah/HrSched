@@ -4,6 +4,10 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 const CALL_THROUGH_CLIENT = 'Call the backend through src/api/client.ts, the only module that may.';
 
+// esquery patterns for destructuring a request primitive off a global object.
+const GLOBAL_OBJECT = '/^(window|globalThis|self)$/';
+const REQUEST_PRIMITIVE = '/^(fetch|XMLHttpRequest|EventSource|WebSocket)$/';
+
 const TEST_CODE = ['src/**/*.test.{ts,tsx}', 'src/test-setup.ts'];
 const NOT_IN_PRODUCTION = 'test-support is for tests; production code never imports it.';
 
@@ -59,7 +63,8 @@ export default tseslint.config(
     // each send a request too, so they are refused alike.
     // checkGlobalObject follows only a declared global object: window is declared above, globalThis
     // comes with ecmaVersion, and self is declared here so that self.fetch is caught too.
-    // Still uncaught: destructuring a global object (const { fetch } = window), a longer path to one
+    // Destructuring one off a global object (const { fetch } = window) is refused by syntax, since
+    // neither rule above sees it. Still uncaught: a longer path to a global object
     // (document.defaultView.fetch, window.navigator.sendBeacon), and an alias of one.
     files: ['src/**/*.{ts,tsx}'],
     languageOptions: { globals: { self: 'readonly' } },
@@ -78,6 +83,17 @@ export default tseslint.config(
       'no-restricted-properties': [
         'error',
         { object: 'navigator', property: 'sendBeacon', message: CALL_THROUGH_CLIENT },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: `VariableDeclarator[init.name=${GLOBAL_OBJECT}] > ObjectPattern > Property[key.name=${REQUEST_PRIMITIVE}]`,
+          message: CALL_THROUGH_CLIENT,
+        },
+        {
+          selector: `AssignmentExpression[right.name=${GLOBAL_OBJECT}] > ObjectPattern > Property[key.name=${REQUEST_PRIMITIVE}]`,
+          message: CALL_THROUGH_CLIENT,
+        },
       ],
     },
   },
