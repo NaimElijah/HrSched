@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { workforce } from '../api/workforce';
+import type { Qualification } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
@@ -7,7 +8,9 @@ import { useSessionKey } from '../auth/SessionProvider';
 /**
  * Admin: who works here, what they hold, and what they are contracted to.
  *
- * Nobody added can be removed, so an addition is sent once: the button waits for the answer.
+ * Nobody added can be removed, so an addition is sent once: the button waits for the answer. Nor
+ * can a qualification be revoked yet (F24, #86), so choosing one grants nothing until it is
+ * submitted.
  */
 export function PeoplePage() {
   const sessionKey = useSessionKey();
@@ -21,13 +24,16 @@ export function PeoplePage() {
     (qualifications.value ?? []).map((qualification) => [qualification.id, qualification.name]),
   );
 
-  async function act(action: () => Promise<unknown>) {
+  /** @returns whether the action succeeded */
+  async function act(action: () => Promise<unknown>): Promise<boolean> {
     setFailure(null);
     try {
       await action();
       people.reload();
+      return true;
     } catch (error) {
       setFailure(error);
+      return false;
     }
   }
 
@@ -106,23 +112,13 @@ export function PeoplePage() {
                 )}
               </td>
               <td>
-                <select
-                  defaultValue=""
-                  aria-label={`Grant a qualification to ${employee.name}`}
-                  onChange={(event) => {
-                    const qualification = event.target.value;
-                    if (qualification !== '') {
-                      void act(() => workforce.grantQualification(employee.id, qualification));
-                    }
-                  }}
-                >
-                  <option value="">choose…</option>
-                  {(qualifications.value ?? []).map((qualification) => (
-                    <option key={qualification.id} value={qualification.id}>
-                      {qualification.name}
-                    </option>
-                  ))}
-                </select>
+                <GrantField
+                  employee={employee.name}
+                  qualifications={qualifications.value ?? []}
+                  onSubmit={(qualification) =>
+                    act(() => workforce.grantQualification(employee.id, qualification))
+                  }
+                />
               </td>
               <td>
                 {/* Beside the field, never in it: a prefilled number could be submitted unchosen. */}
@@ -141,6 +137,62 @@ export function PeoplePage() {
         </tbody>
       </table>
     </section>
+  );
+}
+
+/**
+ * A qualification to grant, and the button that grants it.
+ *
+ * A write on choosing would be one nobody can undo, and with the keyboard a closed select changes
+ * on every arrow key in some browsers: an arrow pressed past the wanted option would grant another.
+ */
+function GrantField({
+  employee,
+  qualifications,
+  onSubmit,
+}: {
+  /** Whose field it is, so every row's controls have a name of their own. */
+  employee: string;
+  qualifications: readonly Qualification[];
+  /** Grants the chosen qualification, resolving to whether it was granted. */
+  onSubmit: (qualification: string) => Promise<boolean>;
+}) {
+  const [choice, setChoice] = useState('');
+  const [granting, setGranting] = useState(false);
+  return (
+    <form
+      className="row"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (granting) {
+          return;
+        }
+        setGranting(true);
+        void onSubmit(choice).then((granted) => {
+          setGranting(false);
+          if (granted) {
+            setChoice('');
+          }
+        });
+      }}
+    >
+      <select
+        value={choice}
+        required
+        aria-label={`Grant a qualification to ${employee}`}
+        onChange={(event) => setChoice(event.target.value)}
+      >
+        <option value="">choose…</option>
+        {qualifications.map((qualification) => (
+          <option key={qualification.id} value={qualification.id}>
+            {qualification.name}
+          </option>
+        ))}
+      </select>
+      <button type="submit" disabled={granting} aria-label={`Grant to ${employee}`}>
+        Grant
+      </button>
+    </form>
   );
 }
 

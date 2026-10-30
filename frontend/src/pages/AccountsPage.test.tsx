@@ -323,6 +323,9 @@ describe('changing an account', () => {
       within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com'),
       'EMPLOYEE',
     );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the role of grace@example.com' }),
+    );
 
     await waitFor(() =>
       expect(
@@ -372,6 +375,9 @@ describe('changing an account', () => {
       within(rowFor('ada@example.com')).getByLabelText('Employee for ada@example.com'),
       ROBIN.id,
     );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the employee of ada@example.com' }),
+    );
 
     await waitFor(() =>
       expect(
@@ -401,6 +407,9 @@ describe('changing an account', () => {
     );
     await waitFor(() => expect(choice).toHaveValue(GRACE_HOPPER.id));
     await userEvent.selectOptions(choice, '');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the employee of grace@example.com' }),
+    );
 
     await waitFor(() =>
       expect(
@@ -476,12 +485,48 @@ describe('changing an account', () => {
       within(rowFor('ada@example.com')).getByLabelText('Role for ada@example.com'),
       'SCHEDULER',
     );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the role of ada@example.com' }),
+    );
 
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
         'An organisation must keep at least one active Admin.',
       ),
     );
+  });
+
+  /**
+   * With the keyboard, a closed select changes on every arrow key in some browsers, so a change
+   * sent on choosing would let an Admin demote themselves in one keystroke. Choosing sends nothing.
+   */
+  it('GivenARoleChosen_WhenNotYetSubmitted_ThenNothingIsSent', async () => {
+    const stub = theOrganisation();
+    show();
+
+    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await userEvent.selectOptions(
+      within(rowFor('ada@example.com')).getByLabelText('Role for ada@example.com'),
+      'EMPLOYEE',
+    );
+
+    expect(writes(stub)).toHaveLength(0);
+  });
+
+  it('GivenAnEmployeeChosen_WhenNotYetSubmitted_ThenNothingIsSent', async () => {
+    const stub = theOrganisation();
+    show();
+
+    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await within(rowFor('ada@example.com')).findByRole('option', {
+      name: `Robin Example · ${ROBIN.id}`,
+    });
+    await userEvent.selectOptions(
+      within(rowFor('ada@example.com')).getByLabelText('Employee for ada@example.com'),
+      ROBIN.id,
+    );
+
+    expect(writes(stub)).toHaveLength(0);
   });
 
   it('GivenAnActiveAccount_WhenDisabled_ThenTheActivationIsSent', async () => {

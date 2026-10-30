@@ -197,6 +197,10 @@ function EmployeeOptions({ staff, linked }: { staff: readonly Employee[]; linked
  *
  * A row of its own because the password field is per account: one shared field would let somebody
  * type a password for a colleague and click reset on the wrong line.
+ *
+ * A role or an employee is chosen, then submitted. A change sent on choosing would be made by an
+ * arrow key, since a closed select changes on every one in some browsers, and an Admin could demote
+ * themselves in one keystroke.
  */
 function AccountRow({
   account,
@@ -208,6 +212,16 @@ function AccountRow({
   administer: (what: string, change: () => Promise<void>) => Promise<boolean>;
 }) {
   const [replacement, setReplacement] = useState('');
+  // What has been chosen and not yet stored, with the copy of the account it was chosen on. A reload
+  // hands the row a new copy and the choice is dropped with the old one, so the selects show what
+  // is stored again; a refused change reloads nothing, so its choice stays to be corrected.
+  const [chosenRole, setChosenRole] = useState<{ on: Account; role: TenantRole } | null>(null);
+  const [chosenEmployee, setChosenEmployee] = useState<{
+    on: Account;
+    employee: string | null;
+  } | null>(null);
+  const role = chosenRole?.on === account ? chosenRole.role : account.role;
+  const employee = chosenEmployee?.on === account ? chosenEmployee.employee : account.employee;
 
   async function reset() {
     if (replacement === '') {
@@ -225,46 +239,63 @@ function AccountRow({
     <tr>
       <td>{account.signInName}</td>
       <td>
-        <label>
-          <span className="visually-hidden">Role for {account.signInName}</span>
-          <select
-            value={account.role}
-            onChange={(event) =>
-              void administer(`Changed the role of ${account.signInName}.`, () =>
-                accounts.changeMembership(
-                  account.id,
-                  event.target.value as TenantRole,
-                  account.employee,
-                ),
-              )
-            }
-          >
-            {ROLES.map((candidate) => (
-              <option key={candidate} value={candidate}>
-                {candidate}
-              </option>
-            ))}
-          </select>
-        </label>
+        <form
+          className="row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void administer(`Changed the role of ${account.signInName}.`, () =>
+              accounts.changeMembership(account.id, role, account.employee),
+            );
+          }}
+        >
+          <label>
+            <span className="visually-hidden">Role for {account.signInName}</span>
+            <select
+              value={role}
+              onChange={(event) =>
+                setChosenRole({ on: account, role: event.target.value as TenantRole })
+              }
+            >
+              {ROLES.map((candidate) => (
+                <option key={candidate} value={candidate}>
+                  {candidate}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" aria-label={`Change the role of ${account.signInName}`}>
+            Change
+          </button>
+        </form>
       </td>
       <td>
-        <label>
-          <span className="visually-hidden">Employee for {account.signInName}</span>
-          <select
-            value={account.employee ?? NOT_LINKED}
-            onChange={(event) =>
-              void administer(`Changed who ${account.signInName} is.`, () =>
-                accounts.changeMembership(
-                  account.id,
-                  account.role,
-                  event.target.value === NOT_LINKED ? null : event.target.value,
-                ),
-              )
-            }
-          >
-            <EmployeeOptions staff={staff} linked={account.employee} />
-          </select>
-        </label>
+        <form
+          className="row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void administer(`Changed who ${account.signInName} is.`, () =>
+              accounts.changeMembership(account.id, account.role, employee),
+            );
+          }}
+        >
+          <label>
+            <span className="visually-hidden">Employee for {account.signInName}</span>
+            <select
+              value={employee ?? NOT_LINKED}
+              onChange={(event) =>
+                setChosenEmployee({
+                  on: account,
+                  employee: event.target.value === NOT_LINKED ? null : event.target.value,
+                })
+              }
+            >
+              <EmployeeOptions staff={staff} linked={account.employee} />
+            </select>
+          </label>
+          <button type="submit" aria-label={`Change the employee of ${account.signInName}`}>
+            Change
+          </button>
+        </form>
       </td>
       <td>
         {account.active ? 'Active' : 'Disabled'}

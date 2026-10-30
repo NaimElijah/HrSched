@@ -212,19 +212,35 @@ describe('granting a qualification', () => {
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
     await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), 'q-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada' }));
 
     await waitFor(() =>
       expect(callsTo(stub, 'PUT', '/api/employees/e-1/qualifications/q-1')).toHaveLength(1),
     );
   });
 
-  /** The placeholder option is not a qualification; selecting it must not send anything. */
-  it('GivenTheChoosePlaceholder_WhenSelected_ThenNothingIsSent', async () => {
+  /**
+   * There is no revoking a qualification yet (F24, #86), and with the keyboard a closed select
+   * changes on every arrow key in some browsers. Choosing one grants nothing until it is submitted.
+   */
+  it('GivenAQualificationChosen_WhenNotYetGranted_ThenNothingIsSent', async () => {
+    const stub = theOrganisation();
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+
+    await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), 'q-1');
+
+    expect(writes(stub)).toHaveLength(0);
+  });
+
+  /** The placeholder option is not a qualification; granting it must not send anything. */
+  it('GivenTheChoosePlaceholder_WhenGranting_ThenNothingIsSent', async () => {
     const stub = theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
     await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), '');
+    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada' }));
 
     expect(writes(stub)).toHaveLength(0);
   });
@@ -240,6 +256,7 @@ describe('granting a qualification', () => {
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
     await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), 'q-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada' }));
 
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Nothing here for this organisation.'),
