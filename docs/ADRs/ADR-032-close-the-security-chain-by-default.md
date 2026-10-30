@@ -5,6 +5,10 @@
     [ADR-049](ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md) refuses the
     `metrics` and `prometheus` endpoints by placing `denyAll` before the actuator `permitAll`. The
     "anybody" in the `/actuator/**` row now holds for health, liveness, readiness and info only.
+  - **Amended 2026-10-30:** The tenant row's list of routes has moved since this record merged.
+    `/api/constraints` became `/api/constraints/**` when a past version of the rules became
+    readable (5e73925), and `/api/objectives/**` joined when an Admin was given the objective
+    weights (cd2be71). `TENANT_ROUTES` in `SecurityConfiguration` holds the current list.
 - **Date:** 2026-09-21
 
 ## Context

@@ -177,7 +177,7 @@ a published roster is superseded rather than edited (R6).
 | R37 | Roster history is append-only: what was authoritative at any past moment can be reconstructed exactly. *`Roster` (`RosterTest`), `SchedulingService` (`SchedulingServiceTest`), `JdbcRosterRepository` and the `roster_one_published_per_moment` constraint (`JdbcRosterRepositoryTest`), migration `V6` (`AppendOnlyRosterHistoryMigrationTest`) ([ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)). Exact from V6 on: nothing earlier was recorded.* |
 | R38 | A sign-in name is an email address. *Not yet — [#108](https://github.com/NaimElijah/HrSched/issues/108)* |
 | R39 | Operators and Admins sign in with a second factor as well as a password. *Not yet — [#109](https://github.com/NaimElijah/HrSched/issues/109)* |
-| R40 | Every objective weight is a whole number of at least one, and an objective with no weight is left out of the score. *`ObjectiveWeights`, `ObjectiveWeightsTest`; the schema's checks on `objective_weights`, `JdbcObjectiveWeightsRepositoryTest`; `ObjectivesHttpTest`* |
+| R40 | Every objective weight is a whole number of at least one, and an objective with no weight is left out of the score. *`ObjectiveWeights`, `ObjectiveWeightsTest`; the schema's checks on `objective_weights`, `JdbcObjectiveWeightsRepositoryTest`; `ObjectivesHttpTest`, `WholeNumberFieldHttpTest`* |
 
 A roster moves `DRAFT → PUBLISHED → SUPERSEDED`, and no other transition is legal. Exactly one
 roster is authoritative for any given moment, which is what R11 enforces.

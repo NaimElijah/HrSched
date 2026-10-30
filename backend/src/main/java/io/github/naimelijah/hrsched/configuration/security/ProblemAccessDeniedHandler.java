@@ -62,7 +62,7 @@ public class ProblemAccessDeniedHandler implements AccessDeniedHandler {
     boolean pendingChange = hasOnlyPendingPasswordChange(caller);
 
     log.atWarn()
-        .addKeyValue("account", caller == null ? null : caller.getName())
+        .addKeyValue("actor", caller == null ? null : caller.getName())
         .log("Refused: an authenticated caller may not do this");
     Counter.builder(DENIED)
         .description("Refused attempts, by what refused them")
