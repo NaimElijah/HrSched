@@ -438,18 +438,19 @@ class JdbcConstraintSetRepositoryTest {
 
   /**
    * A limit is stored in whole seconds, so one with a part of a second could only be stored as
-   * another limit: a minimum rest of eleven hours and half a second, cut to eleven hours, would
-   * permit less rest than the organisation configured. It is refused before anything is written.
+   * another limit: a minimum rest of 437 minutes and half a second, cut to 437 minutes, would
+   * permit less rest than the organisation configured. It is refused before anything is written,
+   * the rule stored beside it included.
    */
   @Test
   void GivenALimitWithAPartOfASecond_WhenSaved_ThenItIsRefusedAndNothingIsStored() {
-    // Invented: eleven hours and half a second of rest, a figure from no statute.
+    // Invented: 437 minutes and half a second of rest.
+    Duration rest = Duration.ofMinutes(437).plusMillis(500);
+    // Invented: four days running, which is not stored either.
+    MaximumConsecutiveWorkingDays days = new MaximumConsecutiveWorkingDays(4);
     ConstraintSet set =
         ConstraintSet.initial(ACME)
-            .revisedTo(
-                List.of(
-                    new MaximumConsecutiveWorkingDays(4),
-                    new MinimumRestBetweenAssignments(Duration.ofHours(11).plusMillis(500))));
+            .revisedTo(List.of(days, new MinimumRestBetweenAssignments(rest)));
 
     assertThatThrownBy(() -> repository.save(set))
         .isExactlyInstanceOf(IllegalArgumentException.class)
