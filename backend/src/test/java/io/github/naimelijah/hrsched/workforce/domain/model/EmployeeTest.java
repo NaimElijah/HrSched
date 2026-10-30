@@ -9,7 +9,6 @@ import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -68,15 +67,6 @@ class EmployeeTest {
     Employee qualified = ada().holding(supervisor);
 
     assertThat(qualified.qualifications()).containsExactly(supervisor);
-    assertThat(qualified.holdsAll(Set.of(supervisor))).isTrue();
-  }
-
-  @Test
-  void GivenAnEmployeeMissingOneRequirement_WhenAskedIfTheyQualify_ThenTheyDoNot() {
-    QualificationId held = QualificationId.newId();
-    QualificationId missing = QualificationId.newId();
-
-    assertThat(ada().holding(held).holdsAll(Set.of(held, missing))).isFalse();
   }
 
   @Test
@@ -87,16 +77,15 @@ class EmployeeTest {
   }
 
   @Test
-  void GivenNoDeclaredUnavailability_WhenAskedAboutAnySpan_ThenTheyAreAvailable() {
-    assertThat(ada().isAvailableFor(MONDAY_DAY)).isTrue();
+  void GivenANewEmployee_WhenReadingTheirUnavailability_ThenNoneIsDeclared() {
+    assertThat(ada().unavailability()).isEmpty();
   }
 
   @Test
-  void GivenUnavailabilityCoveringASpan_WhenAskedAboutIt_ThenTheyAreUnavailable() {
+  void GivenADeclaredSpan_WhenReadingTheirUnavailability_ThenItIsHeld() {
     Employee away = ada().unavailableFor(MONDAY_DAY);
 
-    assertThat(away.isAvailableFor(MONDAY_DAY)).isFalse();
-    assertThat(away.isAvailableFor(MONDAY_EVENING)).isTrue();
+    assertThat(away.unavailability()).containsExactly(MONDAY_DAY);
   }
 
   @Test
@@ -172,9 +161,9 @@ class EmployeeTest {
         ada().preferring(new ShiftPreference(MONDAY_EVENING, PreferenceStrength.PREFERS_NOT));
 
     assertThat(choosy.preferences()).hasSize(1);
-    assertThat(choosy.isAvailableFor(MONDAY_EVENING))
-        .describedAs("a preference is soft and must never block an assignment")
-        .isTrue();
+    assertThat(choosy.unavailability())
+        .describedAs("a preference is soft and must never become unavailability")
+        .isEmpty();
   }
 
   // --- F26: withdrawing a declaration (ADR-040) ---------------------------------------------
@@ -186,7 +175,6 @@ class EmployeeTest {
     Employee withdrawn = declared.noLongerUnavailableFor(MONDAY_DAY);
 
     assertThat(withdrawn.unavailability()).containsExactly(MONDAY_EVENING);
-    assertThat(withdrawn.isAvailableFor(MONDAY_DAY)).isTrue();
   }
 
   /** A withdrawal names a declaration; it does not carve a piece out of one. */

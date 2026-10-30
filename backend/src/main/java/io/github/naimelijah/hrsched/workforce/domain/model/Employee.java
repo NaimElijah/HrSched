@@ -160,24 +160,6 @@ public final class Employee {
     return new Employee(id, organisation, name, qualifications, unavailability, preferences, terms);
   }
 
-  /**
-   * @param period a span of work
-   * @return whether this employee has declared themselves unavailable for any of it
-   */
-  public boolean isAvailableFor(TimeRange period) {
-    Objects.requireNonNull(period, "period must not be null");
-    return unavailability.stream().noneMatch(period::overlaps);
-  }
-
-  /**
-   * @param required the qualifications a shift demands
-   * @return whether this employee holds every one of them
-   */
-  public boolean holdsAll(Set<QualificationId> required) {
-    Objects.requireNonNull(required, "required must not be null");
-    return qualifications.containsAll(required);
-  }
-
   public EmployeeId id() {
     return id;
   }
