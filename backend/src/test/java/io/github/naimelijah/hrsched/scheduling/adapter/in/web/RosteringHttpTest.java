@@ -1134,7 +1134,7 @@ class RosteringHttpTest {
     jdbc.sql("INSERT INTO constraint_set (organisation_id, version) VALUES (:id, 2)")
         .param("id", UUID.fromString(organisation))
         .update();
-    // Invented: two daily caps, of eleven hours and of thirteen.
+    // Invented: two daily caps, of 437 minutes and of 511, figures from no statute.
     for (int ordinal = 0; ordinal < 2; ordinal++) {
       jdbc.sql(
               """
@@ -1144,7 +1144,7 @@ class RosteringHttpTest {
               """)
           .param("id", UUID.fromString(organisation))
           .param("ordinal", ordinal)
-          .param("seconds", TimeUnit.HOURS.toSeconds(11 + 2L * ordinal))
+          .param("seconds", TimeUnit.MINUTES.toSeconds(437 + 74L * ordinal))
           .update();
     }
 

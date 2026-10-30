@@ -133,7 +133,7 @@ class JdbcConstraintSetRepositoryTest {
         .sql("INSERT INTO constraint_set (organisation_id, version) VALUES (:id, 2)")
         .param("id", ACME.value())
         .update();
-    // Invented: two daily caps, of ten hours and of twelve.
+    // Invented: two daily caps, of 437 minutes and of 511, figures from no statute.
     for (int ordinal = 0; ordinal < 2; ordinal++) {
       PostgresDatabase.jdbcClient()
           .sql(
@@ -144,7 +144,7 @@ class JdbcConstraintSetRepositoryTest {
               """)
           .param("id", ACME.value())
           .param("ordinal", ordinal)
-          .param("seconds", Duration.ofHours(10 + 2L * ordinal).toSeconds())
+          .param("seconds", Duration.ofMinutes(437 + 74L * ordinal).toSeconds())
           .update();
     }
 
@@ -288,9 +288,9 @@ class JdbcConstraintSetRepositoryTest {
   void GivenTwoRevisionsOfOneVersion_WhenTheyRace_ThenTheLoserIsRefusedAsAConflict()
       throws Exception {
     ConstraintSet current = ConstraintSet.initial(ACME);
-    // Invented: four days running for the winner, five for the loser, so the two are told apart.
-    ConstraintSet winning = current.revisedTo(List.of(new MaximumConsecutiveWorkingDays(4)));
-    ConstraintSet losing = current.revisedTo(List.of(new MaximumConsecutiveWorkingDays(5)));
+    // Invented: thirteen days running for the winner, seventeen for the loser.
+    ConstraintSet winning = current.revisedTo(List.of(new MaximumConsecutiveWorkingDays(13)));
+    ConstraintSet losing = current.revisedTo(List.of(new MaximumConsecutiveWorkingDays(17)));
     AtomicInteger loser = new AtomicInteger();
 
     List<Throwable> refusals =
@@ -331,9 +331,10 @@ class JdbcConstraintSetRepositoryTest {
                       "CREATE UNIQUE INDEX constraint_set_invented_one_per_organisation"
                           + " ON constraint_set (organisation_id)")
                   .update();
+              // Invented: thirteen days running.
               ConstraintSet second =
                   ConstraintSet.initial(ACME)
-                      .revisedTo(List.of(new MaximumConsecutiveWorkingDays(4)));
+                      .revisedTo(List.of(new MaximumConsecutiveWorkingDays(13)));
               repository.save(second);
               return catchThrowable(() -> repository.save(second.revisedTo(List.of())));
             });

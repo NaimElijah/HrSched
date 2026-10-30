@@ -211,18 +211,18 @@ class ConstraintSetTest {
         List.of(
             new MaximumWeeklyWorkingTime(Duration.ofMinutes(1913)),
             new MaximumWeeklyWorkingTime(Duration.ofMinutes(2087))),
-        List.of(new MaximumConsecutiveWorkingDays(3), new MaximumConsecutiveWorkingDays(7)));
+        List.of(new MaximumConsecutiveWorkingDays(13), new MaximumConsecutiveWorkingDays(17)));
   }
 
   @Test
   void GivenOneRuleOfEachKind_WhenRevisingTo_ThenEveryOneIsKept() {
-    // Invented: one of each kind, none of them from any statute.
+    // Invented: one of each kind, plainly artificial, none of them a figure from any statute.
     List<WorkingTimeConstraint> oneOfEach =
         List.of(
-            new MinimumRestBetweenAssignments(Duration.ofHours(9)),
-            new MaximumDailyWorkingTime(Duration.ofHours(10)),
-            new MaximumWeeklyWorkingTime(Duration.ofHours(40)),
-            new MaximumConsecutiveWorkingDays(5));
+            new MinimumRestBetweenAssignments(Duration.ofMinutes(437)),
+            new MaximumDailyWorkingTime(Duration.ofMinutes(511)),
+            new MaximumWeeklyWorkingTime(Duration.ofMinutes(1913)),
+            new MaximumConsecutiveWorkingDays(13));
 
     assertThat(ConstraintSet.initial(ACME).revisedTo(oneOfEach).constraints())
         .containsExactlyElementsOf(oneOfEach);

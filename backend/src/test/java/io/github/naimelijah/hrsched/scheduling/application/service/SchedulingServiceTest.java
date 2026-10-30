@@ -349,7 +349,7 @@ class SchedulingServiceTest {
   void GivenTwoRulesOfOneKind_WhenAnAdminRevisesTheRules_ThenNothingIsStoredOrRecorded() {
     audit.forget();
 
-    // Invented: two daily caps, of eight hours and of ten.
+    // Invented: two daily caps, of 437 minutes and of 511, figures from no statute.
     assertThatThrownBy(
             () ->
                 service.reviseConstraints(
@@ -357,8 +357,8 @@ class SchedulingServiceTest {
                     new ReviseConstraintsCommand(
                         ACME,
                         List.of(
-                            new MaximumDailyWorkingTime(Duration.ofHours(8)),
-                            new MaximumDailyWorkingTime(Duration.ofHours(10))))))
+                            new MaximumDailyWorkingTime(Duration.ofMinutes(437)),
+                            new MaximumDailyWorkingTime(Duration.ofMinutes(511))))))
         .isInstanceOf(InvalidConstraintException.class);
 
     assertThat(constraintSets.findCurrent(ACME)).isEmpty();
