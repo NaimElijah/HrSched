@@ -22,6 +22,8 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -130,6 +132,61 @@ class JdbcRosterGenerationRepositoryTest {
 
     assertThat(repository.findById(ACME, asked.id()).orElseThrow().violations())
         .containsExactlyElementsOf(broken);
+  }
+
+  /**
+   * A generation ends no earlier than it was asked for and no later than it was lost (V14), and the
+   * schema refuses a row recording otherwise, for a writer that skips the domain.
+   */
+  @Test
+  void GivenAnEndingAfterItWasLost_WhenStoredDirectly_ThenTheSchemaRefusesIt() {
+    assertThatThrownBy(() -> storedEndingAt("2026-10-01T09:15:00.000001Z"))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("roster_generation_finished_while_it_could");
+  }
+
+  @Test
+  void GivenAnEndingBeforeItWasAskedFor_WhenStoredDirectly_ThenTheSchemaRefusesIt() {
+    assertThatThrownBy(() -> storedEndingAt("2026-10-01T08:59:59.999999Z"))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("roster_generation_finished_while_it_could");
+  }
+
+  /**
+   * The domain lets a generation end up to the instant before it is lost, to the nanosecond, and
+   * the column holds microseconds, rounding to the nearest. An ending in the last half microsecond
+   * is stored at the lost-at instant itself, and is still an ending the domain made, so the schema
+   * accepts it.
+   */
+  @Test
+  void GivenAnEndingInTheLastHalfMicrosecondBeforeItIsLost_WhenSaved_ThenItIsStored() {
+    RosterGeneration asked = askedBy(ACME);
+    repository.save(asked);
+
+    repository.save(asked.failed(asked.lostAt().minusNanos(100)));
+
+    assertThat(repository.findById(ACME, asked.id()).orElseThrow().finishedAt())
+        .contains(asked.lostAt());
+  }
+
+  /** A failed generation of ours, asked for at nine and lost at a quarter past, ended then. */
+  private static void storedEndingAt(String finishedAt) {
+    PostgresDatabase.jdbcClient()
+        .sql(
+            """
+            INSERT INTO roster_generation (id, organisation_id, starts_at, ends_at, requested_at,
+                                           lost_at, status, finished_at)
+            VALUES (:id, :organisation, :startsAt, :endsAt, :requestedAt, :lostAt, 'FAILED',
+                    :finishedAt)
+            """)
+        .param("id", GenerationId.newId().value())
+        .param("organisation", ACME.value())
+        .param("startsAt", THE_WEEK.start().atOffset(ZoneOffset.UTC))
+        .param("endsAt", THE_WEEK.end().atOffset(ZoneOffset.UTC))
+        .param("requestedAt", ASKED.atOffset(ZoneOffset.UTC))
+        .param("lostAt", ASKED.plus(POLICY.lostAfter()).atOffset(ZoneOffset.UTC))
+        .param("finishedAt", OffsetDateTime.parse(finishedAt))
+        .update();
   }
 
   /** Refused, so it has violation rows too, which are reached only through their organisation's. */

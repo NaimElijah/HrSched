@@ -90,3 +90,21 @@ ALTER TABLE swap_request VALIDATE CONSTRAINT swap_request_names_a_roster_of_its_
 ALTER TABLE swap_request VALIDATE CONSTRAINT swap_request_names_an_assignment_on_its_roster;
 
 CREATE INDEX swap_request_by_assignment ON swap_request (roster_id, shift_id, requester_id);
+
+-- A generation ends while it still could -------------------------------------------------------
+--
+-- RosterGeneration ends at the clock's reading, or at its request if the clock was stepped back
+-- before it, and refuses to end once it is lost, from lost_at on (ADR-046). So no ending it writes
+-- is before its request or after it was lost, and the schema now refuses one that is, for a writer
+-- that skips the domain. The ending may equal lost_at: the domain allows one up to the nanosecond
+-- before, and timestamptz rounds an instant to the nearest microsecond, so an ending in the last
+-- half microsecond is stored at lost_at itself.
+--
+-- That a REFUSED generation, and only a REFUSED one, has rows in roster_generation_violation is NOT
+-- held here, deliberately. A check sees one row of one table, and those rows are written after their
+-- generation's, so holding it would take a deferred constraint trigger. RosterGeneration refuses to
+-- be loaded from a row that breaks it, so such a row fails loudly when it is read.
+
+ALTER TABLE roster_generation
+    ADD CONSTRAINT roster_generation_finished_while_it_could
+        CHECK (finished_at IS NULL OR (finished_at >= requested_at AND finished_at <= lost_at));

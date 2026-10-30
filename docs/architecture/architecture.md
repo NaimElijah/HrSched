@@ -813,7 +813,13 @@ are not audited. Nothing at runtime depends on any of it.
   because `RosterGeneration` refuses to end. The use case checks before writing anything, and
   again once the draft is saved, inside the unit that saved it, so a save outlasting the instant
   takes the draft back with it
-  ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)).
+  ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). The
+  schema refuses an ending before its request or after its `lost_at`
+  (`roster_generation_finished_while_it_could`, `V14`); one at `lost_at` itself is stored, because
+  the column rounds to the microsecond an ending the domain made just before. That a REFUSED
+  generation, and only one, has rows in `roster_generation_violation` is not held by the schema,
+  which would take a deferred constraint trigger: `RosterGeneration` refuses to be loaded from a
+  row that breaks it.
 - **At the largest stated size, a solve takes minutes and gigabytes.** Measured on an 8-core, 16 GB
   development machine with `GenerationAtScaleRun` (`./mvnw spotless:apply test
   -Dtest=GenerationAtScaleRun`, kept out of the build): the coverage search alone spent 75 s in
