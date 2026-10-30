@@ -7,8 +7,9 @@
     blank. `RequestBindingExceptionHandler` keeps the title.
   - **Amended 2026-10-30:** "Nothing in this repository sends" a 415 no longer holds:
     [ADR-053](ADR-053-bound-a-request-body-and-accept-only-utf-8-json.md) refuses JSON declared in
-    a charset other than UTF-8, and a multipart body, with a 415. The first carries a problem
-    detail written by `JsonCharsetFilter`, and the rest still carry Spring's default body.
+    a charset other than UTF-8 with a 415, and the problem detail is written by
+    `JsonCharsetFilter`. That is the only 415 this repository sends. A multipart body also gets a
+    415, but it is Spring's default, with Spring's default body.
 - **Date:** 2026-09-14
 
 ## Context

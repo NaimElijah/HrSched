@@ -7,8 +7,9 @@
 
 The full-system security scan (#250) found that a JSON request body had no size limit (CF2). The
 fix, in #274, was followed by two more findings in the same area: a form body read ahead of the
-security chain, and a body whose size was counted in characters, not bytes (#277, #278). The policy
-the code now has was decided in those pull requests, merged on 2026-10-28, and not recorded then.
+security chain (fixed in #277), and a body whose size was counted in characters, not bytes (#278,
+still open). The policy the code now has was decided in the pull requests #274 and #277, merged on
+2026-10-28, and not recorded then.
 
 Forces:
 
@@ -35,7 +36,7 @@ Forces:
 ## Decision
 
 **We bound a request body in bytes before any use case runs, and accept no body type but JSON in
-UTF-8.** Five settings carry it, and one number sets two of them.
+UTF-8.** Five properties and two classes carry it, and one number sets two of the properties.
 
 - **A JSON document is at most 1 MiB.** `hrsched.web.max-json-document-bytes` is 1048576 and is
   handed to Jackson as `spring.jackson.factory.constraints.read.max-document-length`. Jackson counts
@@ -43,8 +44,9 @@ UTF-8.** Five settings carry it, and one number sets two of them.
   root value. A body over the limit, or over one of Jackson's nesting or value-length limits, is
   refused with a 413 titled `Request too large`. The detail is a fixed sentence, because Jackson's
   message quotes the input it failed on. The access, scheduling and workforce advices answer it.
-- **A limit of zero or less fails startup.** `RequestBodyLimitProperties` binds the value first and
-  refuses it, where Jackson would read it as no limit.
+- **A limit of zero or less in `hrsched.web.max-json-document-bytes` fails startup.**
+  `RequestBodyLimitProperties` binds the value first and refuses it, where Jackson would read it as
+  no limit. Setting the Jackson property directly is not checked.
 - **JSON declared in any charset but UTF-8 is refused with a 415 before it is read.**
   `JsonCharsetFilter` judges `application/json` and every `application/*+json`, and writes a
   problem detail titled `Unsupported media type`. It runs last, after the security chain, so a route
@@ -68,15 +70,26 @@ refuse such a body with a 415.
 
 - **No one request can make the server hold more than the limit,** signed in or not. The limit
   applies to every route, and a mebibyte is generous for every request this API takes.
-- **The policy is pinned by tests, not by the properties alone.** `RequestBodyLimitHttpTest` pins a
-  body one byte over and a body exactly at the limit. `RequestBodyCharsetHttpTest` pins the 415
+- **Most of the policy is pinned by tests, not by the properties alone.** `RequestBodyLimitHttpTest`
+  pins a body one byte over and a body exactly at the limit. `RequestBodyCharsetHttpTest` pins the 415
   for Latin-1, ISO-2022-JP and UTF-16. `MultipartRequestHttpTest` pins a multipart body refused
   unparsed. `RequestBodyReadingFiltersTest` pins an anonymous form body left unread.
   `FormPostLimitHttpTest` pins a form over the limit refused with a 413. `JsonDocumentLimitStartupTest`
   pins the startup refusal.
+- **Four claims above are not pinned by any test:**
+  - (a) a body over a nesting or value-length limit gets a 413, because every 413 test oversizes
+    the document;
+  - (b) tokens after the root value are checked, because every padded test body pads inside the
+    root;
+  - (c) the filter's 415 is titled `Unsupported media type`, because no test reads `$.title`;
+  - (d) the filter logs and counts nothing.
+
+  [#306](https://github.com/NaimElijah/HrSched/issues/306) tracks the tests.
 - **A refusal for size or charset is not a failed sign-in.** Neither
   `RequestBodyLimitHttpTest.GivenABodyOneByteOverTheLimitNamingARealAccount_WhenSigningIn_ThenNoFailedAttemptIsCounted`
-  nor its charset counterpart counts an attempt against the account named.
+  nor
+  `RequestBodyCharsetHttpTest.GivenABodyDeclaredInLatin1NamingARealAccount_WhenSigningIn_ThenNoFailedAttemptIsCounted`
+  counts an attempt against the account named.
 
 **Harder**
 
