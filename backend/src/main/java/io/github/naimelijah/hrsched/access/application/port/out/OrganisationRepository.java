@@ -29,9 +29,9 @@ public interface OrganisationRepository {
    *
    * @param organisation the organisation to register, under an identity not yet stored, never
    *     {@code null}
-   * @throws RuntimeException if the identity is already stored: the store's own refusal, left
-   *     untranslated, because two fresh identities colliding is a fault rather than a refusal any
-   *     caller could act on
+   * @throws IllegalStateException if the identity is already stored, naming the identity: two fresh
+   *     identities colliding is a fault rather than a refusal any caller could act on, so it is no
+   *     domain exception
    */
   void save(Organisation organisation);
 

@@ -25,6 +25,9 @@ class JdbcOrganisationRepositoryTest {
   /** PostgreSQL's {@code unique_violation}: here, the primary key refusing a second row. */
   private static final String UNIQUE_VIOLATION = "23505";
 
+  /** The primary key {@code V1} leaves PostgreSQL to name. */
+  private static final String PRIMARY_KEY = "organisation_pkey";
+
   /** Invented: an identity PostgreSQL sorts before {@link #LATER_IDENTITY}. */
   private static final String EARLIER_IDENTITY = "00000000-0000-4000-8000-000000000001";
 
@@ -74,7 +77,9 @@ class JdbcOrganisationRepositoryTest {
   /**
    * Saving registers a new tenant and nothing else. An identity already stored belongs to a tenant
    * somebody onboarded, so a second save under it is a fault to surface, never a rename of that
-   * tenant: renaming is its own Admin's act (F30), not a side effect of onboarding.
+   * tenant: renaming is its own Admin's act (F30), not a side effect of onboarding. It surfaces as
+   * this system's defect, naming the identity and not the name, with the store's refusal as its
+   * cause.
    */
   @Test
   void
@@ -83,11 +88,17 @@ class JdbcOrganisationRepositoryTest {
     organisations.save(new Organisation(id, "Acme"));
 
     assertThatThrownBy(() -> organisations.save(new Organisation(id, "Acme Holdings")))
-        .isInstanceOf(DataIntegrityViolationException.class)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(id.value().toString())
+        .hasMessageNotContaining("Acme")
+        .hasCauseInstanceOf(DataIntegrityViolationException.class)
         .rootCause()
         .isInstanceOfSatisfying(
             SQLException.class,
-            refused -> assertThat(refused.getSQLState()).isEqualTo(UNIQUE_VIOLATION));
+            refused -> {
+              assertThat(refused.getSQLState()).isEqualTo(UNIQUE_VIOLATION);
+              assertThat(refused.getMessage()).contains(PRIMARY_KEY);
+            });
     assertThat(organisations.findAll())
         .extracting(Organisation::name)
         .describedAs("the tenant already stored is neither renamed nor duplicated")

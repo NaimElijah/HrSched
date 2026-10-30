@@ -410,7 +410,9 @@ are not audited. Nothing at runtime depends on any of it.
   so a save never moves one to another inbox or rewrites what somebody was told; the upsert only
   ever sets `read`, never clears it. The register of organisations is the exception, having no
   owner to compare: its save is a plain insert, so an identity already stored is refused by the
-  primary key rather than renaming the tenant that holds it.
+  primary key rather than renaming the tenant that holds it. `JdbcOrganisationRepository` matches
+  `organisation_pkey` by name and throws an `IllegalStateException` naming the identity, never the
+  name, as a fault rather than a refusal any caller could act on.
 - **A cross-tenant attempt returns 404, never 403.** A 403 would confirm the resource exists in
   another organisation.
 - **Over HTTP that 404 is produced by the repositories, not by the tenant guard.** A request acts
