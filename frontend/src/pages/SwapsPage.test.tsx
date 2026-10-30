@@ -141,6 +141,20 @@ describe('the queue', () => {
     expect(screen.queryByRole('button', { name: /^Decline/ })).not.toBeInTheDocument();
   });
 
+  /**
+   * A newer server may send a status this build has never heard of. It is named rather than left
+   * blank, and nothing is offered to decide. The status is invented for the test.
+   */
+  it('GivenAStatusThisBuildDoesNotKnow_WhenListed_ThenItSaysSoByName', async () => {
+    aQueue({ '/api/swaps': { status: 200, body: [{ ...PENDING, status: 'ESCALATED' }] } });
+
+    show();
+
+    const row = await rowOfTheShift();
+    expect(within(row).getByText(/cannot describe \(ESCALATED\)/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Approve/ })).not.toBeInTheDocument();
+  });
+
   it('GivenNoSwaps_WhenOpened_ThenItSaysNothingHasBeenAskedFor', async () => {
     aQueue({ '/api/swaps': { status: 200, body: [] } });
 

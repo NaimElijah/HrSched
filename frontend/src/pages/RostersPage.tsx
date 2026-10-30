@@ -108,7 +108,11 @@ export function RostersPage({
     }
   }
 
-  /** Shows how a generation ended, refusing however it ended without a draft. */
+  /**
+   * Shows how a generation ended, refusing however it ended without a draft. An ending this build
+   * has never heard of is named as such: waiting has stopped, and stopping without a word would
+   * leave a Scheduler waiting for a draft that may never come.
+   */
   function ended(generation: Generation) {
     onWaitingFor(null);
     if (generation.status === 'SUCCEEDED') {
@@ -125,6 +129,13 @@ export function RostersPage({
     } else if (generation.status === 'FAILED') {
       setFailure(
         new Error('The generation failed. Generate again, and report it if it fails again.'),
+      );
+    } else {
+      rosters.reload();
+      setFailure(
+        new Error(
+          `The generation ended as ${generation.status}, which this version of HrSched cannot describe. Check the rosters below for its draft before generating again.`,
+        ),
       );
     }
   }

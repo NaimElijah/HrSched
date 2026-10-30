@@ -564,8 +564,9 @@ are not audited. Nothing at runtime depends on any of it.
   a time, and holds no words ([ADR-021](../ADRs/ADR-021-notifications-as-a-bounded-context.md)).
   `Inbox` turns each kind into a sentence through a `Record` over the kinds it knows, so a kind added
   to the client's type cannot compile without its words, and a kind the server sends that this build
-  does not know is shown as unknown rather than guessed at. Opening the inbox marks nothing read;
-  the reader does.
+  does not know is shown as unknown rather than guessed at. A swap's status is worded the same way,
+  by `swapStatus`, for the inbox and the Scheduler's queue alike. Opening the inbox marks nothing
+  read; the reader does.
 - **The rules screen offers no default values.** Not a styling choice: a number suggested by the UI
   would be a working-time threshold chosen by a developer, which is exactly what this system
   refuses to contain.

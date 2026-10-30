@@ -840,6 +840,33 @@ describe('the board of a draft', () => {
     expect(check).toHaveTextContent('Weighted total: 10.');
   });
 
+  /**
+   * An objective a newer server scores still counts towards the total shown, so it is listed by
+   * its name rather than dropped. The objective and its numbers are invented for the test.
+   */
+  it('GivenAnObjectiveThisBuildDoesNotKnow_WhenTheDraftIsChecked_ThenItIsShownByName', async () => {
+    aDraft({
+      '/api/rosters/roster-1/assessment': {
+        status: 200,
+        body: {
+          ...NOTHING_WRONG,
+          objectives: [...NOTHING_WRONG.objectives, { objective: 'TRAVEL', measure: 5, weight: 2 }],
+          weightedTotal: 10,
+        },
+      },
+    });
+    renderPage();
+
+    const check = await theCheck(await openBoard());
+    const travel = await within(check).findByRole('row', { name: /TRAVEL/ });
+
+    expect(
+      within(travel)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent),
+    ).toEqual(['TRAVEL: an objective this version of HrSched cannot describe', '5', '2']);
+  });
+
   it('GivenNothingWeighed_WhenTheDraftIsChecked_ThenItSaysEveryDraftTotalsZero', async () => {
     aDraft();
     renderPage();
@@ -1104,6 +1131,29 @@ describe('the board of a draft', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The generation was lost: the server running it stopped. Generate again.',
+    );
+  });
+
+  /**
+   * A newer server may end a generation in a way this build has never heard of. Waiting stops, so
+   * the page has to say why, by name, rather than stop without a word. Invented for the test.
+   */
+  it('GivenAGenerationEndingInAStatusThisBuildDoesNotKnow_WhenItEnds_ThenItSaysSoByName', async () => {
+    routeTo({
+      'POST /api/rosters/generations': {
+        status: 202,
+        body: { id: 'gen-1', status: 'CANCELLED', roster: null, violations: [] },
+      },
+      '/api/rosters': { status: 200, body: [] },
+    });
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Generate a draft for this span' }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /^The generation ended as CANCELLED, which this version of HrSched cannot describe\./,
     );
   });
 
