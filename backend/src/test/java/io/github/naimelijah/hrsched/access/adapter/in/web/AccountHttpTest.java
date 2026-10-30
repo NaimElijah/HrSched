@@ -784,12 +784,20 @@ class AccountHttpTest {
     mockMvc.perform(signInAs(signInName, A_PASSWORD)).andExpect(status().isOk());
   }
 
-  /** A 404 rather than a 403, and the account keeps signing in: nothing reached it. */
+  /**
+   * A 404 rather than a 403, and nothing reached the account: the session it already holds goes on
+   * working, and it still signs in. Ending sessions is keyed by account alone, so what keeps a
+   * rival's Admin from signing anybody out by identifier is the use case checking tenancy first,
+   * and the refusal rolling back the one transaction the change runs in. {@code
+   * AccountAdministrationTest} pins the order on its own; this test fails once both give way, as
+   * when the sessions are ended before the check and outside that transaction.
+   */
   @Test
-  void GivenAnAccountOfAnotherOrganisation_WhenDisablingIt_ThenItIsNotFoundAndStillSignsIn()
+  void GivenAnAccountOfAnotherOrganisation_WhenDisablingIt_ThenItIsNotFoundAndItsSessionGoesOn()
       throws Exception {
     String theirName = anInventedSignInName();
     String theirs = create(admin(anOrganisation()), theirName, Role.SCHEDULER);
+    String theirToken = tokenFromSignIn(theirName, A_PASSWORD);
 
     mockMvc
         .perform(
@@ -797,6 +805,7 @@ class AccountHttpTest {
                 .content("{\"active\":false}"))
         .andExpect(status().isNotFound());
 
+    mockMvc.perform(with(get("/api/auth/session"), theirToken)).andExpect(status().isOk());
     mockMvc.perform(signInAs(theirName, A_PASSWORD)).andExpect(status().isOk());
   }
 

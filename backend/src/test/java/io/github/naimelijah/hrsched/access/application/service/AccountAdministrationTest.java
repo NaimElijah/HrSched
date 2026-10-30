@@ -555,6 +555,7 @@ class AccountAdministrationTest {
                 service.setAccountActive(
                     admin(acme), new SetAccountActiveCommand(acme, theirs.id(), false)))
         .isInstanceOf(UnknownAccountException.class);
+    assertThat(sessions.everySessionEndedFor(theirs.id())).isEmpty();
   }
 
   // --- #33: a change holds the account from its read (ADR-041)
