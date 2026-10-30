@@ -101,7 +101,7 @@ public class SchedulingService
 
   /**
    * Building rosters belongs to the Scheduler alone. An Admin manages people, qualifications and
-   * the constraint set — {@link Role#ADMIN} says so, and so does requirements F1/F3/F11/F12.
+   * the constraint set — {@link Role#ADMIN} says so, and so does requirements F1/F3/F11.
    */
   private static final Set<Role> MAY_SCHEDULE = Set.of(Role.SCHEDULER);
 
