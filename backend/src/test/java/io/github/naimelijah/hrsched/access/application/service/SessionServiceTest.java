@@ -417,14 +417,18 @@ class SessionServiceTest {
   }
 
   /**
-   * The session's end bounds every token it issued, so a token still within its own expiry renews
-   * nothing once its session has ended.
+   * A session ended early - signed out here - takes every token it issued with it, so a token still
+   * within its own expiry renews nothing. Ending it by sign-out rather than by its expiry is what
+   * leaves the token unexpired legitimately: a token never outlives the time its session was set to
+   * end.
    */
   @Test
   void GivenAnUnexpiredRefreshTokenOfAnEndedSession_WhenRefreshing_ThenItIsRefusedAsSessionEnded() {
     Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
     SignInSession ended =
-        new SignInSession(SignInSessionId.newId(), account.id(), AN_HOUR_AGO, NOW.minusSeconds(1));
+        new SignInSession(
+                SignInSessionId.newId(), account.id(), AN_HOUR_AGO, NOW.plus(Duration.ofHours(11)))
+            .revoked(SessionRevocation.SIGNED_OUT, NOW.minusSeconds(1));
     sessions.given(
         "a-token-outliving-its-session",
         new StoredRefreshToken(ended, NOW.plus(Duration.ofMinutes(5)), Optional.empty()));
