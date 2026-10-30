@@ -87,12 +87,7 @@ class OrganisationHttpTest {
             Instant.now()));
     String body =
         mockMvc
-            .perform(
-                post("/api/auth/sign-in")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(
-                        "{\"signInName\":\"%s\",\"password\":\"%s\"}"
-                            .formatted(signInName, PENDING_PASSWORD)))
+            .perform(signInAs(signInName, PENDING_PASSWORD))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.session.passwordChangeRequired").value(true))
             .andReturn()
@@ -239,9 +234,7 @@ class OrganisationHttpTest {
                 .content(TestTenants.onboarding(name)))
         .andExpect(status().isForbidden());
 
-    mockMvc
-        .perform(with(get("/api/organisations"), operator()))
-        .andExpect(jsonPath("$[?(@.name=='%s')]".formatted(name)).isEmpty());
+    assertThatNoOrganisationIsCalled(name);
   }
 
   @Test
