@@ -43,10 +43,12 @@ import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.po
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.FixturePayrollService;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceCallingARemoteObject;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceCallingOverHttp;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceHoldingAConnection;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceKnowingTheEntryPoint;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceReachingAPublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceStartingAProcess;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceWithAWireFormat;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainHoldingABufferedReader;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainKnowingTheEntryPoint;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainReadingAFile;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainReadingAnArchive;
@@ -374,6 +376,23 @@ class HexagonalArchitectureRulesTest {
     assertViolatedNaming(result, "java.io.File");
   }
 
+  /** The rule names {@code Reader}; a reader that merely extends it is refused with it. */
+  @Test
+  void GivenADomainClassHoldingASubtypeOfAnIoType_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, DomainHoldingABufferedReader.class);
+
+    assertViolatedNaming(result, "java.io.BufferedReader");
+  }
+
+  @Test
+  void GivenAUseCaseHoldingADatabaseConnection_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, ServiceHoldingAConnection.class);
+
+    assertViolatedNaming(result, "java.sql.Connection");
+  }
+
   @Test
   void GivenAUseCaseHoldingAnHttpClient_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
     EvaluationResult result =
@@ -554,6 +573,31 @@ class HexagonalArchitectureRulesTest {
             UnscopedPayslipRepository.class);
 
     assertViolatedNaming(result, "UnscopedPayslipRepository.existsByReference");
+  }
+
+  @Test
+  void GivenARepositoryLockWithoutAnOrganisation_WhenTheTenancyRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repository_methods_take_an_organisation,
+            UnscopedPayslipRepository.class);
+
+    assertViolatedNaming(result, "UnscopedPayslipRepository.lockPayroll");
+  }
+
+  /**
+   * The build allows {@code OrganisationRepository.findAll()}, the register of tenants; the same
+   * signature on any other port is a listing across tenants.
+   */
+  @Test
+  void
+      GivenAnAllowedSignatureOnAPortTheAllowListDoesNotName_WhenTheTenancyRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repository_methods_take_an_organisation,
+            UnscopedPayslipRepository.class);
+
+    assertViolatedNaming(result, "UnscopedPayslipRepository.findAll()");
   }
 
   @Test

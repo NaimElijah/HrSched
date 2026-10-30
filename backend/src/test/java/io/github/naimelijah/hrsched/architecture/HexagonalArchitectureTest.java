@@ -191,9 +191,10 @@ class HexagonalArchitectureTest {
    * <p>{@code java.io}'s exceptions and {@code Serializable} do no I/O and stay allowed, as do
    * {@code java.nio.charset} and {@code java.security}, which the core uses to measure a password
    * and to draw a token. A library that does I/O is the allow-lists' to refuse, not this rule's.
-   * {@code HexagonalArchitectureRulesTest} watches it reject a file and an archive in the domain,
-   * and an HTTP client, a process and a remote-object registry in a use case, and permit {@code
-   * Serializable}, a {@code URI} and the in-memory types.
+   * {@code HexagonalArchitectureRulesTest} watches it reject a file, a {@code BufferedReader} and
+   * an archive in the domain, and a database connection, an HTTP client, a process and a
+   * remote-object registry in a use case, and permit {@code Serializable}, a {@code URI} and the
+   * in-memory types.
    */
   @ArchTest
   static final ArchRule the_core_does_no_io =
@@ -905,10 +906,10 @@ class HexagonalArchitectureTest {
    * thought of. A save is exempt, as its aggregate carries its organisation. The few methods that
    * cannot take one are named in {@link #UNSCOPED_LOOKUPS}, each with its port's own reason, so a
    * new one is a decision written down rather than an omission. {@code
-   * HexagonalArchitectureRulesTest} watches it reject a fixture repository's unscoped lookup and
-   * unscoped question, a fixture directory's unscoped read, and an overload of an allowed method,
-   * and permit a scoped repository; it checks that every allowed method is still a signature its
-   * port declares, with a reason.
+   * HexagonalArchitectureRulesTest} watches it reject a fixture repository's unscoped lookup,
+   * question and lock, an allowed signature on a port the list does not name, a fixture directory's
+   * unscoped read, and an overload of an allowed method, and permit a scoped repository; it checks
+   * that every allowed method is still a signature its port declares, with a reason.
    */
   @ArchTest
   static final ArchRule repository_methods_take_an_organisation =
