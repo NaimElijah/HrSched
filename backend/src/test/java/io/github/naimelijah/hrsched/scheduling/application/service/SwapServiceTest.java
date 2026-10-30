@@ -90,6 +90,9 @@ class SwapServiceTest {
   private static final TimeRange NEXT_MONDAY_DAY =
       new TimeRange(Instant.parse("2026-10-12T08:00:00Z"), Instant.parse("2026-10-12T16:00:00Z"));
 
+  /** The telling a decision makes to its second party, which every one of them has. */
+  private static final int SECOND_TELLING = 2;
+
   /** Fixed, so the time a request records is something these tests state rather than tolerate. */
   private static final Instant RAISED_AT = Instant.parse("2026-10-01T09:30:00Z");
 
@@ -1307,12 +1310,16 @@ class SwapServiceTest {
   // an audit line outlives the rollback of a failure that came after it. Telling a party stores a
   // notification in this use case's transaction, so it is one of those writes.
 
-  /**
-   * This service over the same stores, telling through a notifier whose every telling fails. The
-   * publication it approves through is real here, so that tells through the failing one too.
-   */
+  /** This service over the same stores, telling through a notifier whose every telling fails. */
   private SwapService tellingNobody() {
-    FailingNotifier failing = new FailingNotifier();
+    return tellingThrough(new FailingNotifier());
+  }
+
+  /**
+   * This service over the same stores, telling through {@code failing}. The publication it approves
+   * through is real here, so that tells through the failing one too.
+   */
+  private SwapService tellingThrough(FailingNotifier failing) {
     SchedulingService publishing =
         new SchedulingService(
             shifts,
@@ -1391,6 +1398,53 @@ class SwapServiceTest {
         .isInstanceOf(FailingNotifier.TellingFailed.class);
 
     assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * A rejection tells the requester and then the counterparty. The counterparty's telling failing
+   * takes the rejection back as surely as the requester's, so nothing is recorded between the two.
+   */
+  @Test
+  void GivenTheSecondTellingCannotBeStored_WhenRejectingASwap_ThenNothingIsRecorded() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    audit.forget();
+
+    assertThatThrownBy(
+            () ->
+                tellingThrough(new FailingNotifier(SECOND_TELLING))
+                    .rejectSwap(scheduler(ACME), ACME, request))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * An approval tells both its parties, one after the other, inside the publication it settles. The
+   * second failing takes back the approval, the supersession and the publication, so none of them
+   * is recorded between the two.
+   */
+  @Test
+  void GivenTheSecondTellingCannotBeStored_WhenApprovingASwap_ThenNothingIsRecorded() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    audit.forget();
+
+    assertThatThrownBy(
+            () ->
+                tellingThrough(new FailingNotifier(SECOND_TELLING))
+                    .approveSwap(scheduler(ACME), ACME, request))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes())
+        .describedAs("neither the approval nor the supersession and publication it rolls back with")
+        .isEmpty();
   }
 
   // --- R32: an assignment has at most one pending swap request ------------------------------

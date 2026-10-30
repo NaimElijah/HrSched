@@ -82,6 +82,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -123,6 +124,9 @@ class SchedulingServiceTest {
   private FakeWorkforce workforce;
   private RecordingAuditTrail audit;
   private FakeGenerations generations;
+
+  /** A lapse tells its requester first, and this is the counterparty's telling, after it. */
+  private static final int SECOND_TELLING = 2;
 
   /**
    * Invented: how long a generation may stay pending here; every one ends on the calling thread.
@@ -2469,13 +2473,10 @@ class SchedulingServiceTest {
   }
 
   /**
-   * R33: a publication tells both parties of every request it lapses, and telling stores a
-   * notification in the publication's transaction, a write that can still fail. Its failure takes
-   * the lapse back, and the publication with it, so none of them is recorded before it is told
-   * (backend/CLAUDE.md).
+   * Ada's request to hand Grace her shift, pending on a published roster, and the publication of a
+   * draft that supersedes that roster and so lapses it, telling through {@code failing}.
    */
-  @Test
-  void GivenATellingThatCannotBeStored_WhenAPublicationLapsesASwap_ThenNothingIsRecorded() {
+  private ThrowingCallable publicationLapsingASwapThrough(FailingNotifier failing) {
     EmployeeId ada = available(ACME, "Ada");
     EmployeeId grace = available(ACME, "Grace");
     ShiftId shift = publishedWork(ACME, ada, MONDAY_DAY);
@@ -2483,7 +2484,7 @@ class SchedulingServiceTest {
     FakeSwaps swaps = new FakeSwaps(new CallLog());
     swaps.save(
         new SwapRequest(SwapRequestId.newId(), ACME, published.id(), shift, ada, grace, NOW));
-    SchedulingService tellingNobody =
+    SchedulingService telling =
         new SchedulingService(
             shifts,
             rosters,
@@ -2496,13 +2497,37 @@ class SchedulingServiceTest {
             generations,
             Runnable::run,
             LOST_AFTER,
-            new FailingNotifier(),
+            failing,
             audit,
             Clock.fixed(NOW, ZoneOffset.UTC));
     Roster replacement = emptyDraft(ACME);
     audit.forget();
+    return () -> telling.publish(scheduler(ACME), ACME, replacement.id());
+  }
 
-    assertThatThrownBy(() -> tellingNobody.publish(scheduler(ACME), ACME, replacement.id()))
+  /**
+   * R33: a publication tells both parties of every request it lapses, and telling stores a
+   * notification in the publication's transaction, a write that can still fail. Its failure takes
+   * the lapse back, and the publication with it, so none of them is recorded before it is told
+   * (backend/CLAUDE.md).
+   */
+  @Test
+  void GivenATellingThatCannotBeStored_WhenAPublicationLapsesASwap_ThenNothingIsRecorded() {
+    assertThatThrownBy(publicationLapsingASwapThrough(new FailingNotifier()))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes())
+        .describedAs("neither the lapse nor the supersession and publication it rolls back with")
+        .isEmpty();
+  }
+
+  /**
+   * The requester is told of a lapse first and the counterparty second. The second failing takes
+   * the lapse back as surely as the first, so nothing is recorded between the two.
+   */
+  @Test
+  void GivenTheSecondTellingCannotBeStored_WhenAPublicationLapsesASwap_ThenNothingIsRecorded() {
+    assertThatThrownBy(publicationLapsingASwapThrough(new FailingNotifier(SECOND_TELLING)))
         .isInstanceOf(FailingNotifier.TellingFailed.class);
 
     assertThat(audit.changes())
