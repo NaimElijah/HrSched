@@ -6,7 +6,7 @@ import type { Session } from '../api/session';
 import type { Employee } from '../api/workforce';
 import { dayLabel, timeLabel } from '../components/localDates';
 import { A_TENANT, SignedIn } from '../test-support/session';
-import { callsTo, routeTo, type Answer } from '../test-support/routeTo';
+import { callsTo, holdingWrites, routeTo, type Answer } from '../test-support/routeTo';
 import { RostersPage } from './RostersPage';
 
 /**
@@ -170,6 +170,7 @@ describe('the rosters page', () => {
     expect(alert).toHaveTextContent('maximum daily working time');
     expect(alert).toHaveTextContent('exceeds the maximum of PT1H');
     expect(alert).toHaveTextContent('There is no override');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publish' })).toBeEnabled());
   });
 
   /** F3: a draft that breaks no rule is published, and the list then says so, as the server does. */
@@ -192,6 +193,35 @@ describe('the rosters page', () => {
     expect(callsTo(stub, 'POST', '/api/rosters/roster-1/publication')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  /** A second publication sent meanwhile is refused as a conflict, beside the first one's success. */
+  it('GivenAPublicationInFlight_WhenPublishIsPressedAgain_ThenOnlyOneIsSent', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
+    // A second draft, whose Publish button is still there once the first is published.
+    const anotherDraft = { ...ROSTER, id: 'roster-2' };
+    const server: Record<string, Answer> = {
+      '/api/rosters': { status: 200, body: [ROSTER, anotherDraft] },
+      '/api/shifts': { status: 200, body: [SHIFT] },
+      'POST /api/rosters/roster-1/publication': { status: 200, body: published },
+    };
+    const routed = routeTo(server);
+    const release = holdingWrites(routed);
+    renderPage([ADA]);
+    const [publish] = await screen.findAllByRole('button', { name: 'Publish' });
+    if (publish === undefined) {
+      throw new Error('no draft offers to be published');
+    }
+    server['/api/rosters'] = { status: 200, body: [published, anotherDraft] };
+
+    await userEvent.click(publish);
+    await userEvent.click(publish);
+
+    expect(publish).toBeDisabled();
+    release();
+    expect(await screen.findByRole('cell', { name: 'PUBLISHED' })).toBeInTheDocument();
+    expect(callsTo(routed, 'POST', '/api/rosters/roster-1/publication')).toHaveLength(1);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publish' })).toBeEnabled());
   });
 
   it('GivenTheRosterTable_WhenRendered_ThenEveryColumnHasAHeader', async () => {
@@ -817,6 +847,33 @@ describe('the board of a draft', () => {
     expect(check).toHaveTextContent('Weighted total: 10.');
   });
 
+  /**
+   * An objective a newer server scores still counts towards the total shown, so it is listed by
+   * its name rather than dropped. The objective and its numbers are invented for the test.
+   */
+  it('GivenAnObjectiveThisBuildDoesNotKnow_WhenTheDraftIsChecked_ThenItIsShownByName', async () => {
+    aDraft({
+      '/api/rosters/roster-1/assessment': {
+        status: 200,
+        body: {
+          ...NOTHING_WRONG,
+          objectives: [...NOTHING_WRONG.objectives, { objective: 'TRAVEL', measure: 5, weight: 2 }],
+          weightedTotal: 10,
+        },
+      },
+    });
+    renderPage();
+
+    const check = await theCheck(await openBoard());
+    const travel = await within(check).findByRole('row', { name: /TRAVEL/ });
+
+    expect(
+      within(travel)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent),
+    ).toEqual(['TRAVEL: an objective this version of HrSched cannot describe', '5', '2']);
+  });
+
   it('GivenNothingWeighed_WhenTheDraftIsChecked_ThenItSaysEveryDraftTotalsZero', async () => {
     aDraft();
     renderPage();
@@ -1081,6 +1138,33 @@ describe('the board of a draft', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The generation was lost: the server running it stopped. Generate again.',
+    );
+  });
+
+  /**
+   * A newer server may end a generation in a way this build has never heard of. Waiting stops, so
+   * the page has to say why, by name, rather than stop without a word. Invented for the test.
+   */
+  it('GivenAGenerationEndingInAStatusThisBuildDoesNotKnow_WhenItEnds_ThenItSaysSoByName', async () => {
+    const stub = routeTo({
+      'POST /api/rosters/generations': {
+        status: 202,
+        body: { id: 'gen-1', status: 'CANCELLED', roster: null, violations: [] },
+      },
+      '/api/rosters': { status: 200, body: [] },
+    });
+    renderPage();
+    const generate = await screen.findByRole('button', { name: 'Generate a draft for this span' });
+    const listedBefore = callsTo(stub, 'GET', '/api/rosters').length;
+
+    await userEvent.click(generate);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /^The generation ended as CANCELLED, which this version of HrSched cannot describe\./,
+    );
+    // The message points at the rosters below, so they are read again to hold any draft it made.
+    await waitFor(() =>
+      expect(callsTo(stub, 'GET', '/api/rosters').length).toBeGreaterThan(listedBefore),
     );
   });
 

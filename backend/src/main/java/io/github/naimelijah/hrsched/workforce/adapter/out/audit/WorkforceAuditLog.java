@@ -22,7 +22,8 @@ import org.springframework.stereotype.Component;
  * the simple class name alone: two adapters called {@code LoggingAuditTrail} in different packages
  * collide, and they do so at startup rather than at compile time.
  *
- * <p>Nothing is persisted. Whether this should be a durable, queryable trail is Q20; see ADR-018.
+ * <p>Nothing is persisted (ADR-018). Q20 is answered: the trail is to be durable, and an Admin is
+ * to read their own organisation's and nobody else's, which #31 builds. How long it is kept is Q23.
  */
 @Component
 public class WorkforceAuditLog implements AuditTrail {
@@ -30,7 +31,8 @@ public class WorkforceAuditLog implements AuditTrail {
   private static final Logger log = LoggerFactory.getLogger(WorkforceAuditLog.class);
 
   /**
-   * Shared with the scheduling adapter so one query answers "what changed" across both contexts.
+   * Shared with every other context's audit log, so one query answers "what changed" across all of
+   * them.
    */
   private static final String CHANGES = "hrsched.changes";
 

@@ -18,7 +18,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -37,8 +36,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class JdbcSwapRequestRepository implements SwapRequestRepository {
 
-  /** PostgreSQL's SQLSTATE for {@code unique_violation}. */
-  private static final String UNIQUE_VIOLATION = "23505";
+  /** The unique index keeping an assignment to one pending request, named in {@code V8} (R32). */
+  private static final String ONE_PENDING_PER_ASSIGNMENT =
+      "swap_request_one_pending_per_assignment";
 
   private final JdbcClient jdbc;
 
@@ -54,7 +54,8 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
       // ON CONFLICT (id) absorbs the primary key, so the only unique index a pending request can
       // still break is the one keeping an assignment to one pending request (R32, V8). Raising a
       // request checks first, under the publication lock; this answers a writer that skipped it.
-      if (request.status() == SwapRequestStatus.REQUESTED && isUniqueViolation(refused)) {
+      if (request.status() == SwapRequestStatus.REQUESTED
+          && UniqueViolations.isViolationOf(refused, ONE_PENDING_PER_ASSIGNMENT)) {
         throw new SwapAlreadyRequestedException(request.roster(), request.shift());
       }
       throw refused;
@@ -158,11 +159,6 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
       case REJECTED -> pending.rejected();
       case LAPSED -> pending.lapsed();
     };
-  }
-
-  private static boolean isUniqueViolation(DataAccessException refused) {
-    return NestedExceptionUtils.getMostSpecificCause(refused) instanceof SQLException cause
-        && UNIQUE_VIOLATION.equals(cause.getSQLState());
   }
 
   /**

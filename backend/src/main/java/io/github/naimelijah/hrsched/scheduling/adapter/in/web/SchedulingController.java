@@ -144,9 +144,9 @@ public class SchedulingController {
   }
 
   @GetMapping("/constraints")
-  public ConstraintSetResponse currentConstraints(@AuthenticationPrincipal Actor actor) {
+  public ConstraintSetResponse findCurrentConstraints(@AuthenticationPrincipal Actor actor) {
     return ConstraintSetResponse.from(
-        configureConstraints.currentConstraints(actor, actingIn(actor)));
+        configureConstraints.findCurrentConstraints(actor, actingIn(actor)));
   }
 
   /**

@@ -5,7 +5,7 @@ import { Busy, Failure } from '../components/Feedback';
 import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
-import { SWAP_STATUS } from '../components/swapStatus';
+import { swapStatusWording } from '../components/swapStatus';
 import { useShiftsById } from '../components/useShiftsById';
 
 /**
@@ -93,7 +93,7 @@ export function SwapsPage({ people }: { people: readonly Employee[] }) {
                 <td>{when}</td>
                 <td>{nameOf(swap.requester)}</td>
                 <td>{nameOf(swap.counterparty)}</td>
-                <td>{SWAP_STATUS[swap.status]}</td>
+                <td>{swapStatusWording(swap.status)}</td>
                 <td>
                   {swap.status === 'REQUESTED' ? (
                     <>

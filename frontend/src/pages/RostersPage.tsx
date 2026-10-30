@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, type Violation } from '../api/problem';
-import { scheduling, type Generation } from '../api/scheduling';
+import {
+  isGenerationStatus,
+  scheduling,
+  type Generation,
+  type GenerationStatus,
+} from '../api/scheduling';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure, Violations } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
@@ -8,21 +13,9 @@ import { useSessionKey } from '../auth/SessionProvider';
 import { ApprovingRules } from './ApprovingRules';
 import { RosterBoard } from './RosterBoard';
 
-/**
- * Scheduler: generate a draft, change it by hand, publish it.
- *
- * Publication is the part that matters. A roster breaking the rules is refused with every violation
- * listed and there is no override, so the refusal is rendered inline as a first-class outcome
- * rather than as an error toast to dismiss.
- *
- * Generation fills every place the rules allow and only then weighs the objectives (ADR-044),
- * which this page says plainly rather than letting a scheduler assume more than that. It runs in the
- * background, for minutes at the largest size (ADR-046), so the page starts it and asks once a second
- * whether it has ended.
- *
- * The people come from the shell, which already loads them and already decides which refusal of
- * that listing to keep quiet about; asking again here doubled the request and repeated its failure.
- */
+/** How a generation stands while it is still running, typed so that a misspelling fails to compile. */
+const PENDING: GenerationStatus = 'PENDING';
+
 /** How long to wait between asking whether a generation has ended (ADR-046). */
 const GENERATION_POLL_MS = 1000;
 
@@ -53,6 +46,21 @@ class GenerationRefused extends Error {
   }
 }
 
+/**
+ * Scheduler: generate a draft, change it by hand, publish it.
+ *
+ * Publication is the part that matters. A roster breaking the rules is refused with every violation
+ * listed and there is no override, so the refusal is rendered inline as a first-class outcome
+ * rather than as an error toast to dismiss.
+ *
+ * Generation fills every place the rules allow and only then weighs the objectives (ADR-044),
+ * which this page says plainly rather than letting a scheduler assume more than that. It runs in the
+ * background, for minutes at the largest size (ADR-046), so the page starts it and asks once a second
+ * whether it has ended.
+ *
+ * The people come from the shell, which already loads them and already decides which refusal of
+ * that listing to keep quiet about; asking again here doubled the request and repeated its failure.
+ */
 export function RostersPage({
   span,
   people,
@@ -80,6 +88,9 @@ export function RostersPage({
   // A change made on the board does not bump it: the board already holds what the server returned.
   const [revision, setRevision] = useState(0);
   const [starting, setStarting] = useState(false);
+  // A second publication sent while the first is on its way would be refused as a conflict, and
+  // that refusal shown beside the first one's success.
+  const [publishing, setPublishing] = useState(false);
   const generating = starting || waitingFor !== null;
   // Why asking how the generation stands last failed, while it is still being asked.
   const [askingFailed, setAskingFailed] = useState<unknown>(null);
@@ -88,32 +99,52 @@ export function RostersPage({
   const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (employee: string): string | undefined => personById.get(employee)?.name;
 
-  async function act(action: () => Promise<unknown>) {
+  async function publish(roster: string) {
+    if (publishing) {
+      return;
+    }
     setFailure(null);
+    setPublishing(true);
     try {
-      await action();
+      await scheduling.publishRoster(roster);
       rosters.reload();
       setRevision((previous) => previous + 1);
     } catch (error) {
       setFailure(error);
+    } finally {
+      setPublishing(false);
     }
   }
 
-  /** Shows how a generation ended, refusing however it ended without a draft. */
+  /**
+   * Shows how a generation ended, refusing however it ended without a draft. An ending this build
+   * has never heard of is named as such: waiting has stopped, and stopping without a word would
+   * leave a Scheduler waiting for a draft that may never come.
+   */
   function ended(generation: Generation) {
     onWaitingFor(null);
-    if (generation.status === 'SUCCEEDED') {
+    const status = generation.status;
+    if (!isGenerationStatus(status)) {
+      rosters.reload();
+      setFailure(
+        new Error(
+          `The generation ended as ${status}, which this version of HrSched cannot describe. Check the rosters below for its draft before generating again.`,
+        ),
+      );
+      return;
+    }
+    if (status === 'SUCCEEDED') {
       rosters.reload();
       setRevision((previous) => previous + 1);
       // Waited for, often for minutes, so it opens rather than waiting to be found in the list.
       setSelected(generation.roster);
-    } else if (generation.status === 'REFUSED') {
+    } else if (status === 'REFUSED') {
       setFailure(new GenerationRefused(generation.violations));
-    } else if (generation.status === 'LOST') {
+    } else if (status === 'LOST') {
       setFailure(
         new Error('The generation was lost: the server running it stopped. Generate again.'),
       );
-    } else if (generation.status === 'FAILED') {
+    } else if (status === 'FAILED') {
       setFailure(
         new Error('The generation failed. Generate again, and report it if it fails again.'),
       );
@@ -159,7 +190,7 @@ export function RostersPage({
           return;
         }
         setAskingFailed(null);
-        if (generation.status !== 'PENDING') {
+        if (generation.status !== PENDING) {
           end.current(generation);
           return;
         }
@@ -183,7 +214,7 @@ export function RostersPage({
     setStarting(true);
     try {
       const started = await scheduling.startGeneration(span.from, span.to);
-      if (started.status === 'PENDING') {
+      if (started.status === PENDING) {
         onWaitingFor(started.id);
       } else {
         ended(started);
@@ -271,7 +302,8 @@ export function RostersPage({
                   {roster.status === 'DRAFT' ? (
                     <button
                       type="button"
-                      onClick={() => void act(() => scheduling.publishRoster(roster.id))}
+                      disabled={publishing}
+                      onClick={() => void publish(roster.id)}
                     >
                       Publish
                     </button>

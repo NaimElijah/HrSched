@@ -45,7 +45,7 @@ import java.util.Set;
 public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEmployeesUseCase {
 
   private static final Set<Role> MAY_ADMINISTER = Set.of(Role.ADMIN);
-  private static final Set<Role> MAY_SEE_EVERYONE = Set.of(Role.ADMIN, Role.SCHEDULER);
+  private static final Set<Role> MAY_ACT_FOR_ANYONE = Set.of(Role.ADMIN, Role.SCHEDULER);
 
   private final EmployeeRepository employees;
   private final QualificationRepository qualifications;
@@ -132,7 +132,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
    */
   @Override
   public List<RosterableEmployee> findRosterable(Actor actor, OrganisationId organisation) {
-    authorise(actor, organisation, MAY_SEE_EVERYONE);
+    authorise(actor, organisation, MAY_ACT_FOR_ANYONE);
     return employees.findByOrganisation(organisation).stream()
         .map(EmployeeService::publish)
         .toList();
@@ -141,7 +141,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
   @Override
   public Optional<RosterableEmployee> findEmployee(
       Actor actor, OrganisationId organisation, EmployeeId employee) {
-    authorise(actor, organisation, MAY_SEE_EVERYONE);
+    authorise(actor, organisation, MAY_ACT_FOR_ANYONE);
     return employees.findById(organisation, employee).map(EmployeeService::publish);
   }
 
@@ -227,7 +227,7 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
       Actor actor, OrganisationId organisation, EmployeeId subject) {
     TenantActor tenant = actor.requireAccessTo(organisation);
     if (!tenant.isThemself(subject)) {
-      tenant.requireRoleIn(MAY_SEE_EVERYONE);
+      tenant.requireRoleIn(MAY_ACT_FOR_ANYONE);
     }
   }
 }

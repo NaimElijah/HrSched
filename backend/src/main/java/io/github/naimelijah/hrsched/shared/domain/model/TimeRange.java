@@ -5,11 +5,14 @@ import java.time.Instant;
 import java.util.Objects;
 
 /**
- * A span of time that ends strictly after it starts.
+ * A span of time that ends strictly after it starts, half-open: {@code [start, end)}.
  *
  * <p>A value object in the shared kernel because more than one context needs it and none of them
  * owns it: a shift covers one, an employee is unavailable for one. It carries no domain meaning of
  * its own, which is what makes it safe to share.
+ *
+ * <p>The start is part of the span and the end is not, so one span may end at the very instant the
+ * next begins without the two overlapping.
  *
  * <p>Makes the illegal state unrepresentable — an instance cannot exist unless it ends after it
  * starts, so no caller has to check.
@@ -19,7 +22,7 @@ import java.util.Objects;
  * stays free of a choice only one context makes.
  *
  * @param start when the span begins, never {@code null}
- * @param end when the span ends, never {@code null} and strictly after {@code start}
+ * @param end the first instant after the span, never {@code null} and strictly after {@code start}
  * @throws InvalidTimeRangeException if {@code end} is not strictly after {@code start}
  */
 public record TimeRange(Instant start, Instant end) {
@@ -41,7 +44,8 @@ public record TimeRange(Instant start, Instant end) {
 
   /**
    * @param other another span
-   * @return whether the two spans share any instant
+   * @return whether the two spans share any instant; two that only touch, one ending where the
+   *     other starts, do not, because an end is not part of its span
    */
   public boolean overlaps(TimeRange other) {
     Objects.requireNonNull(other, "other must not be null");

@@ -25,6 +25,7 @@ final class RecordingUnitsOfWork implements UnitsOfWork {
 
   private final List<Unit> begun = new ArrayList<>();
   private final Deque<Unit> open = new ArrayDeque<>();
+  private final List<Integer> escaped = new ArrayList<>();
 
   @Override
   public <T> T reading(Supplier<T> work) {
@@ -37,15 +38,32 @@ final class RecordingUnitsOfWork implements UnitsOfWork {
   }
 
   private <T> T within(Unit unit, Supplier<T> work) {
-    if (open.isEmpty()) {
+    boolean outermost = open.isEmpty();
+    if (outermost) {
       begun.add(unit);
     }
-    open.push(open.isEmpty() ? unit : open.peek());
+    int position = begun.size() - 1;
+    open.push(outermost ? unit : open.peek());
     try {
       return work.get();
+    } catch (RuntimeException | Error thrown) {
+      if (outermost) {
+        escaped.add(position);
+      }
+      throw thrown;
     } finally {
       open.pop();
     }
+  }
+
+  /**
+   * Which units a throw escaped, which a real transaction would roll back with everything written
+   * in it. This double rolls nothing back, so a test asks here instead.
+   *
+   * @return the position in {@link #begun()} of each such unit, in order
+   */
+  List<Integer> escaped() {
+    return List.copyOf(escaped);
   }
 
   /**

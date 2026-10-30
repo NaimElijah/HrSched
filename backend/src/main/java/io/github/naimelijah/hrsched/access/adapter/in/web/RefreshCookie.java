@@ -16,8 +16,10 @@ import org.springframework.http.ResponseCookie;
  *   <li><strong>Secure</strong> - never sent over plain HTTP, so it cannot be read off the wire.
  *   <li><strong>SameSite=Strict</strong> - not sent on any cross-site request, so another origin
  *       cannot cause a renewal by navigating to one.
- *   <li><strong>Path=/api/auth</strong> - sent only to the endpoints that renew or end a session,
- *       so it is absent from every ordinary API request and cannot be leaked by one.
+ *   <li><strong>Path=/api/auth</strong> - sent only to the session endpoints under that path:
+ *       signing in, renewing, signing out, reading the session and changing one's own password, of
+ *       which only renewing and signing out read it. It is absent from every other API request, so
+ *       none of those can leak it.
  *   <li><strong>__Secure- prefix</strong> - browsers refuse to set a cookie so named unless it is
  *       Secure, which stops a network attacker who can forge plain HTTP from overwriting it.
  *   <li><strong>Max-Age</strong> - the browser drops it when the token expires anyway.

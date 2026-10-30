@@ -22,13 +22,20 @@ export function OrganisationsPage() {
   const [temporaryPassword, setTemporaryPassword] = useState('');
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
+  // A second onboarding sent while the first is on its way would be refused for the name the first
+  // took, and that refusal shown beside the first one's success.
+  const [onboarding, setOnboarding] = useState(false);
 
   const organisations = useAsync(() => access.findOrganisations(), sessionKey);
 
   async function onboard(event: React.FormEvent) {
     event.preventDefault();
+    if (onboarding) {
+      return;
+    }
     setFailure(null);
     setDone(null);
+    setOnboarding(true);
     try {
       const onboarded = await access.onboardOrganisation(name, {
         signInName: adminSignInName,
@@ -43,6 +50,8 @@ export function OrganisationsPage() {
       organisations.reload();
     } catch (error) {
       setFailure(error);
+    } finally {
+      setOnboarding(false);
     }
   }
 
@@ -87,7 +96,9 @@ export function OrganisationsPage() {
             required
           />
         </label>
-        <button type="submit">Onboard organisation</button>
+        <button type="submit" disabled={onboarding}>
+          Onboard organisation
+        </button>
       </form>
 
       <Failure error={failure} />

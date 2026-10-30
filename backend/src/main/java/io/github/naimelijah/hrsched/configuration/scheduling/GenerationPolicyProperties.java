@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.configuration.scheduling;
 
 import java.time.Duration;
+import java.util.Objects;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -12,6 +13,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * it must exceed how long a solve may run, and that is configuration too.
  *
  * @param lostAfter how long after it is asked for a generation still pending counts as lost
+ * @throws NullPointerException if it is not configured, naming the key to set
  */
 @ConfigurationProperties("hrsched.generation")
-public record GenerationPolicyProperties(Duration lostAfter) {}
+public record GenerationPolicyProperties(Duration lostAfter) {
+
+  public GenerationPolicyProperties {
+    Objects.requireNonNull(lostAfter, "hrsched.generation.lost-after must be configured");
+  }
+}

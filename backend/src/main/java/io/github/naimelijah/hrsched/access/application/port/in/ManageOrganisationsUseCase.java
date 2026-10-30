@@ -28,13 +28,15 @@ public interface ManageOrganisationsUseCase {
    * @throws io.github.naimelijah.hrsched.access.domain.model.NotThePlatformOperatorException if the
    *     actor belongs to a tenant
    * @throws io.github.naimelijah.hrsched.access.domain.model.InvalidOrganisationNameException if
-   *     the name is blank
+   *     the name is blank, or carries a NUL or an unpaired surrogate, neither of which the store
+   *     can hold as given
    */
   OrganisationId onboardOrganisation(Actor actor, OnboardOrganisationCommand command);
 
   /**
    * @param actor whoever is asking; must be the platform operator
-   * @return every organisation on the platform, by name
+   * @return every organisation on the platform, by name and then by identity, so two sharing a name
+   *     always come back in one order
    * @throws io.github.naimelijah.hrsched.access.domain.model.NotThePlatformOperatorException if the
    *     actor belongs to a tenant
    */

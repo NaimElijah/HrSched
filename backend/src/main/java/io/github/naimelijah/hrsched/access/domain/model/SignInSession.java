@@ -16,7 +16,8 @@ import java.util.Optional;
  * token names its session, so a session that is no longer live makes every token issued for it
  * useless on its next use — without this system ever having held a copy of one.
  *
- * <p>Immutable. Revoking returns a new instance, so a session can never be observed half-ended.
+ * <p>Immutable. A session is revoked where it is stored, through {@code SessionRepository}, and a
+ * revoked one is read back whole, so a session can never be observed half-ended.
  */
 public final class SignInSession {
 
@@ -41,7 +42,7 @@ public final class SignInSession {
   }
 
   /**
-   * Rebuilds a stored session, including a revocation the transitions cannot restore.
+   * Rebuilds a stored session, including any revocation it was given.
    *
    * @param id the session's identity, never {@code null}
    * @param account whose session it is, never {@code null}
@@ -80,22 +81,6 @@ public final class SignInSession {
   public boolean isLiveAt(Instant now) {
     Objects.requireNonNull(now, "now must not be null");
     return revocation.isEmpty() && now.isBefore(expiresAt);
-  }
-
-  /**
-   * @param reason why it is ending, never {@code null}
-   * @param now when it ended, never {@code null}
-   * @return the session, ended; revoking one already revoked keeps the first reason, because the
-   *     first thing that ended it is the thing that ended it
-   */
-  public SignInSession revoked(SessionRevocation reason, Instant now) {
-    Objects.requireNonNull(reason, "reason must not be null");
-    Objects.requireNonNull(now, "now must not be null");
-    if (revocation.isPresent()) {
-      return this;
-    }
-    return new SignInSession(
-        id, account, startedAt, expiresAt, Optional.of(reason), Optional.of(now));
   }
 
   public SignInSessionId id() {

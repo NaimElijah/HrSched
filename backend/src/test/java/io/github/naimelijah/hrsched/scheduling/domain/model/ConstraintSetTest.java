@@ -11,7 +11,10 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Specification of the working-time constraints.
@@ -179,6 +182,50 @@ class ConstraintSetTest {
     assertThat(first.constraints()).isEmpty();
     assertThat(second.version()).isEqualTo(2);
     assertThat(second.constraints()).hasSize(1);
+  }
+
+  /**
+   * R24: at most one rule of each kind. Two of a kind would both be enforced, yet the rules read
+   * back show one of them, so a caller resending what it read would drop the other without seeing
+   * it. One row per kind, each with two different thresholds, all invented and none of them a
+   * figure from any statute.
+   */
+  @ParameterizedTest
+  @MethodSource("twoOfOneKind")
+  void GivenTwoRulesOfOneKind_WhenRevisingTo_ThenTheRevisionIsRejected(
+      List<WorkingTimeConstraint> twoOfOneKind) {
+    ConstraintSet first = ConstraintSet.initial(ACME);
+
+    assertThatThrownBy(() -> first.revisedTo(twoOfOneKind))
+        .isInstanceOf(InvalidConstraintException.class);
+  }
+
+  private static Stream<List<WorkingTimeConstraint>> twoOfOneKind() {
+    return Stream.of(
+        List.of(
+            new MinimumRestBetweenAssignments(Duration.ofMinutes(437)),
+            new MinimumRestBetweenAssignments(Duration.ofMinutes(511))),
+        List.of(
+            new MaximumDailyWorkingTime(Duration.ofMinutes(437)),
+            new MaximumDailyWorkingTime(Duration.ofMinutes(511))),
+        List.of(
+            new MaximumWeeklyWorkingTime(Duration.ofMinutes(1913)),
+            new MaximumWeeklyWorkingTime(Duration.ofMinutes(2087))),
+        List.of(new MaximumConsecutiveWorkingDays(13), new MaximumConsecutiveWorkingDays(17)));
+  }
+
+  @Test
+  void GivenOneRuleOfEachKind_WhenRevisingTo_ThenEveryOneIsKept() {
+    // Invented: one of each kind, plainly artificial, none of them a figure from any statute.
+    List<WorkingTimeConstraint> oneOfEach =
+        List.of(
+            new MinimumRestBetweenAssignments(Duration.ofMinutes(437)),
+            new MaximumDailyWorkingTime(Duration.ofMinutes(511)),
+            new MaximumWeeklyWorkingTime(Duration.ofMinutes(1913)),
+            new MaximumConsecutiveWorkingDays(13));
+
+    assertThat(ConstraintSet.initial(ACME).revisedTo(oneOfEach).constraints())
+        .containsExactlyElementsOf(oneOfEach);
   }
 
   @Test

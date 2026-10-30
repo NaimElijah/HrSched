@@ -19,7 +19,7 @@ public interface ManageQualificationsUseCase {
   /**
    * @param actor whoever is asking
    * @param organisation whose qualifications to list
-   * @return every qualification defined by that organisation
+   * @return every qualification defined by that organisation, ordered by name, then by identity
    */
   List<PublishedQualification> findQualifications(Actor actor, OrganisationId organisation);
 

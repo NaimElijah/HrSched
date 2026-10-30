@@ -137,11 +137,15 @@ the generation in `Location`, because a solve at the largest stated size takes m
 - `REFUSED`, with `violations` in the shape a publication refusal uses: people a published roster
   carries onto these shifts can no longer stay on them, and it is that roster that has to change
   ([#130](https://github.com/NaimElijah/HrSched/issues/130)).
-- `FAILED`, a defect the server logged.
+- `FAILED`, either refused before it was solved, as below, or ended by a defect the server logged.
 - `LOST`, still pending past `hrsched.generation.lost-after`: the server solving it stopped.
 
-When an instance is already solving `hrsched.generation.concurrent-runs` generations, one more
-answers `503` rather than waiting.
+Two refusals answer `503` at once, and store the generation as `FAILED` so nobody waits on it:
+
+- When an instance is already solving `hrsched.generation.concurrent-runs` generations, one more
+  answers `503` titled `Generation is busy` rather than waiting.
+- When the instance asked is shutting down, it answers `503` titled `Generation is unavailable`.
+  Asking again may reach an instance that is not; raising `concurrent-runs` does not help it.
 
 ## Checking a draft
 
@@ -194,6 +198,11 @@ rules`, as publishing it would. With invented identifiers and weights:
 - **A JSON body that is too large.** One over `hrsched.web.max-json-document-bytes` (1048576 bytes
   by default) answers `413` titled `Request too large`, before any use case runs. Its detail repeats
   nothing that was sent.
+- **A fraction where a whole number is bound.** A number written with a fraction part or an
+  exponent, `2.0` included, sent for a headcount, a working-time threshold, an objective weight or
+  contracted minutes answers `400` titled `Malformed request`. Nothing is stored, and the detail
+  repeats nothing that was sent
+  ([ADR-056](ADRs/ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md)).
 - **A body that is not read.** JSON declared in any charset but UTF-8, UTF-16 and UTF-32 included,
   answers `415` titled `Unsupported media type` before it is read; `application/json` with no
   charset, or with `charset=UTF-8`, is accepted. A multipart request answers `415` and is never
@@ -206,6 +215,10 @@ rules`, as publishing it would. With invented identifiers and weights:
   `Roster cannot be checked against the rules`.
 - **A concurrent publication.** An overlapping roster published at the same moment answers `409`,
   titled `Published concurrently`.
+- **A rules revision that lost a race.** Two revisions of one organisation's rules made at the same
+  moment both take the next version; the later answers `409` titled `Revised concurrently`, and
+  nothing of it is kept. Reload the rules and revise them again
+  ([#238](https://github.com/NaimElijah/HrSched/issues/238)).
 - **A roster whose status forbids the change.** Editing or publishing a roster that is no longer a
   draft, or asking for a swap against one that is not the published roster, answers `409` titled
   `Roster status forbids this`. Reload it: somebody most likely published it first.
@@ -223,9 +236,19 @@ rules`, as publishing it would. With invented identifiers and weights:
 - **A span that ends at or before it starts.** On any route that takes a span, the shared time
   range answers `400` titled `Invalid request`, with a constant detail that names neither instant.
 - **A sign-in name that cannot be one, or is taken.** Creating an account, or onboarding an
-  organisation with its first Admin, under a blank sign-in name or one over the permitted length
-  answers `400` titled `Invalid request`; under a name any account already holds, on any
-  organisation, `409`. Neither detail repeats the name.
+  organisation with its first Admin, under a blank sign-in name, one over the permitted length, or
+  one carrying a NUL character or an unpaired surrogate answers `400` titled `Invalid request`;
+  under a name any account already holds, on any organisation, `409`. Neither detail repeats the
+  name. Signing in under a name that cannot be one is refused as any unknown name is.
+- **An organisation name that cannot be one.** Onboarding an organisation under a blank name, or
+  one carrying a NUL character or an unpaired surrogate, answers `400` titled `Invalid request`,
+  stores nothing, and the detail repeats no name.
+- **An employee or qualification name the store cannot hold.** Adding an employee
+  (`POST /api/employees`) or defining a qualification (`POST /api/qualifications`) under a name
+  carrying a NUL character or half of a surrogate pair, or one longer than 2,000 bytes of UTF-8,
+  answers `400` titled `Invalid request`, stores nothing, and the detail repeats no name. The limit
+  is in bytes, not characters, so a name in a script needing two or three bytes a character reaches
+  it sooner.
 - **An Employee account linked to nobody.** Creating one, taking the link away from one, giving
   the Employee role to an account linked to nobody, or restoring one stored unlinked before R34
   answers `422` titled `Employee account not linked`.

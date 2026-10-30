@@ -81,6 +81,20 @@ class RosterGenerationTest {
     assertThat(done.finishedAt()).contains(ASKED.plusSeconds(3));
   }
 
+  /**
+   * A clock stepped back while the solve ran reads earlier than the request. Every ending is
+   * recorded at the moment it was asked for instead, as publication records no earlier than the
+   * history it follows (R37), rather than refused and the draft lost with it.
+   */
+  @Test
+  void GivenAClockSteppedBackBeforeTheRequest_WhenItEnds_ThenItEndsWhenItWasAskedFor() {
+    Instant steppedBack = ASKED.minusSeconds(60);
+
+    assertThat(asked().succeeded(RosterId.newId(), steppedBack).finishedAt()).contains(ASKED);
+    assertThat(asked().refused(List.of(BROKEN), steppedBack).finishedAt()).contains(ASKED);
+    assertThat(asked().failed(steppedBack).finishedAt()).contains(ASKED);
+  }
+
   @Test
   void GivenWorkCarriedOverThatCannotStay_WhenRefused_ThenTheRulesItBreaksAreKept() {
     RosterGeneration refused = asked().refused(List.of(BROKEN), ASKED.plusSeconds(1));

@@ -38,7 +38,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-027](ADR-027-take-turns-publishing-within-an-organisation.md) | Make publications within one organisation take turns, with a transaction-scoped advisory lock | Accepted, amended by [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md), [ADR-039](ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md) | 2026-09-14 |
 | [ADR-028](ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md) | Keep the browser session as an in-memory access token and a rotating refresh cookie | Accepted, amended by [ADR-048](ADR-048-keep-a-browsers-tabs-on-one-session.md) | 2026-09-16 |
 | [ADR-029](ADR-029-provision-accounts-from-the-top-down.md) | Provision accounts from the top down, with temporary passwords, and bootstrap the operator from configuration | Accepted, amended by [ADR-055](ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md) | 2026-09-16 |
-| [ADR-030](ADR-030-confine-the-operator-to-the-register-of-organisations.md) | Confine the platform operator to the register of organisations | Accepted | 2026-09-16 |
+| [ADR-030](ADR-030-confine-the-operator-to-the-register-of-organisations.md) | Confine the platform operator to the register of organisations | Accepted, amended | 2026-09-16 |
 | [ADR-031](ADR-031-take-the-organisation-from-the-account.md) | Take the organisation from the account, not from the request | Accepted | 2026-09-21 |
 | [ADR-032](ADR-032-close-the-security-chain-by-default.md) | Close the security chain by default, and name every route that is open | Accepted, amended by [ADR-049](ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md) | 2026-09-21 |
 | [ADR-033](ADR-033-judge-r3-across-authoritative-rosters-under-the-publication-lock.md) | Judge R3 across authoritative rosters in the application, under the publication lock | Accepted, amended by [ADR-042](ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md) | 2026-10-10 |
@@ -52,16 +52,17 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-043](ADR-043-defer-typescript-7-until-typescript-eslint-supports-it.md) | Stay on TypeScript 6 until typescript-eslint supports TypeScript 7 | Accepted | 2026-10-20 |
 | [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md) | Generate rosters with CP-SAT from Google OR-Tools | Accepted | 2026-10-22 |
 | [ADR-045](ADR-045-generate-outside-the-use-cases-transaction.md) | Generate outside the use case's transaction, between a read and a write | Accepted | 2026-10-22 |
-| [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) | Generate in the background, and keep each generation in PostgreSQL | Accepted | 2026-10-23 |
+| [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) | Generate in the background, and keep each generation in PostgreSQL | Accepted, amended | 2026-10-23 |
 | [ADR-047](ADR-047-audit-dependencies-in-ci-with-osv-scanner.md) | Audit dependencies for known vulnerabilities in CI with OSV-Scanner | Accepted | 2026-10-27 |
 | [ADR-048](ADR-048-keep-a-browsers-tabs-on-one-session.md) | Keep one browser's tabs on one session, over a channel that carries two words | Accepted | 2026-10-27 |
 | [ADR-049](ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md) | Refuse the metrics endpoints to every caller until a scraper exists | Accepted | 2026-10-27 |
 | [ADR-050](ADR-050-reject-the-protected-resource-metadata-endpoint.md) | Reject the OAuth 2.0 protected-resource metadata endpoint | Accepted | 2026-10-27 |
 | [ADR-051](ADR-051-record-why-each-frontend-dependency-is-there.md) | Record why each frontend dependency is there | Accepted | 2026-10-29 |
-| [ADR-052](ADR-052-record-only-after-every-write-notifications-included.md) | Record an audit line only after every write, a notification included | Accepted | 2026-10-30 |
-| [ADR-053](ADR-053-bound-a-request-body-and-accept-only-utf-8-json.md) | Bound a request body in bytes, and accept nothing but UTF-8 JSON | Accepted | 2026-10-30 |
-| [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) | Run a use case read-only when its name starts with `find` | Accepted | 2026-10-30 |
+| [ADR-052](ADR-052-record-only-after-every-write-notifications-included.md) | Record an audit line only after every write, a notification included | Accepted, amended | 2026-10-30 |
+| [ADR-053](ADR-053-bound-a-request-body-and-accept-only-utf-8-json.md) | Bound a request body in bytes, and accept nothing but UTF-8 JSON | Accepted, amended | 2026-10-30 |
+| [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) | Run a use case read-only when its name starts with `find` | Accepted, amended | 2026-10-30 |
 | [ADR-055](ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md) | Read an account or a session without an organisation where none is known | Accepted | 2026-10-30 |
+| [ADR-056](ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md) | Refuse a fraction where a whole number is bound | Accepted | 2026-10-30 |
 
 ## Decisions waiting to be recorded
 

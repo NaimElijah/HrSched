@@ -56,10 +56,10 @@ public class EmployeeController {
   public ResponseEntity<EmployeeResponse> add(
       @AuthenticationPrincipal Actor actor, @RequestBody AddEmployeeRequest request) {
     OrganisationId org = actingIn(actor);
-    EmployeeId id =
-        manageEmployees.addEmployee(actor, new AddEmployeeCommand(org, request.requiredName()));
+    String name = request.requiredName();
+    EmployeeId id = manageEmployees.addEmployee(actor, new AddEmployeeCommand(org, name));
     return ResponseEntity.created(URI.create("/api/employees/" + id.value()))
-        .body(EmployeeResponse.justAdded(id.value(), request.requiredName()));
+        .body(EmployeeResponse.justAdded(id.value(), name));
   }
 
   @GetMapping

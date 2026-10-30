@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { accounts } from '../api/access';
 import type { Account, TenantRole } from '../api/access';
 import { workforce } from '../api/workforce';
@@ -37,6 +37,9 @@ export function AccountsPage() {
   const [employee, setEmployee] = useState(NOT_LINKED);
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
+  // A second creation sent while the first is on its way would be refused for the name the first
+  // took, and that refusal shown beside the first one's success.
+  const [creating, setCreating] = useState(false);
 
   const listed = useAsync(() => accounts.findAccounts(), sessionKey);
   const staff = useAsync(() => workforce.findEmployees(), sessionKey);
@@ -58,6 +61,10 @@ export function AccountsPage() {
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
+    if (creating) {
+      return;
+    }
+    setCreating(true);
     const created = await administer(`Created ${signInName}.`, () =>
       accounts.createAccount({
         signInName,
@@ -66,6 +73,7 @@ export function AccountsPage() {
         ...(employee === NOT_LINKED ? {} : { employee }),
       }),
     );
+    setCreating(false);
     if (created) {
       setSignInName('');
       setTemporaryPassword('');
@@ -123,7 +131,9 @@ export function AccountsPage() {
             <EmployeeOptions staff={staff.value ?? []} linked={null} />
           </select>
         </label>
-        <button type="submit">Create account</button>
+        <button type="submit" disabled={creating}>
+          Create account
+        </button>
       </form>
 
       <Failure error={failure} />
@@ -187,6 +197,19 @@ function EmployeeOptions({ staff, linked }: { staff: readonly Employee[]; linked
  *
  * A row of its own because the password field is per account: one shared field would let somebody
  * type a password for a colleague and click reset on the wrong line.
+ *
+ * A role or an employee is chosen, then submitted. A change sent on choosing would be made by an
+ * arrow key, since a closed select changes on every one in some browsers, and an Admin could demote
+ * themselves in one keystroke. Change sends nothing until something other than what is stored is
+ * chosen: the backend stores and audits a membership change whether or not it differs.
+ *
+ * Every change made here is sent from the copy of the account the row was drawn from, and the
+ * membership is one value, so a change resends the field it leaves alone. Sent from a copy read
+ * before the last change was stored, the next change would put back what that one replaced. So the
+ * row waits while its change is on its way, and then until the read-back that change started has
+ * replaced the copy the row held when it was answered. A copy another row's read-back brings in the
+ * meantime does not end the wait. A row remounted while its change is on its way, by a new session
+ * or a list that no longer holds the account, forgets that it was waiting: that is not covered.
  */
 function AccountRow({
   account,
@@ -198,12 +221,53 @@ function AccountRow({
   administer: (what: string, change: () => Promise<void>) => Promise<boolean>;
 }) {
   const [replacement, setReplacement] = useState('');
+  // What has been chosen and not yet stored, with the stored value it was chosen against. A choice
+  // outlives a read-back that leaves that value alone, such as another row's, and is dropped once
+  // the stored value changes: by this row's own change, or by somebody else's. A refused change
+  // stores nothing, so its choice stays to be corrected.
+  const [chosenRole, setChosenRole] = useState<{ against: TenantRole; role: TenantRole } | null>(
+    null,
+  );
+  const [chosenEmployee, setChosenEmployee] = useState<{
+    against: string | null;
+    employee: string | null;
+  } | null>(null);
+  const role = chosenRole?.against === account.role ? chosenRole.role : account.role;
+  const employee =
+    chosenEmployee !== null && chosenEmployee.against === account.employee
+      ? chosenEmployee.employee
+      : account.employee;
+  const roleChosen = role !== account.role;
+  const employeeChosen = employee !== account.employee;
+  // Whether this row's change is on its way, and then the copy of the account that change's own
+  // read-back will replace. The copy is read from `held` when the change is answered, because by
+  // then another row's read-back may have replaced the one the change was sent from.
+  const [sending, setSending] = useState(false);
+  const [readingBack, setReadingBack] = useState<Account | null>(null);
+  const held = useRef(account);
+  useLayoutEffect(() => {
+    held.current = account;
+  });
+  const waiting = sending || readingBack === account;
+
+  /** Sends one change, unless this row's last one is on its way or not yet read back. */
+  async function change(what: string, request: () => Promise<void>): Promise<boolean> {
+    if (waiting) {
+      return false;
+    }
+    setSending(true);
+    const changed = await administer(what, request);
+    setSending(false);
+    // A refusal reads nothing back, so there is no new copy to wait for.
+    setReadingBack(changed ? held.current : null);
+    return changed;
+  }
 
   async function reset() {
     if (replacement === '') {
       return;
     }
-    const done = await administer(`Reset the password of ${account.signInName}.`, () =>
+    const done = await change(`Reset the password of ${account.signInName}.`, () =>
       accounts.resetPassword(account.id, replacement),
     );
     if (done) {
@@ -215,46 +279,79 @@ function AccountRow({
     <tr>
       <td>{account.signInName}</td>
       <td>
-        <label>
-          <span className="visually-hidden">Role for {account.signInName}</span>
-          <select
-            value={account.role}
-            onChange={(event) =>
-              void administer(`Changed the role of ${account.signInName}.`, () =>
-                accounts.changeMembership(
-                  account.id,
-                  event.target.value as TenantRole,
-                  account.employee,
-                ),
-              )
+        <form
+          className="row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!roleChosen) {
+              return;
             }
+            void change(`Changed the role of ${account.signInName}.`, () =>
+              accounts.changeMembership(account.id, role, account.employee),
+            );
+          }}
+        >
+          <label>
+            <span className="visually-hidden">Role for {account.signInName}</span>
+            <select
+              value={role}
+              disabled={waiting}
+              onChange={(event) =>
+                setChosenRole({ against: account.role, role: event.target.value as TenantRole })
+              }
+            >
+              {ROLES.map((candidate) => (
+                <option key={candidate} value={candidate}>
+                  {candidate}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="submit"
+            disabled={waiting || !roleChosen}
+            aria-label={`Change the role of ${account.signInName}`}
           >
-            {ROLES.map((candidate) => (
-              <option key={candidate} value={candidate}>
-                {candidate}
-              </option>
-            ))}
-          </select>
-        </label>
+            Change
+          </button>
+        </form>
       </td>
       <td>
-        <label>
-          <span className="visually-hidden">Employee for {account.signInName}</span>
-          <select
-            value={account.employee ?? NOT_LINKED}
-            onChange={(event) =>
-              void administer(`Changed who ${account.signInName} is.`, () =>
-                accounts.changeMembership(
-                  account.id,
-                  account.role,
-                  event.target.value === NOT_LINKED ? null : event.target.value,
-                ),
-              )
+        <form
+          className="row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!employeeChosen) {
+              return;
             }
+            void change(`Changed who ${account.signInName} is.`, () =>
+              accounts.changeMembership(account.id, account.role, employee),
+            );
+          }}
+        >
+          <label>
+            <span className="visually-hidden">Employee for {account.signInName}</span>
+            <select
+              value={employee ?? NOT_LINKED}
+              disabled={waiting}
+              onChange={(event) =>
+                setChosenEmployee({
+                  against: account.employee,
+                  employee: event.target.value === NOT_LINKED ? null : event.target.value,
+                })
+              }
+            >
+              <EmployeeOptions staff={staff} linked={account.employee} />
+            </select>
+          </label>
+          <button
+            type="submit"
+            disabled={waiting || !employeeChosen}
+            aria-label={`Change the employee of ${account.signInName}`}
           >
-            <EmployeeOptions staff={staff} linked={account.employee} />
-          </select>
-        </label>
+            Change
+          </button>
+        </form>
       </td>
       <td>
         {account.active ? 'Active' : 'Disabled'}
@@ -271,15 +368,16 @@ function AccountRow({
             autoComplete="new-password"
           />
         </label>
-        <button type="button" onClick={() => void reset()}>
+        <button type="button" disabled={waiting} onClick={() => void reset()}>
           Reset password
         </button>
       </td>
       <td>
         <button
           type="button"
+          disabled={waiting}
           onClick={() =>
-            void administer(
+            void change(
               account.active
                 ? `Disabled ${account.signInName}.`
                 : `Restored ${account.signInName}.`,

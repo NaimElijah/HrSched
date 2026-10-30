@@ -6,7 +6,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -21,10 +21,14 @@ import java.util.Set;
  * their own: they exist only in relation to one employee, and are only ever read alongside them.
  *
  * <p>Immutable. Every change returns a new instance, so an employee can never be observed
- * half-updated and the invariants are checked exactly once, in one place.
+ * half-updated. Every instance passes through one private constructor, which checks the name; R7,
+ * that declared spans never overlap, is checked by {@link #unavailableFor}, the only way to add
+ * one. The name is checked again on every change; R7 again on every rebuild from storage, which
+ * re-adds each stored span through that method.
  *
- * <p>Belongs to exactly one {@link OrganisationId}. Nothing in this class will let two
- * organisations' data meet; that guarantee is enforced above, at the application boundary.
+ * <p>Belongs to exactly one {@link OrganisationId}, but cannot tell whose a {@link QualificationId}
+ * is, so nothing in this class stops it holding another organisation's. The application layer does:
+ * it grants a qualification only once it has found it in the employee's own organisation.
  */
 public final class Employee {
 
@@ -63,7 +67,7 @@ public final class Employee {
       throw new InvalidEmployeeNameException();
     }
     this.name = name;
-    this.qualifications = Set.copyOf(new LinkedHashSet<>(qualifications));
+    this.qualifications = Set.copyOf(qualifications);
     this.unavailability = List.copyOf(unavailability);
     this.preferences = List.copyOf(preferences);
     this.contractTerms = contractTerms;
@@ -75,7 +79,7 @@ public final class Employee {
    */
   public Employee holding(QualificationId qualification) {
     Objects.requireNonNull(qualification, "qualification must not be null");
-    Set<QualificationId> held = new LinkedHashSet<>(qualifications);
+    Set<QualificationId> held = new HashSet<>(qualifications);
     held.add(qualification);
     return new Employee(id, organisation, name, held, unavailability, preferences, contractTerms);
   }
@@ -158,24 +162,6 @@ public final class Employee {
   public Employee contractedTo(ContractTerms terms) {
     Objects.requireNonNull(terms, "terms must not be null");
     return new Employee(id, organisation, name, qualifications, unavailability, preferences, terms);
-  }
-
-  /**
-   * @param period a span of work
-   * @return whether this employee has declared themselves unavailable for any of it
-   */
-  public boolean isAvailableFor(TimeRange period) {
-    Objects.requireNonNull(period, "period must not be null");
-    return unavailability.stream().noneMatch(period::overlaps);
-  }
-
-  /**
-   * @param required the qualifications a shift demands
-   * @return whether this employee holds every one of them
-   */
-  public boolean holdsAll(Set<QualificationId> required) {
-    Objects.requireNonNull(required, "required must not be null");
-    return qualifications.containsAll(required);
   }
 
   public EmployeeId id() {

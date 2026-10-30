@@ -2,6 +2,8 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWorkingDays;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
@@ -14,6 +16,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -42,6 +45,12 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
   private static final String MAXIMUM_WEEKLY = "MAXIMUM_WEEKLY_WORKING_TIME";
   private static final String MAXIMUM_CONSECUTIVE_DAYS = "MAXIMUM_CONSECUTIVE_WORKING_DAYS";
 
+  /**
+   * The primary key of {@code constraint_set}, as PostgreSQL named it in {@code V1}: two revisions
+   * taking one version break it.
+   */
+  private static final String VERSION_TAKEN = "constraint_set_pkey";
+
   private final JdbcClient jdbc;
 
   public JdbcConstraintSetRepository(JdbcClient jdbc) {
@@ -55,17 +64,30 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
    * Admins computed the same next version from the same current one, and exactly one of them is
    * about to lose their revision. Silencing that with {@code ON CONFLICT DO NOTHING} would let the
    * second overwrite the first's constraints while its audit line claimed success — so the unique
-   * violation is allowed to surface and take its transaction with it (ADR-023).
+   * violation refuses the second and takes its transaction with it (ADR-023), as a conflict the
+   * caller can act on by reloading the rules (#238).
+   *
+   * @throws ConstraintsRevisedConcurrentlyException if that version is already stored
    */
   @Override
   public void save(ConstraintSet constraintSet) {
-    jdbc.sql(
-            """
-            INSERT INTO constraint_set (organisation_id, version) VALUES (:organisation, :version)
-            """)
-        .param("organisation", constraintSet.organisation().value())
-        .param("version", constraintSet.version())
-        .update();
+    try {
+      jdbc.sql(
+              """
+              INSERT INTO constraint_set (organisation_id, version)
+              VALUES (:organisation, :version)
+              """)
+          .param("organisation", constraintSet.organisation().value())
+          .param("version", constraintSet.version())
+          .update();
+    } catch (DataAccessException refused) {
+      // Matched by name, so only two revisions taking one version are a lost race; any other unique
+      // constraint a later migration adds surfaces as the store reported it.
+      if (UniqueViolations.isViolationOf(refused, VERSION_TAKEN)) {
+        throw new ConstraintsRevisedConcurrentlyException(constraintSet.version(), refused);
+      }
+      throw refused;
+    }
 
     jdbc.sql(
             """
@@ -134,9 +156,7 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
         .param("organisation", organisation.value())
         .query(Integer.class)
         .optional()
-        .map(
-            version ->
-                new ConstraintSet(organisation, version, constraintsOf(organisation, version)));
+        .map(version -> rebuilt(organisation, version));
   }
 
   @Override
@@ -152,8 +172,29 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
         .param("version", version)
         .query(Integer.class)
         .optional()
-        .map(
-            stored -> new ConstraintSet(organisation, stored, constraintsOf(organisation, stored)));
+        .map(stored -> rebuilt(organisation, stored));
+  }
+
+  /**
+   * One stored version, rebuilt with its rules.
+   *
+   * <p>The schema permits what the domain refuses, such as two rules of one kind (R24, #96), so a
+   * set written past the domain could be stored. It is a fault in stored data, not the caller's
+   * mistake, so it fails loudly rather than as the domain's refusal of a request.
+   *
+   * @throws IllegalStateException naming the set and what the domain refused in it, if what is
+   *     stored is no set the domain allows
+   */
+  private ConstraintSet rebuilt(OrganisationId organisation, int version) {
+    try {
+      return new ConstraintSet(organisation, version, constraintsOf(organisation, version));
+    } catch (InvalidConstraintException refused) {
+      // The refusal's words are carried, not the refusal: Spring routes an exception its handlers
+      // do not name by its cause, and the domain's refusal of a request is answered 400.
+      throw new IllegalStateException(
+          "Stored constraint set version %d of organisation %s is not one the domain allows: %s"
+              .formatted(version, organisation.value(), refused.getMessage()));
+    }
   }
 
   private List<WorkingTimeConstraint> constraintsOf(OrganisationId organisation, int version) {

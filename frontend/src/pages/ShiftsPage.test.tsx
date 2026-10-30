@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { callsTo, routeTo, writes } from '../test-support/routeTo';
+import { callsTo, holdingWrites, routeTo, writes } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { ShiftsPage } from './ShiftsPage';
@@ -292,5 +292,69 @@ describe('defining a shift', () => {
         'A shift must require at least one person.',
       ),
     );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Define shift' })).toBeEnabled());
+  });
+
+  /** Each definition is a shift of its own, so a second one sent meanwhile is staffed twice. */
+  it('GivenADefinitionInFlight_WhenDefinedAgain_ThenOnlyOneShiftIsPosted', async () => {
+    const routed = theOrganisation();
+    const release = holdingWrites(routed);
+    show();
+    await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
+    const define = screen.getByRole('button', { name: 'Define shift' });
+
+    await userEvent.click(define);
+    await userEvent.click(define);
+
+    expect(define).toBeDisabled();
+    release();
+    await screen.findByText(/^Defined/);
+    expect(writes(routed)).toHaveLength(1);
+    await waitFor(() => expect(define).toBeEnabled());
+  });
+
+  /**
+   * A shift outside the planning span is not in the list below, so without a word and an emptied
+   * form nothing would say the definition was stored, and pressing Define again makes a duplicate.
+   */
+  it('GivenADefinitionSucceeds_WhenItReturns_ThenTheFormIsEmptiedAndItSaysSo', async () => {
+    theOrganisation();
+    show();
+    await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
+    await userEvent.clear(screen.getByLabelText('People needed'));
+    await userEvent.type(screen.getByLabelText('People needed'), '3', WITHOUT_PAUSES);
+    await userEvent.selectOptions(screen.getByLabelText('Required qualifications'), ['q-1']);
+    await userEvent.click(screen.getByLabelText('Unpopular'));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
+
+    expect(await screen.findByText(/^Defined/)).toHaveAttribute('role', 'status');
+    expect(screen.getByLabelText('Starts')).toHaveValue('');
+    expect(screen.getByLabelText('Ends')).toHaveValue('');
+    expect(screen.getByLabelText('People needed')).toHaveValue(1);
+    expect(screen.getByLabelText('Required qualifications')).toHaveValue([]);
+    expect(screen.getByLabelText('Unpopular')).not.toBeChecked();
+  });
+
+  /** What was typed is kept to be corrected, and nothing claims the shift was stored. */
+  it('GivenADefinitionRefused_WhenShown_ThenWhatWasTypedIsKeptAndNothingSaysDefined', async () => {
+    theOrganisation({
+      'POST /api/shifts': { status: 403, body: { detail: 'Your role does not permit this.' } },
+    });
+    show();
+    await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
+
+    await screen.findByRole('alert');
+    expect(screen.getByLabelText('Starts')).toHaveValue('2026-10-05T08:00');
+    expect(screen.queryByText(/^Defined/)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Define shift' })).toBeEnabled());
   });
 });

@@ -71,6 +71,28 @@ class ActorTest {
         .isInstanceOf(CrossTenantAccessException.class);
   }
 
+  /**
+   * A missing organisation is a caller's bug, and it fails the same way whoever is acting. It used
+   * to give the operator a quiet refusal and a tenant a failure inside the refusal's own message.
+   */
+  @Test
+  void GivenATenantActor_WhenRequiringAccessToNoOrganisation_ThenTheMissingOrganisationIsNamed() {
+    Actor member = new TenantActor(UserId.newId(), ACME, Role.ADMIN);
+
+    assertThatThrownBy(() -> member.requireAccessTo(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessage("organisation must not be null");
+  }
+
+  @Test
+  void GivenTheOperator_WhenRequiringAccessToNoOrganisation_ThenTheMissingOrganisationIsNamed() {
+    Actor operator = new Operator(UserId.newId());
+
+    assertThatThrownBy(() -> operator.requireAccessTo(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessage("organisation must not be null");
+  }
+
   @Test
   void GivenATenantActor_WhenItHoldsAPermittedRole_ThenTheOperationIsAllowed() {
     TenantActor scheduler = new TenantActor(UserId.newId(), ACME, Role.SCHEDULER);

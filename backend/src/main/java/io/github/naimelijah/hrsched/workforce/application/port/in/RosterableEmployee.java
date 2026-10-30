@@ -47,20 +47,4 @@ public record RosterableEmployee(
     wouldLikeToWork = List.copyOf(wouldLikeToWork);
     wouldRatherNotWork = List.copyOf(wouldRatherNotWork);
   }
-
-  /**
-   * @param period a span of work
-   * @return whether they have declared themselves unavailable for any of it
-   */
-  public boolean isAvailableFor(TimeRange period) {
-    return unavailability.stream().noneMatch(period::overlaps);
-  }
-
-  /**
-   * @param required the qualifications a shift demands
-   * @return whether they hold every one of them
-   */
-  public boolean holdsAll(Set<QualificationId> required) {
-    return qualifications.containsAll(required);
-  }
 }

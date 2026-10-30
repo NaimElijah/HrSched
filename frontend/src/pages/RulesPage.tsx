@@ -21,7 +21,8 @@ function configured(set: ConstraintSet | null, key: RuleField): string {
  * Each field shows the configured value until it is edited, and that is load-bearing rather than a
  * convenience: revising replaces the whole set, so submitting a form that had only one field filled
  * in would delete every other rule. Clearing a field is how a rule is switched off, and it must be
- * the only way.
+ * the only way. For the same reason nothing is sent until the configured rules have loaded: until
+ * then a blank field says nothing about what is configured.
  */
 export function RulesPage() {
   // Only what the admin has actually typed. Everything else is derived from the loaded rules, so
@@ -38,6 +39,11 @@ export function RulesPage() {
 
   async function revise(event: React.FormEvent) {
     event.preventDefault();
+    // Until the stored rules are known every field reads "not enforced" while nothing is, and a
+    // revision sent then would switch off every rule that was not retyped (#239).
+    if (loaded === null) {
+      return;
+    }
     setFailure(null);
     const number = (key: RuleField): number | undefined => {
       const value = shown(key).trim();
@@ -89,7 +95,9 @@ export function RulesPage() {
             />
           </label>
         ))}
-        <button type="submit">Revise rules</button>
+        <button type="submit" disabled={loaded === null}>
+          Revise rules
+        </button>
       </form>
 
       <Failure error={failure} />

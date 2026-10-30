@@ -20,12 +20,15 @@ export function ChangePasswordPage() {
   const [confirmation, setConfirmation] = useState('');
   const [failure, setFailure] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // From the Password tab an accepted change alters nothing else on screen, so it is said here.
+  const [done, setDone] = useState<string | null>(null);
 
   const required = state === 'password-change-required';
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setFailure(null);
+    setDone(null);
     if (replacement !== confirmation) {
       setFailure('The two new passwords do not match.');
       return;
@@ -36,6 +39,7 @@ export function ChangePasswordPage() {
       setCurrent('');
       setReplacement('');
       setConfirmation('');
+      setDone('Your password has been changed.');
     } catch (error) {
       setFailure(error instanceof ApiError ? error.message : String(error));
     } finally {
@@ -86,6 +90,9 @@ export function ChangePasswordPage() {
           {submitting ? 'Changing…' : 'Change password'}
         </button>
       </form>
+      <p className="done" role="status">
+        {done}
+      </p>
       {failure === null ? null : (
         <div className="failure" role="alert">
           {failure}

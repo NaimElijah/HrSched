@@ -4,7 +4,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Identity of an {@link Employee}.
+ * Identity of an {@code Employee}.
  *
  * <p>In the kernel because it crosses contexts: workforce owns the employee, while scheduling
  * records which employee an assignment is for. A bare {@link UUID} would let an employee identity

@@ -4,7 +4,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Identity of an {@link Organisation}, and the tenant boundary of the whole system.
+ * Identity of an {@code Organisation}, and the tenant boundary of the whole system.
  *
  * <p>This type appears on every aggregate in every context. A value carrying it is owned by exactly
  * one organisation, and an operation that mixes two of them is a data leak between paying customers

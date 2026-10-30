@@ -78,9 +78,8 @@ abstract class RosterGeneratorContract {
         false);
   }
 
-  static RosterCandidate anyone(String name) {
-    return new RosterCandidate(
-        EmployeeId.newId(), name, Set.of(), List.of(), StatedPreferences.none());
+  static RosterCandidate anyone() {
+    return new RosterCandidate(EmployeeId.newId(), Set.of(), List.of(), StatedPreferences.none());
   }
 
   static ConstraintSet rules(WorkingTimeConstraint... rules) {
@@ -226,8 +225,7 @@ abstract class RosterGeneratorContract {
     List<Assignment> added =
         generator()
             .generate(
-                request(
-                    List.of(needsATicket), List.of(anyone("Ada")), ConstraintSet.initial(ACME)));
+                request(List.of(needsATicket), List.of(anyone()), ConstraintSet.initial(ACME)));
 
     assertThat(added).describedAs("a roster honest about a gap beats one that hides it").isEmpty();
   }
@@ -238,7 +236,6 @@ abstract class RosterGeneratorContract {
     RosterCandidate away =
         new RosterCandidate(
             EmployeeId.newId(),
-            "Ada",
             Set.of(),
             List.of(
                 new TimeRange(
@@ -260,9 +257,7 @@ abstract class RosterGeneratorContract {
         generator()
             .generate(
                 request(
-                    List.of(morning, clashing),
-                    List.of(anyone("Ada")),
-                    ConstraintSet.initial(ACME)));
+                    List.of(morning, clashing), List.of(anyone()), ConstraintSet.initial(ACME)));
 
     assertThat(added).hasSize(1);
   }
@@ -274,7 +269,7 @@ abstract class RosterGeneratorContract {
     ConstraintSet oneHourDays = rules(new MaximumDailyWorkingTime(Duration.ofHours(1)));
 
     List<Assignment> added =
-        generator().generate(request(List.of(eightHours), List.of(anyone("Ada")), oneHourDays));
+        generator().generate(request(List.of(eightHours), List.of(anyone()), oneHourDays));
 
     assertThat(added).isEmpty();
   }
@@ -310,8 +305,7 @@ abstract class RosterGeneratorContract {
     ConstraintSet tenHourDays = rules(new MaximumDailyWorkingTime(Duration.ofHours(10)));
 
     List<Assignment> added =
-        generator()
-            .generate(request(List.of(lateNight, morning), List.of(anyone("Ada")), tenHourDays));
+        generator().generate(request(List.of(lateNight, morning), List.of(anyone()), tenHourDays));
 
     assertThat(added).hasSize(1);
   }
@@ -324,7 +318,7 @@ abstract class RosterGeneratorContract {
     ConstraintSet sevenHoursRest = rules(new MinimumRestBetweenAssignments(Duration.ofHours(7)));
 
     List<Assignment> added =
-        generator().generate(request(List.of(early, late), List.of(anyone("Ada")), sevenHoursRest));
+        generator().generate(request(List.of(early, late), List.of(anyone()), sevenHoursRest));
 
     assertThat(added).hasSize(1);
   }
@@ -338,7 +332,7 @@ abstract class RosterGeneratorContract {
     ConstraintSet sixHoursRest = rules(new MinimumRestBetweenAssignments(Duration.ofHours(6)));
 
     List<Assignment> added =
-        generator().generate(request(List.of(early, late), List.of(anyone("Ada")), sixHoursRest));
+        generator().generate(request(List.of(early, late), List.of(anyone()), sixHoursRest));
 
     assertThat(added).hasSize(2);
   }
@@ -354,10 +348,7 @@ abstract class RosterGeneratorContract {
     List<Assignment> added =
         generator()
             .generate(
-                request(
-                    List.of(monday, tuesday, wednesday),
-                    List.of(anyone("Ada")),
-                    nineteenHourWeeks));
+                request(List.of(monday, tuesday, wednesday), List.of(anyone()), nineteenHourWeeks));
 
     assertThat(added).hasSize(2);
   }
@@ -372,8 +363,7 @@ abstract class RosterGeneratorContract {
 
     List<Assignment> added =
         generator()
-            .generate(
-                request(List.of(monday, tuesday, wednesday), List.of(anyone("Ada")), twoDayRuns));
+            .generate(request(List.of(monday, tuesday, wednesday), List.of(anyone()), twoDayRuns));
 
     assertThat(added).hasSize(2);
   }
@@ -387,7 +377,7 @@ abstract class RosterGeneratorContract {
             .generate(
                 request(
                     List.of(needsTwo),
-                    List.of(anyone("Ada"), anyone("Grace"), anyone("Alan")),
+                    List.of(anyone(), anyone(), anyone()),
                     ConstraintSet.initial(ACME)));
 
     assertThat(added).hasSize(2);
@@ -401,7 +391,7 @@ abstract class RosterGeneratorContract {
   @Test
   void GivenWorkHeldElsewhereOverlappingAShift_WhenGenerating_ThenItsHolderIsNotPutOnIt() {
     Shift monday = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1, Set.of());
-    RosterCandidate ada = anyone("Ada");
+    RosterCandidate ada = anyone();
     HeldWork evening =
         new HeldWork(
             RosterId.newId(),
@@ -427,7 +417,7 @@ abstract class RosterGeneratorContract {
   @Test
   void GivenADraftAlreadyCarryingSomebody_WhenGenerating_ThenOnlyThePlacesLeftAreFilled() {
     Shift needsTwo = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 2, Set.of());
-    RosterCandidate grace = anyone("Grace");
+    RosterCandidate grace = anyone();
 
     List<Assignment> added =
         generator()
@@ -435,7 +425,7 @@ abstract class RosterGeneratorContract {
                 carrying(
                     needsTwo,
                     grace,
-                    List.of(anyone("Ada"), grace, anyone("Alan")),
+                    List.of(anyone(), grace, anyone()),
                     ConstraintSet.initial(ACME)));
 
     assertThat(added).hasSize(1);
@@ -449,8 +439,8 @@ abstract class RosterGeneratorContract {
   @Test
   void GivenADraftCarryingMoreThanAShiftNeeds_WhenGenerating_ThenNobodyIsAddedToIt() {
     Shift needsOne = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1, Set.of());
-    RosterCandidate grace = anyone("Grace");
-    RosterCandidate alan = anyone("Alan");
+    RosterCandidate grace = anyone();
+    RosterCandidate alan = anyone();
     Roster overstaffed =
         emptyDraft()
             .withAssignments(
@@ -464,7 +454,7 @@ abstract class RosterGeneratorContract {
                 request(
                     overstaffed,
                     List.of(needsOne),
-                    List.of(anyone("Ada"), grace, alan),
+                    List.of(anyone(), grace, alan),
                     ConstraintSet.initial(ACME),
                     List.of(heldOn(needsOne, grace), heldOn(needsOne, alan))));
 
@@ -476,7 +466,7 @@ abstract class RosterGeneratorContract {
   void GivenCarriedWork_WhenGenerating_ThenItCountsTowardItsHoldersRules() {
     Shift monday = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1, Set.of());
     Shift tuesday = shift("2026-10-06T08:00:00Z", "2026-10-06T16:00:00Z", 1, Set.of());
-    RosterCandidate ada = anyone("Ada");
+    RosterCandidate ada = anyone();
     // Invented: twelve hours, room for one eight-hour shift and not two.
     ConstraintSet twelveHourWeeks = rules(new MaximumWeeklyWorkingTime(Duration.ofHours(12)));
 
@@ -497,8 +487,7 @@ abstract class RosterGeneratorContract {
   @Test
   void GivenNoShiftsAtAll_WhenGenerating_ThenNothingIsAssigned() {
     List<Assignment> added =
-        generator()
-            .generate(request(List.of(), List.of(anyone("Ada")), ConstraintSet.initial(ACME)));
+        generator().generate(request(List.of(), List.of(anyone()), ConstraintSet.initial(ACME)));
 
     assertThat(added).isEmpty();
   }

@@ -75,15 +75,6 @@ public final class Notification {
     return new Notification(id, organisation, recipient, kind, subject, occurredAt, true);
   }
 
-  /**
-   * @param employee somebody who might be its recipient
-   * @return whether this notification is addressed to them
-   */
-  public boolean isFor(EmployeeId employee) {
-    Objects.requireNonNull(employee, "employee must not be null");
-    return recipient.equals(employee);
-  }
-
   public NotificationId id() {
     return id;
   }

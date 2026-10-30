@@ -15,14 +15,6 @@ export interface Violation {
   readonly detail: string;
 }
 
-/** An RFC 9457 problem detail, plus the `violations` the scheduling context adds on a 422. */
-export interface ProblemDetail {
-  readonly title?: string;
-  readonly detail?: string;
-  readonly status?: number;
-  readonly violations?: readonly Violation[];
-}
-
 /**
  * A request the backend refused.
  *

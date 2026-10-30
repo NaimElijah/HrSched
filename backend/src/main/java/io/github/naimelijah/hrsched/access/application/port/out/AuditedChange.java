@@ -18,16 +18,23 @@ import java.util.UUID;
  * not personal data, but the record has nowhere to put a name and does not acquire one by
  * exception.
  *
- * <p>The organisation is optional because one change in this context belongs to no tenant: the
- * platform operator is a member of none, which is the whole point of it. Empty means "no
- * organisation", never "not recorded", and the adapter leaves the field out entirely rather than
- * writing a null a query could not tell apart from a missing one.
+ * <p>The organisation is optional because a change to the platform operator's own account, or to
+ * one of its sessions, belongs to no tenant: the operator is a member of none, which is the whole
+ * point of it. Empty means "no organisation", never "not recorded", and the adapter leaves the
+ * field out entirely rather than writing a null a query could not tell apart from a missing one.
  *
- * @param organisation the organisation that was changed, which for an onboarding is the new one,
- *     and which is empty for a change to the platform operator itself
+ * @param organisation the organisation the change belongs to: the new one for an onboarding, the
+ *     account's own for a change to an account or a session, and empty for the platform operator's
  * @param actor who made the change
  * @param change what kind of change it was
- * @param subject the identifier of what changed, which today is always the organisation itself
+ * @param subject the identifier of what changed, which depends on the change: the organisation for
+ *     {@link AccessChange#ORGANISATION_ONBOARDED}; the session for {@link AccessChange#SIGNED_IN},
+ *     {@link AccessChange#SIGNED_OUT} and {@link AccessChange#REFRESH_TOKEN_REUSED}; and the
+ *     account for every other change, {@link AccessChange#ACCOUNT_CREATED}, {@link
+ *     AccessChange#ACCOUNT_MEMBERSHIP_CHANGED}, {@link AccessChange#ACCOUNT_DISABLED}, {@link
+ *     AccessChange#ACCOUNT_ENABLED}, {@link AccessChange#ACCOUNT_PASSWORD_RESET}, {@link
+ *     AccessChange#OPERATOR_BOOTSTRAPPED}, {@link AccessChange#ACCOUNT_LOCKED} and {@link
+ *     AccessChange#PASSWORD_CHANGED}
  */
 public record AuditedChange(
     Optional<OrganisationId> organisation, UserId actor, AccessChange change, UUID subject) {
