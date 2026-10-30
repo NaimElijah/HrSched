@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.access.adapter.out.persistence;
 
 import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
+import io.github.naimelijah.hrsched.access.domain.model.InvalidOrganisationNameException;
 import io.github.naimelijah.hrsched.access.domain.model.Organisation;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.sql.ResultSet;
@@ -8,6 +9,7 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -90,8 +92,30 @@ public class JdbcOrganisationRepository implements OrganisationRepository {
     return refused;
   }
 
+  /**
+   * Rebuilds through the aggregate's own constructor, so its rule is checked again on the way out
+   * of the store.
+   *
+   * <p>The domain's refusal is how a caller is told their own name is blank, and is answered as
+   * their mistake without a log line. A stored name blank to the domain but not to the schema's
+   * {@code btrim}, which trims spaces only, is this system's defect instead (R2), so the refusal is
+   * replaced by one naming the identity and the rule, never the name.
+   *
+   * <p>The refusal is deliberately not attached as the cause. Spring resolves an exception handler
+   * by an exception's causes when none takes its own type, so a cause would route this straight
+   * back to the 400 it exists to avoid. It travels suppressed instead, which Spring does not walk,
+   * so its stack still reaches the log; its message is a constant that never repeats the name.
+   */
   private static Organisation toOrganisation(ResultSet row, int rowNumber) throws SQLException {
-    return new Organisation(
-        new OrganisationId(row.getObject("id", java.util.UUID.class)), row.getString("name"));
+    OrganisationId id = new OrganisationId(row.getObject("id", UUID.class));
+    try {
+      return new Organisation(id, row.getString("name"));
+    } catch (InvalidOrganisationNameException refusal) {
+      IllegalStateException defect =
+          new IllegalStateException(
+              "Stored name of organisation %s is blank, which breaks R2".formatted(id.value()));
+      defect.addSuppressed(refusal);
+      throw defect;
+    }
   }
 }

@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.access.adapter.out.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.naimelijah.hrsched.access.domain.model.InvalidOrganisationNameException;
 import io.github.naimelijah.hrsched.access.domain.model.Organisation;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
@@ -27,6 +28,9 @@ class JdbcOrganisationRepositoryTest {
 
   /** The primary key {@code V1} leaves PostgreSQL to name. */
   private static final String PRIMARY_KEY = "organisation_pkey";
+
+  /** Blank to {@link String#isBlank}, but not to the schema's {@code btrim}, which trims spaces. */
+  private static final String BLANK_TO_THE_DOMAIN_ONLY = "\t";
 
   /** Invented: an identity PostgreSQL sorts before {@link #LATER_IDENTITY}. */
   private static final String EARLIER_IDENTITY = "00000000-0000-4000-8000-000000000001";
@@ -129,5 +133,49 @@ class JdbcOrganisationRepositoryTest {
     assertThat(organisations.findAll())
         .extracting(Organisation::id)
         .containsExactly(earlier, later);
+  }
+
+  /**
+   * {@code organisation_name_not_blank} trims spaces only, so a name that is only a tab stores,
+   * while the domain refuses every blank name (R2). A row written by hand, a restore or a bug can
+   * hold one, and loading it fails loudly, by one identity and in the listing alike.
+   *
+   * <p>Loudly means as our defect, not as the domain's refusal: that refusal is how a caller is
+   * told their own name is blank, and is answered 400 without a log line, so a store breaking R2
+   * would read as the Operator's mistake and leave nobody told. It carries no cause either, because
+   * Spring resolves a handler by an exception's causes too, and would find that one's; the refusal
+   * travels suppressed instead, which Spring does not walk, so its stack still reaches the log. The
+   * message names the identity and the rule only.
+   */
+  @Test
+  void GivenABlankNameInTheStore_WhenLoaded_ThenItFailsAsADefect() {
+    OrganisationId id = OrganisationId.newId();
+    organisations.save(new Organisation(id, "Acme"));
+    PostgresDatabase.jdbcClient()
+        .sql("UPDATE organisation SET name = :name WHERE id = :id")
+        .param("name", BLANK_TO_THE_DOMAIN_ONLY)
+        .param("id", id.value())
+        .update();
+
+    assertThatThrownBy(() -> organisations.findById(id))
+        .isInstanceOf(IllegalStateException.class)
+        .hasNoCause()
+        .satisfies(JdbcOrganisationRepositoryTest::carriesTheNameRefusalSuppressed)
+        .hasMessageContaining(id.value().toString())
+        .hasMessageContaining("R2")
+        .hasMessageNotContaining(BLANK_TO_THE_DOMAIN_ONLY);
+    assertThatThrownBy(() -> organisations.findAll())
+        .isInstanceOf(IllegalStateException.class)
+        .hasNoCause()
+        .satisfies(JdbcOrganisationRepositoryTest::carriesTheNameRefusalSuppressed)
+        .hasMessageContaining(id.value().toString())
+        .hasMessageContaining("R2")
+        .hasMessageNotContaining(BLANK_TO_THE_DOMAIN_ONLY);
+  }
+
+  private static void carriesTheNameRefusalSuppressed(Throwable failure) {
+    assertThat(failure.getSuppressed())
+        .singleElement()
+        .isInstanceOf(InvalidOrganisationNameException.class);
   }
 }
