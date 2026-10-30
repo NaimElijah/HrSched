@@ -2922,7 +2922,7 @@ class SchedulingServiceTest {
 
   @Test
   void GivenTheOperator_WhenReadingTheConstraintSet_ThenItIsRefused() {
-    assertThatThrownBy(() -> service.currentConstraints(anOperator(), ACME))
+    assertThatThrownBy(() -> service.findCurrentConstraints(anOperator(), ACME))
         .isInstanceOf(NotATenantMemberException.class);
   }
 
@@ -3032,7 +3032,7 @@ class SchedulingServiceTest {
 
   @Test
   void GivenAnAdminOfAnotherOrganisation_WhenReadingOurRules_ThenItIsRefused() {
-    assertThatThrownBy(() -> service.currentConstraints(admin(RIVAL), ACME))
+    assertThatThrownBy(() -> service.findCurrentConstraints(admin(RIVAL), ACME))
         .isInstanceOf(CrossTenantAccessException.class);
   }
 

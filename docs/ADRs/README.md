@@ -60,7 +60,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-051](ADR-051-record-why-each-frontend-dependency-is-there.md) | Record why each frontend dependency is there | Accepted | 2026-10-29 |
 | [ADR-052](ADR-052-record-only-after-every-write-notifications-included.md) | Record an audit line only after every write, a notification included | Accepted | 2026-10-30 |
 | [ADR-053](ADR-053-bound-a-request-body-and-accept-only-utf-8-json.md) | Bound a request body in bytes, and accept nothing but UTF-8 JSON | Accepted | 2026-10-30 |
-| [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) | Run a use case read-only when its name starts with `find` | Accepted | 2026-10-30 |
+| [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) | Run a use case read-only when its name starts with `find` | Accepted, amended | 2026-10-30 |
 | [ADR-055](ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md) | Read an account or a session without an organisation where none is known | Accepted | 2026-10-30 |
 
 ## Decisions waiting to be recorded

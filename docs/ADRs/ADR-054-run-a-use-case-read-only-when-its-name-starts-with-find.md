@@ -1,6 +1,11 @@
 # ADR-054: Run a use case read-only when its name starts with `find`
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** The one read named otherwise is gone.
+    `ConfigureConstraintsUseCase.currentConstraints` is now `findCurrentConstraints`, so it runs
+    read-only like every other read
+    ([#254](https://github.com/NaimElijah/HrSched/issues/254)). It was the only read among the
+    driving-port methods not named `find…`, so the exception this record names no longer exists.
 - **Date:** 2026-10-30
 
 ## Context

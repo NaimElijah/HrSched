@@ -224,7 +224,7 @@ public class SchedulingService
   }
 
   @Override
-  public ConstraintSet currentConstraints(Actor actor, OrganisationId organisation) {
+  public ConstraintSet findCurrentConstraints(Actor actor, OrganisationId organisation) {
     actor.requireAccessTo(organisation);
     return currentOrInitial(organisation);
   }

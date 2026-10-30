@@ -29,7 +29,7 @@ public interface ConfigureConstraintsUseCase {
    * @param organisation whose rules to read
    * @return the current rules, or the empty first version if they were never revised
    */
-  ConstraintSet currentConstraints(Actor actor, OrganisationId organisation);
+  ConstraintSet findCurrentConstraints(Actor actor, OrganisationId organisation);
 
   /**
    * Reads back one version of the rules, as it was when it was written: what a roster published
