@@ -13,6 +13,12 @@ public interface UnscopedPayslipRepository {
   /** The lookup the rule must reject. */
   Optional<FixturePayslip> findByReference(String reference);
 
+  /**
+   * An overload of the lookup above, which the rule must reject even where an allow-list names that
+   * lookup's own signature.
+   */
+  Optional<FixturePayslip> findByReference(String reference, int issue);
+
   /** A method named like no lookup, which the rule must reject as well. */
   boolean existsByReference(String reference);
 }

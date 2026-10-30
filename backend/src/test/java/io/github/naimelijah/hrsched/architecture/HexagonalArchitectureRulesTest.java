@@ -12,6 +12,7 @@ import com.tngtech.archunit.lang.EvaluationResult;
 import io.github.naimelijah.hrsched.HrSchedApplication;
 import io.github.naimelijah.hrsched.access.application.service.SessionService;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
+import io.github.naimelijah.hrsched.architecture.HexagonalArchitectureTest.UnscopedLookup;
 import io.github.naimelijah.hrsched.architecture.fixtures.actors.AsksAnAccountForItsActor;
 import io.github.naimelijah.hrsched.architecture.fixtures.actors.BuildsATenantActor;
 import io.github.naimelijah.hrsched.architecture.fixtures.actors.BuildsAnOperator;
@@ -55,7 +56,6 @@ import io.github.naimelijah.hrsched.architecture.fixtures.stereotypes.FixtureExc
 import io.github.naimelijah.hrsched.configuration.UseCaseConfiguration;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -467,21 +467,63 @@ class HexagonalArchitectureRulesTest {
   }
 
   /**
-   * The allow-list names methods by string, so a renamed or deleted method would leave an entry
-   * that exempts nothing, and a new method taking the old name would inherit its exemption unseen.
+   * An entry allows one signature, not a name: an overload added beside an allowed method, with no
+   * organisation and none of the reason the entry gives, is reported.
    */
   @Test
   void
-      GivenTheUnscopedLookupsAllowed_WhenEachIsLookedUpOnItsPort_ThenEveryOneNamesAMethodItDeclares() {
+      GivenAnOverloadOfAnAllowedMethod_WhenTheTenancyRuleIsEvaluated_ThenOnlyTheOverloadIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repositoryMethodsTakeAnOrganisation(
+                List.of(
+                    new UnscopedLookup(
+                        UnscopedPayslipRepository.class,
+                        "findByReference",
+                        List.of(String.class),
+                        "an invented reason, for this test alone"))),
+            UnscopedPayslipRepository.class);
+
+    assertViolatedNaming(result, "findByReference(java.lang.String, int)");
+    assertThat(result.getFailureReport().getDetails())
+        .as("violations of the allowed signature itself")
+        .noneMatch(detail -> detail.contains("findByReference(java.lang.String) "));
+  }
+
+  /**
+   * The allow-list names methods by string, so a renamed or deleted method would leave an entry
+   * that exempts nothing, and a method that later gains an {@code OrganisationId} would keep an
+   * entry it no longer needs. Each is looked up by its whole signature, so either fails here. A
+   * reason is what makes an entry a decision rather than an omission, so none may be blank.
+   */
+  @Test
+  void
+      GivenTheUnscopedMethodsAllowed_WhenEachIsLookedUpOnItsPort_ThenEveryOneIsASignatureItDeclaresWithAReason() {
     assertThat(HexagonalArchitectureTest.UNSCOPED_LOOKUPS)
-        .as("allowed unscoped lookups")
+        .as("allowed unscoped methods")
         .isNotEmpty()
         .allSatisfy(
-            lookup ->
-                assertThat(lookup.port().getDeclaredMethods())
-                    .extracting(Method::getName)
-                    .as("methods %s declares", lookup.port().getSimpleName())
-                    .contains(lookup.method()));
+            lookup -> {
+              assertThat(declares(lookup))
+                  .as(
+                      "%s declares %s%s",
+                      lookup.port().getSimpleName(), lookup.method(), lookup.parameters())
+                  .isTrue();
+              assertThat(lookup.reason())
+                  .as("the reason %s is allowed", lookup.method())
+                  .isNotBlank();
+            });
+  }
+
+  private static boolean declares(UnscopedLookup lookup) {
+    try {
+      lookup
+          .port()
+          .getDeclaredMethod(lookup.method(), lookup.parameters().toArray(Class<?>[]::new));
+      return true;
+    } catch (NoSuchMethodException absent) {
+      return false;
+    }
   }
 
   @Test
