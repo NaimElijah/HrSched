@@ -23,6 +23,7 @@ import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.no
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDrivenPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesThroughThePublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.in.FixturePayUseCase;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceReachingAPublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainKnowingTheEntryPoint;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainUsingSpring;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainWithAWireFormat;
@@ -78,6 +79,21 @@ class HexagonalArchitectureRulesTest {
             ReachesIntoAnotherContextsDrivenPort.class);
 
     assertViolatedNaming(result, "FixtureNoticeStore");
+  }
+
+  /**
+   * The published port is the right target, but a use case is the wrong origin: consuming another
+   * context belongs in an adapter, so the core never names it (ADR-008).
+   */
+  @Test
+  void
+      GivenAUseCaseReferencingAnotherContextsPublishedPort_WhenTheCrossContextRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.contextsTouchOnlyPublishedPortsOfOtherContexts(FIXTURES),
+            ServiceReachingAPublishedPort.class);
+
+    assertViolatedNaming(result, "FixtureNotifyUseCase");
   }
 
   @Test

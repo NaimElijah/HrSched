@@ -29,6 +29,9 @@ final class ContextPackages {
   /** The only part of a context other contexts may reference: its driving ports. */
   private static final String PUBLISHED = ".application.port.in.";
 
+  /** The only part of a context that may reference another: its driven adapters (ADR-008). */
+  private static final String DRIVEN_ADAPTERS = ".adapter.out.";
+
   private final String rootPrefix;
 
   /**
@@ -67,5 +70,17 @@ final class ContextPackages {
    */
   boolean isPublished(JavaClass clazz) {
     return (clazz.getPackageName() + ".").contains(PUBLISHED);
+  }
+
+  /**
+   * @param clazz any class
+   * @return whether it sits in the driven-adapter package of the context it belongs to
+   */
+  boolean isDrivenAdapter(JavaClass clazz) {
+    return contextOf(clazz)
+        .map(
+            context ->
+                (clazz.getPackageName() + ".").startsWith(rootPrefix + context + DRIVEN_ADAPTERS))
+        .orElse(false);
   }
 }

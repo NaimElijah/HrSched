@@ -96,7 +96,7 @@ class HexagonalArchitectureTest {
           .mayOnlyBeAccessedByLayers("Application", "Adapter", "Configuration");
 
   /**
-   * Contexts integrate only through one another's published driving ports.
+   * Contexts integrate only through one another's published driving ports, consumed in an adapter.
    *
    * <p>ADR-006 forbade every cross-context reference. Modelling the real domain showed that is too
    * strict to be honest: generating a roster needs qualifications and unavailability, which live in
@@ -105,10 +105,15 @@ class HexagonalArchitectureTest {
    * context's {@code application.port.in} package, and nothing else of it. Its domain, its
    * services, its adapters and its driven ports all stay private. See ADR-008.
    *
+   * <p>The allowance is spent only in the consuming context's {@code adapter.out}, behind a driven
+   * port of its own, so its domain and application layers never name the other context and a change
+   * to the other's published language stops at that adapter (ADR-008). Which adapter, and how many,
+   * is left to each context.
+   *
    * <p>Loosening a rule is exactly when a rule quietly stops protecting anything, so this one has a
    * failure test: {@code HexagonalArchitectureRulesTest} evaluates it against fixture contexts, and
-   * it must reject a reference into another context's domain or driven ports while permitting one
-   * into its published ports.
+   * it must reject a reference into another context's domain or driven ports, and a use case naming
+   * another's published port, while permitting an adapter's reference into that port.
    */
   @ArchTest
   static final ArchRule contexts_touch_only_published_ports_of_other_contexts =
@@ -121,24 +126,28 @@ class HexagonalArchitectureTest {
   static ArchRule contextsTouchOnlyPublishedPortsOfOtherContexts(ContextPackages packages) {
     return classes()
         .should(onlyReachOtherContextsThroughTheirPublishedPorts(packages))
-        .because("a context may use another context's published driving ports, and nothing else");
+        .because(
+            "a context may use another context's published driving ports, from a driven adapter,"
+                + " and nothing else");
   }
 
   private static ArchCondition<JavaClass> onlyReachOtherContextsThroughTheirPublishedPorts(
       ContextPackages packages) {
-    return new ArchCondition<>("only reach other contexts through their published driving ports") {
+    return new ArchCondition<>(
+        "only reach other contexts through their published driving ports, from a driven adapter") {
       @Override
       public void check(JavaClass origin, ConditionEvents events) {
         Optional<String> originContext = packages.contextOf(origin);
         if (originContext.isEmpty()) {
           return;
         }
+        boolean mayConsume = packages.isDrivenAdapter(origin);
         for (Dependency dependency : origin.getDirectDependenciesFromSelf()) {
           JavaClass target = dependency.getTargetClass();
           Optional<String> targetContext = packages.contextOf(target);
           boolean crossesContexts =
               targetContext.isPresent() && !targetContext.get().equals(originContext.get());
-          if (crossesContexts && !packages.isPublished(target)) {
+          if (crossesContexts && !(mayConsume && packages.isPublished(target))) {
             events.add(SimpleConditionEvent.violated(origin, dependency.getDescription()));
           }
         }

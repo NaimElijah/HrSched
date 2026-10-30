@@ -18,9 +18,11 @@ import org.springframework.stereotype.Component;
 /**
  * Anti-corruption layer between scheduling and workforce.
  *
- * <p>THE ONLY CLASS IN SCHEDULING PERMITTED TO NAME ANOTHER CONTEXT, and it may name only the
- * published driving port, never the workforce domain. The architecture rules enforce that; this
- * adapter is where the allowance is spent, deliberately, in one place.
+ * <p>ONE OF TWO CLASSES IN SCHEDULING THAT NAME ANOTHER CONTEXT, the other being {@code
+ * NotificationAdapter}, and it may name only the published driving port, never the workforce
+ * domain. The architecture rules let only a class in a context's {@code adapter.out} name another
+ * context, and only that port (ADR-008); this adapter is where scheduling spends the allowance on
+ * workforce, deliberately, in one place.
  *
  * <p>Its whole job is translation. Scheduling asks its own question through its own port and gets
  * back its own type; if workforce reshapes its aggregate, this file changes and nothing else does.

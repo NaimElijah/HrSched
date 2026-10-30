@@ -110,11 +110,11 @@ overlapping roster was published at the same moment.
 
 These rules fail the build when they are broken. `HexagonalArchitectureTest` runs fourteen ArchUnit
 rules on every build. They cover a domain that depends on nothing but the JDK and HrSched's own
-domain, dependency direction, a framework-free application layer, published ports between contexts, a
-kernel that knows no context, cycles between contexts and between a context's layers, printing,
-logging in the domain, instrumentation inward of an adapter, the solver kept in its one adapter,
-reading the acting identity from a thread-local, and who may build an actor or ask an account for
-one.
+domain, dependency direction, a framework-free application layer, published ports between contexts,
+consumed only in an adapter, a kernel that knows no context, cycles between contexts and between a
+context's layers, printing, logging in the domain, instrumentation inward of an adapter, the solver
+kept in its one adapter, reading the acting identity from a thread-local, and who may build an actor
+or ask an account for one.
 Components, the authentication sequence and the data flow are in
 [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
 
