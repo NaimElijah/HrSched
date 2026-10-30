@@ -293,6 +293,9 @@ class HexagonalArchitectureTest {
    * that merely lives there, the one place no rule inspects (ADR-008). Any other class there may
    * use a context's published ports, as a context may, and nothing else of it.
    *
+   * <p>A class nested in a {@code @Configuration} class inherits its exemption, and no rule can
+   * tell wiring from logic, so what is nested there is review's to check.
+   *
    * <p>The annotation is a parameter because a fixture cannot carry Spring's: see {@code
    * FixtureConfiguration}. {@code HexagonalArchitectureRulesTest} watches the rule reject a helper
    * beside the wiring reaching a domain, permit its reaching a published port, permit the wiring
@@ -620,7 +623,8 @@ class HexagonalArchitectureTest {
    * ports, and permit one reaching the other's.
    *
    * <p>Sliced by every top-level package, so a cycle through {@code configuration} or the kernel is
-   * one too.
+   * one too, and {@code HexagonalArchitectureRulesTest} watches it reject the fixture kernel and a
+   * fixture context reaching each other.
    */
   @ArchTest
   static final ArchRule contexts_are_free_of_cycles =
@@ -776,12 +780,18 @@ class HexagonalArchitectureTest {
    * domain's and the application's are written against those package names, and {@link
    * #dependencies_point_inward} considers only classes inside a layer. A class in {@code
    * scheduling.util} would escape all three, free to depend on anything and to be depended on by
-   * anything. {@code HexagonalArchitectureRulesTest} watches it reject such a class, and permit a
-   * class from each layer.
+   * anything, and so would a class directly in {@code scheduling}. A {@code package-info} is not
+   * such a class: it is the package's own, and a context's root package may carry an annotation
+   * such as {@code @NullMarked}. {@code HexagonalArchitectureRulesTest} watches it reject a class
+   * in a helper package and one directly in a context's root, and permit a class from each layer
+   * and an annotated {@code package-info} at a context's root.
    */
   @ArchTest
   static final ArchRule every_class_in_a_context_is_in_a_layer =
       everyClassInAContextIsInALayer(ContextPackages.HRSCHED);
+
+  /** The simple name of a package's own class, which holds the package's annotations. */
+  private static final String PACKAGE_INFO = "package-info";
 
   /**
    * @param packages where the contexts are; {@link ContextPackages#HRSCHED} for the build's rule
@@ -790,6 +800,8 @@ class HexagonalArchitectureTest {
   static ArchRule everyClassInAContextIsInALayer(ContextPackages packages) {
     return classes()
         .that(DescribedPredicate.describe("belong to a bounded context", inAContext(packages)))
+        .and()
+        .doNotHaveSimpleName(PACKAGE_INFO)
         .should(
             new ArchCondition<>(
                 "reside in their context's domain, application or adapter package") {

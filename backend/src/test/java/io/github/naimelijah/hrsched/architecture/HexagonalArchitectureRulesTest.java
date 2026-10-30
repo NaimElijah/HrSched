@@ -26,6 +26,7 @@ import io.github.naimelijah.hrsched.architecture.fixtures.configuration.WiringRe
 import io.github.naimelijah.hrsched.architecture.fixtures.notifications.adapter.in.web.NotificationsExceptionHandler;
 import io.github.naimelijah.hrsched.architecture.fixtures.notifications.adapter.out.payroll.ReachesBackThroughPayrollsPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.notifications.application.port.in.FixtureNotifyUseCase;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.PayrollRules;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.ControllerListedByAnotherContext;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.PayrollController;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.PayrollExceptionHandler;
@@ -185,6 +186,24 @@ class HexagonalArchitectureRulesTest {
             FixturePayUseCase.class);
 
     assertViolatedNaming(result, "ReachesBackThroughPayrollsPort");
+  }
+
+  /**
+   * The rule slices every top-level package, not only the contexts, so a kernel that knows a
+   * context which uses the kernel is a cycle too.
+   */
+  @Test
+  void
+      GivenTheKernelAndAContextReachingEachOther_WhenTheContextCycleRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.contextsAreFreeOfCycles(FIXTURES),
+            KernelReachingIntoAnUnlistedContext.class,
+            FixturePayslip.class,
+            FixturePayrollService.class,
+            FixtureKernelValue.class);
+
+    assertViolatedNaming(result, "KernelReachingIntoAnUnlistedContext");
   }
 
   @Test
@@ -555,6 +574,28 @@ class HexagonalArchitectureRulesTest {
             PayslipFormatting.class);
 
     assertViolatedNaming(result, "PayslipFormatting");
+  }
+
+  @Test
+  void GivenAClassDirectlyInAContextsRoot_WhenTheLayerRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyClassInAContextIsInALayer(FIXTURES), PayrollRules.class);
+
+    assertViolatedNaming(result, "PayrollRules");
+  }
+
+  /** A {@code package-info} is no class to put in a layer, annotated or not. */
+  @Test
+  void GivenAnAnnotatedPackageInfoAtAContextsRoot_WhenTheLayerRuleIsEvaluated_ThenItHolds()
+      throws ClassNotFoundException {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyClassInAContextIsInALayer(FIXTURES),
+            Class.forName(FIXTURE_ROOT + ".payroll.package-info"),
+            FixturePayslip.class);
+
+    assertHolds(result);
   }
 
   @Test
