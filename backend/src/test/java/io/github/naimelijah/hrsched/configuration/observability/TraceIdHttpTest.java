@@ -174,11 +174,9 @@ class TraceIdHttpTest {
         as(get("/api/accounts"), "OPERATOR").header("traceparent", INVENTED_TRACEPARENT);
     mockMvc.perform(request).andExpect(status().isForbidden());
 
-    JsonNode line = theOneLineSaying(output, REFUSAL);
-
-    assertThat(line.path(TRACE_ID_FIELD).asString())
-        .as("the trace id of %s", line)
-        .isEqualTo(INVENTED_TRACE_ID);
+    assertThat(theLinesSaying(output, REFUSAL))
+        .as("the lines saying \"%s\"", REFUSAL)
+        .anySatisfy(TraceIdHttpTest::carriesTheInventedTraceId);
   }
 
   @Test
@@ -190,21 +188,26 @@ class TraceIdHttpTest {
             .content("{\"name\":\"Forklift\"}");
     mockMvc.perform(request).andExpect(status().isCreated());
 
-    JsonNode line = theOneLineSaying(output, WORKFORCE_CHANGE);
-
-    assertThat(line.path(TRACE_ID_FIELD).asString())
-        .as("the trace id of %s", line)
-        .isEqualTo(INVENTED_TRACE_ID);
+    assertThat(theLinesSaying(output, WORKFORCE_CHANGE))
+        .as("the lines saying \"%s\"", WORKFORCE_CHANGE)
+        .anySatisfy(TraceIdHttpTest::carriesTheInventedTraceId);
   }
 
   /**
-   * Fails unless exactly one captured line says the message, and that line parses as JSON: a line a
-   * collector cannot parse is a line nobody can search by trace id.
+   * Fails unless some captured line says the message, and every one that does parses as JSON: a
+   * line a collector cannot parse is a line nobody can search by trace id.
+   *
+   * <p>Not required to be the only one: the capture opens before {@code @BeforeEach} onboards an
+   * organisation, so a line the arrange step writes saying the same thing would otherwise fail the
+   * test while the request under test was traced correctly.
    */
-  private static JsonNode theOneLineSaying(CapturedOutput output, String message) {
+  private static List<JsonNode> theLinesSaying(CapturedOutput output, String message) {
     List<String> lines = output.getOut().lines().filter(line -> line.contains(message)).toList();
-    assertThat(lines).as("lines on stdout saying \"%s\"", message).hasSize(1);
-    String line = lines.getFirst();
+    assertThat(lines).as("lines on stdout saying \"%s\"", message).isNotEmpty();
+    return lines.stream().map(line -> parsed(line, message)).toList();
+  }
+
+  private static JsonNode parsed(String line, String message) {
     JsonNode parsed;
     try {
       parsed = JSON.readTree(line);
@@ -213,5 +216,11 @@ class TraceIdHttpTest {
     }
     assertThat(parsed.path("message").asString()).as("the message of %s", line).isEqualTo(message);
     return parsed;
+  }
+
+  private static void carriesTheInventedTraceId(JsonNode line) {
+    assertThat(line.path(TRACE_ID_FIELD).asString())
+        .as("the trace id of %s", line)
+        .isEqualTo(INVENTED_TRACE_ID);
   }
 }
