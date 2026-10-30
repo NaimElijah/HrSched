@@ -5,6 +5,10 @@
     deleted, and the actor now comes from the token
     ([ADR-011](ADR-011-issue-our-own-access-tokens.md)). The trigger on the rejected MDC filter,
     that authentication lands, has fired, and ADR-011 rejected the filter again with a new trigger.
+  - **Erratum 2026-10-30:** `trace_id`, under Consequences, should read `traceId`. Micrometer
+    Tracing puts the id in the MDC under that name, and the ECS format publishes it as named, as
+    both already did in the commit that added this record (c99f71a). `TraceIdHttpTest` reads it
+    off the JSON log lines.
 - **Date:** 2026-08-30
 
 ## Context
