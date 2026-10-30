@@ -356,6 +356,26 @@ class SwapHttpTest {
         .andExpect(status().isBadRequest());
   }
 
+  /**
+   * Refused by the request itself, deep in the domain, and answered as the bad request it is: the
+   * handler's routing of {@code SwapWithThemselfException} is what makes it a 400, not a 500.
+   */
+  @Test
+  void GivenThemselfAsTheColleague_WhenAskingForASwap_ThenItIsABadRequest() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada Lovelace");
+    Rostered rostered = publishedFor(organisation, ada);
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, post("/api/swaps"), organisation, ada)
+                .content(
+                    "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
+                        .formatted(rostered.roster(), rostered.shift(), ada, ada)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.title").value("Invalid request"));
+  }
+
   /** Raises Ada's request to hand her shift to Grace, and returns where its 201 said it lives. */
   private String requestedLocation(String organisation, String ada, String grace) throws Exception {
     Rostered rostered = publishedFor(organisation, ada);

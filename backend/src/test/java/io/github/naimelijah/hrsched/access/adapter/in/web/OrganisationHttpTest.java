@@ -10,12 +10,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
+import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
+import io.github.naimelijah.hrsched.access.domain.model.Account;
+import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
+import io.github.naimelijah.hrsched.access.domain.model.SignInName;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
+import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -43,16 +50,50 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * with a 404, because a 403 would confirm it exists.
  *
  * <p>Annotated identically to the other HTTP tests so they all share one Spring context.
+ *
+ * <p>Every sign-in name and password here is invented for the test.
  */
 @Import(PostgresBackedApplication.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 class OrganisationHttpTest {
 
+  /** Invented for the operator whose temporary password is still pending. */
+  private static final String PENDING_PASSWORD = "an invented temporary password for a test";
+
   @Autowired private MockMvc mockMvc;
+  @Autowired private AccountRepository accounts;
+  @Autowired private PasswordHasher passwords;
 
   private String operator() throws Exception {
     return TestTenants.operatorToken(mockMvc);
+  }
+
+  /**
+   * Stores an operator account whose temporary password has not been replaced yet, and signs it in
+   * through the real endpoint, so the token is one the sign-in really issued.
+   *
+   * @return a bearer token for that operator
+   */
+  private String aPendingOperator() throws Exception {
+    String signInName = "pending-operator-%s@example.com".formatted(UUID.randomUUID());
+    accounts.save(
+        new Account(
+            UserId.newId(),
+            new SignInName(signInName),
+            passwords.hash(PENDING_PASSWORD),
+            new OperatorMembership(),
+            true,
+            Instant.now()));
+    String body =
+        mockMvc
+            .perform(signInAs(signInName, PENDING_PASSWORD))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.session.passwordChangeRequired").value(true))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return JsonPath.read(body, "$.accessToken");
   }
 
   /**
@@ -113,6 +154,30 @@ class OrganisationHttpTest {
         .andExpect(jsonPath("$.id").value(id));
   }
 
+  /** Any member reads their own organisation's record (F13), not only an Admin (#100). */
+  @Test
+  void GivenAnOrganisation_WhenItsOwnSchedulerReadsIt_ThenItIsReturned() throws Exception {
+    String id = onboard("Acme %s".formatted(UUID.randomUUID()));
+    String scheduler = TestTenants.tokenFor(mockMvc, organisation(id), Role.SCHEDULER);
+
+    mockMvc
+        .perform(with(get("/api/organisations/" + id), scheduler))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(id));
+  }
+
+  /** Any member reads their own organisation's record (F13), not only an Admin (#100). */
+  @Test
+  void GivenAnOrganisation_WhenItsOwnEmployeeReadsIt_ThenItIsReturned() throws Exception {
+    String id = onboard("Acme %s".formatted(UUID.randomUUID()));
+    String employee = TestTenants.tokenFor(mockMvc, organisation(id), Role.EMPLOYEE);
+
+    mockMvc
+        .perform(with(get("/api/organisations/" + id), employee))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(id));
+  }
+
   /** A 404 rather than a 403: saying otherwise would confirm that organisation exists. */
   @Test
   void GivenAnAdminOfAnotherOrganisation_WhenReadingOurs_ThenItIsNotFound() throws Exception {
@@ -153,6 +218,41 @@ class OrganisationHttpTest {
     String employee = TestTenants.tokenFor(mockMvc, organisation(onboard("Acme")), Role.EMPLOYEE);
 
     mockMvc.perform(with(get("/api/organisations"), employee)).andExpect(status().isForbidden());
+  }
+
+  // R16 on the operator's own routes: a temporary password still pending holds no role, so even
+  // the operator is refused the register until it has chosen its own (ADR-029).
+
+  @Test
+  void GivenAnOperatorWithAPendingPasswordChange_WhenOnboarding_ThenItIsForbidden()
+      throws Exception {
+    String name = "Pending %s".formatted(UUID.randomUUID());
+
+    mockMvc
+        .perform(
+            with(post("/api/organisations"), aPendingOperator())
+                .content(TestTenants.onboarding(name)))
+        .andExpect(status().isForbidden());
+
+    assertThatNoOrganisationIsCalled(name);
+  }
+
+  @Test
+  void GivenAnOperatorWithAPendingPasswordChange_WhenListingOrganisations_ThenItIsForbidden()
+      throws Exception {
+    mockMvc
+        .perform(with(get("/api/organisations"), aPendingOperator()))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenAnOperatorWithAPendingPasswordChange_WhenReadingAnOrganisation_ThenItIsForbidden()
+      throws Exception {
+    String id = onboard("Acme %s".formatted(UUID.randomUUID()));
+
+    mockMvc
+        .perform(with(get("/api/organisations/" + id), aPendingOperator()))
+        .andExpect(status().isForbidden());
   }
 
   @Test

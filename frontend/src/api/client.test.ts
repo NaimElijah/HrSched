@@ -122,6 +122,16 @@ describe('what a request carries', () => {
     expect((stub.mock.calls[0]?.[1] as RequestInit).body).toBeUndefined();
   });
 
+  /** The backend reads a body as JSON only when it is told it is JSON. */
+  it('GivenARequestWithABody_WhenRequesting_ThenItIsSentAsJson', async () => {
+    const stub = respondWith(201, { id: 'q-1', name: 'Forklift' });
+
+    await api.post('/api/qualifications', { name: 'Forklift' });
+
+    expect(headersOf(stub.mock.calls[0]).get('Content-Type')).toBe('application/json');
+    expect((stub.mock.calls[0]?.[1] as RequestInit).body).toBe('{"name":"Forklift"}');
+  });
+
   it('GivenARequestWithoutABody_WhenRequesting_ThenNoContentTypeIsClaimed', async () => {
     const stub = respondWith(200, []);
 
@@ -255,11 +265,28 @@ describe('where the token is kept', () => {
     });
     const local = vi.spyOn(Storage.prototype, 'setItem');
 
+    try {
+      await auth.signIn('ada@example.com', 'an invented password for a test');
+
+      expect(local).not.toHaveBeenCalled();
+      expect(currentAccessToken()).toBe('token-1');
+    } finally {
+      local.mockRestore();
+    }
+  });
+
+  it('GivenASignIn_WhenItSucceeds_ThenTheTokenIsInNoCookie', async () => {
+    respondWith(200, {
+      accessToken: 'token-1',
+      tokenType: 'Bearer',
+      expiresIn: 600,
+      session: A_SESSION,
+    });
+
     await auth.signIn('ada@example.com', 'an invented password for a test');
 
-    expect(local).not.toHaveBeenCalled();
+    expect(document.cookie).not.toContain('token-1');
     expect(currentAccessToken()).toBe('token-1');
-    local.mockRestore();
   });
 
   it('GivenASignOut_WhenItAnswers_ThenTheTokenAndSessionAreForgotten', async () => {
@@ -350,11 +377,11 @@ describe('renewing a session', () => {
     });
 
     const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+    stop();
 
     expect(error.isUnauthenticated).toBe(true);
     expect(currentAccessToken()).toBeNull();
     expect(ended).toBe(true);
-    stop();
   });
 
   /**
@@ -372,11 +399,11 @@ describe('renewing a session', () => {
     });
 
     const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+    stop();
 
     expect(error.status).toBe(502);
     expect(currentAccessToken()).not.toBeNull();
     expect(ended).toBe(false);
-    stop();
   });
 
   it('GivenARefreshAnsweredByAGatewayWithNoBackend_WhenRestoring_ThenItIsThrownRatherThanReadAsNoSession', async () => {
@@ -454,8 +481,13 @@ describe('renewing a session', () => {
     expect(stub.mock.calls.filter(([called]) => called === '/api/auth/refresh')).toHaveLength(0);
   });
 
-  /** A 401 from signing in is the answer, not a hint to go and renew something. */
+  /**
+   * A 401 from signing in is the answer, not a hint to go and renew something. Somebody is already
+   * signed in here, as in another account's tab, because a request sent as nobody is never renewed
+   * at all and would leave this test unable to fail.
+   */
   it('GivenAnAuthEndpointAnswering401_WhenRequesting_ThenNoRefreshIsAttempted', async () => {
+    signedIn();
     const stub = respondWith(401, { detail: 'Those credentials were not accepted.' });
 
     await expect(auth.signIn('ada@example.com', 'wrong')).rejects.toBeInstanceOf(ApiError);
@@ -559,7 +591,8 @@ describe('what a failure carries', () => {
     expect(error.message).toBe('The server returned 502.');
   });
 
-  it('GivenACrossTenantRead_WhenRequesting_ThenItIsNotFoundRatherThanForbidden', async () => {
+  /** A 404 is how the backend answers a cross-tenant read; the client only has to keep it a 404. */
+  it('GivenA404_WhenRequesting_ThenItIsNotFoundRatherThanForbidden', async () => {
     respondWith(404, { title: 'Not found', detail: 'No such resource.' });
 
     const error = (await api.get('/api/rosters/1').catch((e: unknown) => e)) as ApiError;

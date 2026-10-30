@@ -90,6 +90,9 @@ class SwapServiceTest {
   private static final TimeRange NEXT_MONDAY_DAY =
       new TimeRange(Instant.parse("2026-10-12T08:00:00Z"), Instant.parse("2026-10-12T16:00:00Z"));
 
+  /** The telling a decision makes to its second party, which every one of them has. */
+  private static final int SECOND_TELLING = 2;
+
   /** Fixed, so the time a request records is something these tests state rather than tolerate. */
   private static final Instant RAISED_AT = Instant.parse("2026-10-01T09:30:00Z");
 
@@ -280,6 +283,20 @@ class SwapServiceTest {
         .doesNotThrowAnyException();
   }
 
+  /** F7: a Scheduler may ask on somebody's behalf, as an Admin may, and the ask is theirs. */
+  @Test
+  void GivenAScheduler_WhenAskingOnSomebodyElsesBehalf_ThenTheRequestIsTheirs() {
+    ShiftId shift = aShift(Set.of());
+    Roster published = publishedWith(ada, shift);
+
+    SwapRequestId request =
+        service.requestSwap(
+            scheduler(ACME), new RequestSwapCommand(ACME, published.id(), shift, ada, grace));
+
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(swaps.byId(request).requester()).isEqualTo(ada);
+  }
+
   @Test
   void GivenAShiftTheyDoNotCover_WhenAskingForASwap_ThenItIsRefused() {
     ShiftId theirs = aShift(Set.of());
@@ -307,6 +324,26 @@ class SwapServiceTest {
                     themself(ACME, ada),
                     new RequestSwapCommand(ACME, draft.id(), shift, ada, grace)))
         .isInstanceOf(RosterNotEditableException.class);
+  }
+
+  /**
+   * R20: the roster currently published, not one a newer roster has replaced. Ada still holds the
+   * shift on the superseded one, so only the roster's state refuses the ask.
+   */
+  @Test
+  void GivenASupersededRoster_WhenAskingForASwapAgainstIt_ThenItIsRefusedAndNothingIsStored() {
+    ShiftId shift = aShift(Set.of());
+    Roster replaced = publishedWith(ada, shift);
+    publishedWith(ada, shift);
+
+    assertThatThrownBy(
+            () ->
+                service.requestSwap(
+                    themself(ACME, ada),
+                    new RequestSwapCommand(ACME, replaced.id(), shift, ada, grace)))
+        .isInstanceOf(RosterNotEditableException.class);
+
+    assertThat(swaps.findByOrganisation(ACME)).isEmpty();
   }
 
   @Test
@@ -539,6 +576,38 @@ class SwapServiceTest {
         .describedAs("rejecting decides a request and changes no roster at all")
         .isEqualTo(RosterStatus.PUBLISHED);
     assertThat(audit.of(SchedulingChange.SWAP_REJECTED)).hasSize(1);
+  }
+
+  /** Deciding a swap is the Scheduler's (Q11): the colleague asked is informed, never the judge. */
+  @Test
+  void GivenAnEmployeeRole_WhenRejectingASwap_ThenItIsRefusedAndTheSwapIsStillRequested() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+
+    assertThatThrownBy(() -> service.rejectSwap(themself(ACME, grace), ACME, request))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.SWAP_REJECTED);
+  }
+
+  /** An Admin manages people and rules; deciding a swap is building a roster, as approving is. */
+  @Test
+  void GivenAnAdminRole_WhenRejectingASwap_ThenItIsRefusedAndTheSwapIsStillRequested() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+
+    assertThatThrownBy(() -> service.rejectSwap(admin(ACME), ACME, request))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.SWAP_REJECTED);
   }
 
   /** The same hole as manual assignment, on the path that publishes without anybody re-checking. */
@@ -945,6 +1014,26 @@ class SwapServiceTest {
             new Told("LAPSED", grace, two.alans()));
   }
 
+  /**
+   * The lapses an approval causes are told before the approval, and each party in a fixed order. An
+   * inbox lists the newest first, so the approval, told last, stays at the top of the
+   * counterparty's, where it was before the approval's tellings moved into the publication (#133).
+   */
+  @Test
+  void GivenTwoPendingSwapsOnOneRoster_WhenOneIsApproved_ThenTheLapseIsToldBeforeTheApproval() {
+    TwoPending two = twoPendingOnOneRoster();
+    notifier.told.clear();
+
+    service.approveSwap(scheduler(ACME), ACME, two.adas());
+
+    assertThat(notifier.told)
+        .containsExactly(
+            new Told("LAPSED", two.alan(), two.alans()),
+            new Told("LAPSED", grace, two.alans()),
+            new Told("APPROVED", grace, two.adas()),
+            new Told("APPROVED", ada, two.adas()));
+  }
+
   /** One publication can supersede several rosters, and each takes its pending requests with it. */
   @Test
   void GivenPendingSwapsOnTwoRosters_WhenOnePublicationSupersedesBoth_ThenBothLapse() {
@@ -979,10 +1068,12 @@ class SwapServiceTest {
   }
 
   /**
-   * A lapse that cannot be stored refuses the whole publication, and the transaction takes back
-   * every write before it, but never an audit line or a notification once raised. So every lapse is
-   * stored before anything is recorded or told, and a refusal part-way leaves no account of the
-   * lapses before it, nor of a supersession that never happened.
+   * A lapse that cannot be stored refuses the whole publication. The transaction takes back every
+   * write before it, a notification's row among them, because the notifications use case joins the
+   * publication's transaction (ADR-023). It never takes back an audit line, this context's or the
+   * one the notifications context records for each notification it stores. So every lapse is stored
+   * before anything is recorded or told, and a refusal part-way leaves no account of the lapses
+   * before it, nor of a supersession that never happened.
    */
   @Test
   void GivenALapseThatCannotBeStored_WhenPublishing_ThenNothingIsRecordedOrToldFirst() {
@@ -1233,6 +1324,149 @@ class SwapServiceTest {
     assertThat(log.calls()).first().isEqualTo(CallLog.Call.LOCK_PUBLICATIONS);
   }
 
+  // --- Telling is a write that can fail, so nothing is recorded before it ---------------------
+  //
+  // backend/CLAUDE.md: every write that can still fail runs before anything is recorded, because
+  // an audit line outlives the rollback of a failure that came after it. Telling a party stores a
+  // notification in this use case's transaction, so it is one of those writes.
+
+  /** This service over the same stores, telling through a notifier whose every telling fails. */
+  private SwapService tellingNobody() {
+    return tellingThrough(new FailingNotifier());
+  }
+
+  /**
+   * This service over the same stores, telling through {@code failing}. The publication it approves
+   * through is real here, so that tells through the failing one too.
+   */
+  private SwapService tellingThrough(FailingNotifier failing) {
+    SchedulingService publishing =
+        new SchedulingService(
+            shifts,
+            rosters,
+            constraintSets,
+            new FakeObjectiveWeights(),
+            swaps,
+            workforce,
+            new AssignsNobody(),
+            new RecordingUnitsOfWork(),
+            generations,
+            Runnable::run,
+            LOST_AFTER,
+            failing,
+            audit,
+            Clock.fixed(RAISED_AT, ZoneOffset.UTC));
+    return new SwapService(
+        swaps,
+        rosters,
+        shifts,
+        workforce,
+        publishing,
+        failing,
+        audit,
+        Clock.fixed(RAISED_AT, ZoneOffset.UTC));
+  }
+
+  @Test
+  void GivenATellingThatCannotBeStored_WhenRequestingASwap_ThenNothingIsRecorded() {
+    ShiftId shift = aShift(Set.of());
+    Roster published = publishedWith(ada, shift);
+    audit.forget();
+
+    assertThatThrownBy(
+            () ->
+                tellingNobody()
+                    .requestSwap(
+                        themself(ACME, ada),
+                        new RequestSwapCommand(ACME, published.id(), shift, ada, grace)))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * Approving publishes a replacement, which supersedes the roster the request names. The telling
+   * fails after all of that is stored, and takes it back, so none of it is recorded either.
+   */
+  @Test
+  void GivenATellingThatCannotBeStored_WhenApprovingASwap_ThenNothingIsRecorded() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    audit.forget();
+
+    assertThatThrownBy(() -> tellingNobody().approveSwap(scheduler(ACME), ACME, request))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes())
+        .describedAs("neither the approval nor the supersession and publication it rolls back with")
+        .isEmpty();
+  }
+
+  @Test
+  void GivenATellingThatCannotBeStored_WhenRejectingASwap_ThenNothingIsRecorded() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    audit.forget();
+
+    assertThatThrownBy(() -> tellingNobody().rejectSwap(scheduler(ACME), ACME, request))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * A rejection tells the requester and then the counterparty. The counterparty's telling failing
+   * takes the rejection back as surely as the requester's, so nothing is recorded between the two.
+   */
+  @Test
+  void GivenTheSecondTellingCannotBeStored_WhenRejectingASwap_ThenNothingIsRecorded() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    audit.forget();
+
+    assertThatThrownBy(
+            () ->
+                tellingThrough(new FailingNotifier(SECOND_TELLING))
+                    .rejectSwap(scheduler(ACME), ACME, request))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * An approval tells both its parties, one after the other, inside the publication it settles. The
+   * second failing takes back the approval, the supersession and the publication, so none of them
+   * is recorded between the two.
+   */
+  @Test
+  void GivenTheSecondTellingCannotBeStored_WhenApprovingASwap_ThenNothingIsRecorded() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    audit.forget();
+
+    assertThatThrownBy(
+            () ->
+                tellingThrough(new FailingNotifier(SECOND_TELLING))
+                    .approveSwap(scheduler(ACME), ACME, request))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes())
+        .describedAs("neither the approval nor the supersession and publication it rolls back with")
+        .isEmpty();
+  }
+
   // --- R32: an assignment has at most one pending swap request ------------------------------
 
   @Test
@@ -1358,6 +1592,47 @@ class SwapServiceTest {
   void GivenTheOperator_WhenRejectingASwap_ThenItIsRefused() {
     assertThatThrownBy(() -> service.rejectSwap(anOperator(), ACME, SwapRequestId.newId()))
         .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  // --- Another organisation's Scheduler is refused deciding ours -----------------------------
+  //
+  // One test per decision, for the reason the operator's are.
+
+  @Test
+  void
+      GivenASchedulerOfAnotherOrganisation_WhenApprovingOurSwap_ThenItIsRefusedAndNothingChanges() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    log.forget();
+
+    assertThatThrownBy(() -> service.approveSwap(scheduler(RIVAL), ACME, request))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(rosters.byId(original.id()).status()).isEqualTo(RosterStatus.PUBLISHED);
+    assertThat(log.calls())
+        .describedAs("refused first, not by the directory read that happens to come later")
+        .isEmpty();
+  }
+
+  @Test
+  void
+      GivenASchedulerOfAnotherOrganisation_WhenRejectingOurSwap_ThenItIsRefusedAndItIsStillRequested() {
+    ShiftId shift = aShift(Set.of());
+    Roster original = publishedWith(ada, shift);
+    SwapRequestId request =
+        service.requestSwap(
+            themself(ACME, ada), new RequestSwapCommand(ACME, original.id(), shift, ada, grace));
+    log.forget();
+
+    assertThatThrownBy(() -> service.rejectSwap(scheduler(RIVAL), ACME, request))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(swaps.byId(request).status()).isEqualTo(SwapRequestStatus.REQUESTED);
+    assertThat(log.calls()).describedAs("refused before the request is even read").isEmpty();
   }
 
   private static Operator anOperator() {

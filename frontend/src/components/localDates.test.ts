@@ -11,12 +11,16 @@ import {
 
 /**
  * These functions are zone-dependent on purpose — that is what the hazard in their comments is
- * about — so nothing here asserts a literal instant. A developer machine and the CI runner sit in
- * different zones, and a test pinned to an absolute time would pass in one and fail in the other
- * for reasons that have nothing to do with the code.
+ * about. Every run reads local time in America/Los_Angeles, pinned by `test.env` in vite.config.ts
+ * whatever the machine's own zone is, so a developer machine and the CI runner agree.
  *
- * Every assertion is therefore a round trip or a relative property, both of which hold everywhere.
+ * The zone is west of Greenwich on purpose. CI runs in UTC, where local time and UTC agree and a
+ * function that used UTC by mistake would still pass every round trip below. Each literal instant
+ * here is the Los Angeles wall-clock time it names, in daylight saving time (UTC-7) in October.
  */
+
+/** Local midnight on 5 October 2026 in the pinned zone, as an instant. */
+const MIDNIGHT_ON_THE_5TH = '2026-10-05T07:00:00.000Z';
 
 describe('reading a date input', () => {
   it('GivenAnEmptyField_WhenTakingTheStartOfTheLocalDay_ThenThereIsNoInstant', () => {
@@ -30,8 +34,8 @@ describe('reading a date input', () => {
     },
   );
 
-  it('GivenADate_WhenTakingTheStartOfTheLocalDay_ThenAnInstantComesBack', () => {
-    expect(startOfLocalDay('2026-10-05')).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  it('GivenADate_WhenTakingTheStartOfTheLocalDay_ThenItIsLocalMidnightNotUtcMidnight', () => {
+    expect(startOfLocalDay('2026-10-05')).toBe(MIDNIGHT_ON_THE_5TH);
   });
 });
 
@@ -56,15 +60,17 @@ describe('the local day an instant falls on', () => {
    * where that goes wrong, so it is asserted rather than reasoned about.
    */
   it('GivenAnInstantLateOnALocalEvening_WhenAskedForItsDate_ThenItIsTheDayTheUserWouldRead', () => {
-    const lateEvening = new Date(2026, 9, 5, 23, 30, 0);
+    // 23:30 on the 5th in Los Angeles, which is already the 6th in UTC.
+    const lateEvening = '2026-10-06T06:30:00.000Z';
 
-    expect(localDate(lateEvening.toISOString())).toBe('2026-10-05');
+    expect(localDate(lateEvening)).toBe('2026-10-05');
   });
 
   it('GivenAnInstantJustAfterLocalMidnight_WhenAskedForItsDate_ThenItIsTheNewDay', () => {
-    const justAfterMidnight = new Date(2026, 9, 6, 0, 30, 0);
+    // 00:30 on the 6th in Los Angeles.
+    const justAfterMidnight = '2026-10-06T07:30:00.000Z';
 
-    expect(localDate(justAfterMidnight.toISOString())).toBe('2026-10-06');
+    expect(localDate(justAfterMidnight)).toBe('2026-10-06');
   });
 });
 
@@ -139,8 +145,7 @@ describe('the default planning span', () => {
 
     const span = defaultSpan(afternoon);
 
-    expect(new Date(span.from).getHours()).toBe(0);
-    expect(new Date(span.from).getMinutes()).toBe(0);
+    expect(span.from).toBe(MIDNIGHT_ON_THE_5TH);
   });
 
   /** The regression guard for the hazard: neither end may shift when shown in a date input. */

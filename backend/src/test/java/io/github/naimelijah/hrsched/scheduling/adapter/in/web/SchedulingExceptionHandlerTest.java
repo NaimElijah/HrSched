@@ -2,12 +2,18 @@ package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Objective;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
@@ -16,6 +22,8 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableE
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
@@ -31,12 +39,17 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.assertj.core.api.InstanceOfAssertFactories;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpStatus;
@@ -53,14 +66,45 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
  * that has to parse a sentence back apart will eventually parse it wrong.
  *
  * <p>Driven directly rather than over HTTP, because the cross-tenant branch is unreachable from any
- * HTTP test: the acting identity's organisation is built from the same header the operation
- * targets, so a tenant actor can never fail its own access check. See the workforce handler's test
- * for the same note.
+ * HTTP test: the organisation acted in is the acting account's own, taken from its token (ADR-031),
+ * so a tenant actor can never fail its own access check, and reaching for another organisation's
+ * roster over HTTP is answered by the unknown-roster branch instead.
  */
 class SchedulingExceptionHandlerTest {
 
+  /** Invented: how many generations were running when one more was refused. */
+  private static final int BUSY_RUNS = 2;
+
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private final SchedulingExceptionHandler handler = new SchedulingExceptionHandler(meters);
+
+  private Logger logger;
+  private ListAppender<ILoggingEvent> captured;
+
+  @BeforeEach
+  void captureTheLog() {
+    logger =
+        ((LoggerContext) LoggerFactory.getILoggerFactory())
+            .getLogger(SchedulingExceptionHandler.class.getName());
+    captured = new ListAppender<>();
+    captured.start();
+    logger.addAppender(captured);
+  }
+
+  @AfterEach
+  void releaseTheLog() {
+    logger.detachAppender(captured);
+  }
+
+  private ILoggingEvent onlyEvent() {
+    assertThat(captured.list).hasSize(1);
+    return captured.list.getFirst();
+  }
+
+  private static Map<String, Object> fieldsOf(ILoggingEvent event) {
+    return event.getKeyValuePairs().stream()
+        .collect(Collectors.toMap(pair -> pair.key, pair -> pair.value));
+  }
 
   private double denied(String kind) {
     return meters.find("hrsched.access.denied").tag("kind", kind).counter() == null
@@ -101,6 +145,7 @@ class SchedulingExceptionHandlerTest {
         new InvalidObjectiveWeightException(Objective.FAIRNESS),
         new DuplicateAssignmentException(new Assignment(ShiftId.newId(), EmployeeId.newId())),
         new UnknownRequiredQualificationException(Set.of(QualificationId.newId())),
+        new SwapWithThemselfException(EmployeeId.newId()),
         new MalformedRequestException("shift is required"));
   }
 
@@ -158,6 +203,23 @@ class SchedulingExceptionHandlerTest {
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Invalid request");
     assertThat(problem.getDetail()).isEqualTo(failure.getMessage());
+  }
+
+  /**
+   * Called directly, the method renders whatever it is handed; Spring routes it only the types its
+   * annotation names. So each row is also one of those, or it could pass above and still reach a
+   * client as a 500.
+   */
+  @ParameterizedTest
+  @MethodSource("invalidInput")
+  void GivenAnInvalidInput_WhenSpringRoutesIt_ThenItReachesTheBadRequestHandler(
+      RuntimeException failure) throws NoSuchMethodException {
+    ExceptionHandler routing =
+        SchedulingExceptionHandler.class
+            .getMethod("handleInvalidInput", RuntimeException.class)
+            .getAnnotation(ExceptionHandler.class);
+
+    assertThat(routing.value()).contains(failure.getClass());
   }
 
   @Test
@@ -302,6 +364,118 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(refused("concurrent_publication")).isEqualTo(1.0);
     assertThat(refused("not_compliant")).isZero();
+  }
+
+  // --- A refusal worth somebody's attention is logged at WARN, by identity only (ADR-018) -------
+  //
+  // The counters say how many; the log line says who, which is what an operator investigating one
+  // needs. Every field is an identity or a role, never a name: a log is copied to places a
+  // database is not.
+
+  @Test
+  void GivenACrossTenantAttempt_WhenTranslated_ThenItIsLoggedAtWarnNamingTheActorAndTheTenant() {
+    UserId actor = UserId.newId();
+    OrganisationId theirs = OrganisationId.newId();
+
+    handler.handleUnknown(new CrossTenantAccessException(actor, theirs));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo("Refused: an actor reached for another organisation's data");
+    assertThat(fieldsOf(logged))
+        .containsOnly(Map.entry("actor", actor.value()), Map.entry("organisation", theirs.value()));
+  }
+
+  @Test
+  void GivenARoleRefusal_WhenTranslated_ThenItIsLoggedAtWarnNamingTheActorAndTheRoleHeld() {
+    UserId actor = UserId.newId();
+
+    handler.handleNotPermitted(
+        new NotPermittedException(actor, Role.ADMIN, Set.of(Role.SCHEDULER)));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo("Refused: the actor's role does not permit this");
+    assertThat(fieldsOf(logged))
+        .containsOnly(Map.entry("actor", actor.value()), Map.entry("role", Role.ADMIN));
+  }
+
+  @Test
+  void GivenTheOperatorActingInsideAnOrganisation_WhenTranslated_ThenItIsLoggedAtWarnNamingThem() {
+    UserId operator = UserId.newId();
+
+    handler.handleOperatorConfined(new NotATenantMemberException(operator));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo("Refused: the platform operator reached inside an organisation");
+    assertThat(fieldsOf(logged)).containsOnly(Map.entry("actor", operator.value()));
+  }
+
+  /**
+   * The roster and the shift stay out of the line: what to look at is in the 422 the caller got.
+   */
+  @Test
+  void GivenARosterThatCannotBeChecked_WhenTranslated_ThenItIsLoggedAtWarnCarryingNoFields() {
+    handler.handleNotVerifiable(
+        new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo("Publication refused: the roster names work that cannot be checked");
+    assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
+  }
+
+  @Test
+  void GivenAPublicationThatLostARace_WhenTranslated_ThenItIsLoggedAtWarnNamingOnlyTheRoster() {
+    RosterId replacement = RosterId.newId();
+
+    handler.handleConcurrentPublication(
+        new RosterPublicationConflictException(
+            replacement, new IllegalStateException("what the store said")));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo(
+            "Publication refused by the schema: an overlapping roster was published concurrently");
+    assertThat(fieldsOf(logged)).containsOnly(Map.entry("roster", replacement.value()));
+  }
+
+  @Test
+  void GivenAnActorWithoutAPersonnelRecord_WhenTranslated_ThenItIsLoggedAtWarnNamingOnlyThem() {
+    UserId actor = UserId.newId();
+
+    handler.handleNoEmployeeRecord(new NoEmployeeRecordException(actor));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo("Refused: an actor without a personnel record asked for their own schedule");
+    assertThat(fieldsOf(logged)).containsOnly(Map.entry("actor", actor.value()));
+  }
+
+  /** Saturation, not anybody's doing: the line names nobody, and the counter says how often. */
+  @Test
+  void GivenEveryGenerationRunBusy_WhenTranslated_ThenItIsLoggedAtWarnCarryingNoFields() {
+    handler.handleTooManyGenerations(new TooManyGenerationsException(BUSY_RUNS));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage()).isEqualTo("Generation refused: every run is busy");
+    assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
+  }
+
+  /** A miss is not an incident: logging every 404 would bury the ones that are. */
+  @Test
+  void GivenAnOrdinaryUnknownRoster_WhenTranslated_ThenNothingIsLogged() {
+    handler.handleUnknown(new UnknownRosterException(RosterId.newId()));
+
+    assertThat(captured.list).isEmpty();
   }
 
   /**

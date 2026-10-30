@@ -8,6 +8,7 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.access.LoggedText;
 import io.github.naimelijah.hrsched.access.adapter.out.token.AccessTokenKey;
 import io.github.naimelijah.hrsched.access.adapter.out.token.AccessTokenProperties;
 import io.github.naimelijah.hrsched.access.adapter.out.token.JwtAccessTokenIssuer;
@@ -21,6 +22,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import jakarta.servlet.http.Cookie;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -83,7 +86,7 @@ class SessionRefreshHttpTest {
   @BeforeEach
   void captureTheLog() {
     root = ((LoggerContext) LoggerFactory.getILoggerFactory()).getLogger(Logger.ROOT_LOGGER_NAME);
-    captured = new ListAppender<>();
+    captured = LoggedText.capturing();
     captured.start();
     root.addAppender(captured);
   }
@@ -170,6 +173,20 @@ class SessionRefreshHttpTest {
     assertThat(refresh(token).getStatus()).isEqualTo(401);
   }
 
+  /**
+   * The idle limit, end to end: the session is still live, but its refresh token sat unused past
+   * its own expiry, so it renews nothing.
+   */
+  @Test
+  void GivenARefreshTokenPastItsIdleLimitInALiveSession_WhenRefreshing_ThenItIsRefused()
+      throws Exception {
+    MockHttpServletResponse signedIn = signIn(anOperator());
+    String token = refreshTokenOf(signedIn);
+    expireRefreshTokensOf(sessionOf(signedIn), Instant.now().minusSeconds(1));
+
+    assertThat(refresh(token).getStatus()).isEqualTo(401);
+  }
+
   @Test
   void GivenADisabledAccount_WhenRefreshing_ThenItIsRefused() throws Exception {
     Account account = anOperator();
@@ -238,6 +255,9 @@ class SessionRefreshHttpTest {
     assertThat(cookie).isNotNull();
     assertThat(cookie).startsWith("__Secure-hrsched-refresh=;");
     assertThat(cookie).contains("Max-Age=0");
+    assertThat(cookie)
+        .describedAs("a browser ignores a __Secure- cookie set without the attribute")
+        .contains("; Secure");
   }
 
   /**
@@ -308,6 +328,24 @@ class SessionRefreshHttpTest {
     assertThat(signOut(refreshTokenOf(signedIn)).getStatus()).isEqualTo(204);
 
     assertThat(revocationOf(session)).isNotNull();
+  }
+
+  /**
+   * A database that leaks must hand over nothing anybody can present, so the row holds the SHA-256
+   * of the token the cookie carries, and not the token (V4, ADR-028).
+   */
+  @Test
+  void GivenASignIn_WhenItsRefreshTokenIsStored_ThenTheRowHoldsItsDigestAndNotTheToken()
+      throws Exception {
+    MockHttpServletResponse signedIn = signIn(anOperator());
+    byte[] presented = refreshTokenOf(signedIn).getBytes(StandardCharsets.UTF_8);
+
+    byte[] stored = storedDigestOf(sessionOf(signedIn));
+
+    assertThat(stored)
+        .describedAs("never the token itself")
+        .isNotEqualTo(presented)
+        .isEqualTo(MessageDigest.getInstance("SHA-256").digest(presented));
   }
 
   @Test
@@ -408,6 +446,15 @@ class SessionRefreshHttpTest {
         .orElse(null);
   }
 
+  /** The one refresh token a session holds before it is first renewed, as the row stores it. */
+  private static byte[] storedDigestOf(UUID session) {
+    return PostgresDatabase.jdbcClient()
+        .sql("SELECT digest FROM refresh_token WHERE session_id = :session")
+        .param("session", session)
+        .query(byte[].class)
+        .single();
+  }
+
   /**
    * Moves a session wholly into the past. Both ends, because the schema refuses a session that
    * would end before it began - which is the check earning its keep on a test that tried to.
@@ -421,13 +468,20 @@ class SessionRefreshHttpTest {
         .update();
   }
 
+  /**
+   * Moves the expiry of a session's refresh tokens into the past and leaves the session itself
+   * alone, so the token is idle while its session is live.
+   */
+  private static void expireRefreshTokensOf(UUID session, Instant when) {
+    PostgresDatabase.jdbcClient()
+        .sql("UPDATE refresh_token SET expires_at = :expired WHERE session_id = :session")
+        .param("expired", OffsetDateTime.ofInstant(when, ZoneOffset.UTC))
+        .param("session", session)
+        .update();
+  }
+
+  /** Everything the captured events carry, as one string to search: see {@link LoggedText}. */
   private String everythingLogged() {
-    return captured.list.stream()
-        .map(
-            event ->
-                event.getFormattedMessage()
-                    + " "
-                    + (event.getKeyValuePairs() == null ? "" : event.getKeyValuePairs()))
-        .reduce("", (all, line) -> all + "\n" + line);
+    return LoggedText.of(captured.list);
   }
 }

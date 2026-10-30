@@ -151,6 +151,47 @@ class GenerationRunnerTest {
   }
 
   /**
+   * The runner adds nothing of its own to a failure's line but a constant message: it cannot know
+   * what the work was about, so anything it attached could only be what the work handed it. Whether
+   * the failure itself names anybody is the thrower's to keep, as {@code SchedulingService}'s
+   * defect messages do.
+   */
+  @Test
+  void GivenWorkThatFails_WhenItRuns_ThenTheLineIsAConstantCarryingOnlyTheFailure()
+      throws InterruptedException {
+    Logger logger =
+        ((LoggerContext) LoggerFactory.getILoggerFactory())
+            .getLogger(GenerationRunner.class.getName());
+    ListAppender<ILoggingEvent> captured = new ListAppender<>();
+    captured.start();
+    logger.addAppender(captured);
+    try {
+      IllegalStateException invented = new IllegalStateException("an invented defect");
+      runner.start(
+          () -> {
+            throw invented;
+          });
+      CountDownLatch next = new CountDownLatch(1);
+
+      startWhenFree(next::countDown);
+
+      assertThat(next.await(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
+      assertThat(captured.list)
+          .singleElement()
+          .satisfies(
+              logged -> {
+                assertThat(logged.getLevel()).isEqualTo(Level.ERROR);
+                assertThat(logged.getFormattedMessage()).isEqualTo("Roster generation failed");
+                assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
+                assertThat(logged.getThrowableProxy().getMessage())
+                    .isEqualTo(invented.getMessage());
+              });
+    } finally {
+      logger.detachAppender(captured);
+    }
+  }
+
+  /**
    * The failed work's thread returns to the pool just after it logs, so the next start may race it
    * and be refused; it is asked again until accepted, within the bound.
    */

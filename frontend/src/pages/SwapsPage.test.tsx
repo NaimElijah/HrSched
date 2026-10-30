@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Session } from '../api/session';
 import type { Employee } from '../api/workforce';
 import { dayLabel, timeLabel } from '../components/localDates';
 import { A_TENANT, SignedIn } from '../test-support/session';
@@ -54,9 +55,9 @@ function aQueue(overrides: Record<string, Answer> = {}) {
   });
 }
 
-function show(people: readonly Employee[] = [ADA, GRACE]) {
+function show(people: readonly Employee[] = [ADA, GRACE], session: Session = A_TENANT) {
   render(
-    <SignedIn session={A_TENANT}>
+    <SignedIn session={session}>
       <SwapsPage people={people} />
     </SignedIn>,
   );
@@ -71,13 +72,8 @@ async function rowOfTheShift(): Promise<HTMLElement> {
   return row;
 }
 
-beforeEach(() => {
-  window.localStorage.clear();
-});
-
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 describe('the queue', () => {
@@ -236,7 +232,8 @@ describe('deciding', () => {
             {
               employee: 'emp-2',
               constraint: 'maximum daily working time',
-              detail: 'PT16H worked on 2026-10-06 exceeds the maximum of PT10H',
+              // Invented, like every limit in a test: PT10H1M matches no statute.
+              detail: 'PT16H worked on 2026-10-06 exceeds the maximum of PT10H1M',
             },
           ],
         },
@@ -252,7 +249,7 @@ describe('deciding', () => {
     expect(alert).toHaveTextContent('There is no override');
   });
 
-  it('GivenASwapAlreadyDecided_WhenApproving_ThenItSaysSomebodyAnsweredFirst', async () => {
+  it('GivenASwapAlreadyDecided_WhenApproving_ThenTheBackendsReasonIsShown', async () => {
     aQueue({
       'POST /api/swaps/swap-1/approval': {
         status: 409,
@@ -268,6 +265,23 @@ describe('deciding', () => {
     );
   });
 
+  it('GivenADeclineTheBackendRefuses_WhenDeclining_ThenTheRefusalIsShownRatherThanASuccess', async () => {
+    aQueue({
+      'POST /api/swaps/swap-1/rejection': {
+        status: 409,
+        body: { detail: 'That swap request has already been decided.' },
+      },
+    });
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Decline/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That swap request has already been decided.',
+    );
+    expect(screen.queryByText(/^Declined\./)).not.toBeInTheDocument();
+  });
+
   it('GivenAnEmployeeRole_WhenApproving_ThenTheRoleRefusalIsShown', async () => {
     aQueue({
       'POST /api/swaps/swap-1/approval': {
@@ -275,7 +289,7 @@ describe('deciding', () => {
         body: { detail: 'Your role does not permit this.' },
       },
     });
-    show();
+    show([ADA, GRACE], { ...A_TENANT, role: 'EMPLOYEE', employee: GRACE.id });
 
     await userEvent.click(await screen.findByRole('button', { name: /^Approve/ }));
 

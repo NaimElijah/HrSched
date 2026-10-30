@@ -1,8 +1,12 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { A_TENANT, SignedIn } from '../test-support/session';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { callsTo, routeTo } from '../test-support/routeTo';
+import type { Answer } from '../test-support/routeTo';
+import type { Session } from '../api/session';
+import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { QualificationsPage } from './QualificationsPage';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * A qualification is a named ticket scoped to one organisation, and a shift may only require one
@@ -15,52 +19,34 @@ const DEFINED = [
   { id: 'q-2', name: 'Welding' },
 ];
 
-function routeTo(handlers: {
-  list?: unknown;
-  onPost?: () => { ok: boolean; status: number; body: unknown };
-}) {
-  const stub = vi.fn((path: string, init?: RequestInit) => {
-    if (init?.method === 'POST') {
-      const outcome = handlers.onPost?.() ?? { ok: true, status: 201, body: { id: 'q-3' } };
-      return Promise.resolve({
-        ok: outcome.ok,
-        status: outcome.status,
-        headers: new Headers(),
-        text: () => Promise.resolve(JSON.stringify(outcome.body)),
-      });
-    }
-    void path;
-    return Promise.resolve({
-      ok: true,
-      status: 200,
-      headers: new Headers(),
-      text: () => Promise.resolve(JSON.stringify(handlers.list ?? [])),
-    });
+/** Answers the listing with what is defined, and accepts a definition, unless overridden. */
+function theOrganisation(overrides: Record<string, Answer> = {}) {
+  return routeTo({
+    '/api/qualifications': { status: 200, body: DEFINED },
+    'POST /api/qualifications': { status: 201, body: { id: 'q-3', name: 'Nursing' } },
+    ...overrides,
   });
-  vi.stubGlobal('fetch', stub);
-  return stub;
 }
 
-function show() {
+const NONE_DEFINED: Record<string, Answer> = {
+  '/api/qualifications': { status: 200, body: [] },
+};
+
+function show(session: Session = A_TENANT) {
   render(
-    <SignedIn session={A_TENANT}>
+    <SignedIn session={session}>
       <QualificationsPage />
     </SignedIn>,
   );
 }
 
-beforeEach(() => {
-  window.localStorage.clear();
-});
-
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 describe('listing what the organisation has defined', () => {
   it('GivenDefinedQualifications_WhenOpened_ThenEachIsListedWithItsIdentifier', async () => {
-    routeTo({ list: DEFINED });
+    theOrganisation();
 
     show();
 
@@ -70,24 +56,21 @@ describe('listing what the organisation has defined', () => {
   });
 
   it('GivenNoneDefined_WhenOpened_ThenTheListIsEmptyRatherThanBroken', async () => {
-    routeTo({ list: [] });
+    theOrganisation(NONE_DEFINED);
 
     show();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Define' })).toBeEnabled());
+    // The busy region empties only once the listing has answered; until then an empty list proves
+    // nothing about what the page does with an empty answer.
+    await waitFor(() => expect(screen.getByRole('status')).toBeEmptyDOMElement());
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('GivenTheListingIsRefused_WhenOpened_ThenTheRefusalIsShownRatherThanAnEmptyList', async () => {
-    const stub = vi.fn(() =>
-      Promise.resolve({
-        ok: false,
-        status: 403,
-        headers: new Headers(),
-        text: () => Promise.resolve(JSON.stringify({ detail: 'Your role does not permit this.' })),
-      }),
-    );
-    vi.stubGlobal('fetch', stub);
+    theOrganisation({
+      '/api/qualifications': { status: 403, body: { detail: 'Your role does not permit this.' } },
+    });
 
     show();
 
@@ -99,28 +82,30 @@ describe('listing what the organisation has defined', () => {
 
 describe('defining one', () => {
   it('GivenAName_WhenDefining_ThenItIsSentAndTheFieldIsCleared', async () => {
-    const stub = routeTo({ list: [] });
+    const stub = theOrganisation(NONE_DEFINED);
     show();
 
-    await userEvent.type(screen.getByLabelText('Name'), 'Forklift');
+    await userEvent.type(screen.getByLabelText('Name'), 'Forklift', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define' }));
 
-    await waitFor(() => {
-      const post = stub.mock.calls.find((call) => call[1]?.method === 'POST');
-      expect(post).toBeDefined();
-      expect(JSON.parse(post?.[1]?.body as string)).toEqual({ name: 'Forklift' });
-    });
+    await waitFor(() => expect(callsTo(stub, 'POST', '/api/qualifications')).toHaveLength(1));
+    const init = callsTo(stub, 'POST', '/api/qualifications')[0]?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({ name: 'Forklift' });
     await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue(''));
   });
 
   it('GivenTheBackendRefuses_WhenDefining_ThenTheRefusalIsShownAndTheNameSurvives', async () => {
-    routeTo({
-      list: [],
-      onPost: () => ({ ok: false, status: 403, body: { detail: 'Only an Admin may.' } }),
+    theOrganisation({
+      ...NONE_DEFINED,
+      // Defining one is an Admin's, so a Scheduler is who the backend refuses.
+      'POST /api/qualifications': {
+        status: 403,
+        body: { detail: 'Your role does not permit this.' },
+      },
     });
-    show();
+    show(A_SCHEDULER);
 
-    await userEvent.type(screen.getByLabelText('Name'), 'Forklift');
+    await userEvent.type(screen.getByLabelText('Name'), 'Forklift', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define' }));
 
     await waitFor(() =>
@@ -130,17 +115,16 @@ describe('defining one', () => {
   });
 
   it('GivenADefinitionSucceeds_WhenItReturns_ThenTheListingIsAskedForAgain', async () => {
-    const stub = routeTo({ list: DEFINED });
+    const stub = theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText(/Forklift/)).toBeInTheDocument());
-    const before = stub.mock.calls.filter((call) => call[1]?.method !== 'POST').length;
+    const before = callsTo(stub, 'GET', '/api/qualifications').length;
 
-    await userEvent.type(screen.getByLabelText('Name'), 'Nursing');
+    await userEvent.type(screen.getByLabelText('Name'), 'Nursing', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define' }));
 
     await waitFor(() => {
-      const after = stub.mock.calls.filter((call) => call[1]?.method !== 'POST').length;
-      expect(after).toBeGreaterThan(before);
+      expect(callsTo(stub, 'GET', '/api/qualifications').length).toBeGreaterThan(before);
     });
   });
 });

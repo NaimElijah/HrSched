@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.access.adapter.out.token.AccessTokenProperties;
 import io.github.naimelijah.hrsched.access.application.port.in.ManageAccountsUseCase;
 import io.github.naimelijah.hrsched.access.application.port.in.ResetPasswordCommand;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
@@ -23,6 +24,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import jakarta.servlet.http.Cookie;
+import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -95,6 +97,7 @@ class SessionHttpTest {
   @Autowired private ManageAccountsUseCase manageAccounts;
   @Autowired private PlatformTransactionManager transactions;
   @Autowired private JdbcClient jdbc;
+  @Autowired private AccessTokenProperties tokenProperties;
 
   /**
    * #33's sign-in race, end to end, through the real use cases, their transactions and the real
@@ -273,6 +276,21 @@ class SessionHttpTest {
     assertThat(readSessionWith("Bearer " + crafted).getStatus()).isEqualTo(401);
   }
 
+  /**
+   * The positive control for the test above: a token crafted the same way, pairing an account with
+   * its own session, is accepted, so the refusal there is the mismatched pair and nothing else.
+   */
+  @Test
+  void GivenACraftedTokenPairingAnAccountWithItsOwnSession_WhenReadingTheSession_ThenItIsAccepted()
+      throws Exception {
+    Account mine = anOperator(PASSWORD, false);
+    UUID mySession = sessionOf(signIn(mine, PASSWORD));
+
+    String crafted = craftToken(mine.id().value().toString(), mySession.toString());
+
+    assertThat(readSessionWith("Bearer " + crafted).getStatus()).isEqualTo(200);
+  }
+
   @Test
   void GivenATemporaryPassword_WhenReadingTheSession_ThenAChangeIsReportedRequired()
       throws Exception {
@@ -351,20 +369,83 @@ class SessionHttpTest {
     assertThat(refresh(otherRefreshToken).getStatus()).isEqualTo(401);
   }
 
+  // A single-encoded path is let through by the firewall, decoded, and must meet the same rule as
+  // its plain spelling. Each request is built from a URI rather than a string, because MockMvc
+  // encodes a string template again, and would send %2561 where %61 was written.
+
   /**
-   * An encoded path prefix. Recorded rather than assumed: Spring's firewall refuses a URL-encoded
-   * path outright, so this never reaches a rule at all — which is a safe answer, but not the same
-   * answer as the rule giving, and worth knowing.
+   * The metrics rule is the one a deny sits ahead of a permit for: {@code denyAll} on the metrics,
+   * then {@code permitAll} on the rest of the actuator. A matcher reading the raw path would let
+   * this spelling past the first and into the second, and the metrics would answer. The Prometheus
+   * endpoint is named by the same rule, but answers 404 under test (see {@code MetricsHttpTest}),
+   * so it could not tell the two rules apart here.
    */
   @Test
-  void GivenAnEncodedPathPrefix_WhenReadingTheSessionWithoutAToken_ThenItIsStillRefused()
+  void GivenAnEncodedMetricsPath_WhenCalledWithoutAToken_ThenItIsUnauthorisedAsThePlainPathIs()
       throws Exception {
     MockHttpServletResponse response =
-        mockMvc.perform(get("/%61pi/auth/session")).andReturn().getResponse();
+        mockMvc.perform(get(URI.create("/actuator/%6detrics"))).andReturn().getResponse();
 
     assertThat(response.getStatus())
-        .describedAs("whatever refuses it, an encoded path must not reach the endpoint")
-        .isNotEqualTo(200);
+        .describedAs("the metrics rule's denyAll, not the open actuator rule behind it")
+        .isEqualTo(401);
+  }
+
+  /** A Scheduler is refused account administration however the path is spelled. */
+  @Test
+  void GivenAnEncodedAccountsPath_WhenASchedulerCallsIt_ThenItIsForbiddenAsThePlainPathIs()
+      throws Exception {
+    Account scheduler = aTenant(anOrganisation(), Role.SCHEDULER, PASSWORD, false);
+
+    MockHttpServletResponse response =
+        mockMvc
+            .perform(
+                get(URI.create("/%61pi/accounts"))
+                    .header(HttpHeaders.AUTHORIZATION, bearerFor(scheduler)))
+            .andReturn()
+            .getResponse();
+
+    assertThat(response.getStatus()).describedAs("the accounts rule's hasRole").isEqualTo(403);
+  }
+
+  /**
+   * The positive control for the test above. {@code denyAll} answers a Scheduler with the same 403
+   * the accounts rule does, so that refusal alone cannot say which rule gave it. An Admin answered
+   * on the same spelling can only have met the accounts rule, so the 403 above is that rule's.
+   */
+  @Test
+  void GivenAnEncodedAccountsPath_WhenAnAdminCallsIt_ThenTheAccountsRuleLetsThemIn()
+      throws Exception {
+    Account admin = aTenant(anOrganisation(), Role.ADMIN, PASSWORD, false);
+
+    MockHttpServletResponse response =
+        mockMvc
+            .perform(
+                get(URI.create("/%61pi/accounts"))
+                    .header(HttpHeaders.AUTHORIZATION, bearerFor(admin)))
+            .andReturn()
+            .getResponse();
+
+    assertThat(response.getStatus())
+        .describedAs("the accounts rule, not denyAll, matched the decoded path")
+        .isEqualTo(200);
+  }
+
+  /**
+   * Pins the firewall's own refusal of an encoded percent sign. {@code %2561} decodes to {@code
+   * %61} and then to {@code a}, so letting it through would leave the path meaning one thing to
+   * whatever decodes it once and another to whatever decodes it twice. The firewall answers 400
+   * before any rule or the endpoint is reached.
+   */
+  @Test
+  void GivenAnEncodedPercentSign_WhenReadingTheSessionWithoutAToken_ThenTheFirewallRefusesIt()
+      throws Exception {
+    MockHttpServletResponse response =
+        mockMvc.perform(get(URI.create("/%2561pi/auth/session"))).andReturn().getResponse();
+
+    assertThat(response.getStatus())
+        .describedAs("the firewall's refusal, before any rule or the endpoint is reached")
+        .isEqualTo(400);
   }
 
   /**
@@ -468,8 +549,8 @@ class SessionHttpTest {
             JwtEncoderParameters.from(
                 JwsHeader.with(SignatureAlgorithm.RS256).type("at+jwt").build(),
                 JwtClaimsSet.builder()
-                    .issuer("hrsched")
-                    .audience(List.of("hrsched-api"))
+                    .issuer(tokenProperties.issuer())
+                    .audience(List.of(tokenProperties.audience()))
                     .subject(subject)
                     .issuedAt(now)
                     .expiresAt(now.plus(10, ChronoUnit.MINUTES))

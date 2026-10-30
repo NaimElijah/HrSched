@@ -1,8 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { A_TENANT, SignedIn } from '../test-support/session';
+import { callsTo, routeTo, writes } from '../test-support/routeTo';
+import type { Session } from '../api/session';
+import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { ObjectivesPage } from './ObjectivesPage';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * Weighing the objectives (F35, ADR-010). Revising replaces the weights whole, so the form is
@@ -14,33 +17,25 @@ import { ObjectivesPage } from './ObjectivesPage';
 
 const STORED = { fairness: 3, preferences: null, disruption: 1 };
 
-function routeTo(body: unknown) {
-  const stub = vi.fn((_path: string, init?: RequestInit) => {
-    void _path;
-    void init;
-    return Promise.resolve({
-      ok: true,
-      status: 200,
-      headers: new Headers(),
-      text: () => Promise.resolve(JSON.stringify(body)),
-    });
+/** Answers the stored weights with these, and accepts a revision. */
+function weighing(stored: unknown) {
+  return routeTo({
+    '/api/objectives': { status: 200, body: stored },
+    'PUT /api/objectives': { status: 200, body: stored },
   });
-  vi.stubGlobal('fetch', stub);
-  return stub;
 }
 
 function sentBody(stub: ReturnType<typeof routeTo>): Record<string, unknown> {
-  const put = stub.mock.calls.find((call) => call[1]?.method === 'PUT');
-  const body = put?.[1]?.body;
+  const body = callsTo(stub, 'PUT', '/api/objectives')[0]?.[1]?.body;
   if (typeof body !== 'string') {
-    throw new Error('no PUT was sent');
+    throw new Error('no revision was sent to PUT /api/objectives');
   }
   return JSON.parse(body) as Record<string, unknown>;
 }
 
-function show() {
+function show(session: Session = A_TENANT) {
   render(
-    <SignedIn session={A_TENANT}>
+    <SignedIn session={session}>
       <ObjectivesPage />
     </SignedIn>,
   );
@@ -48,12 +43,11 @@ function show() {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 describe('the objectives page', () => {
   it('GivenStoredWeights_WhenOpened_ThenTheFormShowsThem', async () => {
-    routeTo(STORED);
+    weighing(STORED);
     show();
 
     const fairness = await screen.findByLabelText(/Fairness weight/);
@@ -64,9 +58,12 @@ describe('the objectives page', () => {
   });
 
   it('GivenNothingWeighted_WhenOpened_ThenNoWeightIsSuggested', async () => {
-    const stub = routeTo({ fairness: null, preferences: null, disruption: null });
+    weighing({ fairness: null, preferences: null, disruption: null });
     show();
-    await waitFor(() => expect(stub).toHaveBeenCalled());
+    // Enabled only once the stored weights have loaded: before that every field is blank anyway.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Weigh objectives' })).toBeEnabled(),
+    );
 
     for (const label of [/Fairness weight/, /Preferences weight/, /Disruption weight/]) {
       expect(screen.getByLabelText(label)).toHaveValue(null);
@@ -74,12 +71,12 @@ describe('the objectives page', () => {
   });
 
   it('GivenOneWeightChanged_WhenRevising_ThenTheOtherStoredWeightsAreResent', async () => {
-    const stub = routeTo(STORED);
+    const stub = weighing(STORED);
     show();
     const preferences = await screen.findByLabelText(/Preferences weight/);
     await waitFor(() => expect(screen.getByLabelText(/Fairness weight/)).toHaveValue(3));
 
-    await userEvent.type(preferences, '2');
+    await userEvent.type(preferences, '2', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
 
     await waitFor(() => expect(sentBody(stub).preferences).toBe(2));
@@ -92,28 +89,38 @@ describe('the objectives page', () => {
    * good. Until they have loaded, the form has nothing to resend, and so it sends nothing.
    */
   it('GivenTheStoredWeightsFailedToLoad_WhenTryingToRevise_ThenNothingIsSent', async () => {
-    const stub = vi.fn((_path: string, init?: RequestInit) => {
-      void _path;
-      void init;
-      return Promise.resolve({
-        ok: false,
-        status: 500,
-        headers: new Headers(),
-        text: () => Promise.resolve(JSON.stringify({ detail: 'Something went wrong.' })),
-      });
+    const stub = routeTo({
+      '/api/objectives': { status: 500, body: { detail: 'Something went wrong.' } },
+      'PUT /api/objectives': { status: 200, body: STORED },
     });
-    vi.stubGlobal('fetch', stub);
     show();
     await screen.findByRole('alert');
 
-    await userEvent.type(screen.getByLabelText(/Fairness weight/), '4');
+    await userEvent.type(screen.getByLabelText(/Fairness weight/), '4', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
 
-    expect(stub.mock.calls.some((call) => call[1]?.method === 'PUT')).toBe(false);
+    expect(writes(stub)).toHaveLength(0);
+  });
+
+  it('GivenARevisionTheBackendRefuses_WhenRevising_ThenItsReasonIsShownAndTheEditKept', async () => {
+    routeTo({
+      '/api/objectives': { status: 200, body: STORED },
+      // Revising the weights is an Admin's, so a Scheduler is who the backend refuses.
+      'PUT /api/objectives': { status: 403, body: { detail: 'Your role does not permit this.' } },
+    });
+    show(A_SCHEDULER);
+    const preferences = await screen.findByLabelText(/Preferences weight/);
+    await waitFor(() => expect(screen.getByLabelText(/Fairness weight/)).toHaveValue(3));
+
+    await userEvent.type(preferences, '2', WITHOUT_PAUSES);
+    await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your role does not permit this.');
+    expect(preferences).toHaveValue(2);
   });
 
   it('GivenAClearedWeight_WhenRevising_ThenThatObjectiveIsNoLongerWeighed', async () => {
-    const stub = routeTo(STORED);
+    const stub = weighing(STORED);
     show();
     const fairness = await screen.findByLabelText(/Fairness weight/);
     await waitFor(() => expect(fairness).toHaveValue(3));
