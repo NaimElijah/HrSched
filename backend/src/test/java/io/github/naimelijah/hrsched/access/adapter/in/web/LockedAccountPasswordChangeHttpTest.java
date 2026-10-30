@@ -10,6 +10,7 @@ import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
+import io.github.naimelijah.hrsched.configuration.observability.TraceIdResponseFilter;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import java.time.Instant;
@@ -61,9 +62,6 @@ class LockedAccountPasswordChangeHttpTest {
   /** Invented: what the caller asks to change it to, long enough to satisfy the policy. */
   private static final String REPLACEMENT = "a different invented password";
 
-  /** Set by the trace filter on every response, and the one header that may legitimately differ. */
-  private static final String TRACE_ID = "X-Trace-Id";
-
   @Autowired private MockMvc mockMvc;
   @Autowired private AccountRepository accounts;
   @Autowired private PasswordHasher passwords;
@@ -87,15 +85,6 @@ class LockedAccountPasswordChangeHttpTest {
         .isEqualTo(wrongCurrent.getStatus());
     assertThat(whenLocked.getContentAsString()).isEqualTo(wrongCurrent.getContentAsString());
     assertThat(headersOf(whenLocked)).isEqualTo(headersOf(wrongCurrent));
-  }
-
-  /** Every header but the trace id, which differs on every response whatever it answers. */
-  private static List<String> headersOf(MockHttpServletResponse response) {
-    return response.getHeaderNames().stream()
-        .filter(name -> !TRACE_ID.equalsIgnoreCase(name))
-        .sorted()
-        .map(name -> name + "=" + response.getHeaderValues(name))
-        .toList();
   }
 
   @Test
@@ -172,6 +161,18 @@ class LockedAccountPasswordChangeHttpTest {
         .describedAs("precondition: %d failed sign-ins lock the account", lockout.threshold())
         .isTrue();
     return locked;
+  }
+
+  /**
+   * Every header but the trace id, which the trace filter sets on every response and which differs
+   * on each, whatever it answers.
+   */
+  private static List<String> headersOf(MockHttpServletResponse response) {
+    return response.getHeaderNames().stream()
+        .filter(name -> !TraceIdResponseFilter.TRACE_ID_HEADER.equalsIgnoreCase(name))
+        .sorted()
+        .map(name -> name + "=" + response.getHeaderValues(name))
+        .toList();
   }
 
   private Account stored(Account account) {
