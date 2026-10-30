@@ -577,6 +577,38 @@ class SessionServiceTest {
   }
 
   /**
+   * A disable that a password change finds once held refuses before a wrong password is counted.
+   * Counted, the failure would be saved over the Admin's disable, and here, one short of the lock,
+   * would lock an account the Admin had just switched off and record that it was.
+   */
+  @Test
+  void
+      GivenTheAccountDisabledOnceHeldAndOneFailureShortOfTheLock_WhenAWrongCurrentPasswordIsGiven_ThenNothingIsCounted() {
+    Account disabled =
+        accounts.given(
+            tenant(ADA, Role.SCHEDULER, Optional.empty())
+                .recordFailedSignIn(NOW, LOCK_AFTER_THREE)
+                .recordFailedSignIn(NOW, LOCK_AFTER_THREE)
+                .disabled());
+    assertThat(disabled.isLockedAt(NOW)).describedAs("precondition: not yet locked").isFalse();
+    TenantActor themself = new TenantActor(disabled.id(), ACME, Role.SCHEDULER);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            new ChangePasswordCommand(WRONG_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            ChangePasswordOutcome.CurrentPasswordRejected.class,
+            rejected -> assertThat(rejected.reason()).isEqualTo(CurrentPasswordRefusal.DISABLED));
+    Account after = accounts.find(ACME, disabled.id()).orElseThrow();
+    assertThat(after.failedSignIns()).isEqualTo(disabled.failedSignIns());
+    assertThat(after.isLockedAt(NOW)).isFalse();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
    * The new session is written after the password, and its write can still fail, taking the change
    * back with it. A line recorded before it would outlive that rollback, a record of a change that
    * never happened (#133).
