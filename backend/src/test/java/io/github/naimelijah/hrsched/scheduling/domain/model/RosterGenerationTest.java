@@ -122,6 +122,151 @@ class RosterGenerationTest {
         .isInstanceOf(IllegalStateException.class);
   }
 
+  // --- Each way a stored row can contradict itself is refused on its own ----------------------
+  //
+  // Each case below changes one thing about a row that agrees with itself, so each is refused for
+  // that one thing and no other.
+
+  /** Invented: a quarter of an hour after it was asked for, as {@link #POLICY} would set it. */
+  private static final Instant LOST_AT = ASKED.plus(Duration.ofMinutes(15));
+
+  /** Invented: three seconds after it was asked for. */
+  private static final Instant FINISHED = ASKED.plusSeconds(3);
+
+  private static RosterGeneration restoring(
+      Instant lostAt,
+      GenerationStatus status,
+      Optional<RosterId> roster,
+      List<ConstraintViolation> violations,
+      Optional<Instant> finishedAt) {
+    return RosterGeneration.restored(
+        GenerationId.newId(),
+        ACME,
+        THE_WEEK,
+        ASKED,
+        lostAt,
+        status,
+        roster,
+        violations,
+        finishedAt);
+  }
+
+  /** The row every case below changes one thing about. */
+  @Test
+  void GivenAStoredRowThatAgreesWithItself_WhenRestored_ThenItReadsAsStored() {
+    RosterGeneration failed =
+        restoring(
+            LOST_AT, GenerationStatus.FAILED, Optional.empty(), List.of(), Optional.of(FINISHED));
+
+    assertThat(failed.status()).isEqualTo(GenerationStatus.FAILED);
+    assertThat(failed.finishedAt()).contains(FINISHED);
+  }
+
+  /** Lost is read from the clock, never stored: a row saying so was written by something else. */
+  @Test
+  void GivenAStoredRowSayingLost_WhenRestored_ThenItIsRejected() {
+    assertThatThrownBy(
+            () ->
+                restoring(
+                    LOST_AT,
+                    GenerationStatus.LOST,
+                    Optional.empty(),
+                    List.of(),
+                    Optional.of(FINISHED)))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void GivenAStoredRowLostTheMomentItWasAskedFor_WhenRestored_ThenItIsRejected() {
+    assertThatThrownBy(
+            () ->
+                restoring(
+                    ASKED,
+                    GenerationStatus.FAILED,
+                    Optional.empty(),
+                    List.of(),
+                    Optional.of(FINISHED)))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void GivenAStoredRowPendingButFinished_WhenRestored_ThenItIsRejected() {
+    assertThatThrownBy(
+            () ->
+                restoring(
+                    LOST_AT,
+                    GenerationStatus.PENDING,
+                    Optional.empty(),
+                    List.of(),
+                    Optional.of(FINISHED)))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void GivenAStoredRowEndedButNeverFinished_WhenRestored_ThenItIsRejected() {
+    assertThatThrownBy(
+            () ->
+                restoring(
+                    LOST_AT,
+                    GenerationStatus.FAILED,
+                    Optional.empty(),
+                    List.of(),
+                    Optional.empty()))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void GivenAStoredRowNamingADraftThoughItFailed_WhenRestored_ThenItIsRejected() {
+    assertThatThrownBy(
+            () ->
+                restoring(
+                    LOST_AT,
+                    GenerationStatus.FAILED,
+                    Optional.of(RosterId.newId()),
+                    List.of(),
+                    Optional.of(FINISHED)))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void GivenAStoredRowRefusedForNoRule_WhenRestored_ThenItIsRejected() {
+    assertThatThrownBy(
+            () ->
+                restoring(
+                    LOST_AT,
+                    GenerationStatus.REFUSED,
+                    Optional.empty(),
+                    List.of(),
+                    Optional.of(FINISHED)))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void GivenAStoredRowNamingBrokenRulesThoughItFailed_WhenRestored_ThenItIsRejected() {
+    assertThatThrownBy(
+            () ->
+                restoring(
+                    LOST_AT,
+                    GenerationStatus.FAILED,
+                    Optional.empty(),
+                    List.of(BROKEN),
+                    Optional.of(FINISHED)))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void GivenAStoredRowFinishedBeforeItWasAskedFor_WhenRestored_ThenItIsRejected() {
+    assertThatThrownBy(
+            () ->
+                restoring(
+                    LOST_AT,
+                    GenerationStatus.FAILED,
+                    Optional.empty(),
+                    List.of(),
+                    Optional.of(ASKED.minusSeconds(1))))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
   @Test
   void GivenNoTimeAtAll_WhenAPolicyIsMade_ThenItIsRejected() {
     assertThatThrownBy(() -> new GenerationPolicy(Duration.ZERO))

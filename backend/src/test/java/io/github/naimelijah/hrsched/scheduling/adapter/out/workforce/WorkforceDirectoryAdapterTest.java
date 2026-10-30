@@ -96,7 +96,7 @@ class WorkforceDirectoryAdapterTest {
             "Ada",
             Set.of(),
             List.of(),
-            Optional.of(Duration.ofMinutes(2400)),
+            Optional.of(Duration.ofMinutes(2401)),
             List.of(),
             List.of()));
     RosterCandidate withContract = adapter.candidatesFor(scheduler(), ACME).getFirst();

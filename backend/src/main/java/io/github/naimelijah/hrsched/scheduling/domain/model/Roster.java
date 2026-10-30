@@ -464,8 +464,8 @@ public final class Roster {
    * Refuses anything but a draft, for a caller that must know before it does anything else.
    *
    * <p>Every edit to a draft, and {@link #publishedUnder}, checks this itself. Publication needs it
-   * on its own, because it supersedes other rosters and records that before it reaches {@link
-   * #publishedUnder}.
+   * on its own, because it writes before it reaches {@link #publishedUnder}: it supersedes other
+   * rosters, and every check that can refuse runs before the first write.
    *
    * @throws RosterNotEditableException if this roster is no longer a draft
    */

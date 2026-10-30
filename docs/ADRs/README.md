@@ -58,6 +58,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-049](ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md) | Refuse the metrics endpoints to every caller until a scraper exists | Accepted | 2026-10-27 |
 | [ADR-050](ADR-050-reject-the-protected-resource-metadata-endpoint.md) | Reject the OAuth 2.0 protected-resource metadata endpoint | Accepted | 2026-10-27 |
 | [ADR-051](ADR-051-record-why-each-frontend-dependency-is-there.md) | Record why each frontend dependency is there | Accepted | 2026-10-29 |
+| [ADR-052](ADR-052-record-only-after-every-write-notifications-included.md) | Record an audit line only after every write, a notification included | Accepted | 2026-10-30 |
 
 ## Decisions waiting to be recorded
 

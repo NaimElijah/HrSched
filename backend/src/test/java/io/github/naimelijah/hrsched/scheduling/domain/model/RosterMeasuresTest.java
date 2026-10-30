@@ -185,7 +185,9 @@ class RosterMeasuresTest {
     assertThat(measure(roster, Map.of(ADA, nextMonday)).preferencesGoneAgainst()).isZero();
   }
 
-  /** Two people on a shift one of them wished for meets that wish once, and only that one. */
+  /**
+   * One wish that two of their shifts both meet is one wish met, not two, and none gone against.
+   */
   @Test
   void GivenOneWishMetTwice_WhenMeasured_ThenItIsStillOneWishMet() {
     Roster roster = draft(THE_WEEK, on(MONDAY, ADA), on(MONDAY_NIGHT, ADA));

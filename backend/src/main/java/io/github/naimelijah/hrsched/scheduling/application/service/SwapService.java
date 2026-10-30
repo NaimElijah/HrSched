@@ -128,8 +128,8 @@ public class SwapService implements RequestSwapsUseCase {
             command.counterparty(),
             clock.instant());
     swaps.save(request);
-    recorded(actor, command.organisation(), SchedulingChange.SWAP_REQUESTED, request.id().value());
     notifier.swapRequested(actor, command.organisation(), command.counterparty(), request.id());
+    recorded(actor, command.organisation(), SchedulingChange.SWAP_REQUESTED, request.id().value());
     return request.id();
   }
 
@@ -193,16 +193,14 @@ public class SwapService implements RequestSwapsUseCase {
 
     // Publishing is what checks the rules, supersedes what it replaces, and records both. It stores
     // the approval too, before lapsing the other requests on the roster it supersedes, so this one
-    // is not lapsed with them (R33, ADR-039). If the swap would break a rule this throws and
-    // nothing
-    // below runs, so the request stays pending; the use case's transaction then takes the
-    // replacement draft with it, leaving nothing half-built (ADR-023).
+    // is not lapsed with them (R33, ADR-039), and tells both parties of it before it records
+    // anything, because a telling is a write that can still fail (#133). If the swap would break a
+    // rule this throws and nothing below runs, so the request stays pending; the use case's
+    // transaction then takes the replacement draft with it, leaving nothing half-built (ADR-023).
     Roster publishedReplacement =
         planRosters.publishApproving(actor, organisation, replacement.id(), request.approved());
 
     recorded(actor, organisation, SchedulingChange.SWAP_APPROVED, request.id().value());
-    notifier.swapApproved(actor, organisation, request.counterparty(), request.id());
-    notifier.swapApproved(actor, organisation, request.requester(), request.id());
     return publishedReplacement;
   }
 
@@ -216,11 +214,11 @@ public class SwapService implements RequestSwapsUseCase {
     SwapRequest request = pending(organisation, id);
 
     swaps.save(request.rejected());
-    recorded(actor, organisation, SchedulingChange.SWAP_REJECTED, request.id().value());
     // Both parties, as on approval. The colleague was told they were being asked to cover a shift;
     // telling only the requester leaves them holding an open question nobody ever answers.
     notifier.swapRejected(actor, organisation, request.requester(), request.id());
     notifier.swapRejected(actor, organisation, request.counterparty(), request.id());
+    recorded(actor, organisation, SchedulingChange.SWAP_REJECTED, request.id().value());
   }
 
   /** The roster the replacement should carry: the same work, with one assignment handed over. */
@@ -289,7 +287,10 @@ public class SwapService implements RequestSwapsUseCase {
     actor.requireAccessTo(organisation).requireRoleIn(permitted);
   }
 
-  /** Called after the repository, never before: see ADR-018. */
+  /**
+   * Called once every write the use case makes has run, its notifications included, never before:
+   * an audit line outlives the rollback of a write that fails after it (ADR-018, #133).
+   */
   private void recorded(
       Actor actor, OrganisationId organisation, SchedulingChange change, UUID subject) {
     audit.record(new AuditedChange(organisation, actor.id(), change, subject));

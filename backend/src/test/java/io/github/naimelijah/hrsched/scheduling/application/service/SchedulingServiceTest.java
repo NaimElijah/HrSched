@@ -31,6 +31,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
+import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Objective;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
@@ -42,6 +43,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterMeasures;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotVerifiableException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterScore;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shift;
@@ -49,6 +51,8 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftOutsideRosterPeriodException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Shortfall;
 import io.github.naimelijah.hrsched.scheduling.domain.model.StatedPreferences;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequest;
+import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException;
@@ -78,6 +82,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -119,6 +124,9 @@ class SchedulingServiceTest {
   private FakeWorkforce workforce;
   private RecordingAuditTrail audit;
   private FakeGenerations generations;
+
+  /** A lapse tells its requester first, and this is the counterparty's telling, after it. */
+  private static final int SECOND_TELLING = 2;
 
   /**
    * Invented: how long a generation may stay pending here; every one ends on the calling thread.
@@ -263,22 +271,33 @@ class SchedulingServiceTest {
 
   @Test
   void GivenRulesTightenedAfterGeneration_WhenPublishing_ThenItIsRefusedWithEveryViolation() {
-    available(ACME, "Ada");
+    EmployeeId ada = available(ACME, "Ada");
     service.defineShift(
         scheduler(ACME),
         new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
     Roster draft =
         Generations.draft(service, scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
 
-    // Invented: one hour a day, which the eight-hour shift already assigned cannot satisfy.
+    // Invented: one hour a day and one a week, which the eight-hour shift already assigned breaks
+    // both of, so a refusal naming only the first would show.
     service.reviseConstraints(
         admin(ACME),
         new ReviseConstraintsCommand(
-            ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(1)))));
+            ACME,
+            List.of(
+                new MaximumDailyWorkingTime(Duration.ofHours(1)),
+                new MaximumWeeklyWorkingTime(Duration.ofHours(1)))));
 
     assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, draft.id()))
         .describedAs("a roster breaking the rules cannot be published, and there is no override")
-        .isInstanceOf(RosterNotCompliantException.class);
+        .isInstanceOfSatisfying(
+            RosterNotCompliantException.class,
+            refused ->
+                assertThat(refused.violations())
+                    .extracting(ConstraintViolation::employee, ConstraintViolation::constraint)
+                    .containsExactlyInAnyOrder(
+                        tuple(ada, "maximum daily working time"),
+                        tuple(ada, "maximum weekly working time")));
     assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
   }
 
@@ -445,6 +464,41 @@ class SchedulingServiceTest {
                 Generations.draft(service, admin(ACME), new GenerateRosterCommand(ACME, THE_WEEK)))
         .describedAs("an Admin manages people and rules; building rosters is the Scheduler's")
         .isInstanceOf(NotPermittedException.class);
+  }
+
+  /**
+   * Publishing is building a roster, which belongs to the Scheduler alone: an Admin manages people,
+   * qualifications and the rules. Refused before anything is read or written.
+   */
+  @Test
+  void GivenAnAdmin_WhenPublishingADraft_ThenItIsRefusedAndItStaysADraft() {
+    Roster draft = emptyDraft(ACME);
+    rosters.log().forget();
+
+    assertThatThrownBy(() -> service.publish(admin(ACME), ACME, draft.id()))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.ROSTER_PUBLISHED);
+    assertThat(rosters.log().calls())
+        .describedAs("refused before the publication lock or any read")
+        .isEmpty();
+  }
+
+  @Test
+  void GivenAnEmployee_WhenPublishingADraft_ThenItIsRefusedAndItStaysADraft() {
+    Roster draft = emptyDraft(ACME);
+    TenantActor employee = themself(ACME, available(ACME, "Ada"));
+    rosters.log().forget();
+
+    assertThatThrownBy(() -> service.publish(employee, ACME, draft.id()))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.ROSTER_PUBLISHED);
+    assertThat(rosters.log().calls())
+        .describedAs("refused before the publication lock or any read")
+        .isEmpty();
   }
 
   @Test
@@ -943,6 +997,20 @@ class SchedulingServiceTest {
     assertThat(service.findShifts(scheduler(RIVAL), RIVAL, THE_WEEK)).isEmpty();
   }
 
+  /** F1a: any member sees the shifts needing covering, not only whoever defines them. */
+  @Test
+  void GivenDefinedShifts_WhenAnEmployeeListsThemForASpan_ThenTheyAreShown() {
+    ShiftId shift =
+        service.defineShift(
+            scheduler(ACME),
+            new DefineShiftCommand(ACME, MONDAY_DAY, ZoneOffset.UTC, 1, Set.of(), false));
+    TenantActor employee = themself(ACME, available(ACME, "Ada"));
+
+    assertThat(service.findShifts(employee, ACME, THE_WEEK))
+        .extracting(Shift::id)
+        .containsExactly(shift);
+  }
+
   @Test
   void GivenADefinedShift_WhenAnEmployeeReadsItByIdentity_ThenItIsReturned() {
     ShiftId id =
@@ -1338,6 +1406,41 @@ class SchedulingServiceTest {
                     new TenantActor(UserId.newId(), ACME, Role.EMPLOYEE),
                     new AssignToShiftCommand(ACME, draft.id(), shift, ada)))
         .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenAnAdminRole_WhenRemovingAnAssignment_ThenItIsRefusedAndTheAssignmentIsKept() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+
+    assertThatThrownBy(
+            () ->
+                service.unassign(
+                    admin(ACME), new RemoveAssignmentCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(rosters.byId(draft.id()).assignments()).containsExactly(new Assignment(shift, ada));
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.ASSIGNMENT_REMOVED);
+  }
+
+  /** Ada may not take herself off her own shift: changing a draft is the Scheduler's alone. */
+  @Test
+  void GivenAnEmployeeRole_WhenRemovingAnAssignment_ThenItIsRefusedAndTheAssignmentIsKept() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+
+    assertThatThrownBy(
+            () ->
+                service.unassign(
+                    themself(ACME, ada), new RemoveAssignmentCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(rosters.byId(draft.id()).assignments()).containsExactly(new Assignment(shift, ada));
+    assertThat(audit.changes()).doesNotContain(SchedulingChange.ASSIGNMENT_REMOVED);
   }
 
   @Test
@@ -1840,7 +1943,9 @@ class SchedulingServiceTest {
 
     service.findAssessment(scheduler(ACME), ACME, draft.id());
 
-    assertThat(rosters.byId(draft.id())).isEqualTo(draft);
+    // A roster is equal to another by identity alone, so what is stored is compared field by field.
+    assertThat(rosters.byId(draft.id()).assignments()).isEqualTo(draft.assignments());
+    assertThat(rosters.byId(draft.id()).period()).isEqualTo(draft.period());
     assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
     assertThat(audit.changes()).isEmpty();
   }
@@ -2375,6 +2480,96 @@ class SchedulingServiceTest {
             SchedulingChange.GENERATION_REQUESTED, SchedulingChange.GENERATION_REFUSED);
   }
 
+  /**
+   * Ada's request to hand Grace her shift, pending on a published roster, and the publication of a
+   * draft that supersedes that roster and so lapses it, telling through {@code failing}.
+   */
+  private ThrowingCallable publicationLapsingASwapThrough(FailingNotifier failing) {
+    EmployeeId ada = available(ACME, "Ada");
+    EmployeeId grace = available(ACME, "Grace");
+    ShiftId shift = publishedWork(ACME, ada, MONDAY_DAY);
+    Roster published = rosters.findByOrganisation(ACME).getFirst();
+    FakeSwaps swaps = new FakeSwaps(new CallLog());
+    swaps.save(
+        new SwapRequest(SwapRequestId.newId(), ACME, published.id(), shift, ada, grace, NOW));
+    SchedulingService telling =
+        new SchedulingService(
+            shifts,
+            rosters,
+            constraintSets,
+            objectiveWeights,
+            swaps,
+            workforce,
+            new FirstFitGenerator(),
+            new RecordingUnitsOfWork(),
+            generations,
+            Runnable::run,
+            LOST_AFTER,
+            failing,
+            audit,
+            Clock.fixed(NOW, ZoneOffset.UTC));
+    Roster replacement = emptyDraft(ACME);
+    audit.forget();
+    return () -> telling.publish(scheduler(ACME), ACME, replacement.id());
+  }
+
+  /**
+   * R33: a publication tells both parties of every request it lapses, and telling stores a
+   * notification in the publication's transaction, a write that can still fail. Its failure takes
+   * the lapse back, and the publication with it, so none of them is recorded before it is told
+   * (backend/CLAUDE.md).
+   */
+  @Test
+  void GivenATellingThatCannotBeStored_WhenAPublicationLapsesASwap_ThenNothingIsRecorded() {
+    assertThatThrownBy(publicationLapsingASwapThrough(new FailingNotifier()))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes())
+        .describedAs("neither the lapse nor the supersession and publication it rolls back with")
+        .isEmpty();
+  }
+
+  /**
+   * The requester is told of a lapse first and the counterparty second. The second failing takes
+   * the lapse back as surely as the first, so nothing is recorded between the two.
+   */
+  @Test
+  void GivenTheSecondTellingCannotBeStored_WhenAPublicationLapsesASwap_ThenNothingIsRecorded() {
+    assertThatThrownBy(publicationLapsingASwapThrough(new FailingNotifier(SECOND_TELLING)))
+        .isInstanceOf(FailingNotifier.TellingFailed.class);
+
+    assertThat(audit.changes())
+        .describedAs("neither the lapse nor the supersession and publication it rolls back with")
+        .isEmpty();
+  }
+
+  /**
+   * The publication's own save comes after the rosters it replaces are stored as superseded, and
+   * the schema can still refuse it: two publications colliding is a 409 (ADR-026). The refusal
+   * takes the supersessions back, so they are not recorded before it.
+   */
+  @Test
+  void GivenAPublicationThatCannotBeStored_WhenItSupersedesARoster_ThenNothingIsRecorded() {
+    Roster original = publishTheWeek();
+    Roster replacement = emptyDraft(ACME);
+    rosters.observeSaves(
+        () -> {
+          if (rosters.byId(replacement.id()).status() == RosterStatus.PUBLISHED) {
+            throw new RosterPublicationConflictException(
+                replacement.id(), new IllegalStateException("Invented: the schema refused it"));
+          }
+        });
+    audit.forget();
+
+    assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, replacement.id()))
+        .isInstanceOf(RosterPublicationConflictException.class);
+
+    assertThat(rosters.byId(original.id()).status())
+        .describedAs("stored before the refusal; a transaction, unlike this fake, takes it back")
+        .isEqualTo(RosterStatus.SUPERSEDED);
+    assertThat(audit.changes()).isEmpty();
+  }
+
   @Test
   void GivenAScheduler_WhenAssigningAndRemoving_ThenBothAreRecordedAgainstThem() {
     EmployeeId ada = available(ACME, "Ada");
@@ -2440,6 +2635,35 @@ class SchedulingServiceTest {
     assertThat(mine).hasSize(1);
     assertThat(mine.getFirst().shift()).isEqualTo(shift);
     assertThat(mine.getFirst().period()).isEqualTo(MONDAY_DAY);
+  }
+
+  /**
+   * F5 is any member linked to an employee, not the Employee role: a Scheduler who also works
+   * shifts sees their own work as anybody rostered does.
+   */
+  @Test
+  void GivenASchedulerLinkedToAnEmployee_WhenReadingTheirOwnSchedule_ThenTheySeeTheirWork() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId shift = publishedWork(ACME, ada, MONDAY_DAY);
+    TenantActor schedulingAda =
+        new TenantActor(UserId.newId(), ACME, Role.SCHEDULER, Optional.of(ada));
+
+    assertThat(service.findOwnSchedule(schedulingAda, ACME, THE_WEEK))
+        .extracting(RosteredShift::shift)
+        .containsExactly(shift);
+  }
+
+  /** As for a Scheduler: an Admin who is also on the rota sees their own work. */
+  @Test
+  void GivenAnAdminLinkedToAnEmployee_WhenReadingTheirOwnSchedule_ThenTheySeeTheirWork() {
+    EmployeeId ada = available(ACME, "Ada");
+    ShiftId shift = publishedWork(ACME, ada, MONDAY_DAY);
+    TenantActor administeringAda =
+        new TenantActor(UserId.newId(), ACME, Role.ADMIN, Optional.of(ada));
+
+    assertThat(service.findOwnSchedule(administeringAda, ACME, THE_WEEK))
+        .extracting(RosteredShift::shift)
+        .containsExactly(shift);
   }
 
   /**
@@ -2665,6 +2889,89 @@ class SchedulingServiceTest {
   void GivenTheOperator_WhenListingRosters_ThenItIsRefused() {
     assertThatThrownBy(() -> service.findRosters(anOperator(), ACME))
         .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingAGeneration_ThenItIsRefused() {
+    GenerationState started =
+        backgroundThatNeverRuns(Clock.fixed(NOW, ZoneOffset.UTC))
+            .startGeneration(scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK));
+
+    assertThatThrownBy(() -> service.findGeneration(anOperator(), ACME, started.id()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
+  // --- Another organisation's Scheduler or Admin is refused by every use case naming ours ------
+  //
+  // One test per driving-port method, for the reason the operator's are: each is a tenancy
+  // decision, and a cross-tenant read or write is a security incident.
+
+  @Test
+  void
+      GivenASchedulerOfAnotherOrganisation_WhenPublishingOurDraft_ThenItIsRefusedAndItStaysADraft() {
+    Roster draft = emptyDraft(ACME);
+    rosters.log().forget();
+
+    assertThatThrownBy(() -> service.publish(scheduler(RIVAL), ACME, draft.id()))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
+    assertThat(rosters.log().calls())
+        .describedAs("refused first, not by the directory read that happens to come later")
+        .isEmpty();
+  }
+
+  @Test
+  void
+      GivenASchedulerOfAnotherOrganisation_WhenRemovingOurAssignment_ThenItIsRefusedAndTheAssignmentIsKept() {
+    EmployeeId ada = available(ACME, "Ada");
+    Roster draft = emptyDraft(ACME);
+    ShiftId shift = aShift(ACME, Set.of());
+    service.assign(scheduler(ACME), new AssignToShiftCommand(ACME, draft.id(), shift, ada));
+
+    assertThatThrownBy(
+            () ->
+                service.unassign(
+                    scheduler(RIVAL), new RemoveAssignmentCommand(ACME, draft.id(), shift, ada)))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(rosters.byId(draft.id()).assignments()).containsExactly(new Assignment(shift, ada));
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingOurRules_ThenItIsRefused() {
+    assertThatThrownBy(() -> service.currentConstraints(admin(RIVAL), ACME))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenRevisingOurRules_ThenItIsRefusedAndNothingIsStored() {
+    // Invented: one hour a day.
+    assertThatThrownBy(
+            () ->
+                service.reviseConstraints(
+                    admin(RIVAL),
+                    new ReviseConstraintsCommand(
+                        ACME, List.of(new MaximumDailyWorkingTime(Duration.ofHours(1))))))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(constraintSets.findCurrent(ACME)).isEmpty();
+  }
+
+  @Test
+  void GivenASchedulerOfAnotherOrganisation_WhenReadingOurRoster_ThenItIsRefused() {
+    Roster draft = emptyDraft(ACME);
+
+    assertThatThrownBy(() -> service.findRoster(scheduler(RIVAL), ACME, draft.id()))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenASchedulerOfAnotherOrganisation_WhenListingOurRosters_ThenItIsRefused() {
+    emptyDraft(ACME);
+
+    assertThatThrownBy(() -> service.findRosters(scheduler(RIVAL), ACME))
+        .isInstanceOf(CrossTenantAccessException.class);
   }
 
   private static Operator anOperator() {
