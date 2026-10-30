@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
+import io.github.naimelijah.hrsched.workforce.domain.model.InvalidQualificationNameException;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +23,9 @@ class JdbcQualificationRepositoryTest {
 
   private static final OrganisationId ACME = OrganisationId.newId();
   private static final OrganisationId RIVAL = OrganisationId.newId();
+
+  /** Blank to {@link String#isBlank}, but not to the schema's {@code btrim}, which trims spaces. */
+  private static final String BLANK_TO_THE_DOMAIN_ONLY = "\t";
 
   private final JdbcQualificationRepository repository =
       new JdbcQualificationRepository(PostgresDatabase.jdbcClient());
@@ -153,5 +157,47 @@ class JdbcQualificationRepositoryTest {
         .get()
         .extracting(Qualification::name)
         .isEqualTo("Their Qualification");
+  }
+
+  /**
+   * {@code qualification_name_not_blank} trims spaces only, so a name that is only a tab stores,
+   * while the domain refuses every blank name (R2). A row written by hand, a restore or a bug can
+   * hold one, and loading it fails loudly, by one identity and in a listing alike.
+   *
+   * <p>Loudly means as our defect, not as the domain's refusal: that refusal is how a caller is
+   * told their own name is blank, and is answered 400 without a log line, so a store breaking R2
+   * would read as the caller's mistake and leave the operator nothing. It carries no cause either,
+   * because Spring resolves a handler by an exception's causes too, and would find that one's; the
+   * refusal travels suppressed instead, which Spring does not walk, so its stack still reaches the
+   * log. The message names the identity and the rule only.
+   */
+  @Test
+  void GivenABlankNameInTheStore_WhenLoaded_ThenItFailsAsADefect() {
+    Qualification forklift = qualification(ACME, "Forklift");
+    repository.save(forklift);
+    PostgresDatabase.jdbcClient()
+        .sql("UPDATE qualification SET name = :name WHERE id = :id")
+        .param("name", BLANK_TO_THE_DOMAIN_ONLY)
+        .param("id", forklift.id().value())
+        .update();
+
+    assertThatThrownBy(() -> repository.findById(ACME, forklift.id()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasNoCause()
+        .satisfies(JdbcQualificationRepositoryTest::carriesTheNameRefusalSuppressed)
+        .hasMessageContaining(forklift.id().value().toString())
+        .hasMessageContaining("R2");
+    assertThatThrownBy(() -> repository.findByOrganisation(ACME))
+        .isInstanceOf(IllegalStateException.class)
+        .hasNoCause()
+        .satisfies(JdbcQualificationRepositoryTest::carriesTheNameRefusalSuppressed)
+        .hasMessageContaining(forklift.id().value().toString())
+        .hasMessageContaining("R2");
+  }
+
+  private static void carriesTheNameRefusalSuppressed(Throwable failure) {
+    assertThat(failure.getSuppressed())
+        .singleElement()
+        .isInstanceOf(InvalidQualificationNameException.class);
   }
 }

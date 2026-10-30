@@ -759,13 +759,14 @@ are not audited. Nothing at runtime depends on any of it.
   Contracted hours travel on `RosterableEmployee` too, as `weeklyContractedHours`, but
   scheduling's `WorkforceDirectoryAdapter` drops them, so nothing in scheduling reads them until
   [#103](https://github.com/NaimElijah/HrSched/issues/103) bounds a roster by them.
-- **An employee stored breaking a rule is this system's defect, not the caller's mistake.**
-  `JdbcEmployeeRepository` rebuilds every employee it reads through the aggregate's own
-  constructor and withers, so each rule they check is checked again on the way out of the store.
-  The refusal stored rows can reach, a name the schema's `btrim` lets through, as it trims spaces
-  only, but the domain calls blank (R2), is replaced by an `IllegalStateException` naming the
-  employee's identity and the rule, never the name. No workforce handler takes it, so it is
-  answered as a server error rather than the 400 the same refusal earns a caller. The refusal
+- **An employee or qualification stored breaking a rule is this system's defect, not the
+  caller's mistake.** `JdbcEmployeeRepository` and `JdbcQualificationRepository` rebuild every
+  aggregate they read through its own constructor, and an employee through its withers too, so
+  each rule they check is checked again on the way out of the store. The refusal stored rows can
+  reach, a name the schema's `btrim` lets through, as it trims spaces only, but the domain calls
+  blank (R2), is replaced by an `IllegalStateException` naming the identity and the rule, never
+  the name. No workforce handler takes it, so it is answered as a server error rather than the
+  400 the same refusal earns a caller. The refusal
   travels suppressed rather than as the cause, because Spring resolves a handler by an
   exception's causes too.
 - **An employee's unavailability cannot be stored overlapping (R7).** The domain refuses an
