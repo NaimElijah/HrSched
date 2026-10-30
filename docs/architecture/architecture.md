@@ -67,7 +67,7 @@ flowchart TB
     end
 
     kernel["shared.domain.model<br/>OrganisationId, Actor, TimeRange, EmployeeId"]
-    db[("PostgreSQL<br/>one schema, organisation_id on every root")]
+    db[("PostgreSQL<br/>one schema, organisation_id on every root,<br/>bar the operator's account and the sessions")]
 
     client --> schedWeb
     client --> wfWeb
@@ -387,7 +387,11 @@ are not audited. Nothing at runtime depends on any of it.
   once it has filled every place it can ([ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md), [ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)).
 - **Tenancy is in every signature, on purpose.** Repository lookups take an `OrganisationId`, so
   a cross-tenant read cannot be written by forgetting a filter. See
-  [ADR-009](../ADRs/ADR-009-tenant-isolation-in-the-domain.md). A `save` takes no organisation of
+  [ADR-009](../ADRs/ADR-009-tenant-isolation-in-the-domain.md). The exceptions are the access
+  context's credential reads and its register of organisations, which carry no organisation
+  because none is known when they run, or because they are the register
+  ([ADR-055](../ADRs/ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md)).
+  A `save` takes no organisation of
   its own, so the upsert of every aggregate an organisation owns guards the write instead: its
   `ON CONFLICT … DO UPDATE` applies only where the stored row's organisation is the one being
   saved, and a save that so touched no row throws rather than overwrite another organisation's, or
@@ -401,7 +405,8 @@ are not audited. Nothing at runtime depends on any of it.
   in the organisation its own account belongs to (ADR-031), so `Actor.requireAccessTo` compares an
   organisation with itself and cannot fail for a caller arriving over HTTP. Isolation there comes
   from every repository read filtering by organisation and returning nothing, which surfaces as an
-  unknown-record 404. `CrossTenantAccessException` still guards every direct caller, and every
+  unknown-record 404, bar the reads ADR-055 lists, which run before an organisation is known or
+  are the register. `CrossTenantAccessException` still guards every direct caller, and every
   exception handler still translates it. Worth knowing before anyone concludes the guard is dead
   code and deletes it.
 - **The platform operator is refused inside an organisation, with a 403 rather than that 404.** The

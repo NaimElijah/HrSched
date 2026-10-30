@@ -70,7 +70,8 @@ handler fails silently — its domain exceptions are never translated.
   `GET /api/organisations/{id}` names what to read, not who acts; a tenant naming another gets a
   404. Nothing reads `X-User`, `X-Role`, `X-Organisation` or `X-Employee`; never bring them back.
 - **Tenancy is in every signature.** Repository lookups take an `OrganisationId`; there is no
-  `findById(EmployeeId)`. Use cases take an `Actor` and call `requireAccessTo` first. A
+  `findById(EmployeeId)`. The exceptions are the access context's credential reads and its register
+  of organisations, which ADR-055 lists and why. Use cases take an `Actor` and call `requireAccessTo` first. A
   cross-tenant attempt is a 404, never a 403 — a 403 confirms the resource exists.
 - **`UserId` and `EmployeeId` are never compared.** They are different identities on purpose. To
   ask whether an actor is the person being acted on, use `TenantActor.isThemself` — the link is
@@ -87,16 +88,17 @@ handler fails silently — its domain exceptions are never translated.
 ## Persistence
 
 Persistence is settled (ADR-004): PostgreSQL, hand-written SQL through `JdbcClient`, Flyway, one
-schema with `organisation_id` on every aggregate root (child tables are reached only through their
-root). The domain may not carry `jakarta.persistence` annotations — the architecture test fails on
+schema with `organisation_id` on every aggregate root, bar the operator's account row (ADR-029) and
+the session tables, which carry none (ADR-055); child tables are reached only through their root. The domain may not carry `jakarta.persistence` annotations — the architecture test fails on
 them — so JPA would need a parallel annotated model, buying only what an adapter must not leak.
 
 - **Migrations** in `src/main/resources/db/migration/` are the only way the schema changes. Name
   one `V<n>__<rule_in_snake_case>.sql`, opening with a comment giving the rule, ADR and reasoning.
   **Never edit an applied migration**; correct it in the next, as V6 and V8 do. A backfill is
   explicit and invents nothing. An index on a root leads with `organisation_id`; a foreign key
-  stays inside one context, bar the one every root table has to `organisation (id)`, the tenant
-  register `access` owns (ADR-004). A migration rewriting stored rows gets a test that migrates to
+  stays inside one context, bar the one every root table carrying an `organisation_id` has to
+  `organisation (id)`, the tenant register `access` owns; the session tables carry none (ADR-004,
+  ADR-055). A migration rewriting stored rows gets a test that migrates to
   the version before, inserts rows as it stored them, then migrates on (see
   `AppendOnlyRosterHistoryMigrationTest`).
 - **Conflicts come from the database, not from version columns.** A use case changing an aggregate

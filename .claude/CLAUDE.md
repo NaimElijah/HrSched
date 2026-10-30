@@ -17,7 +17,7 @@ build-failing tests.
 ## Rules that hold everywhere
 
 - **Multi-tenant.** Every aggregate belongs to exactly one organisation and every query is
-  scoped to it. A cross-tenant read is a security incident, not a bug.
+  scoped to it, bar the reads ADR-055 lists. A cross-tenant read is a security incident, not a bug.
 - **No number from any statute is ever written down** — not in a class, not in a migration, not
   as the default of a form field. Working-time rules are a *configured constraint set*: a rest
   period or an hours cap is a value in a `ConstraintSet`, and the schema stores a limit without

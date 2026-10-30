@@ -18,7 +18,7 @@ flowchart LR
     people(["Admin · Scheduler · Employee<br/>platform Operator"])
     spa["React SPA<br/>Vite dev server :5173"]
     api["Spring Boot API :8080<br/>access · workforce · scheduling · notifications"]
-    db[("PostgreSQL 18<br/>one schema, organisation_id on every root")]
+    db[("PostgreSQL 18<br/>one schema, organisation_id on every root,<br/>bar the operator's account and the sessions")]
     scraper["A metrics scraper<br/>(none deployed yet)"]
     logs["A log collector<br/>(none deployed yet)"]
 
