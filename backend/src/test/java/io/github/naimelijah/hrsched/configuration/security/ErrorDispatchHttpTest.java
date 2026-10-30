@@ -27,6 +27,12 @@ import org.springframework.context.annotation.Import;
  * {@code /error} is a {@code REQUEST} dispatch, and no rule opens it, so it is refused like any
  * other route nobody decided was safe (ADR-032).
  *
+ * <p>The page the container renders carries the same {@code Content-Security-Policy} and {@code
+ * nosniff} as every other answer, as JSON and as the HTML a browser asks for. The chain's header
+ * writer does not run in the {@code ERROR} dispatch: the headers reach that page only because the
+ * first dispatch's response wrote them when the error was sent, so nothing but a test on a real
+ * port would notice them going.
+ *
  * <p>Real HTTP on a random port, not MockMvc, because MockMvc never performs the container's error
  * dispatch. Annotated as {@code FormPostLimitHttpTest} is, so the two share one real-port context.
  */
@@ -40,6 +46,16 @@ class ErrorDispatchHttpTest {
   private static final int METHOD_NOT_ALLOWED = 405;
 
   private static final int UNAUTHORIZED = 401;
+
+  private static final String CONTENT_SECURITY_POLICY = "Content-Security-Policy";
+  private static final String NOTHING_LOADS_AND_NOTHING_FRAMES =
+      "default-src 'none'; frame-ancestors 'none'";
+
+  private static final String CONTENT_TYPE_OPTIONS = "X-Content-Type-Options";
+  private static final String NOSNIFF = "nosniff";
+
+  private static final String JSON = "application/json";
+  private static final String HTML = "text/html";
 
   private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
@@ -64,12 +80,66 @@ class ErrorDispatchHttpTest {
   }
 
   @Test
+  void GivenNoToken_WhenPostingToARouteThatOnlyReads_ThenTheRenderedErrorCarriesTheCsp()
+      throws Exception {
+    HttpResponse<String> response = renderedError(JSON);
+
+    assertThat(response.headers().firstValue(CONTENT_SECURITY_POLICY))
+        .as("the Content-Security-Policy of the rendered error")
+        .hasValue(NOTHING_LOADS_AND_NOTHING_FRAMES);
+  }
+
+  @Test
+  void GivenNoToken_WhenPostingToARouteThatOnlyReads_ThenTheRenderedErrorForbidsSniffing()
+      throws Exception {
+    HttpResponse<String> response = renderedError(JSON);
+
+    assertThat(response.headers().firstValue(CONTENT_TYPE_OPTIONS))
+        .as("the X-Content-Type-Options of the rendered error")
+        .hasValue(NOSNIFF);
+  }
+
+  /** The page a browser is given, which is the one a policy exists to make inert. */
+  @Test
+  void GivenABrowserAskingForHtml_WhenPostingToARouteThatOnlyReads_ThenThePageCarriesTheCsp()
+      throws Exception {
+    HttpResponse<String> response = renderedError(HTML);
+
+    assertThat(response.headers().firstValue(CONTENT_SECURITY_POLICY))
+        .as("the Content-Security-Policy of the rendered HTML error")
+        .hasValue(NOTHING_LOADS_AND_NOTHING_FRAMES);
+  }
+
+  @Test
+  void GivenABrowserAskingForHtml_WhenPostingToARouteThatOnlyReads_ThenThePageForbidsSniffing()
+      throws Exception {
+    HttpResponse<String> response = renderedError(HTML);
+
+    assertThat(response.headers().firstValue(CONTENT_TYPE_OPTIONS))
+        .as("the X-Content-Type-Options of the rendered HTML error")
+        .hasValue(NOSNIFF);
+  }
+
+  @Test
   void GivenNoToken_WhenAskingForTheErrorPageDirectly_ThenItIsRefused() throws Exception {
     HttpResponse<String> response = send(HttpRequest.newBuilder(uri("/error")).GET());
 
     assertThat(response.statusCode())
         .describedAs("status, which answered: %s", response.body())
         .isEqualTo(UNAUTHORIZED);
+  }
+
+  /** The container's rendering of a 405, asked for in the given media type. */
+  private HttpResponse<String> renderedError(String accept) throws Exception {
+    HttpResponse<String> response =
+        send(HttpRequest.newBuilder(uri(HEALTH)).header("Accept", accept).POST(noBody()));
+    assertThat(response.statusCode())
+        .describedAs("arranged: rendered, which answered: %s", response.body())
+        .isEqualTo(METHOD_NOT_ALLOWED);
+    assertThat(response.headers().firstValue("Content-Type"))
+        .describedAs("arranged: rendered as %s", accept)
+        .hasValueSatisfying(type -> assertThat(type).startsWith(accept));
+    return response;
   }
 
   private URI uri(String path) {
