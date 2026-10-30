@@ -320,8 +320,11 @@ public class SessionService
     // under the old one, and the caller is handed a new session rather than being signed out of
     // their own password change.
     sessions.revokeEverySessionOf(changed.id(), SessionRevocation.PASSWORD_CHANGED, now);
+    // Begun before the change is recorded: the new session's writes can still fail and take the
+    // change back with them, and a line recorded first would outlive that rollback (#133).
+    IssuedSession replacement = beginSession(changed, now);
     record(changed, AccessChange.PASSWORD_CHANGED, changed.id().value());
-    return new ChangePasswordOutcome.Changed(beginSession(changed, now));
+    return new ChangePasswordOutcome.Changed(replacement);
   }
 
   @Override

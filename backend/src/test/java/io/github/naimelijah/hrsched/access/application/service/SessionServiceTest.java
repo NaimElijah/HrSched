@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.access.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.access.application.port.in.AccountKind;
 import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordCommand;
@@ -550,6 +551,28 @@ class SessionServiceTest {
     assertThat(audit.changes()).isEmpty();
   }
 
+  /**
+   * The new session is written after the password, and its write can still fail, taking the change
+   * back with it. A line recorded before it would outlive that rollback, a record of a change that
+   * never happened (#133).
+   */
+  @Test
+  void GivenANewSessionThatCannotBeStored_WhenChangingThePassword_ThenNothingIsRecorded() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+    sessions.whereStartingASessionFails();
+
+    assertThatThrownBy(
+            () ->
+                service.changePassword(
+                    themself,
+                    new ChangePasswordCommand(
+                        RIGHT_PASSWORD, "another invented password for a test")))
+        .isInstanceOf(StubSessionRepository.SessionNotStored.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
   /** The operator belongs to no organisation, so its account is held where it is: in none. */
   @Test
   void GivenTheOperatorChangingTheirPassword_WhenMade_ThenTheirAccountIsReadForUpdate() {
@@ -778,13 +801,21 @@ class SessionServiceTest {
   /**
    * Remembers the sessions it was asked to start, the revocations it was asked to make, each
    * account whose every session it was asked to end, and when each successor token it issued
-   * expires; and lets a test say that the conditional update found nothing to change.
+   * expires; and lets a test say that the conditional update found nothing to change, or that a
+   * session cannot be stored.
    *
-   * <p>That last part is the only way to reach the race the real adapter guards against: two
+   * <p>The first of those is the only way to reach the race the real adapter guards against: two
    * refreshes holding one token, where the database awards the exchange to one of them. Here the
    * test simply says the exchange was already taken.
    */
   private static final class StubSessionRepository implements SessionRepository {
+
+    /** What a session that cannot be stored throws, told apart from any refusal of the use case. */
+    static final class SessionNotStored extends RuntimeException {
+      SessionNotStored() {
+        super("Invented: the session could not be stored");
+      }
+    }
 
     private final List<SignInSession> started = new ArrayList<>();
     private final Map<SignInSessionId, SessionRevocation> revocations = new LinkedHashMap<>();
@@ -792,6 +823,7 @@ class SessionServiceTest {
     private final Map<UserId, SessionRevocation> accountsWhoseSessionsEnded = new LinkedHashMap<>();
     private final Map<SignInSessionId, Instant> successorExpiries = new LinkedHashMap<>();
     private boolean exchangeAlreadyTaken;
+    private boolean startingFails;
 
     List<SignInSession> started() {
       return List.copyOf(started);
@@ -815,12 +847,20 @@ class SessionServiceTest {
       exchangeAlreadyTaken = true;
     }
 
+    /** Makes every session this is asked to start fail to be stored. */
+    void whereStartingASessionFails() {
+      startingFails = true;
+    }
+
     void given(String tokenValue, StoredRefreshToken token) {
       tokens.put(tokenValue, token);
     }
 
     @Override
     public void start(SignInSession session, byte[] refreshDigest, Instant refreshExpiresAt) {
+      if (startingFails) {
+        throw new SessionNotStored();
+      }
       started.add(session);
     }
 
