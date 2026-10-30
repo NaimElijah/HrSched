@@ -360,6 +360,19 @@ describe('a session renewed underneath somebody', () => {
     expect(await screen.findByText(/^ADMIN in/)).toBeInTheDocument();
   });
 
+  /** A password reset by an Admin since sign-in leaves the account able to do one thing only. */
+  it('GivenARenewalRequiringAPasswordChange_WhenItIsHeld_ThenOnlyTheChangePasswordScreenIsShown', async () => {
+    await renewedAs(A_TENANT, { ...A_TENANT, passwordChangeRequired: true }, '/api/qualifications');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Qualifications' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Change your password' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'People' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Qualifications' })).not.toBeInTheDocument();
+  });
+
   it('GivenARenewalCarryingAMovedEmployeeLink_WhenItIsHeld_ThenOwnRecordsAreReadForTheNewLink', async () => {
     const routed = await renewedAs(
       { ...A_TENANT, employee: EMPLOYEE_BEFORE },
