@@ -11,21 +11,24 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.slf4j.MarkerFactory;
 
 /**
- * That the appender {@link LoggedText#capturing} hands out keeps the MDC a line was logged with.
+ * That {@link LoggedText} searches the parts of a line that are easiest to lose: the MDC it was
+ * logged with, which the appender {@link LoggedText#capturing} hands out has to keep, and a marker.
  *
- * <p>Every "nothing logged contains this" test in the access context relies on it, and they cannot
- * notice it failing: a search of an empty MDC finds no leak, which is what they assert. The logger
- * here is not additive, so no other appender, the console above all, reads the MDC first and hides
- * whether this one did.
+ * <p>Every "nothing logged contains this" test in the access context relies on both, and they
+ * cannot notice either failing: a search of an empty MDC finds no leak, which is what they assert.
+ * The logger here is not additive, so no other appender, the console above all, reads the MDC first
+ * and hides whether this one did.
  *
- * <p>The key and value are invented for the test.
+ * <p>The key, the values and the marker's name are invented for the test.
  */
 class LoggedTextTest {
 
   private static final String KEY = "an-invented-key";
   private static final String VALUE = "an invented value only the MDC carries";
+  private static final String MARKER = "an-invented-marker-only-the-marker-carries";
 
   private Logger logger;
   private ListAppender<ILoggingEvent> captured;
@@ -56,5 +59,13 @@ class LoggedTextTest {
     assertThat(LoggedText.of(captured.list))
         .describedAs("the MDC as it stood when the line was logged, not as it stands now")
         .contains(VALUE);
+  }
+
+  /** The encoder ships a marker as a tag, so a value carried that way is searched as well. */
+  @Test
+  void GivenALineCarryingAMarker_WhenSearching_ThenTheMarkerIsFound() {
+    logger.info(MarkerFactory.getDetachedMarker(MARKER), "A line logged with a marker");
+
+    assertThat(LoggedText.of(captured.list)).contains(MARKER);
   }
 }
