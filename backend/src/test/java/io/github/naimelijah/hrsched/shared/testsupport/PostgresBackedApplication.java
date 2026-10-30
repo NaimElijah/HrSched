@@ -1,8 +1,8 @@
 package io.github.naimelijah.hrsched.shared.testsupport;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.out.BackgroundWork;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -10,25 +10,39 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 /**
  * Points a {@code @SpringBootTest} at the PostgreSQL the suite already has running.
  *
- * <p>{@code @Import} this from any test that boots the application. {@code @ServiceConnection}
- * supplies the URL, user and password to Boot's auto-configuration, so no test has to name a
- * property, and Flyway then applies the real migrations to it.
+ * <p>{@code @Import} this from any test that boots the application. Boot's datasource
+ * auto-configuration takes its URL, user and password from the {@link JdbcConnectionDetails} bean
+ * here, so no test has to name a property, and Flyway then applies the real migrations to it.
  *
- * <p>It hands back the container {@link PostgresDatabase} already started rather than declaring one
- * of its own, so the whole suite pays for a single container once.
- *
- * <p>{@code destroyMethod = ""} is load-bearing. Boot treats a container bean as something it owns
- * and closes it when the context is destroyed, which for a container shared with every plain
- * adapter test would stop the database out from under them on the first context eviction. This bean
- * is a reference to something it did not start, so it must not stop it either.
+ * <p>The container is the one {@link PostgresDatabase} already started, so the whole suite pays for
+ * a single container once, and Spring is given only its address, never the container as a bean.
+ * Boot's Testcontainers lifecycle stops every container bean when its context closes, {@code
+ * destroyMethod = ""} or not (Boot 4.1.2), so a container bean here would let any test that closes
+ * a context it started take the database away from every test after it (#252). {@code
+ * PostgresBackedApplicationTest} pins that a context can close and leave the database answering.
  */
 @TestConfiguration(proxyBeanMethods = false)
 public class PostgresBackedApplication {
 
-  @Bean(destroyMethod = "")
-  @ServiceConnection
-  PostgreSQLContainer postgres() {
-    return PostgresDatabase.container();
+  @Bean
+  JdbcConnectionDetails sharedPostgres() {
+    PostgreSQLContainer container = PostgresDatabase.container();
+    return new JdbcConnectionDetails() {
+      @Override
+      public String getJdbcUrl() {
+        return container.getJdbcUrl();
+      }
+
+      @Override
+      public String getUsername() {
+        return container.getUsername();
+      }
+
+      @Override
+      public String getPassword() {
+        return container.getPassword();
+      }
+    };
   }
 
   /**

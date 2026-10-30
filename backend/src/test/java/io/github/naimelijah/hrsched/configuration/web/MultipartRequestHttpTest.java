@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 
@@ -31,7 +32,9 @@ import org.springframework.http.HttpHeaders;
  *
  * <p>Real HTTP on a random port, not MockMvc, because MockMvc never parses a multipart body: its
  * mock request hands the dispatcher only the parts a test registered on it, so the parser this is
- * about never runs. That costs a context of its own.
+ * about never runs. It sends nothing through MockMvc, and carries {@code @AutoConfigureMockMvc}
+ * only so that its annotations match {@code FormPostLimitHttpTest}'s and the two share one
+ * real-port context.
  *
  * <p>The part is 1.5 MiB of an invented byte: over the default 1 MB limit on a part, and under the
  * 2 MiB Tomcat reads and discards from a body it answered without reading. Larger, and a server
@@ -40,6 +43,7 @@ import org.springframework.http.HttpHeaders;
  */
 @Import(PostgresBackedApplication.class)
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+@AutoConfigureMockMvc
 class MultipartRequestHttpTest {
 
   private static final String SIGN_IN = "/api/auth/sign-in";

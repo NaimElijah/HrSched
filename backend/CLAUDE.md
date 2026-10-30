@@ -40,14 +40,17 @@ A context may reference another context's `application.port.in` package and **no
 ## Architecture tests
 
 - **Dependencies point inward, and contexts are independent. Both are enforced.**
-  `HexagonalArchitectureTest` fails the build if the domain imports Spring, the application
-  touches an adapter, a context reaches past another's published ports, the kernel depends on a
-  context, or a context's layers form a cycle. Never weaken or delete a rule to make code pass —
-  the rule is the point. Deleting one that provably cannot fail is different, and needs the proof.
+  `HexagonalArchitectureTest` fails the build if the domain depends on anything but the JDK and
+  HrSched's own domain packages, the application touches an adapter, a context reaches past
+  another's published ports, the kernel depends on a context, or a context's layers form a cycle.
+  Never weaken or delete a rule to make code pass — the rule is the point. Deleting one that
+  provably cannot fail is different, and needs the proof.
 - **When adding an architecture rule, watch it fail first.** All thirteen rules here have been
   observed failing on a deliberately introduced violation, then reverted; a rule that has only
-  ever been green proves nothing. The same applies to a test: a fix whose test was never seen
-  failing has not been shown to fix anything.
+  ever been green proves nothing. A rule whose logic is ours keeps that failure as a test in
+  `HexagonalArchitectureRulesTest`, against a class under `architecture/fixtures` that breaks it
+  on purpose, beside the nearest legal case. The same applies to a test: a fix whose test was
+  never seen failing has not been shown to fix anything.
 
 ## Adding a use case
 
@@ -172,14 +175,18 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
 ## Testing
 
 - **One container, one context.** `PostgresDatabase` holds a container started once and never
-  stopped; `PostgresBackedApplication` hands it to Spring with `destroyMethod = ""`, meant so that
-  closing a context cannot stop it. Under Boot 4.1.2 closing one does stop it (#252), so a test must
-  never close a context that holds the container. A Spring test shares the suite's context only
-  while its annotations are exactly
-  `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`;
-  `MetricsHttpTest`, `MultipartRequestHttpTest` (on a real port), the bare smoke test
-  `HrSchedApplicationTests` and `JsonDocumentLimitStartupTest` (which passes the datasource as
-  properties, so it holds no container) each start another.
+  stopped. `PostgresBackedApplication` hands Spring its address as a `JdbcConnectionDetails`,
+  never the container as a bean: Boot's Testcontainers lifecycle stops every container bean when
+  its context closes, `destroyMethod = ""` or not, so a test closing a context it started would take
+  the database from every test after it (#252, pinned by `PostgresBackedApplicationTest`). A
+  Spring test shares the suite's context only while its annotations are exactly
+  `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`, as the smoke
+  test `HrSchedApplicationTests` does. Two more are started: `MetricsHttpTest`'s, and one on a real
+  port that `MultipartRequestHttpTest`, `FormPostLimitHttpTest` and `ErrorDispatchHttpTest` share
+  by adding `webEnvironment = RANDOM_PORT`. Two tests start an application themselves:
+  `JsonDocumentLimitStartupTest`, passing the datasource as properties, and
+  `PostgresBackedApplicationTest`, which starts and closes one over `PostgresBackedApplication` on
+  purpose, to pin that closing it leaves the database answering.
 - **Isolation.** An HTTP test onboards a fresh organisation through `TestTenants`; an adapter
   test, which runs without Spring, calls `PostgresDatabase.empty()` first.
 - **Fakes are hand-written**, package-private beside the service tests that use them, and copy the

@@ -39,19 +39,29 @@ class HexagonalArchitectureTest {
   /** The name of {@code Account.actor()}, which ArchUnit matches by name rather than by literal. */
   private static final String ACTOR_METHOD = "actor";
 
+  /**
+   * The domain depends on the JDK and on HrSched's own domain, and on nothing else.
+   *
+   * <p>An allow-list rather than a list of forbidden frameworks: a list names only the libraries
+   * somebody thought of, so a Jackson annotation on a domain record, or any library added later,
+   * passed it. Within HrSched it allows only a {@code domain} package, the kernel's included, so
+   * the root package's {@code HrSchedApplication} is outside it as much as a library is. {@code
+   * HexagonalArchitectureRulesTest} watches it reject a library, Spring and that entry point. The
+   * outer layers are also forbidden by name, as {@link #dependencies_point_inward} forbids them, so
+   * a {@code domain} package nested inside one of them is not a way in.
+   */
   @ArchTest
   static final ArchRule domain_depends_on_nothing_but_the_jdk =
       noClasses()
           .that()
           .resideInAPackage("..domain..")
           .should()
-          .dependOnClassesThat()
-          .resideInAnyPackage(
-              "org.springframework..",
-              "jakarta..",
-              "..application..",
-              "..adapter..",
-              "..configuration..")
+          .dependOnClassesThat(
+              JavaClass.Predicates.resideOutsideOfPackages(
+                      "java..", "io.github.naimelijah.hrsched..domain..")
+                  .or(
+                      JavaClass.Predicates.resideInAnyPackage(
+                          "..application..", "..adapter..", "..configuration..")))
           .because("the domain must be testable and reusable without the framework");
 
   @ArchTest
@@ -96,29 +106,39 @@ class HexagonalArchitectureTest {
    * services, its adapters and its driven ports all stay private. See ADR-008.
    *
    * <p>Loosening a rule is exactly when a rule quietly stops protecting anything, so this one has a
-   * failure test: it must reject a reference into another context's domain while permitting one
+   * failure test: {@code HexagonalArchitectureRulesTest} evaluates it against fixture contexts, and
+   * it must reject a reference into another context's domain or driven ports while permitting one
    * into its published ports.
    */
   @ArchTest
   static final ArchRule contexts_touch_only_published_ports_of_other_contexts =
-      classes()
-          .should(onlyReachOtherContextsThroughTheirPublishedPorts())
-          .because("a context may use another context's published driving ports, and nothing else");
+      contextsTouchOnlyPublishedPortsOfOtherContexts(ContextPackages.HRSCHED);
 
-  private static ArchCondition<JavaClass> onlyReachOtherContextsThroughTheirPublishedPorts() {
+  /**
+   * @param packages where the contexts are; {@link ContextPackages#HRSCHED} for the build's rule
+   * @return the cross-context rule over those contexts
+   */
+  static ArchRule contextsTouchOnlyPublishedPortsOfOtherContexts(ContextPackages packages) {
+    return classes()
+        .should(onlyReachOtherContextsThroughTheirPublishedPorts(packages))
+        .because("a context may use another context's published driving ports, and nothing else");
+  }
+
+  private static ArchCondition<JavaClass> onlyReachOtherContextsThroughTheirPublishedPorts(
+      ContextPackages packages) {
     return new ArchCondition<>("only reach other contexts through their published driving ports") {
       @Override
       public void check(JavaClass origin, ConditionEvents events) {
-        Optional<String> originContext = ContextPackages.contextOf(origin);
+        Optional<String> originContext = packages.contextOf(origin);
         if (originContext.isEmpty()) {
           return;
         }
         for (Dependency dependency : origin.getDirectDependenciesFromSelf()) {
           JavaClass target = dependency.getTargetClass();
-          Optional<String> targetContext = ContextPackages.contextOf(target);
+          Optional<String> targetContext = packages.contextOf(target);
           boolean crossesContexts =
               targetContext.isPresent() && !targetContext.get().equals(originContext.get());
-          if (crossesContexts && !ContextPackages.isPublished(target)) {
+          if (crossesContexts && !packages.isPublished(target)) {
             events.add(SimpleConditionEvent.violated(origin, dependency.getDescription()));
           }
         }
@@ -132,16 +152,40 @@ class HexagonalArchitectureTest {
    * <p>A shared kernel is a coupling every context pays for, so it only stays cheap while it stays
    * small and knows nothing. The moment it reaches into a context, every context transitively
    * depends on that one and the boundaries stop meaning anything. See ADR-008.
+   *
+   * <p>What counts as a context comes from {@link ContextPackages#contextOf}, the definition the
+   * cross-context rule uses, rather than from a list of names: a hand-kept list left out {@code
+   * notifications} when that context arrived (#220), and would leave out the next one too. {@code
+   * HexagonalArchitectureRulesTest} watches it reject a kernel class reaching into {@code
+   * notifications}, into a context no list names, and into configuration.
+   *
+   * <p>In this tree such a reference is also a cycle, as every context depends on the kernel, and
+   * {@link #layers_within_a_context_are_free_of_cycles} reports it too. This rule is the one that
+   * says why, and the one that still holds for a context that does not use the kernel.
    */
   @ArchTest
   static final ArchRule the_shared_kernel_depends_on_no_context =
-      noClasses()
-          .that()
-          .resideInAPackage("..shared..")
-          .should()
-          .dependOnClassesThat()
-          .resideInAnyPackage("..scheduling..", "..workforce..", "..access..", "..configuration..")
-          .because("a kernel that knows about a context couples every context to that context");
+      theSharedKernelDependsOnNoContext(ContextPackages.HRSCHED);
+
+  /**
+   * @param packages where the contexts are; {@link ContextPackages#HRSCHED} for the build's rule
+   * @return the kernel rule over those contexts
+   */
+  static ArchRule theSharedKernelDependsOnNoContext(ContextPackages packages) {
+    return noClasses()
+        .that()
+        .resideInAPackage("..shared..")
+        .should()
+        .dependOnClassesThat(aContextOrTheCompositionRoot(packages))
+        .because("a kernel that knows about a context couples every context to that context");
+  }
+
+  private static DescribedPredicate<JavaClass> aContextOrTheCompositionRoot(
+      ContextPackages packages) {
+    return DescribedPredicate.<JavaClass>describe(
+            "belong to a bounded context", target -> packages.contextOf(target).isPresent())
+        .or(JavaClass.Predicates.resideInAPackage("..configuration.."));
+  }
 
   /**
    * Nothing prints.
@@ -160,9 +204,10 @@ class HexagonalArchitectureTest {
   /**
    * The domain does not log.
    *
-   * <p>{@link #domain_depends_on_nothing_but_the_jdk} does not cover this, and that is not an
-   * oversight to leave alone: SLF4J is not Spring, so a domain logger passes it, and {@code
-   * java.util.logging} genuinely <em>is</em> the JDK. A domain class that logs is a domain class
+   * <p>{@link #domain_depends_on_nothing_but_the_jdk} already rejects SLF4J and Logback, as it
+   * rejects every library, but not {@code java.util.logging}, which genuinely <em>is</em> the JDK.
+   * That one is this rule's alone, and the other two are named here as well so that the reason
+   * stays written down if the allow-list ever changes. A domain class that logs is a domain class
    * with a side effect, which is the property that makes the rest of it worth testing without a
    * framework.
    *
@@ -205,9 +250,10 @@ class HexagonalArchitectureTest {
    * <p>OR-Tools is native code with a modelling discipline of its own, a version held back for one
    * platform's runtime, and a crash that takes the JVM with it. Confined to {@code
    * scheduling.adapter.out.generation}, it can be replaced, upgraded or moved into a process of its
-   * own by changing one package. The rules that keep frameworks out of the domain and the
-   * application name packages; none of them names this library, so without this rule a model type
-   * could reach a use case unnoticed.
+   * own by changing one package. The domain's allow-list already rejects this library there, but
+   * the rule for the application layer names the packages it forbids, and this library is not among
+   * them, so without this rule a model type could reach a use case, or any adapter but this one,
+   * unnoticed.
    */
   @ArchTest
   static final ArchRule the_solver_stays_in_its_adapter =
