@@ -117,7 +117,7 @@ wiring seeing inside a context, a kernel that knows no context, cycles between c
 a context's layers, printing, logging in the domain, instrumentation inward of an adapter, the
 solver kept in its one adapter, reading the acting identity from a thread-local, who may build an
 actor or ask an account for one, every controller listed by its context's exception handler, and
-an organisation in every repository lookup but a named few.
+an organisation in every repository and directory method but a save and a named few.
 Components, the authentication sequence and the data flow are in
 [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
 

@@ -30,6 +30,7 @@ import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.no
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesThroughThePublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.in.FixturePayUseCase;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.out.ScopedPayslipRepository;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.out.UnscopedPayeeDirectory;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.out.UnscopedPayslipRepository;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.FixturePayrollService;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceCallingOverHttp;
@@ -423,10 +424,35 @@ class HexagonalArchitectureRulesTest {
       GivenARepositoryLookupWithoutAnOrganisation_WhenTheTenancyRuleIsEvaluated_ThenItIsViolated() {
     EvaluationResult result =
         evaluate(
-            HexagonalArchitectureTest.repository_lookups_take_an_organisation,
+            HexagonalArchitectureTest.repository_methods_take_an_organisation,
             UnscopedPayslipRepository.class);
 
     assertViolatedNaming(result, "UnscopedPayslipRepository.findByReference");
+  }
+
+  /**
+   * An unscoped {@code exists…} is an oracle that a record exists in some organisation, and a name
+   * pattern for lookups would never have asked about it.
+   */
+  @Test
+  void
+      GivenARepositoryMethodNamedLikeNoLookupWithoutAnOrganisation_WhenTheTenancyRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repository_methods_take_an_organisation,
+            UnscopedPayslipRepository.class);
+
+    assertViolatedNaming(result, "UnscopedPayslipRepository.existsByReference");
+  }
+
+  @Test
+  void GivenADirectoryReadWithoutAnOrganisation_WhenTheTenancyRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repository_methods_take_an_organisation,
+            UnscopedPayeeDirectory.class);
+
+    assertViolatedNaming(result, "UnscopedPayeeDirectory.payeesNamed");
   }
 
   @Test
@@ -434,7 +460,7 @@ class HexagonalArchitectureRulesTest {
       GivenARepositoryWhoseLookupAndLockTakeAnOrganisation_WhenTheTenancyRuleIsEvaluated_ThenItHolds() {
     EvaluationResult result =
         evaluate(
-            HexagonalArchitectureTest.repository_lookups_take_an_organisation,
+            HexagonalArchitectureTest.repository_methods_take_an_organisation,
             ScopedPayslipRepository.class);
 
     assertHolds(result);

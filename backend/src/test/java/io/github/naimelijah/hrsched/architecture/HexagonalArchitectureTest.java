@@ -690,7 +690,7 @@ class HexagonalArchitectureTest {
   }
 
   /**
-   * A repository lookup allowed to take no {@code OrganisationId}.
+   * A repository method allowed to take no {@code OrganisationId}.
    *
    * @param port the driven port declaring it, by class literal so a renamed port fails compilation
    * @param method its name; every overload of it is allowed
@@ -699,11 +699,13 @@ class HexagonalArchitectureTest {
   record UnscopedLookup(Class<?> port, String method, String reason) {}
 
   /**
-   * The repository lookups that take no organisation, each named, with the reason its port gives.
+   * The repository methods that take no organisation, each named, with the reason its port gives:
+   * six reads, and the five writes that keep a session.
    *
    * <p>All belong to access, where the tenant is still being discovered: signing in and
-   * authenticating come before there is an organisation, the operator belongs to none, and the
-   * register of tenants is the one thing with no tenant above it.
+   * authenticating come before there is an organisation, the operator belongs to none, a session
+   * belongs to an account rather than a tenant, and the register of tenants is the one thing with
+   * no tenant above it. ADR-055 records each.
    */
   static final List<UnscopedLookup> UNSCOPED_LOOKUPS =
       List.of(
@@ -733,41 +735,74 @@ class HexagonalArchitectureTest {
               "the read that discovers which organisation the caller belongs to, and the operator"
                   + " belongs to none"),
           new UnscopedLookup(
+              SessionRepository.class,
+              "start",
+              "a session belongs to an account rather than a tenant, and the operator's to none,"
+                  + " so there is no organisation to open it under"),
+          new UnscopedLookup(
+              SessionRepository.class,
+              "markReplaced",
+              "reaches a refresh token only by the digest of a token this system issued"),
+          new UnscopedLookup(
+              SessionRepository.class,
+              "issueSuccessor",
+              "renews a session reached only through a token this system issued, and a session"
+                  + " belongs to an account rather than a tenant"),
+          new UnscopedLookup(
+              SessionRepository.class,
+              "revoke",
+              "ends a session reached only through a token this system issued, and a session"
+                  + " belongs to an account rather than a tenant"),
+          new UnscopedLookup(
+              SessionRepository.class,
+              "revokeEverySessionOf",
+              "ends the sessions of one account, which is their scope, and the operator's"
+                  + " account belongs to no organisation"),
+          new UnscopedLookup(
               OrganisationRepository.class,
               "findAll",
               "the register of tenants has no outer scope to filter by, and listing it is"
                   + " operator-only at the use case above"));
 
-  /** The method names of a repository lookup: a read, or a lock taken before one. */
-  private static final String LOOKUP = "(find|lock).*";
+  /**
+   * The method names of a save, the one kind of repository method the tenancy rule does not ask
+   * about: the aggregate it stores carries its own organisation.
+   */
+  private static final String SAVE = "save.*";
 
   /**
-   * Every repository lookup takes the organisation it reads in.
+   * Every method of a repository or a directory takes the organisation it works in, but a save.
    *
    * <p>ADR-009 makes the tenant part of the signature, so a cross-tenant read cannot be written by
    * forgetting a {@code WHERE organisation_id = ?}, only by passing the wrong organisation, which a
-   * reviewer sees. That holds only while every {@code find…} and {@code lock…} on a driven-port
-   * repository takes an {@code OrganisationId}; a {@code findById(EmployeeId)} added later would
-   * compile, pass review by habit, and read across tenants. The few that cannot take one are named
-   * in {@link #UNSCOPED_LOOKUPS}, each with its port's own reason, so a new one is a decision
-   * written down rather than an omission. {@code HexagonalArchitectureRulesTest} watches it reject
-   * a fixture repository's unscoped lookup and permit a scoped one, and checks that every allowed
-   * lookup still names a method its port declares.
+   * reviewer sees. That holds only while every method of a driven port named {@code …Repository} or
+   * {@code …Directory} takes an {@code OrganisationId}: a {@code findById(EmployeeId)}, an {@code
+   * existsByEmail(String)} or a {@code countActive()} added later would compile, pass review by
+   * habit, and read across tenants or tell that a record exists in one. Every method is asked,
+   * rather than those named like a lookup, because a name pattern catches only the names somebody
+   * thought of. A save is exempt, as its aggregate carries its organisation. The few methods that
+   * cannot take one are named in {@link #UNSCOPED_LOOKUPS}, each with its port's own reason, so a
+   * new one is a decision written down rather than an omission. {@code
+   * HexagonalArchitectureRulesTest} watches it reject a fixture repository's unscoped lookup and
+   * unscoped question, and a fixture directory's unscoped read, and permit a scoped repository, and
+   * checks that every allowed method is still one its port declares.
    */
   @ArchTest
-  static final ArchRule repository_lookups_take_an_organisation =
+  static final ArchRule repository_methods_take_an_organisation =
       methods()
           .that()
           .areDeclaredInClassesThat(
               JavaClass.Predicates.resideInAPackage("..application.port.out..")
-                  .and(JavaClass.Predicates.simpleNameEndingWith("Repository"))
+                  .and(
+                      JavaClass.Predicates.simpleNameEndingWith("Repository")
+                          .or(JavaClass.Predicates.simpleNameEndingWith("Directory")))
                   .and(JavaClass.Predicates.INTERFACES))
           .and()
-          .haveNameMatching(LOOKUP)
+          .haveNameNotMatching(SAVE)
           .and(DescribedPredicate.not(oneOf(UNSCOPED_LOOKUPS)))
           .should(takeAnOrganisation())
           .because(
-              "a lookup without the tenant in its signature is a cross-tenant read waiting to be"
+              "a method without the tenant in its signature is a cross-tenant read waiting to be"
                   + " written (ADR-009)");
 
   private static DescribedPredicate<JavaMethod> oneOf(List<UnscopedLookup> lookups) {

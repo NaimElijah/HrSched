@@ -47,9 +47,9 @@ A context may reference another context's `application.port.in` package and **no
   `adapter/out`; a class in `configuration` other than the `@Configuration` wiring reaches past
   them; the kernel depends on a context; contexts, or a context's layers, form a cycle; a class in a
   context sits outside its `domain`, `application` and `adapter` packages; a `@RestController` is
-  missing from its context's `@RestControllerAdvice(assignableTypes = …)`; or a `find…` or
-  `lock…` on a driven-port repository takes no `OrganisationId` and is not in the named
-  `UNSCOPED_LOOKUPS`. Never weaken or delete a rule to make code pass — the rule is the point.
+  missing from its context's `@RestControllerAdvice(assignableTypes = …)`; or a method other than a
+  `save…` on a driven-port `*Repository` or `*Directory` takes no `OrganisationId` and is not in
+  the named `UNSCOPED_LOOKUPS`. Never weaken or delete a rule to make code pass — the rule is the point.
   Deleting one that provably cannot fail is different, and needs the proof.
 - **When adding an architecture rule, watch it fail first.** All nineteen rules here have been
   observed failing on a deliberately introduced violation, then reverted; a rule that has only
