@@ -21,4 +21,27 @@ export default tseslint.config(
       'no-console': 'error',
     },
   },
+  {
+    // A request that bypasses client.ts goes out without the bearer token and is never renewed on a
+    // 401. Tests are exempt because they stand in for the network, not because they talk to it.
+    // checkGlobalObject follows only a declared global object: window is declared above, globalThis
+    // comes with ecmaVersion, and self is declared here so that self.fetch is caught too.
+    files: ['src/**/*.{ts,tsx}'],
+    languageOptions: { globals: { self: 'readonly' } },
+    ignores: ['src/api/client.ts', 'src/**/*.test.{ts,tsx}', 'src/test-support/**'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        {
+          globals: [
+            {
+              name: 'fetch',
+              message: 'Call the backend through src/api/client.ts, the only module that may.',
+            },
+          ],
+          checkGlobalObject: true,
+        },
+      ],
+    },
+  },
 );
