@@ -20,9 +20,13 @@ sees the file.
   and `notifications.ts` mirror the backend DTOs, one module per context.
 - `src/auth/` — `SessionProvider` and the sign-in, change-password and session-bar screens
   (ADR-011, ADR-028).
-- `src/pages/` — one screen per capability. Pages never call `fetch` directly.
-- `src/components/` — what several pages share: `ErrorBoundary`, `Feedback`, `useAsync`,
-  `localDates`.
+- `src/pages/` — the screens, one `*Page` per capability, and the parts of a screen:
+  `RosterBoard`, `ApprovingRules` and `ObjectiveScores` belong to `RostersPage`, `Inbox` to
+  `MePage`. A helper only one screen uses stays beside it; once a second screen uses it, it moves
+  to `src/components/`. Pages never call `fetch` directly.
+- `src/components/` — what several screens share: `ErrorBoundary`, `Feedback`, `useAsync`,
+  `localDates`, `useShiftsById`, `swapStatus`, and the wording tables `ruleFields` and
+  `objectiveFields`.
 - `src/test-support/` — `routeTo` replaces `fetch` with a router that answers anything unmatched
   with a 404. A `METHOD path` key answers that method at exactly that path, and a bare path only a
   GET there, so a write to the wrong endpoint is refused. `renderSignedIn` renders a screen as

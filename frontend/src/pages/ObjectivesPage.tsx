@@ -4,7 +4,7 @@ import type { ObjectiveWeights, ObjectiveWeightsRequest } from '../api/schedulin
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
-import { OBJECTIVE_FIELDS, type ObjectiveField } from './objectiveFields';
+import { OBJECTIVE_FIELDS, type ObjectiveField } from '../components/objectiveFields';
 
 function stored(weights: ObjectiveWeights | null, key: ObjectiveField): string {
   const value = weights === null ? null : weights[key];

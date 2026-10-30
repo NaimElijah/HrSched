@@ -5,8 +5,8 @@ import { Busy, Failure } from '../components/Feedback';
 import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
-import { SWAP_STATUS } from './swapStatus';
-import { useShiftsById } from './useShiftsById';
+import { SWAP_STATUS } from '../components/swapStatus';
+import { useShiftsById } from '../components/useShiftsById';
 
 /**
  * Scheduler: answer the swap requests (F7).
@@ -26,7 +26,10 @@ export function SwapsPage({ people }: { people: readonly Employee[] }) {
   const [deciding, setDeciding] = useState(false);
 
   const swaps = useAsync(() => scheduling.findSwapRequests(), sessionKey);
-  const shifts = useShiftsById((swaps.value ?? []).map((swap) => swap.shift));
+  const shifts = useShiftsById(
+    (swaps.value ?? []).map((swap) => swap.shift),
+    sessionKey,
+  );
   const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (employee: string): string => personById.get(employee)?.name ?? employee;
 

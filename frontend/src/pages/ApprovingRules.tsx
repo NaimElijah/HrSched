@@ -2,7 +2,7 @@ import { scheduling } from '../api/scheduling';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
-import { RULE_FIELDS } from './ruleFields';
+import { RULE_FIELDS } from '../components/ruleFields';
 
 /**
  * The rules a published roster was judged against: the version it names, read back as it was
