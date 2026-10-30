@@ -270,8 +270,8 @@ filled every place it can, it keeps at least that many filled and minimises the 
   covered by its own tests rather than assumed. **A request cannot name an organisation at all**:
   it acts in the one its own account belongs to, read from a row the caller cannot write, so a
   tenant can be neither invented nor borrowed.
-  *Enforced by `Actor.requireTenantMembership` and `Actor.requireAccessTo` (`ActorTest` covers the
-  second), and by the helper in each web adapter that takes the organisation from the actor
+  *Enforced by `Actor.requireTenantMembership` and `Actor.requireAccessTo` (`ActorTest` covers
+  both), and by the helper in each web adapter that takes the organisation from the actor
   (`actingIn`; `organisationOf` in `AccountController`), covered by `EmployeeHttpTest`, `CrossTenantEmployeeWriteHttpTest`, `CrossTenantSchedulingWriteHttpTest`, `RosteringHttpTest`, `SwapHttpTest`, `NotificationHttpTest`
   and `AccountHttpTest`;
   [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md). On the write side, by the
