@@ -1,6 +1,9 @@
 # ADR-002: Make `./mvnw verify` the single build gate, formatted by Spotless
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** Spotless is no longer 2.44.5: its version is `spotless.version` in
+    `backend/pom.xml`. Dependabot covers npm as well as Maven and GitHub Actions
+    (`.github/dependabot.yml`).
 - **Date:** 2026-08-29
 
 ## Context

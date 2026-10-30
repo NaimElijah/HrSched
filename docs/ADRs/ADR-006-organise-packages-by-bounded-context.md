@@ -1,6 +1,10 @@
 # ADR-006: Organise packages by bounded context, not by layer
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** "Contexts may not depend on each other" is replaced by
+    [ADR-008](ADR-008-context-integration.md): a context may reference another context's
+    `application.port.in` package and nothing else. "No `shared/` package is created" is replaced
+    by the same record, which adds the shared kernel `shared.domain.model`. The rest stands.
 - **Date:** 2026-08-29
 
 ## Context

@@ -1,6 +1,12 @@
 # ADR-021: Make notifications a bounded context, and let it hold no words
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** The notification store is in PostgreSQL
+    ([ADR-004](ADR-004-postgresql-behind-the-driven-ports.md)), so "nothing survives a restart" no
+    longer holds. Delivery is still pull-only, which is Q21.
+  - **Erratum 2026-10-30:** "Q22" in the consequences and in the last alternative should read Q21,
+    the question about the notification channel. Q22 is whether a swap is a transfer or an
+    exchange.
 - **Date:** 2026-09-01
 
 ## Context

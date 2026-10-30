@@ -1,6 +1,12 @@
 # ADR-007: Keep backend and frontend in one repository, as sibling directories
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** `frontend/` now exists
+    ([ADR-013](ADR-013-react-typescript-vite-frontend.md)), so "is not created yet" no longer
+    holds. The missing root command the text accepts as debt is
+    [ADR-014](ADR-014-root-task-runner.md)'s root task runner. Q5 is answered in shape:
+    containerised, with the provider left to its own record (reserved as ADR-035, #153).
+    Dependabot covers `/frontend`, as the text foresaw.
 - **Date:** 2026-08-29
 
 ## Context

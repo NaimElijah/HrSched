@@ -1,6 +1,10 @@
 # ADR-011: Issue our own signed access tokens, and resolve the actor from the stored account and session on every request
 
 - **Status:** Accepted
+  - **Erratum 2026-10-30:** "An open question the requirements already carry" (lockout as a
+    denial-of-service lever) named a question that did not exist.
+    [#142](https://github.com/NaimElijah/HrSched/issues/142) asks it and proposes Q34.
+    `requirements.md` does not carry it yet.
 - **Date:** 2026-09-16
 
 ## Context

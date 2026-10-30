@@ -1,6 +1,8 @@
 # ADR-029: Provision accounts from the top down, with temporary passwords, and bootstrap the operator from configuration
 
 - **Status:** Accepted
+  - **Erratum 2026-10-30:** "Q27" for the Admin who is locked out should read Q28. Q27 is the
+    security defaults.
 - **Date:** 2026-09-16
 
 ## Context
