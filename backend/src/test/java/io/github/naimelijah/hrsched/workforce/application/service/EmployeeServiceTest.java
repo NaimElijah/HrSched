@@ -25,7 +25,6 @@ import io.github.naimelijah.hrsched.workforce.application.port.in.WithdrawPrefer
 import io.github.naimelijah.hrsched.workforce.application.port.in.WithdrawUnavailabilityCommand;
 import io.github.naimelijah.hrsched.workforce.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
-import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
 import io.github.naimelijah.hrsched.workforce.application.port.out.WorkforceChange;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidContractTermsException;
@@ -928,9 +927,10 @@ class EmployeeServiceTest {
 
   // --- the doubles refuse what the adapters refuse -------------------------------------------
   //
-  // JdbcEmployeeRepository and JdbcQualificationRepository refuse a save over an identity another
-  // organisation holds. A double that accepted it would let a use case writing across the tenant
-  // boundary pass every test here while the database refused it in production.
+  // JdbcEmployeeRepository refuses a save over an identity another organisation holds. A double
+  // that accepted it would let a use case writing across the tenant boundary pass every test here
+  // while the database refused it in production. The shared StubQualificationRepository is held
+  // to the same refusal in QualificationServiceTest.
 
   @Test
   void GivenAnIdentityHeldByAnotherOrganisation_WhenTheEmployeeDoubleSavesOverIt_ThenItIsRefused() {
@@ -943,20 +943,6 @@ class EmployeeServiceTest {
         .map(Employee::name)
         .contains("Their Employee");
     assertThat(employees.findById(ACME, theirs.id())).isEmpty();
-  }
-
-  @Test
-  void
-      GivenAnIdentityHeldByAnotherOrganisation_WhenTheQualificationDoubleSavesOverIt_ThenItIsRefused() {
-    Qualification theirs = new Qualification(QualificationId.newId(), RIVAL, "Their Ticket");
-    qualifications.save(theirs);
-
-    assertThatThrownBy(() -> qualifications.save(new Qualification(theirs.id(), ACME, "Forklift")))
-        .isInstanceOf(IllegalStateException.class);
-    assertThat(qualifications.findById(RIVAL, theirs.id()))
-        .map(Qualification::name)
-        .contains("Their Ticket");
-    assertThat(qualifications.findById(ACME, theirs.id())).isEmpty();
   }
 
   /**
@@ -1014,40 +1000,6 @@ class EmployeeServiceTest {
       matching.removeIf(employee -> !employee.organisation().equals(organisation));
       matching.sort(Comparator.comparing(Employee::name));
       return List.copyOf(matching);
-    }
-  }
-
-  /** In-memory stand-in for the qualification port. */
-  private static final class StubQualificationRepository implements QualificationRepository {
-
-    private final Map<QualificationId, Qualification> saved = new HashMap<>();
-
-    /**
-     * @throws IllegalStateException if the identity already belongs to another organisation, as
-     *     {@code JdbcQualificationRepository}'s upsert refuses it
-     */
-    @Override
-    public void save(Qualification qualification) {
-      Qualification held = saved.get(qualification.id());
-      if (held != null && !held.organisation().equals(qualification.organisation())) {
-        throw new IllegalStateException(
-            "Refused to store %s: that identity already belongs to another organisation"
-                .formatted(qualification.id().value()));
-      }
-      saved.put(qualification.id(), qualification);
-    }
-
-    @Override
-    public Optional<Qualification> findById(OrganisationId organisation, QualificationId id) {
-      return Optional.ofNullable(saved.get(id))
-          .filter(qualification -> qualification.organisation().equals(organisation));
-    }
-
-    @Override
-    public List<Qualification> findByOrganisation(OrganisationId organisation) {
-      return saved.values().stream()
-          .filter(qualification -> qualification.organisation().equals(organisation))
-          .toList();
     }
   }
 
