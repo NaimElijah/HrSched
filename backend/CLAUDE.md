@@ -40,14 +40,17 @@ A context may reference another context's `application.port.in` package and **no
 ## Architecture tests
 
 - **Dependencies point inward, and contexts are independent. Both are enforced.**
-  `HexagonalArchitectureTest` fails the build if the domain imports Spring, the application
-  touches an adapter, a context reaches past another's published ports, the kernel depends on a
-  context, or a context's layers form a cycle. Never weaken or delete a rule to make code pass —
-  the rule is the point. Deleting one that provably cannot fail is different, and needs the proof.
+  `HexagonalArchitectureTest` fails the build if the domain depends on anything but the JDK and
+  HrSched's own domain packages, the application touches an adapter, a context reaches past
+  another's published ports, the kernel depends on a context, or a context's layers form a cycle.
+  Never weaken or delete a rule to make code pass — the rule is the point. Deleting one that
+  provably cannot fail is different, and needs the proof.
 - **When adding an architecture rule, watch it fail first.** All thirteen rules here have been
   observed failing on a deliberately introduced violation, then reverted; a rule that has only
-  ever been green proves nothing. The same applies to a test: a fix whose test was never seen
-  failing has not been shown to fix anything.
+  ever been green proves nothing. A rule whose logic is ours keeps that failure as a test in
+  `HexagonalArchitectureRulesTest`, against a class under `architecture/fixtures` that breaks it
+  on purpose, beside the nearest legal case. The same applies to a test: a fix whose test was
+  never seen failing has not been shown to fix anything.
 
 ## Adding a use case
 
@@ -175,8 +178,10 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
   `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`, as the smoke
   test `HrSchedApplicationTests` does. Two more are started: `MetricsHttpTest`'s, and one on a real
   port that `MultipartRequestHttpTest`, `FormPostLimitHttpTest` and `ErrorDispatchHttpTest` share
-  by adding `webEnvironment = RANDOM_PORT`. `JsonDocumentLimitStartupTest` starts the application itself,
-  passing the datasource as properties.
+  by adding `webEnvironment = RANDOM_PORT`. Two tests start an application themselves:
+  `JsonDocumentLimitStartupTest`, passing the datasource as properties, and
+  `PostgresBackedApplicationTest`, which starts and closes one over `PostgresBackedApplication` on
+  purpose, to pin that closing it leaves the database answering.
 - **Isolation.** An HTTP test onboards a fresh organisation through `TestTenants`; an adapter
   test, which runs without Spring, calls `PostgresDatabase.empty()` first.
 - **Fakes are hand-written**, package-private beside the service tests that use them, and copy the
