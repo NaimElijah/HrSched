@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.naimelijah.hrsched.access.application.port.in.AccountKind;
 import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordOutcome;
+import io.github.naimelijah.hrsched.access.application.port.in.CurrentPasswordRefusal;
 import io.github.naimelijah.hrsched.access.application.port.in.RefreshOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.RefreshRefusal;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInCommand;
@@ -519,6 +520,34 @@ class SessionServiceTest {
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
     assertThat(accounts.heldForUpdate()).containsExactly(account.id());
+  }
+
+  /**
+   * The request was authenticated before an Admin's disable committed, and its held read sees the
+   * disable. A session begun here would be opened after the disable ended every other, and would
+   * outlive a later restore (R17, ADR-041), so nothing changes and nothing is counted.
+   */
+  @Test
+  void GivenTheAccountDisabledOnceHeld_WhenChangingItsPassword_ThenItIsRefusedAndNothingChanges() {
+    Account disabled = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()).disabled());
+    TenantActor themself = new TenantActor(disabled.id(), ACME, Role.SCHEDULER);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            ChangePasswordOutcome.CurrentPasswordRejected.class,
+            rejected -> assertThat(rejected.reason()).isEqualTo(CurrentPasswordRefusal.DISABLED));
+    Account after = accounts.find(ACME, disabled.id()).orElseThrow();
+    assertThat(after.passwordHash()).isEqualTo(disabled.passwordHash());
+    assertThat(after.active()).isFalse();
+    assertThat(after.failedSignIns()).isEqualTo(disabled.failedSignIns());
+    assertThat(sessions.started()).isEmpty();
+    assertThat(sessions.everySessionEndedFor(disabled.id())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
   }
 
   /** The operator belongs to no organisation, so its account is held where it is: in none. */

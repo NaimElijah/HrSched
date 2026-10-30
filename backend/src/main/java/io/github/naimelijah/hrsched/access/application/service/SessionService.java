@@ -262,7 +262,8 @@ public class SessionService
    * counted as a failed attempt: without that, this endpoint would be a way to guess at a password
    * with no lockout behind it. That count is why the refusal is returned rather than thrown. A
    * locked account is refused here as at sign-in, whatever password it is given, and nothing is
-   * counted (R29).
+   * counted (R29). So is an account disabled after the request was authenticated, as its held copy
+   * shows (R17).
    */
   @Override
   public ChangePasswordOutcome changePassword(Actor actor, ChangePasswordCommand command) {
@@ -290,6 +291,11 @@ public class SessionService
     // is counted, as with a locked sign-in: counting here would let anyone keep the account shut.
     if (account.isLockedAt(now)) {
       return new ChangePasswordOutcome.CurrentPasswordRejected(CurrentPasswordRefusal.LOCKED);
+    }
+    // Authenticated before an Admin's disable committed, and held after it: the disable ended every
+    // session, and one begun here would outlive a later restore (R17, ADR-041).
+    if (!account.active()) {
+      return new ChangePasswordOutcome.CurrentPasswordRejected(CurrentPasswordRefusal.DISABLED);
     }
     if (!currentMatches) {
       Account counted = account.recordFailedSignIn(now, lockout);

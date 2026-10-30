@@ -182,8 +182,9 @@ public class AuthController {
    *
    * @param actor whoever is changing their own password
    * @param request the current and new passwords
-   * @return 200 with a new session, 403 if the current password was wrong or the account is locked
-   *     (answered alike), or 422 naming the rule a new password broke
+   * @return 200 with a new session, 403 if the current password was wrong, the account is locked or
+   *     it was disabled since the request was authenticated (answered alike), or 422 naming the
+   *     rule a new password broke
    */
   @PostMapping(path = "/password", consumes = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<?> changePassword(
@@ -201,9 +202,9 @@ public class AuthController {
   }
 
   /**
-   * Answers a locked account exactly as a wrong current password, and records which it was: the
-   * caller must not learn of the lock, and an operator must, since refusals while locked are
-   * somebody still guessing.
+   * Answers a locked or newly disabled account exactly as a wrong current password, and records
+   * which it was: the caller must not learn of the lock, and an operator must, since refusals while
+   * locked are somebody still guessing.
    */
   private ResponseEntity<ProblemDetail> currentPasswordRejected(
       Actor actor, CurrentPasswordRefusal reason) {
