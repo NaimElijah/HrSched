@@ -106,6 +106,36 @@ class CpSatRosterGeneratorTest extends RosterGeneratorContract {
         .hasSize(2);
   }
 
+  /**
+   * Time is counted in whole ticks of each span the model states: a shift's length, its share of
+   * each day, a rule's threshold. Where a shift sits is never counted, so shifts further apart than
+   * a {@code long} counts in nanoseconds, about 292 years, are generated like any other. The three
+   * centuries are invented, and only long enough to pass that.
+   */
+  @Test
+  void GivenShiftsThreeCenturiesApart_WhenGenerating_ThenBothAreCovered() {
+    Shift first = shift("2026-10-05T08:00:00Z", "2026-10-05T16:00:00Z", 1, Set.of());
+    Shift last = shift("2326-10-05T08:00:00Z", "2326-10-05T16:00:00Z", 1, Set.of());
+    Roster draft =
+        new Roster(
+            RosterId.newId(),
+            ACME,
+            new TimeRange(
+                Instant.parse("2026-10-05T00:00:00Z"), Instant.parse("2326-10-06T00:00:00Z")));
+    RosterCandidate ada = anyone();
+
+    assertThat(
+            generator.generate(
+                request(
+                    draft,
+                    List.of(first, last),
+                    List.of(ada),
+                    ConstraintSet.initial(ACME),
+                    List.of())))
+        .containsExactlyInAnyOrder(
+            new Assignment(first.id(), ada.id()), new Assignment(last.id(), ada.id()));
+  }
+
   /** Invented: the instant a roster being replaced was published, before the week it covers. */
   private static final Instant PUBLISHED = Instant.parse("2026-10-01T09:00:00Z");
 
