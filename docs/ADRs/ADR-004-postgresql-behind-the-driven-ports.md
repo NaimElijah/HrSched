@@ -25,6 +25,11 @@
       [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md).
     - The count of adapters ("Eight") has moved. `Jdbc*Repository` classes in each context's
       `adapter.out.persistence` package are the current set.
+  - **Amended 2026-10-30:** The schema now holds R24: migration `V14` adds
+    `working_time_constraint_one_of_each_kind`, so a set with two constraints of one kind can no
+    longer be stored, and the earlier note's "the schema still permits it" no longer holds. A
+    database already holding such a set fails that migration, and the row that is wrong is deleted
+    by hand ([#255](https://github.com/NaimElijah/HrSched/issues/255)).
 - **Date:** 2026-09-06
 
 ## Context

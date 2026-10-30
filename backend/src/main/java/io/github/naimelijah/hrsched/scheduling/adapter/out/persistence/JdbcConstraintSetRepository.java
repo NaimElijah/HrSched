@@ -178,9 +178,10 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
   /**
    * One stored version, rebuilt with its rules.
    *
-   * <p>The schema permits what the domain refuses, such as two rules of one kind (R24, #96), so a
-   * set written past the domain could be stored. It is a fault in stored data, not the caller's
-   * mistake, so it fails loudly rather than as the domain's refusal of a request.
+   * <p>The schema holds every rule {@code ConstraintSet} enforces today, two of a kind included
+   * (R24, V14), so a refusal here means rows stored before the domain gained a rule the schema did
+   * not then hold. It is a fault in stored data, not the caller's mistake, so it fails loudly
+   * rather than as the domain's refusal of a request (#96).
    *
    * @throws IllegalStateException naming the set and what the domain refused in it, if what is
    *     stored is no set the domain allows

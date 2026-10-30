@@ -119,44 +119,82 @@ class JdbcConstraintSetRepositoryTest {
   }
 
   /**
-   * R24: a set holds at most one constraint of each kind, which {@code ConstraintSet} now refuses
-   * to be built otherwise, so no revision can store two. The schema still permits them (V1), so a
-   * set holding two could only have been written past the domain. Read back, it is refused rather
-   * than loaded as rules that are not what they say, and refused as a fault in stored data, not as
-   * the caller's mistake: a loud failure naming the set and saying what the domain refused (#96),
-   * whichever way it is read. It carries no cause, because Spring would route the domain's refusal
-   * as its cause to the 400 handler; {@code RosteringHttpTest} pins that it is answered by none.
+   * R24 in the schema (V14): a set holds at most one constraint of each kind, which {@code
+   * ConstraintSet} refuses to be built otherwise, and the store refuses too, for a writer that
+   * skips the domain. The violation is not translated: only the primary key of {@code
+   * constraint_set} is a racing revision.
    */
   @Test
-  void GivenTwoConstraintsOfOneKindStoredPastTheDomain_WhenReadBack_ThenItFailsAsStoredData() {
+  void GivenTwoConstraintsOfOneKind_WhenStoredDirectly_ThenTheSchemaRefusesIt() {
     PostgresDatabase.jdbcClient()
         .sql("INSERT INTO constraint_set (organisation_id, version) VALUES (:id, 2)")
         .param("id", ACME.value())
         .update();
-    // Invented: two daily caps, of 437 minutes and of 511, figures from no statute.
-    for (int ordinal = 0; ordinal < 2; ordinal++) {
-      PostgresDatabase.jdbcClient()
-          .sql(
-              """
-              INSERT INTO working_time_constraint
-                  (organisation_id, version, ordinal, kind, duration_seconds, day_count)
-              VALUES (:id, 2, :ordinal, 'MAXIMUM_DAILY_WORKING_TIME', :seconds, NULL)
-              """)
-          .param("id", ACME.value())
-          .param("ordinal", ordinal)
-          .param("seconds", Duration.ofMinutes(437 + 74L * ordinal).toSeconds())
-          .update();
-    }
+    // Invented: a daily cap of 437 minutes, a figure from no statute.
+    insertDailyCap(0, Duration.ofMinutes(437));
 
-    assertThatThrownBy(() -> repository.findCurrent(ACME))
+    // Invented: a second daily cap, of 511 minutes.
+    assertThatThrownBy(() -> insertDailyCap(1, Duration.ofMinutes(511)))
+        .isInstanceOf(DuplicateKeyException.class)
+        .hasMessageContaining("working_time_constraint_one_of_each_kind");
+  }
+
+  /**
+   * A set stored before a rule the domain now enforces, which the schema did not hold when it was
+   * stored, is a fault in stored data, not the caller's mistake. Read back, it fails loudly, naming
+   * the set and saying what the domain refused (#96), whichever way it is read. It carries no
+   * cause, because Spring would route the domain's refusal as its cause to the 400 handler.
+   *
+   * <p>Since V14 the schema holds every rule {@code ConstraintSet} enforces, so no stored row can
+   * reach this today. Such a set is made here by dropping R24's constraint for the life of a
+   * transaction that is rolled back, so no other test sees the schema without it.
+   */
+  @Test
+  void GivenASetStoredBeforeTheSchemaHeldADomainRule_WhenReadBack_ThenItFailsAsStoredData() {
+    TransactionTemplate transaction = new TransactionTemplate(PostgresDatabase.transactions());
+
+    List<Throwable> refusals =
+        transaction.execute(
+            status -> {
+              status.setRollbackOnly();
+              PostgresDatabase.jdbcClient()
+                  .sql(
+                      "ALTER TABLE working_time_constraint"
+                          + " DROP CONSTRAINT working_time_constraint_one_of_each_kind")
+                  .update();
+              PostgresDatabase.jdbcClient()
+                  .sql("INSERT INTO constraint_set (organisation_id, version) VALUES (:id, 2)")
+                  .param("id", ACME.value())
+                  .update();
+              // Invented: two daily caps, of 437 minutes and of 511, figures from no statute.
+              insertDailyCap(0, Duration.ofMinutes(437));
+              insertDailyCap(1, Duration.ofMinutes(511));
+              return List.of(
+                  catchThrowable(() -> repository.findCurrent(ACME)),
+                  catchThrowable(() -> repository.findVersion(ACME, 2)));
+            });
+
+    assertThat(refusals.getFirst())
         .isExactlyInstanceOf(IllegalStateException.class)
         .hasMessageContaining(ACME.value().toString())
         .hasMessageContaining("version 2")
         .hasMessageContaining("maximum daily working time is given twice")
         .hasNoCause();
-    assertThatThrownBy(() -> repository.findVersion(ACME, 2))
-        .isExactlyInstanceOf(IllegalStateException.class)
-        .hasNoCause();
+    assertThat(refusals.getLast()).isExactlyInstanceOf(IllegalStateException.class).hasNoCause();
+  }
+
+  private static void insertDailyCap(int ordinal, Duration maximum) {
+    PostgresDatabase.jdbcClient()
+        .sql(
+            """
+            INSERT INTO working_time_constraint
+                (organisation_id, version, ordinal, kind, duration_seconds, day_count)
+            VALUES (:id, 2, :ordinal, 'MAXIMUM_DAILY_WORKING_TIME', :seconds, NULL)
+            """)
+        .param("id", ACME.value())
+        .param("ordinal", ordinal)
+        .param("seconds", maximum.toSeconds())
+        .update();
   }
 
   /**
