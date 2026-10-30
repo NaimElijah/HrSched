@@ -292,6 +292,7 @@ describe('defining a shift', () => {
         'A shift must require at least one person.',
       ),
     );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Define shift' })).toBeEnabled());
   });
 
   /** Each definition is a shift of its own, so a second one sent meanwhile is staffed twice. */
@@ -311,6 +312,7 @@ describe('defining a shift', () => {
     release();
     await screen.findByText(/^Defined/);
     expect(writes(routed)).toHaveLength(1);
+    await waitFor(() => expect(define).toBeEnabled());
   });
 
   /**
@@ -353,5 +355,6 @@ describe('defining a shift', () => {
     await screen.findByRole('alert');
     expect(screen.getByLabelText('Starts')).toHaveValue('2026-10-05T08:00');
     expect(screen.queryByText(/^Defined/)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Define shift' })).toBeEnabled());
   });
 });

@@ -184,6 +184,7 @@ describe('adding an employee', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
     );
     expect(screen.getByLabelText('Name')).toHaveValue('Marie');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add employee' })).toBeEnabled());
   });
 
   /** Each addition is a person of their own, and none can be deleted afterwards. */
@@ -202,6 +203,7 @@ describe('adding an employee', () => {
     release();
     await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue(''));
     expect(writes(routed)).toHaveLength(1);
+    await waitFor(() => expect(add).toBeEnabled());
   });
 });
 
@@ -217,6 +219,7 @@ describe('granting a qualification', () => {
     await waitFor(() =>
       expect(callsTo(stub, 'PUT', '/api/employees/e-1/qualifications/q-1')).toHaveLength(1),
     );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Grant to Ada' })).toBeEnabled());
   });
 
   /**
@@ -261,6 +264,7 @@ describe('granting a qualification', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Nothing here for this organisation.'),
     );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Grant to Ada' })).toBeEnabled());
   });
 });
 

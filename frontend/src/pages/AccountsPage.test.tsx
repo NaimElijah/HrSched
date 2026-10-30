@@ -284,6 +284,9 @@ describe('creating an account', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('That sign-in name is already in use.'),
     );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Create account' })).toBeEnabled(),
+    );
   });
 
   /** A second creation sent meanwhile is refused for the name the first took, beside its success. */
@@ -301,6 +304,7 @@ describe('creating an account', () => {
     release();
     await screen.findByText('Created robin@example.com.');
     expect(writes(routed)).toHaveLength(1);
+    await waitFor(() => expect(create).toBeEnabled());
   });
 });
 

@@ -170,6 +170,7 @@ describe('the rosters page', () => {
     expect(alert).toHaveTextContent('maximum daily working time');
     expect(alert).toHaveTextContent('exceeds the maximum of PT1H');
     expect(alert).toHaveTextContent('There is no override');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publish' })).toBeEnabled());
   });
 
   /** F3: a draft that breaks no rule is published, and the list then says so, as the server does. */
@@ -197,16 +198,21 @@ describe('the rosters page', () => {
   /** A second publication sent meanwhile is refused as a conflict, beside the first one's success. */
   it('GivenAPublicationInFlight_WhenPublishIsPressedAgain_ThenOnlyOneIsSent', async () => {
     const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
+    // A second draft, whose Publish button is still there once the first is published.
+    const anotherDraft = { ...ROSTER, id: 'roster-2' };
     const server: Record<string, Answer> = {
-      '/api/rosters': { status: 200, body: [ROSTER] },
+      '/api/rosters': { status: 200, body: [ROSTER, anotherDraft] },
       '/api/shifts': { status: 200, body: [SHIFT] },
       'POST /api/rosters/roster-1/publication': { status: 200, body: published },
     };
     const routed = routeTo(server);
     const release = holdingWrites(routed);
     renderPage([ADA]);
-    const publish = await screen.findByRole('button', { name: 'Publish' });
-    server['/api/rosters'] = { status: 200, body: [published] };
+    const [publish] = await screen.findAllByRole('button', { name: 'Publish' });
+    if (publish === undefined) {
+      throw new Error('no draft offers to be published');
+    }
+    server['/api/rosters'] = { status: 200, body: [published, anotherDraft] };
 
     await userEvent.click(publish);
     await userEvent.click(publish);
@@ -215,6 +221,7 @@ describe('the rosters page', () => {
     release();
     expect(await screen.findByRole('cell', { name: 'PUBLISHED' })).toBeInTheDocument();
     expect(callsTo(routed, 'POST', '/api/rosters/roster-1/publication')).toHaveLength(1);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publish' })).toBeEnabled());
   });
 
   it('GivenTheRosterTable_WhenRendered_ThenEveryColumnHasAHeader', async () => {

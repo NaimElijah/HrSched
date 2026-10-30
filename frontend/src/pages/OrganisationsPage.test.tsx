@@ -213,6 +213,9 @@ describe('onboarding', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('That sign-in name is already in use.'),
     );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Onboard organisation' })).toBeEnabled(),
+    );
   });
 
   /** A second onboarding sent meanwhile is refused for the name the first took, beside its success. */
@@ -230,6 +233,7 @@ describe('onboarding', () => {
     release();
     await screen.findByText('Onboarded Beta.');
     expect(writes(routed)).toHaveLength(1);
+    await waitFor(() => expect(onboard).toBeEnabled());
   });
 });
 

@@ -112,6 +112,7 @@ describe('defining one', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
     );
     expect(screen.getByLabelText('Name')).toHaveValue('Forklift');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Define' })).toBeEnabled());
   });
 
   it('GivenADefinitionSucceeds_WhenItReturns_ThenTheListingIsAskedForAgain', async () => {
@@ -143,5 +144,6 @@ describe('defining one', () => {
     release();
     await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue(''));
     expect(writes(routed)).toHaveLength(1);
+    await waitFor(() => expect(define).toBeEnabled());
   });
 });
