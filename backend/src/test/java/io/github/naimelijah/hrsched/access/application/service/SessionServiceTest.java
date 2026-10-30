@@ -449,8 +449,12 @@ class SessionServiceTest {
     Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
     SignInSession ended =
         new SignInSession(
-                SignInSessionId.newId(), account.id(), AN_HOUR_AGO, NOW.plus(Duration.ofHours(11)))
-            .revoked(SessionRevocation.SIGNED_OUT, NOW.minusSeconds(1));
+            SignInSessionId.newId(),
+            account.id(),
+            AN_HOUR_AGO,
+            NOW.plus(Duration.ofHours(11)),
+            Optional.of(SessionRevocation.SIGNED_OUT),
+            Optional.of(NOW.minusSeconds(1)));
     sessions.given(
         "a-token-outliving-its-session",
         new StoredRefreshToken(ended, NOW.plus(Duration.ofMinutes(5)), Optional.empty()));
