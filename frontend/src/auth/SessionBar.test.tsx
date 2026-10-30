@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { endSession } from '../api/session';
 import { A_TENANT, renderSignedIn, THE_OPERATOR } from '../test-support/session';
@@ -15,41 +15,36 @@ afterEach(() => {
   endSession();
 });
 
-function bar(): HTMLElement {
-  const signedInAs = screen.getByText(/^Signed in as/);
-  const container = signedInAs.closest('.session-bar');
-  if (!(container instanceof HTMLElement)) {
-    throw new Error('the session bar is not on screen');
-  }
-  return container;
-}
-
 describe('what the session bar says', () => {
   it('GivenATenant_WhenShown_ThenItNamesTheAccountItsRoleAndItsOrganisation', () => {
-    renderSignedIn(<SessionBar onChangePassword={() => undefined} />, {
+    // Rendered on its own, so everything rendered is the bar.
+    const { container: bar } = renderSignedIn(<SessionBar onChangePassword={() => undefined} />, {
       ...A_TENANT,
       role: 'SCHEDULER',
     });
 
-    expect(bar()).toHaveTextContent(`Signed in as ${A_TENANT.signInName}`);
-    expect(bar()).toHaveTextContent(`SCHEDULER in ${String(A_TENANT.organisation)}`);
+    expect(bar).toHaveTextContent(`Signed in as ${A_TENANT.signInName}`);
+    expect(bar).toHaveTextContent(`SCHEDULER in ${String(A_TENANT.organisation)}`);
   });
 
   it('GivenTheOperator_WhenShown_ThenItSaysPlatformOperatorAndNamesNoRole', () => {
-    renderSignedIn(<SessionBar onChangePassword={() => undefined} />, THE_OPERATOR);
+    const { container: bar } = renderSignedIn(
+      <SessionBar onChangePassword={() => undefined} />,
+      THE_OPERATOR,
+    );
 
-    expect(bar()).toHaveTextContent(`Signed in as ${THE_OPERATOR.signInName}`);
-    expect(bar()).toHaveTextContent('Platform operator');
-    expect(bar()).not.toHaveTextContent(/\b(ADMIN|SCHEDULER|EMPLOYEE)\b/);
+    expect(bar).toHaveTextContent(`Signed in as ${THE_OPERATOR.signInName}`);
+    expect(bar).toHaveTextContent('Platform operator');
+    expect(bar).not.toHaveTextContent(/\b(ADMIN|SCHEDULER|EMPLOYEE)\b/);
   });
 
   it('GivenASession_WhenShown_ThenNothingOnItChangesWhoIsActing', () => {
-    renderSignedIn(<SessionBar onChangePassword={() => undefined} />);
+    const { container: bar } = renderSignedIn(<SessionBar onChangePassword={() => undefined} />);
 
-    expect(within(bar()).queryAllByRole('combobox')).toHaveLength(0);
-    expect(within(bar()).queryAllByRole('textbox')).toHaveLength(0);
+    expect(within(bar).queryAllByRole('combobox')).toHaveLength(0);
+    expect(within(bar).queryAllByRole('textbox')).toHaveLength(0);
     expect(
-      within(bar())
+      within(bar)
         .getAllByRole('button')
         .map((button) => button.textContent),
     ).toEqual(['Change password', 'Sign out']);
