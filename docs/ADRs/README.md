@@ -12,7 +12,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-001](ADR-001-java-spring-boot-maven.md) | Build HrSched on Java 21, Spring Boot, and Maven | Accepted | 2026-08-29 |
 | [ADR-002](ADR-002-single-command-build-gate.md) | Make `./mvnw verify` the single build gate, formatted by Spotless | Accepted, amended | 2026-08-29 |
 | [ADR-003](ADR-003-hexagonal-architecture-with-ddd.md) | Structure the application as a hexagon, enforced by ArchUnit | Accepted, amended | 2026-08-29 |
-| [ADR-004](ADR-004-postgresql-behind-the-driven-ports.md) | Store every aggregate in PostgreSQL, behind the driven ports | Accepted | 2026-09-06 |
+| [ADR-004](ADR-004-postgresql-behind-the-driven-ports.md) | Store every aggregate in PostgreSQL, behind the driven ports | Accepted, amended by [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md), [ADR-041](ADR-041-make-concurrent-changes-take-turns-on-the-row.md) | 2026-09-06 |
 | [ADR-005](ADR-005-roster-generation-behind-a-port.md) | Automatic roster generation, behind a port, with a greedy first implementation | Superseded by [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md) | 2026-08-30 |
 | [ADR-006](ADR-006-organise-packages-by-bounded-context.md) | Organise packages by bounded context, not by layer | Accepted, amended by [ADR-008](ADR-008-context-integration.md) | 2026-08-29 |
 | [ADR-007](ADR-007-monorepo-backend-and-frontend.md) | Keep backend and frontend in one repository, as sibling directories | Accepted, amended by [ADR-013](ADR-013-react-typescript-vite-frontend.md), [ADR-014](ADR-014-root-task-runner.md) | 2026-08-29 |

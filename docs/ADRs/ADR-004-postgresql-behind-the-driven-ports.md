@@ -1,6 +1,13 @@
 # ADR-004: Store every aggregate in PostgreSQL, behind the driven ports
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** Roster history is now append-only after all:
+    [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md) derives a roster's status from
+    the moments it was published and superseded, each written once, so superseding a roster no
+    longer changes it in place. "Last writer still wins" is replaced by
+    [ADR-041](ADR-041-make-concurrent-changes-take-turns-on-the-row.md): a use case that changes an
+    aggregate reads it with `findForUpdate`, so a concurrent change waits and both apply. The rest
+    stands.
 - **Date:** 2026-09-06
 
 ## Context
