@@ -39,6 +39,14 @@ final class ContextPackages {
   }
 
   /**
+   * @return an ArchUnit slice pattern capturing each top-level package under the root, contexts and
+   *     the packages that are not one alike
+   */
+  String topLevelPackages() {
+    return rootPrefix + "(*)..";
+  }
+
+  /**
    * @param clazz any class
    * @return the bounded context it belongs to, or empty if it is not in one
    */

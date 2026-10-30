@@ -375,10 +375,9 @@ class HexagonalArchitectureTest {
   /**
    * Cycles are checked one level below the context, between a context's own layers.
    *
-   * <p>A context-level cycle rule was removed as dead: any cycle between two contexts requires a
-   * dependency between them, which {@link #contexts_touch_only_published_ports_of_other_contexts}
-   * already forbids outright, so it had no failure mode left. This rule does have one — a {@code
-   * scheduling.domain -> scheduling.application} dependency fails it, and was observed doing so.
+   * <p>{@link #contexts_are_free_of_cycles} cannot see such a cycle, as both ends sit in one of its
+   * slices (ADR-006). This rule can — a {@code scheduling.domain -> scheduling.application}
+   * dependency fails it, and was observed doing so.
    */
   @ArchTest
   static final ArchRule layers_within_a_context_are_free_of_cycles =
@@ -387,4 +386,35 @@ class HexagonalArchitectureTest {
           .namingSlices("$1.$2")
           .should()
           .beFreeOfCycles();
+
+  /**
+   * Contexts depend on one another in one direction only.
+   *
+   * <p>ADR-008 lets any context reach another's published ports, so two contexts can each reach the
+   * other's, adapter to port, with every other rule here satisfied. That pair can no longer change,
+   * or be extracted, one without the other: the boundary between them is gone. A context-level
+   * cycle rule was once removed as dead, when ADR-006 forbade every cross-context reference and so
+   * left a cycle nothing to be made of; the published ports gave it a failure mode back. {@code
+   * HexagonalArchitectureRulesTest} watches it reject two fixture contexts reaching each other's
+   * ports, and permit one reaching the other's.
+   *
+   * <p>Sliced by every top-level package, so a cycle through {@code configuration} or the kernel is
+   * one too.
+   */
+  @ArchTest
+  static final ArchRule contexts_are_free_of_cycles =
+      contextsAreFreeOfCycles(ContextPackages.HRSCHED);
+
+  /**
+   * @param packages where the contexts are; {@link ContextPackages#HRSCHED} for the build's rule
+   * @return the context cycle rule over those contexts
+   */
+  static ArchRule contextsAreFreeOfCycles(ContextPackages packages) {
+    return slices()
+        .matching(packages.topLevelPackages())
+        .namingSlices("$1")
+        .should()
+        .beFreeOfCycles()
+        .because("two contexts reaching each other can no longer change one without the other");
+  }
 }

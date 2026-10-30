@@ -17,9 +17,12 @@ import io.github.naimelijah.hrsched.architecture.fixtures.actors.BuildsATenantAc
 import io.github.naimelijah.hrsched.architecture.fixtures.actors.BuildsAnOperator;
 import io.github.naimelijah.hrsched.architecture.fixtures.actors.ReferencesAccountActor;
 import io.github.naimelijah.hrsched.architecture.fixtures.actors.ReferencesTheOperatorConstructor;
+import io.github.naimelijah.hrsched.architecture.fixtures.notifications.adapter.out.payroll.ReachesBackThroughPayrollsPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.notifications.application.port.in.FixtureNotifyUseCase;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDomain;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDrivenPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesThroughThePublishedPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.in.FixturePayUseCase;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainKnowingTheEntryPoint;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainUsingSpring;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainWithAWireFormat;
@@ -84,6 +87,37 @@ class HexagonalArchitectureRulesTest {
         evaluate(
             HexagonalArchitectureTest.contextsTouchOnlyPublishedPortsOfOtherContexts(FIXTURES),
             ReachesThroughThePublishedPort.class);
+
+    assertHolds(result);
+  }
+
+  /**
+   * Each reference is legal alone, as the cross-context rule permits a published port; together
+   * they make two contexts that can no longer change, or be extracted, one without the other.
+   */
+  @Test
+  void
+      GivenTwoContextsEachReachingTheOthersPublishedPort_WhenTheContextCycleRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.contextsAreFreeOfCycles(FIXTURES),
+            ReachesThroughThePublishedPort.class,
+            FixtureNotifyUseCase.class,
+            ReachesBackThroughPayrollsPort.class,
+            FixturePayUseCase.class);
+
+    assertViolatedNaming(result, "ReachesBackThroughPayrollsPort");
+  }
+
+  @Test
+  void
+      GivenOneContextReachingAnothersPublishedPort_WhenTheContextCycleRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.contextsAreFreeOfCycles(FIXTURES),
+            ReachesThroughThePublishedPort.class,
+            FixtureNotifyUseCase.class,
+            FixturePayUseCase.class);
 
     assertHolds(result);
   }

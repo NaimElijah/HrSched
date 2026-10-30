@@ -42,10 +42,10 @@ A context may reference another context's `application.port.in` package and **no
 - **Dependencies point inward, and contexts are independent. Both are enforced.**
   `HexagonalArchitectureTest` fails the build if the domain depends on anything but the JDK and
   HrSched's own domain packages, the application touches an adapter, a context reaches past
-  another's published ports, the kernel depends on a context, or a context's layers form a cycle.
-  Never weaken or delete a rule to make code pass — the rule is the point. Deleting one that
-  provably cannot fail is different, and needs the proof.
-- **When adding an architecture rule, watch it fail first.** All thirteen rules here have been
+  another's published ports, the kernel depends on a context, or contexts, or a context's layers,
+  form a cycle. Never weaken or delete a rule to make code pass — the rule is the point. Deleting
+  one that provably cannot fail is different, and needs the proof.
+- **When adding an architecture rule, watch it fail first.** All fourteen rules here have been
   observed failing on a deliberately introduced violation, then reverted; a rule that has only
   ever been green proves nothing. A rule whose logic is ours keeps that failure as a test in
   `HexagonalArchitectureRulesTest`, against a class under `architecture/fixtures` that breaks it
