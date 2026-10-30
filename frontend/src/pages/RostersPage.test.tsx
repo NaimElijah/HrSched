@@ -1011,6 +1011,7 @@ describe('the board of a draft', () => {
   /** The span on screen is what is generated for, not a span the page chose itself. */
   it('GivenASpan_WhenGenerating_ThenItsStartAndEndAreSent', async () => {
     const stub = routeTo({
+      // Answered as already ended, so the page starts no wait for it to finish.
       'POST /api/rosters/generations': {
         status: 202,
         body: { id: 'gen-1', status: 'REFUSED', roster: null, violations: [] },
