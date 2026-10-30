@@ -19,6 +19,10 @@ import org.junit.jupiter.params.provider.MethodSource;
  * set, rather than with a bare {@code NullPointerException} later, in the wiring that turns them
  * into the domain's policies.
  *
+ * <p>Boot binds a nested record as {@code null} only when none of its own settings is present, so a
+ * missing {@code Password}, whose one setting is the minimum length, means exactly that setting is
+ * missing, and the refusal names it rather than the group.
+ *
  * <p>Every number here is invented for the test, and none is a recommendation.
  */
 class SecurityPolicyPropertiesTest {
@@ -33,7 +37,7 @@ class SecurityPolicyPropertiesTest {
   private static final Session SESSION = new Session(INVENTED_DURATION, INVENTED_DURATION);
   private static final Password PASSWORD = new Password(INVENTED_COUNT);
 
-  private static Stream<Arguments> bindingsMissingOneValue() {
+  private static Stream<Arguments> constructionsMissingOneValue() {
     return Stream.of(
         missing(
             "hrsched.security.sign-in",
@@ -42,7 +46,7 @@ class SecurityPolicyPropertiesTest {
             "hrsched.security.session",
             () -> new SecurityPolicyProperties(SIGN_IN, null, PASSWORD)),
         missing(
-            "hrsched.security.password",
+            "hrsched.security.password.minimum-length",
             () -> new SecurityPolicyProperties(SIGN_IN, SESSION, null)),
         missing(
             "hrsched.security.sign-in.lockout-duration", () -> new SignIn(INVENTED_COUNT, null)),
@@ -53,14 +57,16 @@ class SecurityPolicyPropertiesTest {
             "hrsched.security.session.idle-lifetime", () -> new Session(INVENTED_DURATION, null)));
   }
 
-  private static Arguments missing(String key, ThrowingCallable binding) {
-    return Arguments.of(key, binding);
+  private static Arguments missing(String key, ThrowingCallable construction) {
+    return Arguments.of(key, construction);
   }
 
   @ParameterizedTest(name = "{0}")
-  @MethodSource("bindingsMissingOneValue")
-  void GivenAMissingSetting_WhenBound_ThenTheRefusalNamesItsKey(
-      String key, ThrowingCallable binding) {
-    assertThatThrownBy(binding).isInstanceOf(NullPointerException.class).hasMessageContaining(key);
+  @MethodSource("constructionsMissingOneValue")
+  void GivenAMissingSetting_WhenConstructed_ThenTheRefusalNamesItsKey(
+      String key, ThrowingCallable construction) {
+    assertThatThrownBy(construction)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessage(key + " must be configured");
   }
 }

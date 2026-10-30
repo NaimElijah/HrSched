@@ -27,7 +27,9 @@ public record SecurityPolicyProperties(SignIn signIn, Session session, Password 
   public SecurityPolicyProperties {
     Objects.requireNonNull(signIn, "hrsched.security.sign-in must be configured");
     Objects.requireNonNull(session, "hrsched.security.session must be configured");
-    Objects.requireNonNull(password, "hrsched.security.password must be configured");
+    // Boot binds a nested record as null only when none of its settings is present, and Password
+    // has one, so a null here means exactly that one is missing.
+    Objects.requireNonNull(password, "hrsched.security.password.minimum-length must be configured");
   }
 
   /**

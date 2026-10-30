@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 class RequestBodyLimitPropertiesTest {
 
   @Test
-  void GivenTheLargestLimitAnIntHolds_WhenBound_ThenItIsAccepted() {
+  void GivenTheLargestLimitAnIntHolds_WhenConstructed_ThenItIsAccepted() {
     assertThat(new RequestBodyLimitProperties(Integer.MAX_VALUE).maxJsonDocumentBytes())
         .isEqualTo(Integer.MAX_VALUE);
   }

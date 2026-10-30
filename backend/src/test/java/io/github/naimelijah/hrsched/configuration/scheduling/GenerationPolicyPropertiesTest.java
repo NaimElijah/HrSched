@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 class GenerationPolicyPropertiesTest {
 
   @Test
-  void GivenNoLostAfter_WhenBound_ThenTheRefusalNamesTheKey() {
+  void GivenNoLostAfter_WhenConstructed_ThenTheRefusalNamesTheKey() {
     assertThatThrownBy(() -> new GenerationPolicyProperties(null))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("hrsched.generation.lost-after");
