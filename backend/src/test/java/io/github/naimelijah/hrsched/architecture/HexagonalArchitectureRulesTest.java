@@ -26,6 +26,7 @@ import io.github.naimelijah.hrsched.architecture.fixtures.notifications.applicat
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.PayrollController;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.PayrollExceptionHandler;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.UnhandledPayrollController;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.WebAdapterReachingAPublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDomain;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDrivenPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesThroughThePublishedPort;
@@ -123,9 +124,24 @@ class HexagonalArchitectureRulesTest {
     assertViolatedNaming(result, "FixtureNotifyUseCase");
   }
 
+  /**
+   * An adapter, but a driving one: what a controller needs of another context, it asks of its own
+   * use case, which reaches the other context through a driven port (ADR-008).
+   */
   @Test
   void
-      GivenAContextReferencingAPublishedPortItsOwnDomainAndTheKernel_WhenTheCrossContextRuleIsEvaluated_ThenItHolds() {
+      GivenADrivingAdapterReferencingAnotherContextsPublishedPort_WhenTheCrossContextRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.contextsTouchOnlyPublishedPortsOfOtherContexts(FIXTURES),
+            WebAdapterReachingAPublishedPort.class);
+
+    assertViolatedNaming(result, "FixtureNotifyUseCase");
+  }
+
+  @Test
+  void
+      GivenADrivenAdapterReferencingAPublishedPortItsOwnDomainAndTheKernel_WhenTheCrossContextRuleIsEvaluated_ThenItHolds() {
     EvaluationResult result =
         evaluate(
             HexagonalArchitectureTest.contextsTouchOnlyPublishedPortsOfOtherContexts(FIXTURES),

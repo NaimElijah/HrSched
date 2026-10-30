@@ -251,8 +251,9 @@ class HexagonalArchitectureTest {
    *
    * <p>Loosening a rule is exactly when a rule quietly stops protecting anything, so this one has a
    * failure test: {@code HexagonalArchitectureRulesTest} evaluates it against fixture contexts, and
-   * it must reject a reference into another context's domain or driven ports, and a use case naming
-   * another's published port, while permitting an adapter's reference into that port.
+   * it must reject a reference into another context's domain or driven ports, and a use case or a
+   * driving adapter naming another's published port, while permitting a driven adapter's reference
+   * into that port.
    */
   @ArchTest
   static final ArchRule contexts_touch_only_published_ports_of_other_contexts =
