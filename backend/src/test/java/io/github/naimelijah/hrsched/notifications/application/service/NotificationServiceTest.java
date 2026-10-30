@@ -509,7 +509,7 @@ class NotificationServiceTest {
           .filter(
               notification ->
                   notification.organisation().equals(organisation)
-                      && notification.isFor(recipient));
+                      && notification.recipient().equals(recipient));
     }
 
     /**
@@ -520,7 +520,8 @@ class NotificationServiceTest {
       return saved.values().stream()
           .filter(
               notification ->
-                  notification.organisation().equals(organisation) && notification.isFor(recipient))
+                  notification.organisation().equals(organisation)
+                      && notification.recipient().equals(recipient))
           .toList();
     }
   }

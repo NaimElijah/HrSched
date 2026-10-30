@@ -5,9 +5,10 @@ import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 /**
  * Raised when an actor asks for their notifications but is not somebody one can be addressed to.
  *
- * <p>Notifications are addressed to a personnel record, not to a login. A user who is not an
- * employee — an Admin who administers without working shifts, or the platform operator — has no
- * inbox, which is different from having an empty one.
+ * <p>Notifications are addressed to a personnel record, not to a login. A member who is not an
+ * employee — an Admin who administers without working shifts, say — has no inbox, which is
+ * different from having an empty one. The platform operator never gets this one: it belongs to no
+ * organisation, and is refused as such before anybody asks whose inbox it would be (ADR-030).
  *
  * <p>Its own type in this context rather than something shared, for the reason ADR-008 gives: the
  * kernel stays cheap while it stays small, and a near-twin in another context is a different

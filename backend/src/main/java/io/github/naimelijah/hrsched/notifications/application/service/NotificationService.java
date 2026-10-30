@@ -69,18 +69,18 @@ public class NotificationService implements NotifyUseCase, ReadNotificationsUseC
 
   @Override
   public List<PublishedNotification> findMine(Actor actor, OrganisationId organisation) {
-    actor.requireAccessTo(organisation);
-    return notifications.findFor(organisation, inboxOf(actor)).stream()
+    TenantActor member = actor.requireAccessTo(organisation);
+    return notifications.findFor(organisation, inboxOf(member)).stream()
         .map(NotificationService::publish)
         .toList();
   }
 
   @Override
   public void markRead(Actor actor, OrganisationId organisation, NotificationId id) {
-    actor.requireAccessTo(organisation);
+    TenantActor member = actor.requireAccessTo(organisation);
     Notification mine =
         notifications
-            .findById(organisation, inboxOf(actor), id)
+            .findById(organisation, inboxOf(member), id)
             .orElseThrow(() -> new UnknownNotificationException(id));
     notifications.save(mine.markedRead());
     recorded(actor, organisation, NotificationChange.NOTIFICATION_READ, id);
@@ -93,13 +93,13 @@ public class NotificationService implements NotifyUseCase, ReadNotificationsUseC
    * else's inbox because there is nowhere to name one: the recipient is the personnel record the
    * actor carries (ADR-012), so asking for a colleague's notifications is not refused so much as
    * unrepresentable.
+   *
+   * <p>Takes the member {@code requireAccessTo} handed back, so the platform operator never gets
+   * this far: it is refused as no member of any organisation (ADR-030), not as somebody without an
+   * inbox.
    */
-  private static EmployeeId inboxOf(Actor actor) {
-    if (actor instanceof TenantActor tenant) {
-      return tenant.employee().orElseThrow(() -> new NotAddressableException(actor.id()));
-    }
-    // The platform operator belongs to no organisation and is nobody's colleague, so has no inbox.
-    throw new NotAddressableException(actor.id());
+  private static EmployeeId inboxOf(TenantActor member) {
+    return member.employee().orElseThrow(() -> new NotAddressableException(member.id()));
   }
 
   /** Called after the repository, never before: see ADR-018. */
