@@ -13,6 +13,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentE
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Objective;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
@@ -22,6 +23,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationCon
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterStatus;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQualificationException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
@@ -69,6 +71,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
  * roster over HTTP is answered by the unknown-roster branch instead.
  */
 class SchedulingExceptionHandlerTest {
+
+  /** Invented: how many generations were running when one more was refused. */
+  private static final int BUSY_RUNS = 2;
 
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private final SchedulingExceptionHandler handler = new SchedulingExceptionHandler(meters);
@@ -408,6 +413,61 @@ class SchedulingExceptionHandlerTest {
     assertThat(logged.getFormattedMessage())
         .isEqualTo("Refused: the platform operator reached inside an organisation");
     assertThat(fieldsOf(logged)).containsOnly(Map.entry("actor", operator.value()));
+  }
+
+  /**
+   * The roster and the shift stay out of the line: what to look at is in the 422 the caller got.
+   */
+  @Test
+  void GivenARosterThatCannotBeChecked_WhenTranslated_ThenItIsLoggedAtWarnCarryingNoFields() {
+    handler.handleNotVerifiable(
+        new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo("Publication refused: the roster names work that cannot be checked");
+    assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
+  }
+
+  @Test
+  void GivenAPublicationThatLostARace_WhenTranslated_ThenItIsLoggedAtWarnNamingOnlyTheRoster() {
+    RosterId replacement = RosterId.newId();
+
+    handler.handleConcurrentPublication(
+        new RosterPublicationConflictException(
+            replacement, new IllegalStateException("what the store said")));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo(
+            "Publication refused by the schema: an overlapping roster was published concurrently");
+    assertThat(fieldsOf(logged)).containsOnly(Map.entry("roster", replacement.value()));
+  }
+
+  @Test
+  void GivenAnActorWithoutAPersonnelRecord_WhenTranslated_ThenItIsLoggedAtWarnNamingOnlyThem() {
+    UserId actor = UserId.newId();
+
+    handler.handleNoEmployeeRecord(new NoEmployeeRecordException(actor));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo("Refused: an actor without a personnel record asked for their own schedule");
+    assertThat(fieldsOf(logged)).containsOnly(Map.entry("actor", actor.value()));
+  }
+
+  /** Saturation, not anybody's doing: the line names nobody, and the counter says how often. */
+  @Test
+  void GivenEveryGenerationRunBusy_WhenTranslated_ThenItIsLoggedAtWarnCarryingNoFields() {
+    handler.handleTooManyGenerations(new TooManyGenerationsException(BUSY_RUNS));
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage()).isEqualTo("Generation refused: every run is busy");
+    assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
   }
 
   /** A miss is not an incident: logging every 404 would bury the ones that are. */
