@@ -16,6 +16,12 @@ export const A_TENANT: Session = {
   passwordChangeRequired: false,
 };
 
+/**
+ * A Scheduler in the same organisation: the role the backend refuses a write only an Admin may
+ * make, so a test of that refusal stubs one that could really happen.
+ */
+export const A_SCHEDULER: Session = { ...A_TENANT, role: 'SCHEDULER' };
+
 /** The platform operator: no organisation, no role, no employee. */
 export const THE_OPERATOR: Session = {
   userId: '44444444-4444-4444-8444-444444444444',

@@ -6,6 +6,7 @@ import { callsTo, routeTo } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
 import { A_TENANT, SignedIn, THE_OPERATOR } from '../test-support/session';
 import type { Session } from '../api/session';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * The register of tenants, which is the whole of what the operator administers.
@@ -88,9 +89,9 @@ describe('reading the platform', () => {
 
 describe('onboarding', () => {
   async function fillIn(organisation: string, admin: string, password: string) {
-    await userEvent.type(await screen.findByLabelText('Name'), organisation);
-    await userEvent.type(screen.getByLabelText('First admin sign-in name'), admin);
-    await userEvent.type(screen.getByLabelText('Temporary password'), password);
+    await userEvent.type(await screen.findByLabelText('Name'), organisation, WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('First admin sign-in name'), admin, WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Temporary password'), password, WITHOUT_PAUSES);
   }
 
   it('GivenANameAndAFirstAdmin_WhenOnboarding_ThenBothAreSentAsTheSignedInOperator', async () => {
@@ -116,8 +117,12 @@ describe('onboarding', () => {
     const stub = thePlatform();
     show();
 
-    await userEvent.type(await screen.findByLabelText('First admin sign-in name'), AN_ADMIN);
-    await userEvent.type(screen.getByLabelText('Temporary password'), A_PASSWORD);
+    await userEvent.type(
+      await screen.findByLabelText('First admin sign-in name'),
+      AN_ADMIN,
+      WITHOUT_PAUSES,
+    );
+    await userEvent.type(screen.getByLabelText('Temporary password'), A_PASSWORD, WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
 
     expect(callsTo(stub, 'POST', '/api/organisations')).toHaveLength(0);
@@ -132,7 +137,7 @@ describe('onboarding', () => {
     const stub = thePlatform();
     show();
 
-    await userEvent.type(await screen.findByLabelText('Name'), 'Beta');
+    await userEvent.type(await screen.findByLabelText('Name'), 'Beta', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
 
     expect(callsTo(stub, 'POST', '/api/organisations')).toHaveLength(0);
@@ -142,8 +147,12 @@ describe('onboarding', () => {
     const stub = thePlatform();
     show();
 
-    await userEvent.type(await screen.findByLabelText('Name'), 'Beta');
-    await userEvent.type(screen.getByLabelText('First admin sign-in name'), AN_ADMIN);
+    await userEvent.type(await screen.findByLabelText('Name'), 'Beta', WITHOUT_PAUSES);
+    await userEvent.type(
+      screen.getByLabelText('First admin sign-in name'),
+      AN_ADMIN,
+      WITHOUT_PAUSES,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
 
     expect(callsTo(stub, 'POST', '/api/organisations')).toHaveLength(0);
@@ -169,6 +178,24 @@ describe('onboarding', () => {
     await screen.findByText('Onboarded Beta.');
     expect(screen.getByLabelText('Temporary password')).toHaveValue('');
     expect(screen.getByLabelText('First admin sign-in name')).toHaveValue('');
+  });
+
+  it('GivenAnOnboardingRefused_WhenShown_ThenWhatWasTypedIsKept', async () => {
+    thePlatform({
+      'POST /api/organisations': {
+        status: 409,
+        body: { detail: 'That sign-in name is already in use.' },
+      },
+    });
+    show();
+
+    await fillIn('Beta', AN_ADMIN, A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+
+    await screen.findByRole('alert');
+    expect(screen.getByLabelText('Temporary password')).toHaveValue(A_PASSWORD);
+    expect(screen.getByLabelText('First admin sign-in name')).toHaveValue(AN_ADMIN);
+    expect(screen.getByLabelText('Name')).toHaveValue('Beta');
   });
 
   it('GivenATakenSignInName_WhenOnboarding_ThenTheRefusalIsShown', async () => {

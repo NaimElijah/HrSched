@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Session } from '../api/session';
 import type { Employee } from '../api/workforce';
 import { dayLabel, timeLabel } from '../components/localDates';
 import { A_TENANT, SignedIn } from '../test-support/session';
@@ -76,10 +77,8 @@ const NOTHING_WRONG = {
 };
 
 /**
- * A draft with Ada on its one shift, and Grace free to be assigned.
- *
- * The check has an answer of its own: the router answers by longest prefix, so without one it
- * would answer the check with the roster itself.
+ * A draft with Ada on its one shift, and Grace free to be assigned, and a check that finds nothing
+ * wrong with it.
  */
 function aDraft(overrides: Record<string, Answer> = {}) {
   return routeTo({
@@ -93,9 +92,9 @@ function aDraft(overrides: Record<string, Answer> = {}) {
 }
 
 /** The people come from the shell, as App passes them, so the page itself never asks. */
-function renderPage(people: readonly Employee[] = [ADA, GRACE]) {
+function renderPage(people: readonly Employee[] = [ADA, GRACE], session: Session = A_TENANT) {
   return render(
-    <SignedIn session={A_TENANT}>
+    <SignedIn session={session}>
       <AsTheShellHoldsIt people={people} />
     </SignedIn>,
   );
@@ -123,7 +122,6 @@ async function assignGrace(board: HTMLElement) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 describe('the rosters page', () => {
@@ -146,7 +144,7 @@ describe('the rosters page', () => {
 
   it('GivenARosterThatBreaksTheRules_WhenPublishing_ThenEveryViolationIsShown', async () => {
     routeTo({
-      '/api/rosters/roster-1/publication': {
+      'POST /api/rosters/roster-1/publication': {
         status: 422,
         body: {
           detail: 'The roster breaks 1 working-time rule(s)',
@@ -174,13 +172,43 @@ describe('the rosters page', () => {
     expect(alert).toHaveTextContent('There is no override');
   });
 
+  /** F3: a draft that breaks no rule is published, and the list then says so, as the server does. */
+  it('GivenADraftThatBreaksNoRule_WhenPublished_ThenItIsListedAsPublished', async () => {
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
+    const server: Record<string, Answer> = {
+      '/api/rosters': { status: 200, body: [ROSTER] },
+      '/api/shifts': { status: 200, body: [SHIFT] },
+      'POST /api/rosters/roster-1/publication': { status: 200, body: published },
+    };
+    const stub = routeTo(server);
+    renderPage([ADA]);
+    const publish = await screen.findByRole('button', { name: 'Publish' });
+    // What the server holds once the publication has landed; the page is told only by reading again.
+    server['/api/rosters'] = { status: 200, body: [published] };
+
+    await userEvent.click(publish);
+
+    expect(await screen.findByRole('cell', { name: 'PUBLISHED' })).toBeInTheDocument();
+    expect(callsTo(stub, 'POST', '/api/rosters/roster-1/publication')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('GivenTheRosterTable_WhenRendered_ThenEveryColumnHasAHeader', async () => {
     aDraft();
     renderPage();
 
     await screen.findByRole('button', { name: 'Open' });
 
-    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+    const table = screen.getByRole('table');
+    const headers = within(table).getAllByRole('columnheader');
+    // One roster is listed, so every cell is in its row.
+    expect(headers, 'one header per column of the roster row').toHaveLength(
+      within(table).getAllByRole('cell').length,
+    );
+    for (const header of headers) {
+      expect(header, 'every column header has a name').toHaveAccessibleName();
+    }
   });
 
   /**
@@ -218,13 +246,12 @@ describe('the rosters page', () => {
       '/api/rosters': { status: 200, body: [] },
       '/api/shifts': { status: 200, body: [] },
       '/api/employees': { status: 200, body: [] },
+      'POST /api/rosters/generations': {
+        status: 403,
+        body: { detail: 'Your role does not permit this.' },
+      },
     });
-    renderPage();
-    routeTo({
-      '/api/rosters': { status: 403, body: { detail: 'Your role does not permit this.' } },
-      '/api/shifts': { status: 200, body: [] },
-      '/api/employees': { status: 200, body: [] },
-    });
+    renderPage([ADA, GRACE], { ...A_TENANT, role: 'EMPLOYEE', employee: ADA.id });
 
     await userEvent.click(await screen.findByRole('button', { name: /Generate a draft/ }));
 
@@ -979,6 +1006,27 @@ describe('the board of a draft', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  /** The span on screen is what is generated for, not a span the page chose itself. */
+  it('GivenASpan_WhenGenerating_ThenItsStartAndEndAreSent', async () => {
+    const stub = routeTo({
+      // Answered as already ended, so the page starts no wait for it to finish.
+      'POST /api/rosters/generations': {
+        status: 202,
+        body: { id: 'gen-1', status: 'REFUSED', roster: null, violations: [] },
+      },
+      '/api/rosters': { status: 200, body: [] },
+    });
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Generate a draft for this span' }),
+    );
+
+    await waitFor(() => expect(callsTo(stub, 'POST', '/api/rosters/generations')).toHaveLength(1));
+    const init = callsTo(stub, 'POST', '/api/rosters/generations')[0]?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({ start: SPAN.from, end: SPAN.to });
   });
 
   /**

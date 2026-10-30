@@ -1,56 +1,59 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { A_TENANT, SignedIn } from '../test-support/session';
+import { callsTo, routeTo } from '../test-support/routeTo';
+import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { RulesPage } from './RulesPage';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * Revising the rules replaces the whole set — the backend does not merge — so the form must be
  * seeded from what is already configured. A blank form that posts on submit silently deletes every
  * rule the admin did not retype, and rosters that should be refused start publishing.
+ *
+ * Every limit here is invented, and odd on purpose so that it matches no statute: a rule's number
+ * is configuration, never something this code base writes down.
  */
+
+/** Invented minutes, the configured minimum rest. */
+const REST = 661;
+/** Invented minutes, the configured daily maximum. */
+const DAILY = 601;
+/** Invented minutes, the daily maximum typed in its place. */
+const REVISED_DAILY = 481;
 
 const CONFIGURED = {
   version: 4,
   constraints: ['minimum rest between assignments', 'maximum daily working time'],
-  minimumRestMinutes: 660,
-  maximumDailyMinutes: 600,
+  minimumRestMinutes: REST,
+  maximumDailyMinutes: DAILY,
   maximumWeeklyMinutes: null,
   maximumConsecutiveDays: null,
 };
 
-function routeTo(body: unknown) {
-  const stub = vi.fn((_path: string, init?: RequestInit) => {
-    void _path;
-    void init;
-    return Promise.resolve({
-      ok: true,
-      status: 200,
-      headers: new Headers(),
-      text: () => Promise.resolve(JSON.stringify(body)),
-    });
+/** Answers the current rules with what is configured, and accepts a revision. */
+function configured() {
+  return routeTo({
+    '/api/constraints': { status: 200, body: CONFIGURED },
+    'PUT /api/constraints': { status: 200, body: { ...CONFIGURED, version: 5 } },
   });
-  vi.stubGlobal('fetch', stub);
-  return stub;
 }
 
 function sentBody(stub: ReturnType<typeof routeTo>): Record<string, unknown> {
-  const put = stub.mock.calls.find((call) => call[1]?.method === 'PUT');
-  const body = put?.[1]?.body;
+  const body = callsTo(stub, 'PUT', '/api/constraints')[0]?.[1]?.body;
   if (typeof body !== 'string') {
-    throw new Error('no PUT was sent');
+    throw new Error('no revision was sent to PUT /api/constraints');
   }
   return JSON.parse(body) as Record<string, unknown>;
 }
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 describe('the rules page', () => {
   it('GivenConfiguredRules_WhenOpened_ThenTheFormShowsTheirCurrentValues', async () => {
-    routeTo(CONFIGURED);
+    configured();
     render(
       <SignedIn session={A_TENANT}>
         <RulesPage />
@@ -58,45 +61,69 @@ describe('the rules page', () => {
     );
 
     const rest = await screen.findByLabelText(/Minimum rest/);
-    await waitFor(() => expect(rest).toHaveValue(660));
-    expect(screen.getByLabelText(/Maximum daily/)).toHaveValue(600);
+    await waitFor(() => expect(rest).toHaveValue(REST));
+    expect(screen.getByLabelText(/Maximum daily/)).toHaveValue(DAILY);
     // Not configured stays blank; a suggested number here would be a threshold we invented.
     expect(screen.getByLabelText(/Maximum consecutive/)).toHaveValue(null);
   });
 
   it('GivenOneRuleChanged_WhenRevising_ThenTheOtherConfiguredRulesAreResent', async () => {
-    const stub = routeTo(CONFIGURED);
+    const stub = configured();
     render(
       <SignedIn session={A_TENANT}>
         <RulesPage />
       </SignedIn>,
     );
     const daily = await screen.findByLabelText(/Maximum daily/);
-    await waitFor(() => expect(daily).toHaveValue(600));
+    await waitFor(() => expect(daily).toHaveValue(DAILY));
 
     await userEvent.clear(daily);
-    await userEvent.type(daily, '480');
+    await userEvent.type(daily, String(REVISED_DAILY), WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
 
-    await waitFor(() => expect(sentBody(stub).maximumDailyMinutes).toBe(480));
+    await waitFor(() => expect(sentBody(stub).maximumDailyMinutes).toBe(REVISED_DAILY));
     // The rule nobody touched must survive: revising replaces the set wholesale.
-    expect(sentBody(stub).minimumRestMinutes).toBe(660);
+    expect(sentBody(stub).minimumRestMinutes).toBe(REST);
+  });
+
+  /** The backend's own words, and the value typed stays to be corrected rather than retyped. */
+  it('GivenARevisionTheBackendRefuses_WhenRevising_ThenItsReasonIsShownAndTheEditKept', async () => {
+    routeTo({
+      '/api/constraints': { status: 200, body: CONFIGURED },
+      // Revising the rules is an Admin's. The field's own `min` stops a non-positive limit before
+      // the backend could refuse it as invalid, so the refusal that can reach this form is the role's.
+      'PUT /api/constraints': { status: 403, body: { detail: 'Your role does not permit this.' } },
+    });
+    render(
+      <SignedIn session={A_SCHEDULER}>
+        <RulesPage />
+      </SignedIn>,
+    );
+    const daily = await screen.findByLabelText(/Maximum daily/);
+    await waitFor(() => expect(daily).toHaveValue(DAILY));
+
+    await userEvent.clear(daily);
+    await userEvent.type(daily, String(REVISED_DAILY), WITHOUT_PAUSES);
+    await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your role does not permit this.');
+    expect(daily).toHaveValue(REVISED_DAILY);
   });
 
   it('GivenAClearedField_WhenRevising_ThenThatRuleIsSwitchedOff', async () => {
-    const stub = routeTo(CONFIGURED);
+    const stub = configured();
     render(
       <SignedIn session={A_TENANT}>
         <RulesPage />
       </SignedIn>,
     );
     const rest = await screen.findByLabelText(/Minimum rest/);
-    await waitFor(() => expect(rest).toHaveValue(660));
+    await waitFor(() => expect(rest).toHaveValue(REST));
 
     await userEvent.clear(rest);
     await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
 
     await waitFor(() => expect(sentBody(stub)).not.toHaveProperty('minimumRestMinutes'));
-    expect(sentBody(stub).maximumDailyMinutes).toBe(600);
+    expect(sentBody(stub).maximumDailyMinutes).toBe(DAILY);
   });
 });

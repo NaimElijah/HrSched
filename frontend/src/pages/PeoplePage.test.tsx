@@ -1,8 +1,12 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { A_TENANT, SignedIn } from '../test-support/session';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { callsTo, routeTo, writes } from '../test-support/routeTo';
+import type { Answer } from '../test-support/routeTo';
+import type { Session } from '../api/session';
+import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { PeoplePage } from './PeoplePage';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * Admin: who works here, what they hold, and what they are contracted to.
@@ -10,7 +14,14 @@ import { PeoplePage } from './PeoplePage';
  * Listing people returns their unavailability, which is personal data, so the backend gates it
  * behind Admin or Scheduler. An EMPLOYEE sees a 403, and the page has to say so rather than show an
  * empty table — an empty table reads as "nobody works here", which is a different and wrong claim.
+ *
+ * Every contracted number here is invented, and odd on purpose so that it matches no statute.
  */
+
+/** Invented minutes a week, Ada's stored contract. */
+const ADAS_CONTRACT = 2101;
+/** Invented minutes a week, the contract typed in its place. */
+const TYPED_CONTRACT = 2401;
 
 const ABSENCE = { start: '2026-10-07T08:00:00Z', end: '2026-10-07T12:00:00Z' };
 
@@ -21,7 +32,7 @@ const PEOPLE = [
     name: 'Ada',
     qualifications: ['q-1'],
     unavailability: [ABSENCE],
-    weeklyContractedMinutes: 2100,
+    weeklyContractedMinutes: ADAS_CONTRACT,
   },
   {
     id: 'e-2',
@@ -42,67 +53,42 @@ function rowOf(name: string): HTMLElement {
 
 const QUALIFICATIONS = [{ id: 'q-1', name: 'Forklift' }];
 
-function routeTo(
-  options: {
-    people?: { ok: boolean; status: number; body: unknown };
-    onWrite?: () => { ok: boolean; status: number; body: unknown };
-  } = {},
-) {
-  const stub = vi.fn((path: string, init?: RequestInit) => {
-    const method = init?.method ?? 'GET';
-    if (method !== 'GET') {
-      const outcome = options.onWrite?.() ?? { ok: true, status: 204, body: null };
-      return Promise.resolve({
-        ok: outcome.ok,
-        status: outcome.status,
-        headers: new Headers(),
-        text: () => Promise.resolve(outcome.body === null ? '' : JSON.stringify(outcome.body)),
-      });
-    }
-    if (path.startsWith('/api/qualifications')) {
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        headers: new Headers(),
-        text: () => Promise.resolve(JSON.stringify(QUALIFICATIONS)),
-      });
-    }
-    const people = options.people ?? { ok: true, status: 200, body: PEOPLE };
-    return Promise.resolve({
-      ok: people.ok,
-      status: people.status,
-      headers: new Headers(),
-      text: () => Promise.resolve(JSON.stringify(people.body)),
-    });
+/** Answers the two listings, and accepts every change the tests below make, unless overridden. */
+function theOrganisation(overrides: Record<string, Answer> = {}) {
+  return routeTo({
+    '/api/employees': { status: 200, body: PEOPLE },
+    '/api/qualifications': { status: 200, body: QUALIFICATIONS },
+    'POST /api/employees': {
+      status: 201,
+      body: {
+        id: 'e-3',
+        name: 'Marie',
+        qualifications: [],
+        unavailability: [],
+        weeklyContractedMinutes: null,
+      },
+    },
+    'PUT /api/employees/e-1/qualifications/q-1': { status: 204, body: null },
+    'PUT /api/employees/e-1/contract': { status: 204, body: null },
+    ...overrides,
   });
-  vi.stubGlobal('fetch', stub);
-  return stub;
 }
 
-function show() {
+function show(session: Session = A_TENANT) {
   render(
-    <SignedIn session={A_TENANT}>
+    <SignedIn session={session}>
       <PeoplePage />
     </SignedIn>,
   );
 }
 
-function writes(stub: ReturnType<typeof routeTo>) {
-  return stub.mock.calls.filter((call) => (call[1]?.method ?? 'GET') !== 'GET');
-}
-
-beforeEach(() => {
-  window.localStorage.clear();
-});
-
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 describe('listing people', () => {
   it('GivenPeople_WhenOpened_ThenEachIsListedWithTheirIdentifier', async () => {
-    routeTo();
+    theOrganisation();
 
     show();
 
@@ -112,8 +98,8 @@ describe('listing people', () => {
   });
 
   it('GivenTheListingIs403_WhenOpened_ThenTheRefusalIsShownRatherThanAnEmptyTable', async () => {
-    routeTo({
-      people: { ok: false, status: 403, body: { detail: 'Your role does not permit this.' } },
+    theOrganisation({
+      '/api/employees': { status: 403, body: { detail: 'Your role does not permit this.' } },
     });
 
     show();
@@ -130,7 +116,7 @@ describe('listing people', () => {
  */
 describe('what is already known about each person', () => {
   it('GivenQualificationsHeld_WhenListed_ThenTheirNamesAreShown', async () => {
-    routeTo();
+    theOrganisation();
 
     show();
 
@@ -139,7 +125,7 @@ describe('what is already known about each person', () => {
   });
 
   it('GivenDeclaredUnavailability_WhenListed_ThenEachSpanIsShown', async () => {
-    routeTo();
+    theOrganisation();
 
     show();
 
@@ -157,39 +143,41 @@ describe('what is already known about each person', () => {
    * having chosen it.
    */
   it('GivenNoContract_WhenListed_ThenItSaysNoneRatherThanZero', async () => {
-    routeTo();
+    theOrganisation();
 
     show();
 
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
     expect(within(rowOf('Grace')).getByText('None set')).toBeInTheDocument();
-    expect(within(rowOf('Ada')).getByText('2100 minutes a week')).toBeInTheDocument();
+    expect(within(rowOf('Ada')).getByText(`${ADAS_CONTRACT} minutes a week`)).toBeInTheDocument();
     expect(screen.getByLabelText('Contracted minutes per week for Ada')).toHaveValue(null);
   });
 });
 
 describe('adding an employee', () => {
   it('GivenAName_WhenAdded_ThenItIsSentAndTheFieldClears', async () => {
-    const stub = routeTo();
+    const stub = theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Name'), 'Marie');
+    await userEvent.type(screen.getByLabelText('Name'), 'Marie', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Add employee' }));
 
-    await waitFor(() => {
-      const posted = writes(stub).find((call) => call[1]?.method === 'POST');
-      expect(JSON.parse(posted?.[1]?.body as string)).toEqual({ name: 'Marie' });
-    });
+    await waitFor(() => expect(callsTo(stub, 'POST', '/api/employees')).toHaveLength(1));
+    const init = callsTo(stub, 'POST', '/api/employees')[0]?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({ name: 'Marie' });
     await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue(''));
   });
 
   it('GivenTheBackendRefuses_WhenAdding_ThenTheRefusalIsShownAndTheNameSurvives', async () => {
-    routeTo({ onWrite: () => ({ ok: false, status: 403, body: { detail: 'Only an Admin.' } }) });
-    show();
+    // Adding someone is an Admin's, so a Scheduler is who the backend refuses.
+    theOrganisation({
+      'POST /api/employees': { status: 403, body: { detail: 'Your role does not permit this.' } },
+    });
+    show(A_SCHEDULER);
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Name'), 'Marie');
+    await userEvent.type(screen.getByLabelText('Name'), 'Marie', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Add employee' }));
 
     await waitFor(() =>
@@ -201,22 +189,20 @@ describe('adding an employee', () => {
 
 describe('granting a qualification', () => {
   it('GivenAQualificationChosen_WhenGranting_ThenItIsSentForThatEmployee', async () => {
-    const stub = routeTo();
+    const stub = theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
     await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), 'q-1');
 
     await waitFor(() =>
-      expect(writes(stub).map((call) => String(call[0]))).toContain(
-        '/api/employees/e-1/qualifications/q-1',
-      ),
+      expect(callsTo(stub, 'PUT', '/api/employees/e-1/qualifications/q-1')).toHaveLength(1),
     );
   });
 
   /** The placeholder option is not a qualification; selecting it must not send anything. */
   it('GivenTheChoosePlaceholder_WhenSelected_ThenNothingIsSent', async () => {
-    const stub = routeTo();
+    const stub = theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
@@ -226,7 +212,12 @@ describe('granting a qualification', () => {
   });
 
   it('GivenTheBackendRefusesAGrant_WhenGranting_ThenTheRefusalIsShown', async () => {
-    routeTo({ onWrite: () => ({ ok: false, status: 404, body: { detail: 'No such resource.' } }) });
+    theOrganisation({
+      'PUT /api/employees/e-1/qualifications/q-1': {
+        status: 404,
+        body: { detail: 'No such resource.' },
+      },
+    });
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
@@ -241,7 +232,7 @@ describe('granting a qualification', () => {
 describe('setting contracted hours', () => {
   /** One name repeated on every row gave a screen reader no way to tell whose field it was in. */
   it('GivenSeveralPeople_WhenListed_ThenEachContractFieldIsNamedForItsEmployee', async () => {
-    routeTo();
+    theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
@@ -250,35 +241,45 @@ describe('setting contracted hours', () => {
   });
 
   it('GivenTypedMinutes_WhenSet_ThenTheyAreSentAsANumber', async () => {
-    const stub = routeTo();
+    const stub = theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText('Contracted minutes per week for Ada'), '2400');
-    await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
-
-    await waitFor(() => {
-      const put = writes(stub).find((call) => String(call[0]).endsWith('/contract'));
-      expect(JSON.parse(put?.[1]?.body as string)).toEqual({ weeklyContractedMinutes: 2400 });
-    });
-  });
-
-  it('GivenTheBackendRefusesTheTerms_WhenSet_ThenTheRefusalIsShown', async () => {
-    routeTo({
-      onWrite: () => ({
-        ok: false,
-        status: 400,
-        body: { detail: 'weeklyContractedHours must be positive' },
-      }),
-    });
-    show();
-    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
-
-    await userEvent.type(screen.getByLabelText('Contracted minutes per week for Ada'), '5');
+    await userEvent.type(
+      screen.getByLabelText('Contracted minutes per week for Ada'),
+      String(TYPED_CONTRACT),
+      WITHOUT_PAUSES,
+    );
     await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
 
     await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('weeklyContractedHours must be positive'),
+      expect(callsTo(stub, 'PUT', '/api/employees/e-1/contract')).toHaveLength(1),
+    );
+    const init = callsTo(stub, 'PUT', '/api/employees/e-1/contract')[0]?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({ weeklyContractedMinutes: TYPED_CONTRACT });
+  });
+
+  it('GivenTheBackendRefusesTheTerms_WhenSet_ThenTheRefusalIsShown', async () => {
+    theOrganisation({
+      // Setting terms is an Admin's. The field's own `min` stops a non-positive value before the
+      // backend could refuse it as invalid, so the refusal that can reach this page is the role's.
+      'PUT /api/employees/e-1/contract': {
+        status: 403,
+        body: { detail: 'Your role does not permit this.' },
+      },
+    });
+    show(A_SCHEDULER);
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+
+    await userEvent.type(
+      screen.getByLabelText('Contracted minutes per week for Ada'),
+      '5',
+      WITHOUT_PAUSES,
+    );
+    await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Your role does not permit this.'),
     );
   });
 });

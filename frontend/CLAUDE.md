@@ -24,7 +24,12 @@ sees the file.
 - `src/components/` — what several pages share: `ErrorBoundary`, `Feedback`, `useAsync`,
   `localDates`.
 - `src/test-support/` — `routeTo` replaces `fetch` with a router that answers anything unmatched
-  with a 404, and `renderSignedIn` renders a screen as somebody already signed in.
+  with a 404. A `METHOD path` key answers that method at exactly that path, and a bare path only a
+  GET there, so a write to the wrong endpoint is refused. `renderSignedIn` renders a screen as
+  somebody already signed in, and `WITHOUT_PAUSES` types a value without a timer turn between
+  keys, so a form test does not press against the timeout (#286). Tests run in
+  `America/Los_Angeles`, set as `test.env.TZ` in `vite.config.ts`, so a test that builds a local
+  date asserts the exact instant it means in that zone.
 
 ## Conventions
 

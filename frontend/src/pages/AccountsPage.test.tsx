@@ -6,6 +6,7 @@ import { callsTo, routeTo } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import type { Session } from '../api/session';
+import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
  * The screen an Admin administers colleagues from (requirement F15).
@@ -66,6 +67,9 @@ const UNLINKED_EMPLOYEE_REFUSED =
 /** Invented for these tests. Nothing here suggests what a real password should look like. */
 const A_PASSWORD = 'an invented temporary password';
 
+/** Invented, and short on purpose: a password a configured minimum length can refuse. */
+const A_SHORT_PASSWORD = 'short';
+
 function theOrganisation(overrides: Record<string, Answer> = {}) {
   return routeTo({
     '/api/accounts': { status: 200, body: [ADA, GRACE] },
@@ -118,21 +122,30 @@ describe('reading the organisation', () => {
     );
   });
 
-  it('GivenNoAccountHasAPasswordHere_WhenListed_ThenNothingLooksLikeACredential', async () => {
-    theOrganisation();
+  /**
+   * The backend sends no credential, and this screen must not become the place one leaks if that
+   * ever changes: it shows the fields it names, never whatever else the body carries.
+   */
+  it('GivenAnAccountListedWithAPasswordHash_WhenShown_ThenTheHashIsNotOnScreen', async () => {
+    // Invented, and shaped like nothing a real hash function produces.
+    const leaked = 'an-invented-password-hash';
+    theOrganisation({
+      '/api/accounts': { status: 200, body: [{ ...ADA, passwordHash: leaked }, GRACE] },
+    });
 
     show();
 
     await screen.findByRole('cell', { name: 'ada@example.com' });
+    expect(document.body).not.toHaveTextContent(leaked);
     expect(screen.queryByText(/passwordHash/)).not.toBeInTheDocument();
   });
 });
 
 describe('creating an account', () => {
   async function fillIn(signInName: string, role: string, password: string) {
-    await userEvent.type(await screen.findByLabelText('Sign-in name'), signInName);
+    await userEvent.type(await screen.findByLabelText('Sign-in name'), signInName, WITHOUT_PAUSES);
     await userEvent.selectOptions(screen.getByLabelText('Role'), role);
-    await userEvent.type(screen.getByLabelText('Temporary password'), password);
+    await userEvent.type(screen.getByLabelText('Temporary password'), password, WITHOUT_PAUSES);
   }
 
   it('GivenANameARoleAndAPassword_WhenCreating_ThenAllThreeAreSent', async () => {
@@ -193,7 +206,11 @@ describe('creating an account', () => {
     const stub = theOrganisation();
     show();
 
-    await userEvent.type(await screen.findByLabelText('Temporary password'), A_PASSWORD);
+    await userEvent.type(
+      await screen.findByLabelText('Temporary password'),
+      A_PASSWORD,
+      WITHOUT_PAUSES,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     expect(callsTo(stub, 'POST', '/api/accounts')).toHaveLength(0);
@@ -203,7 +220,11 @@ describe('creating an account', () => {
     const stub = theOrganisation();
     show();
 
-    await userEvent.type(await screen.findByLabelText('Sign-in name'), 'grace@example.com');
+    await userEvent.type(
+      await screen.findByLabelText('Sign-in name'),
+      'grace@example.com',
+      WITHOUT_PAUSES,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     expect(callsTo(stub, 'POST', '/api/accounts')).toHaveLength(0);
@@ -228,6 +249,24 @@ describe('creating an account', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Temporary password')).toHaveValue(''));
     expect(screen.getByLabelText('Sign-in name')).toHaveValue('');
+  });
+
+  /** A refused attempt is retyped only when there is something to change, never because it failed. */
+  it('GivenACreationRefused_WhenShown_ThenWhatWasTypedIsKept', async () => {
+    theOrganisation({
+      'POST /api/accounts': {
+        status: 409,
+        body: { detail: 'That sign-in name is already in use.' },
+      },
+    });
+    show();
+
+    await fillIn('ada@example.com', 'EMPLOYEE', A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    await screen.findByRole('alert');
+    expect(screen.getByLabelText('Temporary password')).toHaveValue(A_PASSWORD);
+    expect(screen.getByLabelText('Sign-in name')).toHaveValue('ada@example.com');
   });
 
   it('GivenATakenSignInName_WhenCreating_ThenTheRefusalIsShown', async () => {
@@ -500,6 +539,7 @@ describe('resetting a colleague’s password', () => {
     await userEvent.type(
       within(row).getByLabelText('New temporary password for grace@example.com'),
       A_PASSWORD,
+      WITHOUT_PAUSES,
     );
     await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
 
@@ -545,10 +585,38 @@ describe('resetting a colleague’s password', () => {
       .getByRole('cell', { name: 'grace@example.com' })
       .closest('tr') as HTMLElement;
     const field = within(row).getByLabelText('New temporary password for grace@example.com');
-    await userEvent.type(field, A_PASSWORD);
+    await userEvent.type(field, A_PASSWORD, WITHOUT_PAUSES);
     await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
 
     await waitFor(() => expect(field).toHaveValue(''));
+  });
+
+  it('GivenAResetRefused_WhenShown_ThenTheTypedPasswordIsKept', async () => {
+    theOrganisation({
+      // What AccessExceptionHandler answers a temporary password the policy refuses.
+      'POST /api/accounts/99999999-9999-4999-8999-999999999999/password': {
+        status: 422,
+        body: {
+          title: 'Password not accepted',
+          detail: 'That temporary password does not satisfy the policy.',
+          reason: 'TOO_SHORT',
+        },
+      },
+    });
+    show();
+
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const row = screen
+      .getByRole('cell', { name: 'grace@example.com' })
+      .closest('tr') as HTMLElement;
+    const field = within(row).getByLabelText('New temporary password for grace@example.com');
+    await userEvent.type(field, A_SHORT_PASSWORD, WITHOUT_PAUSES);
+    await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That temporary password does not satisfy the policy.',
+    );
+    expect(field).toHaveValue(A_SHORT_PASSWORD);
   });
 
   it('GivenAResetField_WhenShown_ThenItIsMaskedAndEmpty', async () => {
