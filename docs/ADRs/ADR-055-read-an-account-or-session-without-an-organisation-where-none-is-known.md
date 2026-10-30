@@ -62,8 +62,8 @@ One method looks unscoped and is not exempt, and a rule must treat it so:
 
 - **`AccountRepository.findForUpdate(Optional<OrganisationId>, UserId)` is scoped.** An empty
   organisation names the operator's scope, `organisation_id IS NULL`. A tenant's account is never
-  found under it, nor the operator's under an organisation. Its parameter is optional, so a rule that
-  looks for an `OrganisationId` parameter must accept the `Optional` form.
+  found under it, nor the operator's under an organisation. Its parameter is optional, so the
+  architecture rule below, which looks for an `OrganisationId` parameter, names it in its allow-list.
 
 **`sign_in_session` and `refresh_token` carry no `organisation_id`, and none is added.** Their
 organisation is the one their account has: one join away through `account_id` for a session, and
@@ -83,10 +83,14 @@ two for a refresh token, which reaches its account through its session.
 - **ADR-009's guarantee does not cover these reads.** For them the compiler does not participate:
   the protection is what each caller does with the result. `findBySignInName`'s javadoc says so: do
   not reuse it to look up an account for somebody who already has an organisation.
-- **A new caller of one of them can read across tenants,** and today only the javadoc and review
-  stop it. Naming the methods exactly is what lets an architecture rule allow these and no others:
-  a rule in `HexagonalArchitectureTest` requires every repository `find…` or `lock…` method to take
-  an `OrganisationId`, and this table's methods are its allow-list.
+- **A new caller of one of them can read across tenants,** and no rule sees a caller. What a rule
+  can see is the signature: `repository_lookups_take_an_organisation` in `HexagonalArchitectureTest`
+  fails the build on a `find…` or `lock…` method of a driven-port repository that takes no
+  `OrganisationId`, except those its `UNSCOPED_LOOKUPS` list names: `findBySignInName`,
+  `findForAuthentication`, `findRefreshToken`, `findAuthenticatedSession`, `findAll`, and
+  `findForUpdate` for its `Optional`. Naming the methods exactly is what lets it allow these and no
+  others. `findById` passes it, because it takes an `OrganisationId`, and the session writes are
+  not lookups, so for those the guard in the table is review's to check, as is every caller.
 - **A failed sign-in writes to an account the caller does not hold.** `findBySignInName` finds the
   account by a name anybody can submit, and a wrong password is counted against it, so a stranger
   who knows a name can lock it out ([#142](https://github.com/NaimElijah/HrSched/issues/142)).
