@@ -73,8 +73,9 @@ public class AccessExceptionHandler {
         .increment();
   }
 
-  // InvalidSignInNameException's message names the rule and never the name, so it can be the
-  // detail. Without it here a blank or over-long name escaped every handler and answered 500.
+  // The two invalid-name exceptions' messages name the rule and never the name, so they can be the
+  // detail. Without them here a refused name - blank, over-long, or carrying a NUL or an unpaired
+  // surrogate - would escape every handler and answer 500.
   @ExceptionHandler({
     InvalidOrganisationNameException.class,
     InvalidSignInNameException.class,

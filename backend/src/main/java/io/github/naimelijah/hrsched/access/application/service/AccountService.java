@@ -46,8 +46,8 @@ import java.util.Set;
  *
  * <p>Provisioning runs top-down (ADR-029). The operator is bootstrapped from configuration, an
  * organisation's first Admin is created when it is onboarded, and every other account is created by
- * an Admin here. Apart from {@link #ensureOperator}, which runs at startup before anybody can sign
- * in, nothing in this class can be reached without an account that already exists.
+ * an Admin here. Apart from {@link #ensureOperator}, which runs at startup with no actor, nothing
+ * in this class can be reached without an account that already exists.
  *
  * <p>The two methods that can take an active Admin away, {@link #changeMembership} and {@link
  * #setAccountActive}, take the organisation's administration lock before they read anything, and

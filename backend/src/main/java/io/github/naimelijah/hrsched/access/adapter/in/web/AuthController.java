@@ -204,7 +204,8 @@ public class AuthController {
   /**
    * Answers a locked or newly disabled account exactly as a wrong current password, and records
    * which it was: the caller must not learn of the lock, and an operator must, since refusals while
-   * locked are somebody still guessing.
+   * locked are somebody still guessing. A disable needs no answer of its own: it ended every
+   * session, so the caller's very next request is answered 401.
    */
   private ResponseEntity<ProblemDetail> currentPasswordRejected(
       Actor actor, CurrentPasswordRefusal reason) {
