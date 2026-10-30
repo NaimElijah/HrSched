@@ -16,7 +16,8 @@
       [ADR-011](ADR-011-issue-our-own-access-tokens.md).
     - "Two constraints of the same kind in one set" is no longer something the domain permits:
       `ConstraintSet` refuses it (R24, [#96](https://github.com/NaimElijah/HrSched/issues/96)).
-      The schema still permits it, so that invariant is held by the domain alone.
+      The schema still permits it, so that invariant is held by the domain alone, and a set stored
+      with two of a kind fails on reading as a fault in stored data, naming the set.
     - `EXCLUDE` constraints, rejected "in this change", have been adopted:
       [ADR-026](ADR-026-make-overlapping-published-rosters-unrepresentable.md) and
       [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md).

@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWorkingDays;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
@@ -157,9 +158,7 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
         .param("organisation", organisation.value())
         .query(Integer.class)
         .optional()
-        .map(
-            version ->
-                new ConstraintSet(organisation, version, constraintsOf(organisation, version)));
+        .map(version -> rebuilt(organisation, version));
   }
 
   @Override
@@ -175,8 +174,27 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
         .param("version", version)
         .query(Integer.class)
         .optional()
-        .map(
-            stored -> new ConstraintSet(organisation, stored, constraintsOf(organisation, stored)));
+        .map(stored -> rebuilt(organisation, stored));
+  }
+
+  /**
+   * One stored version, rebuilt with its rules.
+   *
+   * <p>The schema permits what the domain refuses, two rules of one kind (R24, #96), so a set
+   * written past the domain could be stored. It is a fault in stored data, not the caller's
+   * mistake, so it fails loudly rather than as the domain's refusal of a request.
+   *
+   * @throws IllegalStateException naming the set, if what is stored is no set the domain allows
+   */
+  private ConstraintSet rebuilt(OrganisationId organisation, int version) {
+    try {
+      return new ConstraintSet(organisation, version, constraintsOf(organisation, version));
+    } catch (InvalidConstraintException refused) {
+      throw new IllegalStateException(
+          "Stored constraint set version %d of organisation %s breaks R24: it holds two rules of one kind"
+              .formatted(version, organisation.value()),
+          refused);
+    }
   }
 
   private List<WorkingTimeConstraint> constraintsOf(OrganisationId organisation, int version) {

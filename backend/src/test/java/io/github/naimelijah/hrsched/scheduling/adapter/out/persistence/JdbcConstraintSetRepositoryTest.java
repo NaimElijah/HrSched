@@ -121,11 +121,12 @@ class JdbcConstraintSetRepositoryTest {
    * R24: a set holds at most one constraint of each kind, which {@code ConstraintSet} now refuses
    * to be built otherwise, so no revision can store two. The schema still permits them (V1), so a
    * set holding two could only have been written past the domain. Read back, it is refused rather
-   * than loaded as rules that are not what they say. This pins today's answer to #96's open point,
-   * what becomes of such a set, not a decision on it.
+   * than loaded as rules that are not what they say, and refused as a fault in stored data, not as
+   * the caller's mistake: a loud failure naming the set and R24, carrying the domain's refusal
+   * (#96). Whichever way it is read.
    */
   @Test
-  void GivenTwoConstraintsOfOneKindStoredPastTheDomain_WhenReadBack_ThenTheReadIsRefused() {
+  void GivenTwoConstraintsOfOneKindStoredPastTheDomain_WhenReadBack_ThenItFailsAsStoredData() {
     PostgresDatabase.jdbcClient()
         .sql("INSERT INTO constraint_set (organisation_id, version) VALUES (:id, 2)")
         .param("id", ACME.value())
@@ -146,7 +147,14 @@ class JdbcConstraintSetRepositoryTest {
     }
 
     assertThatThrownBy(() -> repository.findCurrent(ACME))
-        .isInstanceOf(InvalidConstraintException.class);
+        .isExactlyInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(ACME.value().toString())
+        .hasMessageContaining("version 2")
+        .hasMessageContaining("R24")
+        .hasCauseInstanceOf(InvalidConstraintException.class);
+    assertThatThrownBy(() -> repository.findVersion(ACME, 2))
+        .isExactlyInstanceOf(IllegalStateException.class)
+        .hasCauseInstanceOf(InvalidConstraintException.class);
   }
 
   /**
