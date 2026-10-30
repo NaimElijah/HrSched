@@ -2,7 +2,7 @@ import { render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { holdSession } from '../api/session';
 import type { Session } from '../api/session';
-import { SessionContext } from '../auth/SessionProvider';
+import { SessionContext, sessionKeyOf } from '../auth/SessionProvider';
 import type { SessionContextValue } from '../auth/SessionProvider';
 
 /** A signed-in tenant Admin, which is what most screens are written for. */
@@ -65,7 +65,7 @@ export function SignedIn({ session, children }: { session: Session; children: Re
     session,
     restoreFailure: null,
     retryRestore: () => undefined,
-    key: `${session.userId}|${String(session.passwordChangeRequired)}`,
+    key: sessionKeyOf(session),
     signIn: () => Promise.resolve(),
     signOut: () => Promise.resolve(),
     signOutProgress: { pending: false, failures: 0, failure: null },

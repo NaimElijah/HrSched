@@ -52,3 +52,25 @@ export function callsTo(stub: ReturnType<typeof routeTo>, method: string, path: 
 export function writes(stub: ReturnType<typeof routeTo>) {
   return stub.mock.calls.filter(([, init]) => (init?.method ?? 'GET') !== 'GET');
 }
+
+/**
+ * Holds every write sent until the returned function is called, while reads are answered at once.
+ * For a test of what a screen does while a write is on its way: a held write reaches the routed
+ * stub, and so is counted by {@link writes} and {@link callsTo}, only once it is released.
+ *
+ * @param routed the stub {@link routeTo} returned, which answers each write once it is released
+ * @returns the function that lets every held write through
+ */
+export function holdingWrites(routed: ReturnType<typeof routeTo>): () => void {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((path: string, init?: RequestInit) =>
+      (init?.method ?? 'GET') === 'GET' ? routed(path, init) : held.then(() => routed(path, init)),
+    ),
+  );
+  return release;
+}

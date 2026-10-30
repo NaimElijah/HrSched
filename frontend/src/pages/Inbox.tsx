@@ -7,7 +7,7 @@ import { Busy, Failure } from '../components/Feedback';
 import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
-import { SWAP_STATUS } from '../components/swapStatus';
+import { swapStatusWording } from '../components/swapStatus';
 import { useShiftsById } from '../components/useShiftsById';
 
 /**
@@ -126,6 +126,6 @@ function describe(
 ): string {
   const when = shift === undefined ? 'a shift' : shiftLabel(shift.start, shift.end);
   return swap.requester === reader
-    ? `You asked ${nameOf(swap.counterparty)} to take ${when} — ${SWAP_STATUS[swap.status]}.`
-    : `${nameOf(swap.requester)} asked you to take ${when} — ${SWAP_STATUS[swap.status]}.`;
+    ? `You asked ${nameOf(swap.counterparty)} to take ${when} — ${swapStatusWording(swap.status)}.`
+    : `${nameOf(swap.requester)} asked you to take ${when} — ${swapStatusWording(swap.status)}.`;
 }

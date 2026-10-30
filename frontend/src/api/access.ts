@@ -62,10 +62,6 @@ export const access = {
 
   /** Every organisation on the platform. The Operator's alone: a tenant role is refused with a 403. */
   findOrganisations: (): Promise<Organisation[]> => api.get<Organisation[]>('/api/organisations'),
-
-  /** One organisation: any of them for the Operator, and only its own for a tenant role. */
-  findOrganisation: (id: string): Promise<Organisation> =>
-    api.get<Organisation>(path`/api/organisations/${id}`),
 };
 
 /**
