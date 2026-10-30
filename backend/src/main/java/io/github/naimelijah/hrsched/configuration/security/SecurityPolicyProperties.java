@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.configuration.security;
 
 import java.time.Duration;
+import java.util.Objects;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -18,21 +19,44 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param signIn what it takes to lock an account, and for how long
  * @param session how long a session may live, in total and while idle
  * @param password the floor on a password somebody chooses; the ceiling comes from the hasher
+ * @throws NullPointerException if any of them is not configured, naming the key to set
  */
 @ConfigurationProperties("hrsched.security")
 public record SecurityPolicyProperties(SignIn signIn, Session session, Password password) {
 
+  public SecurityPolicyProperties {
+    Objects.requireNonNull(signIn, "hrsched.security.sign-in must be configured");
+    Objects.requireNonNull(session, "hrsched.security.session must be configured");
+    Objects.requireNonNull(password, "hrsched.security.password must be configured");
+  }
+
   /**
    * @param lockoutThreshold consecutive failures that lock an account
    * @param lockoutDuration how long that lock lasts
+   * @throws NullPointerException if the duration is not configured, naming the key to set
    */
-  public record SignIn(int lockoutThreshold, Duration lockoutDuration) {}
+  public record SignIn(int lockoutThreshold, Duration lockoutDuration) {
+
+    public SignIn {
+      Objects.requireNonNull(
+          lockoutDuration, "hrsched.security.sign-in.lockout-duration must be configured");
+    }
+  }
 
   /**
    * @param absoluteLifetime how long a session may live in total, never extended by use
    * @param idleLifetime how long it survives without being renewed
+   * @throws NullPointerException if either is not configured, naming the key to set
    */
-  public record Session(Duration absoluteLifetime, Duration idleLifetime) {}
+  public record Session(Duration absoluteLifetime, Duration idleLifetime) {
+
+    public Session {
+      Objects.requireNonNull(
+          absoluteLifetime, "hrsched.security.session.absolute-lifetime must be configured");
+      Objects.requireNonNull(
+          idleLifetime, "hrsched.security.session.idle-lifetime must be configured");
+    }
+  }
 
   /**
    * Only the minimum. The maximum is not configuration at all: it is whatever the hashing algorithm
