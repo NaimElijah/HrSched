@@ -21,10 +21,14 @@ import java.util.Set;
  * their own: they exist only in relation to one employee, and are only ever read alongside them.
  *
  * <p>Immutable. Every change returns a new instance, so an employee can never be observed
- * half-updated and the invariants are checked exactly once, in one place.
+ * half-updated. Every instance passes through one private constructor, which checks the name; R7,
+ * that declared spans never overlap, is checked by {@link #unavailableFor}, the only way to add
+ * one. The name is checked again on every change; R7 again on every rebuild from storage, which
+ * re-adds each stored span through that method.
  *
- * <p>Belongs to exactly one {@link OrganisationId}. Nothing in this class will let two
- * organisations' data meet; that guarantee is enforced above, at the application boundary.
+ * <p>Belongs to exactly one {@link OrganisationId}, but cannot tell whose a {@link QualificationId}
+ * is, so nothing in this class stops it holding another organisation's. The application layer does:
+ * it grants a qualification only once it has found it in the employee's own organisation.
  */
 public final class Employee {
 

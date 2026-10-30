@@ -41,7 +41,11 @@ public class WorkforceExceptionHandler {
 
   private static final Logger log = LoggerFactory.getLogger(WorkforceExceptionHandler.class);
 
-  /** Shared with the scheduling handler, so one query answers "who was refused" across both. */
+  /**
+   * Shared by every class that counts a refusal, seven today - each context's exception handler,
+   * access's {@code AuthController} and the security chain's two handlers - so one query answers
+   * "who was refused" across all of them.
+   */
   private static final String DENIED = "hrsched.access.denied";
 
   private final MeterRegistry meters;

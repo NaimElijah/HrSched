@@ -8,8 +8,12 @@ import java.util.List;
 /**
  * Workforce's published API: who an organisation could roster.
  *
- * <p>The one entry point other contexts are permitted to use. Everything else about this context —
- * its aggregate, its services, its storage — stays private.
+ * <p>One of three of this package's ports another context uses, each from an {@code
+ * adapter.out.workforce} class: scheduling reads who it could roster through this one and
+ * qualifications through {@code ManageQualificationsUseCase}, and access asks {@code
+ * ManageEmployeesUseCase.findEmployee} whether an employee exists. Another context may reach this
+ * package and nothing else (ADR-008): this context's aggregate, its services and its storage stay
+ * private.
  */
 public interface FindRosterableEmployeesUseCase {
 

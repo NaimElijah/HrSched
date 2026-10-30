@@ -15,9 +15,11 @@ import java.util.UUID;
  * the HTTP listing quietly did not.
  *
  * <p>This is personal data - when somebody cannot work says things about their health and their
- * household - which is why the listing behind it is restricted to Admins and Schedulers. It is the
- * one response in this API where that restriction is the only thing standing between a colleague
- * and somebody's medical appointments.
+ * household - which is why the listing behind it is restricted to Admins and Schedulers. It is not
+ * the only response carrying it: {@code GET /api/employees/{id}/unavailability} answers with the
+ * same spans, to the person themself as well. For somebody else's, both are refused to anyone but
+ * an Admin or a Scheduler, and that restriction is the only thing standing between a colleague and
+ * somebody's medical appointments.
  *
  * @param id the employee identity
  * @param name their name
