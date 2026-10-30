@@ -309,6 +309,33 @@ describe('changing an account', () => {
     return screen.getByRole('cell', { name: signInName }).closest('tr') as HTMLElement;
   }
 
+  /** The organisation, accepting a password reset for Ada, with the list it reads back editable. */
+  function resettingAdasPassword() {
+    const server: Record<string, Answer> = {
+      '/api/accounts': { status: 200, body: [ADA, GRACE] },
+      '/api/employees': { status: 200, body: [GRACE_HOPPER, ROBIN] },
+      [`POST /api/accounts/${ADA.id}/password`]: { status: 204, body: null },
+    };
+    return { routed: routeTo(server), server };
+  }
+
+  /** Resets Ada's password from her row, and waits until the list has been read back after it. */
+  async function resetAdasPassword({ routed }: ReturnType<typeof resettingAdasPassword>) {
+    const listedBefore = callsTo(routed, 'GET', '/api/accounts').length;
+    await userEvent.type(
+      screen.getByLabelText('New temporary password for ada@example.com'),
+      A_PASSWORD,
+      WITHOUT_PAUSES,
+    );
+    await userEvent.click(
+      within(rowFor('ada@example.com')).getByRole('button', { name: 'Reset password' }),
+    );
+    await screen.findByText('Reset the password of ada@example.com.');
+    await waitFor(() =>
+      expect(callsTo(routed, 'GET', '/api/accounts').length).toBeGreaterThan(listedBefore),
+    );
+  }
+
   it('GivenAnAccount_WhenItsRoleIsChanged_ThenTheMembershipIsSent', async () => {
     const stub = theOrganisation({
       'PUT /api/accounts/99999999-9999-4999-8999-999999999999/membership': {
@@ -674,6 +701,39 @@ describe('changing an account', () => {
     expect(writes(stub)).toHaveLength(0);
     expect(screen.queryByText(/^Changed/)).not.toBeInTheDocument();
     expect(change).toBeDisabled();
+  });
+
+  /**
+   * Another row's change reads the whole list back. A choice made here and not yet sent was made
+   * against a value that has not changed, so it stays rather than reverting under the Admin's hand.
+   */
+  it('GivenARoleChosenButNotSent_WhenAnotherRowsChangeIsReadBack_ThenTheChoiceIsKept', async () => {
+    const stub = resettingAdasPassword();
+    show();
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
+    await userEvent.selectOptions(role, 'EMPLOYEE');
+
+    await resetAdasPassword(stub);
+
+    expect(role).toHaveValue('EMPLOYEE');
+    expect(
+      screen.getByRole('button', { name: 'Change the role of grace@example.com' }),
+    ).toBeEnabled();
+  });
+
+  /** A choice made against a value that has since changed would be a decision about the past. */
+  it('GivenARoleChosenButNotSent_WhenTheStoredRoleChangesUnderIt_ThenTheStoredRoleIsShown', async () => {
+    const stub = resettingAdasPassword();
+    show();
+    await screen.findByRole('cell', { name: 'grace@example.com' });
+    const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
+    await userEvent.selectOptions(role, 'EMPLOYEE');
+    stub.server['/api/accounts'] = { status: 200, body: [ADA, { ...GRACE, role: 'ADMIN' }] };
+
+    await resetAdasPassword(stub);
+
+    await waitFor(() => expect(role).toHaveValue('ADMIN'));
   });
 
   /** A refusal reads nothing back, so the row must not wait for a read that never comes. */

@@ -221,16 +221,22 @@ function AccountRow({
   administer: (what: string, change: () => Promise<void>) => Promise<boolean>;
 }) {
   const [replacement, setReplacement] = useState('');
-  // What has been chosen and not yet stored, with the copy of the account it was chosen on. A reload
-  // hands the row a new copy and the choice is dropped with the old one, so the selects show what
-  // is stored again; a refused change reloads nothing, so its choice stays to be corrected.
-  const [chosenRole, setChosenRole] = useState<{ on: Account; role: TenantRole } | null>(null);
+  // What has been chosen and not yet stored, with the stored value it was chosen against. A choice
+  // outlives a read-back that leaves that value alone, such as another row's, and is dropped once
+  // the stored value changes: by this row's own change, or by somebody else's. A refused change
+  // stores nothing, so its choice stays to be corrected.
+  const [chosenRole, setChosenRole] = useState<{ against: TenantRole; role: TenantRole } | null>(
+    null,
+  );
   const [chosenEmployee, setChosenEmployee] = useState<{
-    on: Account;
+    against: string | null;
     employee: string | null;
   } | null>(null);
-  const role = chosenRole?.on === account ? chosenRole.role : account.role;
-  const employee = chosenEmployee?.on === account ? chosenEmployee.employee : account.employee;
+  const role = chosenRole?.against === account.role ? chosenRole.role : account.role;
+  const employee =
+    chosenEmployee !== null && chosenEmployee.against === account.employee
+      ? chosenEmployee.employee
+      : account.employee;
   const roleChosen = role !== account.role;
   const employeeChosen = employee !== account.employee;
   // Whether this row's change is on its way, and then the copy of the account that change's own
@@ -291,7 +297,7 @@ function AccountRow({
               value={role}
               disabled={waiting}
               onChange={(event) =>
-                setChosenRole({ on: account, role: event.target.value as TenantRole })
+                setChosenRole({ against: account.role, role: event.target.value as TenantRole })
               }
             >
               {ROLES.map((candidate) => (
@@ -330,7 +336,7 @@ function AccountRow({
               disabled={waiting}
               onChange={(event) =>
                 setChosenEmployee({
-                  on: account,
+                  against: account.employee,
                   employee: event.target.value === NOT_LINKED ? null : event.target.value,
                 })
               }
