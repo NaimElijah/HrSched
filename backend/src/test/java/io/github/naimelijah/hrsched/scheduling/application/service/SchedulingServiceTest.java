@@ -16,6 +16,7 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.ReviseObjecti
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosterAssessment;
 import io.github.naimelijah.hrsched.scheduling.application.port.in.RosteredShift;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.AuditedChange;
+import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterCandidate;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.RosterGenerator;
@@ -25,6 +26,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableE
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationPolicy;
 import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationStatus;
@@ -32,6 +34,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationsStoppedEx
 import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWorkingDays;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
@@ -160,6 +163,12 @@ class SchedulingServiceTest {
   }
 
   private SchedulingService with(Clock clock, RosterGenerator generator) {
+    return with(clock, generator, new RecordingUnitsOfWork());
+  }
+
+  /** The service, marking out its units of work through {@code units}, which a test reads. */
+  private SchedulingService with(
+      Clock clock, RosterGenerator generator, RecordingUnitsOfWork units) {
     return new SchedulingService(
         shifts,
         rosters,
@@ -168,7 +177,7 @@ class SchedulingServiceTest {
         new FakeSwaps(new CallLog()),
         workforce,
         generator,
-        new RecordingUnitsOfWork(),
+        units,
         generations,
         Runnable::run,
         LOST_AFTER,
@@ -354,6 +363,66 @@ class SchedulingServiceTest {
 
     assertThat(constraintSets.findCurrent(ACME)).isEmpty();
     assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * #238: another Admin's revision of the same version is stored between this one's read and its
+   * save. The store's conflict reaches the caller, to be answered 409, and nothing is recorded,
+   * because nothing of this revision was stored.
+   */
+  @Test
+  void GivenARivalRevisionStoredFirst_WhenAnAdminRevisesTheRules_ThenTheConflictReachesThem() {
+    audit.forget();
+    ConstraintSetRepository racedBy =
+        new ConstraintSetRepository() {
+          @Override
+          public void save(ConstraintSet revision) {
+            constraintSets.save(
+                new ConstraintSet(revision.organisation(), revision.version(), List.of()));
+            constraintSets.save(revision);
+          }
+
+          @Override
+          public Optional<ConstraintSet> findCurrent(OrganisationId organisation) {
+            return constraintSets.findCurrent(organisation);
+          }
+
+          @Override
+          public Optional<ConstraintSet> findVersion(OrganisationId organisation, int version) {
+            return constraintSets.findVersion(organisation, version);
+          }
+        };
+    SchedulingService racing =
+        new SchedulingService(
+            shifts,
+            rosters,
+            racedBy,
+            objectiveWeights,
+            new FakeSwaps(new CallLog()),
+            workforce,
+            new FirstFitGenerator(),
+            new RecordingUnitsOfWork(),
+            generations,
+            Runnable::run,
+            LOST_AFTER,
+            new RecordingNotifier(),
+            audit,
+            Clock.fixed(NOW, ZoneOffset.UTC));
+
+    // Invented: three days running.
+    assertThatThrownBy(
+            () ->
+                racing.reviseConstraints(
+                    admin(ACME),
+                    new ReviseConstraintsCommand(
+                        ACME, List.of(new MaximumConsecutiveWorkingDays(3)))))
+        .isInstanceOf(ConstraintsRevisedConcurrentlyException.class);
+
+    assertThat(audit.changes()).isEmpty();
+    assertThat(constraintSets.findCurrent(ACME))
+        .get()
+        .extracting(ConstraintSet::constraints)
+        .isEqualTo(List.of());
   }
 
   /**
@@ -944,14 +1013,25 @@ class SchedulingServiceTest {
    * stored: the generation is ended from the clock read after that save, so it stays lost rather
    * than becoming a success nobody is waiting for. The store does not refuse it: its guard asks
    * only whether the row is pending.
+   *
+   * <p>The refusal escapes the very unit the draft was stored in, so a real transaction takes the
+   * draft back with it; this double rolls nothing back, so the unit is asked instead. Nothing but
+   * the request is recorded.
    */
   @Test
   void GivenADraftSaveOutlastingTheLostAtInstant_WhenTheSolveEnds_ThenTheGenerationStaysLost() {
     available(ACME);
     aShift(ACME, Set.of());
+    audit.forget();
     MovableClock clock = new MovableClock(NOW);
-    rosters.observeSaves(() -> clock.moveTo(NOW.plus(LOST_AFTER.lostAfter())));
-    SchedulingService slowToStore = withClock(clock);
+    RecordingUnitsOfWork units = new RecordingUnitsOfWork();
+    List<Integer> draftStoredIn = new ArrayList<>();
+    rosters.observeSaves(
+        () -> {
+          draftStoredIn.add(units.begun().size() - 1);
+          clock.moveTo(NOW.plus(LOST_AFTER.lostAfter()));
+        });
+    SchedulingService slowToStore = with(clock, new FirstFitGenerator(), units);
 
     assertThatThrownBy(
             () ->
@@ -963,6 +1043,10 @@ class SchedulingServiceTest {
         .singleElement()
         .extracting(generation -> generation.statusAt(clock.instant()))
         .isEqualTo(GenerationStatus.LOST);
+    assertThat(draftStoredIn).singleElement().isIn(units.escaped());
+    assertThat(units.begun().get(draftStoredIn.getFirst()))
+        .isEqualTo(RecordingUnitsOfWork.Unit.WRITING);
+    assertThat(audit.changes()).containsExactly(SchedulingChange.GENERATION_REQUESTED);
   }
 
   /**
