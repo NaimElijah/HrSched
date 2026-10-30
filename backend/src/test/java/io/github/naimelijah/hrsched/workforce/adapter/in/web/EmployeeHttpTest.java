@@ -259,6 +259,11 @@ class EmployeeHttpTest {
                 ours,
                 "ADMIN"))
         .andExpect(status().isNotFound());
+
+    mockMvc
+        .perform(as(mockMvc, get("/api/employees/" + ada), ours, "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.qualifications.length()").value(0));
   }
 
   @Test
@@ -996,6 +1001,18 @@ class EmployeeHttpTest {
                 "ADMIN"))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+
+    mockMvc
+        .perform(
+            as(
+                mockMvc,
+                get("/api/employees/" + theirs + "/unavailability"),
+                theirOrganisation,
+                "ADMIN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].start").value("2026-11-24T00:00:00Z"))
+        .andExpect(jsonPath("$[0].end").value("2026-11-25T00:00:00Z"));
   }
 
   @Test
