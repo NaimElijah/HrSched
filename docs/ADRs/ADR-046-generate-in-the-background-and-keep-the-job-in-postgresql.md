@@ -1,6 +1,13 @@
 # ADR-046: Generate in the background, and keep each generation in PostgreSQL
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** Two more ways a generation ends, and one check moved
+    ([#254](https://github.com/NaimElijah/HrSched/issues/254)).
+    - A runner that has stopped, as its instance shuts down, refuses a generation as every run
+      busy does: a 503, titled apart and not counted as saturation, logged at WARN, and the record
+      says `FAILED`. So `FAILED` is not only a defect logged at ERROR.
+    - The lost check runs before anything is written and again once the draft is saved, inside the
+      unit of work that saved it, so a save outlasting `lost_at` takes the draft back with it.
 - **Date:** 2026-10-23
 
 ## Context

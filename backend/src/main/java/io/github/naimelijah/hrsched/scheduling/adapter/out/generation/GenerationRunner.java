@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.generation;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.out.BackgroundWork;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationsStoppedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 import jakarta.annotation.PreDestroy;
 import java.util.Map;
@@ -59,12 +60,20 @@ public class GenerationRunner implements BackgroundWork {
             new ThreadPoolExecutor.AbortPolicy());
   }
 
+  /**
+   * @throws TooManyGenerationsException if every thread is busy
+   * @throws GenerationsStoppedException if the runner has stopped, which refuses all work, busy or
+   *     not; it carries the pool's rejection as its cause
+   */
   @Override
   public void start(Runnable work) {
     Map<String, String> context = MDC.getCopyOfContextMap();
     try {
       runs.execute(() -> run(work, context));
-    } catch (RejectedExecutionException everyThreadBusy) {
+    } catch (RejectedExecutionException refused) {
+      if (runs.isShutdown()) {
+        throw new GenerationsStoppedException(refused);
+      }
       throw new TooManyGenerationsException(concurrentRuns);
     }
   }
@@ -87,7 +96,10 @@ public class GenerationRunner implements BackgroundWork {
     }
   }
 
-  /** Stops taking generations. Any still solving are left to end, or to read as lost. */
+  /**
+   * Stops taking generations. Any still solving are left to end, or to read as lost. One asked for
+   * from now on is refused as stopped rather than as busy, and its caller fails it at once.
+   */
   @PreDestroy
   void stop() {
     runs.shutdown();

@@ -84,4 +84,21 @@ public record GenerationRequest(
       }
     }
   }
+
+  /**
+   * Says what the request is for and how much it carries, and names nobody: the generated one would
+   * print every candidate's absence and preferences, and every span of work held elsewhere.
+   */
+  @Override
+  public String toString() {
+    return ("GenerationRequest[draft=%s, shifts=%d, candidates=%d, constraintVersion=%d,"
+            + " heldElsewhere=%d, superseded=%d]")
+        .formatted(
+            draft.id(),
+            shifts.size(),
+            candidates.size(),
+            constraints.version(),
+            heldElsewhere.size(),
+            superseded.size());
+  }
 }

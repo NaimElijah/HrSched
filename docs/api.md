@@ -137,11 +137,15 @@ the generation in `Location`, because a solve at the largest stated size takes m
 - `REFUSED`, with `violations` in the shape a publication refusal uses: people a published roster
   carries onto these shifts can no longer stay on them, and it is that roster that has to change
   ([#130](https://github.com/NaimElijah/HrSched/issues/130)).
-- `FAILED`, a defect the server logged.
+- `FAILED`, either refused before it was solved, as below, or ended by a defect the server logged.
 - `LOST`, still pending past `hrsched.generation.lost-after`: the server solving it stopped.
 
-When an instance is already solving `hrsched.generation.concurrent-runs` generations, one more
-answers `503` rather than waiting.
+Two refusals answer `503` at once, and store the generation as `FAILED` so nobody waits on it:
+
+- When an instance is already solving `hrsched.generation.concurrent-runs` generations, one more
+  answers `503` titled `Generation is busy` rather than waiting.
+- When the instance asked is shutting down, it answers `503` titled `Generation is unavailable`.
+  Asking again may reach an instance that is not; raising `concurrent-runs` does not help it.
 
 ## Checking a draft
 
@@ -206,6 +210,10 @@ rules`, as publishing it would. With invented identifiers and weights:
   `Roster cannot be checked against the rules`.
 - **A concurrent publication.** An overlapping roster published at the same moment answers `409`,
   titled `Published concurrently`.
+- **A rules revision that lost a race.** Two revisions of one organisation's rules made at the same
+  moment both take the next version; the later answers `409` titled `Revised concurrently`, and
+  nothing of it is kept. Reload the rules and revise them again
+  ([#238](https://github.com/NaimElijah/HrSched/issues/238)).
 - **A roster whose status forbids the change.** Editing or publishing a roster that is no longer a
   draft, or asking for a swap against one that is not the published roster, answers `409` titled
   `Roster status forbids this`. Reload it: somebody most likely published it first.

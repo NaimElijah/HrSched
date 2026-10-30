@@ -38,21 +38,14 @@ class RosterCandidateTest {
   private static RosterCandidate candidate(
       Set<QualificationId> qualifications, List<TimeRange> unavailability) {
     return new RosterCandidate(
-        EmployeeId.newId(), "Ada", qualifications, unavailability, StatedPreferences.none());
+        EmployeeId.newId(), qualifications, unavailability, StatedPreferences.none());
   }
 
   private static Stream<ThrowingCallable> nullFields() {
     return Stream.of(
-        () -> new RosterCandidate(null, "Ada", Set.of(), List.of(), StatedPreferences.none()),
-        () ->
-            new RosterCandidate(
-                EmployeeId.newId(), null, Set.of(), List.of(), StatedPreferences.none()),
-        () ->
-            new RosterCandidate(
-                EmployeeId.newId(), "Ada", null, List.of(), StatedPreferences.none()),
-        () ->
-            new RosterCandidate(
-                EmployeeId.newId(), "Ada", Set.of(), null, StatedPreferences.none()));
+        () -> new RosterCandidate(null, Set.of(), List.of(), StatedPreferences.none()),
+        () -> new RosterCandidate(EmployeeId.newId(), null, List.of(), StatedPreferences.none()),
+        () -> new RosterCandidate(EmployeeId.newId(), Set.of(), null, StatedPreferences.none()));
   }
 
   @ParameterizedTest
@@ -133,6 +126,26 @@ class RosterCandidateTest {
 
     assertThat(candidate(Set.of(), List.of(untilTheShiftStarts)).isUnavailableDuring(MONDAY_DAY))
         .isFalse();
+  }
+
+  /**
+   * A {@code toString} ends up where a field does not: in an exception's message, a debugger's
+   * copy, a log line. Absence and preferences say things about a person's health and household.
+   */
+  @Test
+  void GivenACandidateWithAbsenceAndPreferences_WhenPrinted_ThenOnlyTheirIdentityIsNamed() {
+    EmployeeId ada = EmployeeId.newId();
+    RosterCandidate candidate =
+        new RosterCandidate(
+            ada,
+            Set.of(QualificationId.newId()),
+            List.of(MONDAY_DAY),
+            new StatedPreferences(List.of(TUESDAY_DAY), List.of()));
+
+    assertThat(candidate.toString())
+        .contains(ada.value().toString())
+        .doesNotContain("2026-09-07")
+        .doesNotContain("2026-09-08");
   }
 
   @Test

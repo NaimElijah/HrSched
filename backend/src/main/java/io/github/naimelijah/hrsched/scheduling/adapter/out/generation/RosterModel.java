@@ -132,19 +132,13 @@ final class RosterModel {
   }
 
   /**
-   * Every span the model will state in ticks: each shift's start and end from the earliest start,
-   * each of its days' shares, and each rule's threshold.
+   * Every span the model will state in ticks: each shift's length, each of its days' shares, and
+   * each rule's threshold. No instant is stated in ticks, so where a shift sits is never counted.
    */
   private Ticks ticksFor() {
-    Instant origin =
-        request.shifts().stream()
-            .map(shift -> shift.period().start())
-            .min(Comparator.naturalOrder())
-            .orElse(Instant.EPOCH);
     List<Duration> spans = new ArrayList<>();
     for (Shift shift : request.shifts()) {
-      spans.add(Duration.between(origin, shift.period().start()));
-      spans.add(Duration.between(origin, shift.period().end()));
+      spans.add(shift.period().length());
       spans.addAll(days.get(shift.id()).values());
     }
     for (WorkingTimeConstraint rule : request.constraints().constraints()) {
@@ -156,7 +150,7 @@ final class RosterModel {
             case MaximumConsecutiveWorkingDays run -> Duration.ZERO;
           });
     }
-    return Ticks.dividing(origin, spans);
+    return Ticks.dividing(spans);
   }
 
   /** R35: a different shift held on another authoritative roster, running at the same time. */

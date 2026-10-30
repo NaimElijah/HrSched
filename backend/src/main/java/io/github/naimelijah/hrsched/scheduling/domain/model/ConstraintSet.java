@@ -1,8 +1,10 @@
 package io.github.naimelijah.hrsched.scheduling.domain.model;
 
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * The working-time rules one organisation is bound by, at one point in time.
@@ -14,9 +16,13 @@ import java.util.Objects;
  * <p>An empty set enforces nothing. That is a legitimate configuration — an organisation with no
  * statutory constraints, or one still being set up — and not a special case in the code.
  *
+ * <p>It holds at most one rule of each kind (R24). Two would both be enforced, yet read back as one
+ * threshold per kind, so a caller resending what it read would drop one without seeing it.
+ *
  * @param organisation whose rules these are
  * @param version which revision of that organisation's rules this is, starting at one
- * @param constraints the rules themselves, each carrying its own threshold
+ * @param constraints the rules themselves, each carrying its own threshold, at most one of a kind
+ * @throws InvalidConstraintException if the version is below one, or two rules are of one kind
  */
 public record ConstraintSet(
     OrganisationId organisation, int version, List<WorkingTimeConstraint> constraints) {
@@ -27,6 +33,14 @@ public record ConstraintSet(
       throw new InvalidConstraintException("A constraint set version starts at one");
     }
     constraints = List.copyOf(constraints);
+    Set<Class<?>> kinds = new HashSet<>();
+    for (WorkingTimeConstraint constraint : constraints) {
+      if (!kinds.add(constraint.getClass())) {
+        throw new InvalidConstraintException(
+            "A constraint set holds at most one rule of each kind, and %s is given twice"
+                .formatted(constraint.name()));
+      }
+    }
   }
 
   /**

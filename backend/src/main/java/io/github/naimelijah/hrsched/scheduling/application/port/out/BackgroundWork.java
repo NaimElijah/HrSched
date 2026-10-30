@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.scheduling.application.port.out;
 
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationsStoppedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 
 /**
@@ -16,6 +17,7 @@ public interface BackgroundWork {
    * gone by then.
    *
    * @throws TooManyGenerationsException if as many generations as may run at once already are
+   * @throws GenerationsStoppedException if nothing more will run, because the instance is stopping
    */
   void start(Runnable work);
 }

@@ -87,52 +87,78 @@ public class JdbcRosterGenerationRepository implements RosterGenerationRepositor
     }
   }
 
+  /**
+   * One statement, so the row and its violations come from one snapshot. Read in two under READ
+   * COMMITTED, a refusal committing between them would be seen as a refused row with nothing
+   * broken, which cannot be loaded.
+   */
   @Override
   public Optional<RosterGeneration> findById(OrganisationId organisation, GenerationId id) {
-    List<ConstraintViolation> violations =
+    List<GenerationRow> rows =
         jdbc.sql(
                 """
-                SELECT violation.employee_id, violation.constraint_name, violation.detail
-                FROM roster_generation_violation violation
-                JOIN roster_generation generation ON generation.id = violation.generation_id
+                SELECT generation.id, generation.starts_at, generation.ends_at,
+                       generation.requested_at, generation.lost_at, generation.status,
+                       generation.roster_id, generation.finished_at,
+                       violation.employee_id, violation.constraint_name, violation.detail
+                FROM roster_generation generation
+                LEFT JOIN roster_generation_violation violation
+                       ON violation.generation_id = generation.id
                 WHERE generation.organisation_id = :organisation AND generation.id = :id
                 ORDER BY violation.position
                 """)
             .param("organisation", organisation.value())
             .param("id", id.value())
-            .query(
-                (row, rowNumber) ->
-                    new ConstraintViolation(
-                        new EmployeeId(row.getObject("employee_id", UUID.class)),
-                        row.getString("constraint_name"),
-                        row.getString("detail")))
+            .query(JdbcRosterGenerationRepository::toGenerationRow)
             .list();
-    return jdbc.sql(
-            """
-            SELECT id, starts_at, ends_at, requested_at, lost_at, status, roster_id, finished_at
-            FROM roster_generation
-            WHERE organisation_id = :organisation AND id = :id
-            """)
-        .param("organisation", organisation.value())
-        .param("id", id.value())
-        .query((row, rowNumber) -> toGeneration(organisation, row, violations))
-        .optional();
+    if (rows.isEmpty()) {
+      return Optional.empty();
+    }
+    GenerationRow generation = rows.getFirst();
+    return Optional.of(
+        RosterGeneration.restored(
+            generation.id(),
+            organisation,
+            generation.period(),
+            generation.requestedAt(),
+            generation.lostAt(),
+            generation.status(),
+            generation.roster(),
+            rows.stream().flatMap(row -> row.violation().stream()).toList(),
+            generation.finishedAt()));
   }
 
-  private static RosterGeneration toGeneration(
-      OrganisationId organisation, ResultSet row, List<ConstraintViolation> violations)
-      throws SQLException {
-    return RosterGeneration.restored(
+  /** One row of {@link #findById}'s statement: the generation, and one rule it breaks, if any. */
+  private record GenerationRow(
+      GenerationId id,
+      TimeRange period,
+      Instant requestedAt,
+      Instant lostAt,
+      GenerationStatus status,
+      Optional<RosterId> roster,
+      Optional<Instant> finishedAt,
+      Optional<ConstraintViolation> violation) {}
+
+  private static GenerationRow toGenerationRow(ResultSet row, int rowNumber) throws SQLException {
+    UUID employee = row.getObject("employee_id", UUID.class);
+    Optional<ConstraintViolation> violation =
+        employee == null
+            ? Optional.empty()
+            : Optional.of(
+                new ConstraintViolation(
+                    new EmployeeId(employee),
+                    row.getString("constraint_name"),
+                    row.getString("detail")));
+    return new GenerationRow(
         new GenerationId(row.getObject("id", UUID.class)),
-        organisation,
         new TimeRange(instant(row, "starts_at"), instant(row, "ends_at")),
         instant(row, "requested_at"),
         instant(row, "lost_at"),
         GenerationStatus.valueOf(row.getString("status")),
         Optional.ofNullable(row.getObject("roster_id", UUID.class)).map(RosterId::new),
-        violations,
         Optional.ofNullable(row.getObject("finished_at", OffsetDateTime.class))
-            .map(OffsetDateTime::toInstant));
+            .map(OffsetDateTime::toInstant),
+        violation);
   }
 
   private static Instant instant(ResultSet row, String column) throws SQLException {

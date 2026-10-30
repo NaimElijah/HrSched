@@ -9,7 +9,9 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationsStoppedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
@@ -37,6 +39,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +59,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.method.annotation.ExceptionHandlerMethodResolver;
 
 /**
  * Specification of which scheduling failure earns which status.
@@ -206,9 +210,10 @@ class SchedulingExceptionHandlerTest {
   }
 
   /**
-   * Called directly, the method renders whatever it is handed; Spring routes it only the types its
-   * annotation names. So each row is also one of those, or it could pass above and still reach a
-   * client as a 500.
+   * Called directly, the method renders whatever it is handed; Spring routes it the types its
+   * annotation names, and also an exception no handler names whose cause is one of them, as it
+   * resolves by the cause next. So each row is also one of the named types, or it could pass above
+   * and still reach a client as a 500.
    */
   @ParameterizedTest
   @MethodSource("invalidInput")
@@ -323,12 +328,28 @@ class SchedulingExceptionHandlerTest {
   }
 
   @Test
-  void GivenARosterThatCannotBeChecked_WhenTranslated_ThenItIsCountedApart() {
+  void GivenAPublicationOfARosterThatCannotBeChecked_WhenTranslated_ThenItIsCountedApart() {
     handler.handleNotVerifiable(
-        new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()));
+        new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()).refusingPublication());
 
     assertThat(refused("not_verifiable")).isEqualTo(1.0);
     assertThat(refused("not_compliant")).isZero();
+  }
+
+  /**
+   * #134: assigning, assessing a draft and reading one's own schedule refuse the same way when a
+   * shift cannot be resolved, and answer the same, but nothing was published, so nothing is counted
+   * as a refused publication.
+   */
+  @Test
+  void
+      GivenARosterThatCannotBeCheckedOutsidePublication_WhenTranslated_ThenNoPublicationIsRefused() {
+    ProblemDetail problem =
+        handler.handleNotVerifiable(
+            new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY.value());
+    assertThat(refused("not_verifiable")).isZero();
   }
 
   /**
@@ -354,6 +375,33 @@ class SchedulingExceptionHandlerTest {
         .isEqualTo(conflict.getMessage())
         .doesNotContain("what the store said")
         .doesNotContain(replacement.value().toString());
+  }
+
+  /**
+   * #238: a revision of the rules that lost a race is a conflict too, rather than the 500 the
+   * store's own exception became. The store's words stay out of the response, and nothing is
+   * logged: losing a race is ordinary. The handler is found as Spring finds it, from the exception
+   * and its cause, so a refusal routed elsewhere fails here.
+   */
+  @Test
+  void GivenARevisionOfTheRulesThatLostARace_WhenTranslated_ThenItIsAConflictSayingWhatToDo()
+      throws Exception {
+    ConstraintsRevisedConcurrentlyException conflict =
+        new ConstraintsRevisedConcurrentlyException(
+            2, new IllegalStateException("what the store said"));
+    Method routed =
+        new ExceptionHandlerMethodResolver(SchedulingExceptionHandler.class)
+            .resolveMethodByThrowable(conflict);
+    assertThat(routed).describedAs("the handler Spring routes the conflict to").isNotNull();
+
+    ProblemDetail problem = (ProblemDetail) routed.invoke(handler, conflict);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getTitle()).isEqualTo("Revised concurrently");
+    assertThat(problem.getDetail())
+        .isEqualTo(conflict.getMessage())
+        .doesNotContain("what the store said");
+    assertThat(captured.list).isEmpty();
   }
 
   @Test
@@ -419,14 +467,29 @@ class SchedulingExceptionHandlerTest {
    * The roster and the shift stay out of the line: what to look at is in the 422 the caller got.
    */
   @Test
-  void GivenARosterThatCannotBeChecked_WhenTranslated_ThenItIsLoggedAtWarnCarryingNoFields() {
+  void
+      GivenAPublicationOfARosterThatCannotBeChecked_WhenTranslated_ThenItIsLoggedAtWarnBareOfFields() {
+    handler.handleNotVerifiable(
+        new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()).refusingPublication());
+
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage())
+        .isEqualTo("Publication refused: the roster names work that cannot be checked");
+    assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
+  }
+
+  /** As a refused publication is, but not called one (#134). */
+  @Test
+  void
+      GivenARosterThatCannotBeCheckedOutsidePublication_WhenTranslated_ThenItIsLoggedBareOfFields() {
     handler.handleNotVerifiable(
         new RosterNotVerifiableException(RosterId.newId(), ShiftId.newId()));
 
     ILoggingEvent logged = onlyEvent();
     assertThat(logged.getLevel()).isEqualTo(Level.WARN);
     assertThat(logged.getFormattedMessage())
-        .isEqualTo("Publication refused: the roster names work that cannot be checked");
+        .isEqualTo("Refused: the roster names work that cannot be checked");
     assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
   }
 
@@ -468,6 +531,36 @@ class SchedulingExceptionHandlerTest {
     assertThat(logged.getLevel()).isEqualTo(Level.WARN);
     assertThat(logged.getFormattedMessage()).isEqualTo("Generation refused: every run is busy");
     assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
+  }
+
+  /**
+   * A runner that has stopped is not saturation: the caller is told 503 and to ask again, the line
+   * says nothing about runs being busy, and the busy counter is not moved. The handler is found as
+   * Spring finds it, from the exception, so a refusal routed to nothing fails here rather than
+   * reaching the caller as a 500.
+   */
+  @Test
+  void GivenAStoppedRunnersRefusal_WhenSpringRoutesIt_ThenItIsUnavailableAndNotCountedAsBusy()
+      throws Exception {
+    GenerationsStoppedException stopped =
+        new GenerationsStoppedException(new IllegalStateException("what the pool said"));
+    Method routed =
+        new ExceptionHandlerMethodResolver(SchedulingExceptionHandler.class)
+            .resolveMethodByThrowable(stopped);
+    assertThat(routed).describedAs("the handler Spring routes the refusal to").isNotNull();
+
+    ProblemDetail problem = (ProblemDetail) routed.invoke(handler, stopped);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE.value());
+    assertThat(problem.getDetail())
+        .isEqualTo(stopped.getMessage())
+        .contains("ask again")
+        .doesNotContain("what the pool said");
+    ILoggingEvent logged = onlyEvent();
+    assertThat(logged.getLevel()).isEqualTo(Level.WARN);
+    assertThat(logged.getFormattedMessage()).doesNotContain("busy");
+    assertThat(logged.getKeyValuePairs()).isNullOrEmpty();
+    assertThat(meters.find("hrsched.generations.busy").counter()).isNull();
   }
 
   /** A miss is not an incident: logging every 404 would bury the ones that are. */

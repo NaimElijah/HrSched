@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
@@ -54,7 +55,7 @@ class GenerationRequestTest {
   }
 
   private static RosterCandidate candidate(EmployeeId id) {
-    return new RosterCandidate(id, "Ada", Set.of(), List.of(), StatedPreferences.none());
+    return new RosterCandidate(id, Set.of(), List.of(), StatedPreferences.none());
   }
 
   private static Stream<ThrowingCallable> nullFields() {
@@ -232,5 +233,48 @@ class GenerationRequestTest {
 
     assertThat(request.shifts()).containsExactly(MONDAY);
     assertThat(request.candidates()).hasSize(1);
+  }
+
+  /**
+   * The request carries every candidate, with their absence and what they said about when they
+   * would like to work, and the work they hold on other rosters. Printed, it says how much it
+   * carries and names nobody, and no span of anybody's time.
+   */
+  @Test
+  void GivenACandidateWithAbsenceAndPreferences_WhenTheRequestIsPrinted_ThenItNamesNoneOfIt() {
+    TimeRange away =
+        new TimeRange(Instant.parse("2026-10-06T08:00:00Z"), Instant.parse("2026-10-06T16:00:00Z"));
+    TimeRange wished =
+        new TimeRange(Instant.parse("2026-10-07T08:00:00Z"), Instant.parse("2026-10-07T16:00:00Z"));
+    EmployeeId holder = EmployeeId.newId();
+    HeldWork elsewhere =
+        new HeldWork(
+            RosterId.newId(),
+            ShiftId.newId(),
+            holder,
+            new TimeRange(
+                Instant.parse("2026-10-08T08:00:00Z"), Instant.parse("2026-10-08T16:00:00Z")));
+    Roster draft = emptyDraft();
+    GenerationRequest request =
+        new GenerationRequest(
+            draft,
+            List.of(MONDAY),
+            List.of(
+                new RosterCandidate(
+                    EmployeeId.newId(),
+                    Set.of(),
+                    List.of(away),
+                    new StatedPreferences(List.of(wished), List.of()))),
+            ConstraintSet.initial(ACME),
+            List.of(elsewhere),
+            NONE,
+            List.of());
+
+    assertThat(request.toString())
+        .contains(draft.id().value().toString())
+        .doesNotContain("2026-10-06")
+        .doesNotContain("2026-10-07")
+        .doesNotContain("2026-10-08")
+        .doesNotContain(holder.value().toString());
   }
 }

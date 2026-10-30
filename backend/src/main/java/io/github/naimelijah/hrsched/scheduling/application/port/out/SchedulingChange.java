@@ -26,8 +26,10 @@ public enum SchedulingChange {
 
   /**
    * A draft was asked for, to be generated in the background (ADR-046). The subject is the
-   * generation. It ends as ROSTER_GENERATED, as GENERATION_REFUSED, or failed, which is a defect
-   * logged where it happened.
+   * generation. It ends as ROSTER_GENERATED or as GENERATION_REFUSED, or with nothing more recorded
+   * here: failed, because the solve met a defect, logged where it happened, or because every run
+   * was busy or the instance was stopping, either of which the request asking for it is refused for
+   * at once; or lost, because the instance solving it stopped.
    */
   GENERATION_REQUESTED,
 
