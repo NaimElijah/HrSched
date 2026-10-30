@@ -101,8 +101,9 @@ These rules hold this together, and each fails the build when broken:
 depends only on an allow-list of the JDK, SLF4J and HrSched's own core; neither the domain nor the
 application layer does I/O through the JDK; every class of a context sits in one of its layers;
 only the `@Configuration` wiring sees inside a context; every `@RestController` is handled by its
-own context's exception handler; and every repository and directory method but a save takes an
-`OrganisationId`, bar those named in `UNSCOPED_LOOKUPS`.
+own context's exception handler; the root package holds only `HrSchedApplication`; and every
+repository and directory method but a save takes an `OrganisationId`, bar those named in
+`UNSCOPED_LOOKUPS`.
 
 ## Components
 

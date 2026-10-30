@@ -51,6 +51,13 @@ final class ContextPackages {
   }
 
   /**
+   * @return the root package itself, whose direct subpackages are the contexts
+   */
+  String root() {
+    return rootPrefix.substring(0, rootPrefix.length() - 1);
+  }
+
+  /**
    * @return an ArchUnit slice pattern capturing each top-level package under the root, contexts and
    *     the packages that are not one alike
    */

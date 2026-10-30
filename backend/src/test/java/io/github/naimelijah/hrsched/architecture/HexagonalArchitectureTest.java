@@ -22,6 +22,7 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import io.github.naimelijah.hrsched.HrSchedApplication;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.SessionRepository;
@@ -802,6 +803,36 @@ class HexagonalArchitectureTest {
               }
             })
         .because("a class outside every layer escapes every rule written against the layers");
+  }
+
+  /**
+   * Only {@code HrSchedApplication} resides in the root package.
+   *
+   * <p>A class in {@code io.github.naimelijah.hrsched} itself belongs to no context, is not in the
+   * composition root, sits in no layer and in no slice of either cycle rule, so every rule here
+   * passes it by: a {@code RosterTranslator} there could reach into two contexts' domains with the
+   * build green. It is the back door {@link #only_the_wiring_sees_inside_a_context} closes in
+   * {@code configuration} and {@link #every_class_in_a_context_is_in_a_layer} closes in a context.
+   * {@code HexagonalArchitectureRulesTest} watches it reject a class beside a stand-in entry point,
+   * and permit the entry point alone.
+   */
+  @ArchTest
+  static final ArchRule only_the_entry_point_resides_in_the_root_package =
+      onlyTheEntryPointResidesInTheRootPackage(ContextPackages.HRSCHED, HrSchedApplication.class);
+
+  /**
+   * @param packages where the root package is; {@link ContextPackages#HRSCHED} for the build's rule
+   * @param entryPoint the one class allowed there; {@code HrSchedApplication} for the build's rule
+   * @return the root-package rule over that root
+   */
+  static ArchRule onlyTheEntryPointResidesInTheRootPackage(
+      ContextPackages packages, Class<?> entryPoint) {
+    return classes()
+        .that()
+        .resideInAPackage(packages.root())
+        .should()
+        .be(entryPoint)
+        .because("a class in the root package belongs to no context, and no rule looks at it");
   }
 
   /**

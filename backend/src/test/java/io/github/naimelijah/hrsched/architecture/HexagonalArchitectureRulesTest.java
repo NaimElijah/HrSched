@@ -13,6 +13,8 @@ import io.github.naimelijah.hrsched.HrSchedApplication;
 import io.github.naimelijah.hrsched.access.application.service.SessionService;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.architecture.HexagonalArchitectureTest.UnscopedLookup;
+import io.github.naimelijah.hrsched.architecture.fixtures.FixtureApplication;
+import io.github.naimelijah.hrsched.architecture.fixtures.RosterTranslator;
 import io.github.naimelijah.hrsched.architecture.fixtures.actors.AsksAnAccountForItsActor;
 import io.github.naimelijah.hrsched.architecture.fixtures.actors.BuildsATenantActor;
 import io.github.naimelijah.hrsched.architecture.fixtures.actors.BuildsAnOperator;
@@ -545,6 +547,31 @@ class HexagonalArchitectureRulesTest {
             PayslipFormatting.class);
 
     assertViolatedNaming(result, "PayslipFormatting");
+  }
+
+  @Test
+  void
+      GivenAClassBesideTheEntryPointInTheRootPackage_WhenTheRootPackageRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.onlyTheEntryPointResidesInTheRootPackage(
+                FIXTURES, FixtureApplication.class),
+            FixtureApplication.class,
+            RosterTranslator.class);
+
+    assertViolatedNaming(result, "RosterTranslator");
+  }
+
+  @Test
+  void GivenTheEntryPointAloneInTheRootPackage_WhenTheRootPackageRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.onlyTheEntryPointResidesInTheRootPackage(
+                FIXTURES, FixtureApplication.class),
+            FixtureApplication.class,
+            FixturePayslip.class);
+
+    assertHolds(result);
   }
 
   /** One class from each layer, and a kernel class the rule does not ask about. */
