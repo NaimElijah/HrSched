@@ -376,18 +376,45 @@ class JdbcEmployeeRepositoryTest {
   }
 
   /**
+   * R7 is one person's rule: two people may be away at once. The exclusion compares spans only
+   * within one employee, so another tenant's absence, or a colleague's, never refuses a write,
+   * which would otherwise surface as a server error naming nobody the caller can see.
+   */
+  @Test
+  void GivenEmployeesOfTwoOrganisations_WhenEachDeclaresOverlappingSpans_ThenBothAreStored() {
+    Employee ada = employee(ACME, "Ada").unavailableFor(A_FORTNIGHT_OFF).unavailableFor(A_WEEK_OFF);
+    Employee theirs =
+        employee(RIVAL, "Their Employee")
+            .unavailableFor(A_FORTNIGHT_OFF)
+            .unavailableFor(A_WEEK_OFF);
+
+    repository.save(ada);
+    repository.save(theirs);
+
+    assertThat(repository.findById(ACME, ada.id()).orElseThrow().unavailability())
+        .containsExactly(A_FORTNIGHT_OFF, A_WEEK_OFF);
+    assertThat(repository.findById(RIVAL, theirs.id()).orElseThrow().unavailability())
+        .containsExactly(A_FORTNIGHT_OFF, A_WEEK_OFF);
+  }
+
+  /**
    * A save deletes the employee's spans and then inserts the new set, so a new span overlapping one
    * it replaces is never compared with it: the exclusion is checked as each statement runs, and the
    * delete has already run. Withdrawing a span and declaring one overlapping it is a legitimate
-   * change of mind.
+   * change of mind. Saved in one transaction, as a use case saves, so the delete is not committed
+   * before the insert runs.
    */
   @Test
   void GivenAStoredSpan_WhenSavedWithItReplacedByAnOverlappingOne_ThenOnlyTheNewOneIsKept() {
     Employee ada = employee(ACME, "Ada").unavailableFor(A_FORTNIGHT_OFF);
     repository.save(ada);
 
-    repository.save(
-        ada.noLongerUnavailableFor(A_FORTNIGHT_OFF).unavailableFor(OVERLAPPING_THE_FORTNIGHT));
+    new TransactionTemplate(PostgresDatabase.transactions())
+        .executeWithoutResult(
+            status ->
+                repository.save(
+                    ada.noLongerUnavailableFor(A_FORTNIGHT_OFF)
+                        .unavailableFor(OVERLAPPING_THE_FORTNIGHT)));
 
     assertThat(repository.findById(ACME, ada.id()).orElseThrow().unavailability())
         .containsExactly(OVERLAPPING_THE_FORTNIGHT);
