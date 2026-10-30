@@ -5,6 +5,8 @@ import { App } from '../App';
 import { currentAccessToken, endSession } from '../api/session';
 import type { Session } from '../api/session';
 import { SessionProvider } from './SessionProvider';
+import { routeTo } from '../test-support/routeTo';
+import type { Answer } from '../test-support/routeTo';
 import { A_TENANT } from '../test-support/session';
 import { WITHOUT_PAUSES } from '../test-support/typing';
 
@@ -21,26 +23,15 @@ import { WITHOUT_PAUSES } from '../test-support/typing';
 
 const PASSWORD = 'an invented password for a test';
 
-interface Answer {
-  readonly status: number;
-  readonly body: unknown;
-}
+/** What the shell reads once somebody is signed in, answered empty unless a test says otherwise. */
+const THE_SHELL: Readonly<Record<string, Answer>> = {
+  '/api/employees': { status: 200, body: [] },
+  '/api/qualifications': { status: 200, body: [] },
+};
 
-/** Routes the handshake and whatever else a test names, and lets the answers change mid-test. */
-function serving(answers: () => Record<string, Answer>) {
-  const stub = vi.fn((path: string, init?: RequestInit) => {
-    const table = answers();
-    const answer: Answer = table[`${init?.method ?? 'GET'} ${path}`] ??
-      table[path] ?? { status: 200, body: [] };
-    return Promise.resolve({
-      ok: answer.status < 400,
-      status: answer.status,
-      headers: new Headers(),
-      text: () => Promise.resolve(answer.body === null ? '' : JSON.stringify(answer.body)),
-    });
-  });
-  vi.stubGlobal('fetch', stub);
-  return stub;
+/** Routes the handshake, the shell, and whatever else a test names, with `routeTo`'s strictness. */
+function serving(answers: Readonly<Record<string, Answer>>) {
+  return routeTo({ ...THE_SHELL, ...answers });
 }
 
 function signedInBody(session: Session = A_TENANT) {
@@ -67,11 +58,11 @@ afterEach(() => {
 
 describe('signing in', () => {
   it('GivenTheRightCredentials_WhenSigningIn_ThenTheShellIsShown', async () => {
-    serving(() => ({
+    serving({
       'POST /api/auth/refresh': NO_COOKIE,
       'POST /api/auth/sign-in': { status: 200, body: signedInBody() },
       '/api/auth/session': { status: 200, body: A_TENANT },
-    }));
+    });
     show();
 
     await userEvent.type(
@@ -86,11 +77,11 @@ describe('signing in', () => {
   });
 
   it('GivenTheTypedCredentials_WhenSigningIn_ThenExactlyThoseAreSent', async () => {
-    const stub = serving(() => ({
+    const stub = serving({
       'POST /api/auth/refresh': NO_COOKIE,
       'POST /api/auth/sign-in': { status: 200, body: signedInBody() },
       '/api/auth/session': { status: 200, body: A_TENANT },
-    }));
+    });
     show();
 
     await userEvent.type(
@@ -117,13 +108,13 @@ describe('signing in', () => {
    * identically, and this screen must not undo that by guessing at something friendlier.
    */
   it('GivenASignInRefused_WhenShown_ThenItDoesNotSayWhetherTheAccountExists', async () => {
-    serving(() => ({
+    serving({
       'POST /api/auth/refresh': NO_COOKIE,
       'POST /api/auth/sign-in': {
         status: 401,
         body: { title: 'Sign-in refused', detail: 'Those credentials were not accepted.' },
       },
-    }));
+    });
     show();
 
     await userEvent.type(
@@ -142,11 +133,11 @@ describe('signing in', () => {
 
 describe('signing out', () => {
   it('GivenASignedInUser_WhenSigningOut_ThenTheSignInPageIsShownAndTheTokenIsForgotten', async () => {
-    serving(() => ({
+    serving({
       'POST /api/auth/refresh': { status: 200, body: signedInBody() },
       '/api/auth/session': { status: 200, body: A_TENANT },
       'POST /api/auth/sign-out': { status: 204, body: null },
-    }));
+    });
     show();
     await screen.findByRole('button', { name: 'People' });
 
@@ -159,14 +150,14 @@ describe('signing out', () => {
 
 describe('changing a password', () => {
   it('GivenAChangedPassword_WhenAccepted_ThenTheShellIsShown', async () => {
-    const stub = serving(() => ({
+    const stub = serving({
       'POST /api/auth/refresh': {
         status: 200,
         body: signedInBody({ ...A_TENANT, passwordChangeRequired: true }),
       },
       '/api/auth/session': { status: 200, body: { ...A_TENANT, passwordChangeRequired: true } },
       'POST /api/auth/password': { status: 200, body: signedInBody() },
-    }));
+    });
     show();
     await screen.findByRole('heading', { name: 'Change your password' });
 
@@ -195,13 +186,13 @@ describe('changing a password', () => {
   });
 
   it('GivenTwoNewPasswordsThatDiffer_WhenSubmitted_ThenNothingIsSent', async () => {
-    const stub = serving(() => ({
+    const stub = serving({
       'POST /api/auth/refresh': {
         status: 200,
         body: signedInBody({ ...A_TENANT, passwordChangeRequired: true }),
       },
       '/api/auth/session': { status: 200, body: { ...A_TENANT, passwordChangeRequired: true } },
-    }));
+    });
     show();
     await screen.findByRole('heading', { name: 'Change your password' });
 
@@ -224,7 +215,7 @@ describe('changing a password', () => {
 
   /** The rule is the backend's, and it says so in its own words rather than being repeated here. */
   it('GivenANewPasswordTheBackendRefuses_WhenShown_ThenItsOwnReasonIsDisplayed', async () => {
-    serving(() => ({
+    serving({
       'POST /api/auth/refresh': {
         status: 200,
         body: signedInBody({ ...A_TENANT, passwordChangeRequired: true }),
@@ -234,7 +225,7 @@ describe('changing a password', () => {
         status: 422,
         body: { detail: 'A password must be at least 15 characters long.', reason: 'TOO_SHORT' },
       },
-    }));
+    });
     show();
     await screen.findByRole('heading', { name: 'Change your password' });
 
@@ -250,13 +241,13 @@ describe('changing a password', () => {
 
   /** No field suggests a password, and none carries a default. */
   it('GivenTheChangeScreen_WhenShown_ThenNoPasswordFieldCarriesAValue', async () => {
-    serving(() => ({
+    serving({
       'POST /api/auth/refresh': {
         status: 200,
         body: signedInBody({ ...A_TENANT, passwordChangeRequired: true }),
       },
       '/api/auth/session': { status: 200, body: { ...A_TENANT, passwordChangeRequired: true } },
-    }));
+    });
     show();
 
     await screen.findByRole('heading', { name: 'Change your password' });
@@ -268,23 +259,19 @@ describe('changing a password', () => {
 
 describe('a session that ends underneath somebody', () => {
   it('GivenTheSessionEnds_WhenARequestIsRefused_ThenTheSignInPageIsShown', async () => {
-    let live = true;
-    serving(() =>
-      live
-        ? {
-            'POST /api/auth/refresh': { status: 200, body: signedInBody() },
-            '/api/auth/session': { status: 200, body: A_TENANT },
-          }
-        : {
-            'POST /api/auth/refresh': NO_COOKIE,
-            '/api/employees': NO_COOKIE,
-            '/api/qualifications': NO_COOKIE,
-          },
-    );
+    const server: Record<string, Answer> = {
+      ...THE_SHELL,
+      'POST /api/auth/refresh': { status: 200, body: signedInBody() },
+      '/api/auth/session': { status: 200, body: A_TENANT },
+    };
+    routeTo(server);
     show();
     await screen.findByRole('button', { name: 'People' });
 
-    live = false;
+    // The session ends on the server: from here its refresh and every read are refused.
+    server['POST /api/auth/refresh'] = NO_COOKIE;
+    server['/api/employees'] = NO_COOKIE;
+    server['/api/qualifications'] = NO_COOKIE;
     await userEvent.click(screen.getByRole('button', { name: 'Qualifications' }));
 
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();

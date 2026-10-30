@@ -2,7 +2,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dayLabel, timeLabel } from '../components/localDates';
-import { routeTo } from '../test-support/routeTo';
+import { callsTo, routeTo } from '../test-support/routeTo';
+import type { Answer } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { Inbox } from './Inbox';
 
@@ -47,33 +48,19 @@ function told(kind: string, read = false) {
  * the server says rather than what the page assumed.
  */
 function serving(inbox: ReturnType<typeof told>[], swaps: unknown[] = [SWAP]) {
-  let held = inbox;
-  const stub = vi.fn((path: string, init?: RequestInit) => {
-    const method = init?.method ?? 'GET';
-    let body: unknown = [];
-    let status = 200;
-    if (method === 'POST' && path === '/api/notifications/n-1/read') {
-      held = held.map((notification) => ({ ...notification, read: true }));
-      status = 204;
-      body = null;
-    } else if (path === '/api/notifications') {
-      body = held;
-    } else if (path === '/api/swaps') {
-      body = swaps;
-    } else if (path === '/api/shifts/shift-1') {
-      body = SHIFT;
-    } else {
-      status = 404;
-      body = {};
-    }
-    return Promise.resolve({
-      ok: status < 400,
-      status,
-      headers: new Headers(),
-      text: () => Promise.resolve(body === null ? '' : JSON.stringify(body)),
-    });
+  const stub = routeTo({
+    'POST /api/notifications/n-1/read': { status: 204, body: null },
+    // A getter, so the listing is worked out on each request from the marks received so far.
+    get '/api/notifications'(): Answer {
+      const marked = callsTo(stub, 'POST', '/api/notifications/n-1/read').length > 0;
+      return {
+        status: 200,
+        body: marked ? inbox.map((notification) => ({ ...notification, read: true })) : inbox,
+      };
+    },
+    '/api/swaps': { status: 200, body: swaps },
+    '/api/shifts/shift-1': { status: 200, body: SHIFT },
   });
-  vi.stubGlobal('fetch', stub);
   return stub;
 }
 
