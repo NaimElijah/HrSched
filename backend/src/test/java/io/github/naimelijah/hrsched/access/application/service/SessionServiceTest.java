@@ -743,8 +743,9 @@ class SessionServiceTest {
   }
 
   /**
-   * Remembers the sessions it was asked to start and the revocations it was asked to make, and lets
-   * a test say that the conditional update found nothing to change.
+   * Remembers the sessions it was asked to start, the revocations it was asked to make, each
+   * account whose every session it was asked to end, and when each successor token it issued
+   * expires; and lets a test say that the conditional update found nothing to change.
    *
    * <p>That last part is the only way to reach the race the real adapter guards against: two
    * refreshes holding one token, where the database awards the exchange to one of them. Here the
