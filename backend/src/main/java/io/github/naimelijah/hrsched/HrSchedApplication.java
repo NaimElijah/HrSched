@@ -12,8 +12,10 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
  * dependency direction this preserves.
  *
  * <p>{@code @ConfigurationPropertiesScan} is here rather than on a configuration class because the
- * property records it binds live beside the adapters that read them, which is where knowledge of a
- * setting belongs. It binds types; it does not reference them, so the dependency rule is untouched.
+ * property records it binds live in more than one package: beside the adapter that reads one, or in
+ * {@code configuration} for one the composition root turns into a domain policy or one that only
+ * guards a value handed to the framework. Scanning from the root finds them all. It binds types; it
+ * does not reference them, so the dependency rule is untouched.
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan

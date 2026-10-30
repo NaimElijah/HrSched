@@ -4,7 +4,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Identity of a {@link User}.
+ * Identity of an {@code Account}.
  *
  * <p>Distinct from an employee identity on purpose: not every user is rostered, and not every
  * rostered person necessarily logs in.
