@@ -21,10 +21,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  *
  * <p>Each case starts the whole application, because the limit is only a property until the
  * application binds it, and no lighter context can say whether a full start refuses it. That costs
- * a context per case, so there are three: zero, a negative number, and the control. The control
- * starts the same way with a positive limit, so a refusal below is the value's doing and not the
- * harness's. A refusal must also be the limit's own: a start that failed for any other reason would
- * throw too, so the root cause is held to the one {@code RequestBodyLimitProperties} raises.
+ * a context per case, so there are four: zero, a negative number, one too large for the form limit,
+ * and the control. The control starts the same way with a positive limit, so a refusal below is the
+ * value's doing and not the harness's. A refusal must also be the limit's own: a start that failed
+ * for any other reason would throw too, so the root cause is held to the one {@code
+ * RequestBodyLimitProperties} raises.
  *
  * <p>The suite's database is handed over as plain datasource properties. These contexts are closed
  * as soon as they start, which leaves the database running only because nothing in them holds the
@@ -53,6 +54,21 @@ class JsonDocumentLimitStartupTest {
   void GivenANegativeLimit_WhenTheApplicationStarts_ThenStartupFails() {
     assertThatThrownBy(() -> startWithLimit("-1"))
         .describedAs("starting with %s=-1", LIMIT)
+        .rootCause()
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(LIMIT);
+  }
+
+  /**
+   * The same value is the server's form limit, which Boot narrows to an {@code int}: one byte over
+   * {@link Integer#MAX_VALUE} wraps to a negative number, which Tomcat reads as no limit at all.
+   */
+  @Test
+  void GivenALimitBeyondWhatTheFormLimitCanHold_WhenTheApplicationStarts_ThenStartupFails() {
+    String beyond = Long.toString(Integer.MAX_VALUE + 1L);
+
+    assertThatThrownBy(() -> startWithLimit(beyond))
+        .describedAs("starting with %s=%s", LIMIT, beyond)
         .rootCause()
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining(LIMIT);
