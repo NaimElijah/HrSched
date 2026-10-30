@@ -379,30 +379,29 @@ class SchedulingExceptionHandlerTest {
 
   /**
    * #238: a revision of the rules that lost a race is a conflict too, rather than the 500 the
-   * store's own exception became. The store's words stay out of the response. Checked as Spring
-   * routes it as well, since calling the method directly would pass whatever its annotation said.
+   * store's own exception became. The store's words stay out of the response, and nothing is
+   * logged: losing a race is ordinary. The handler is found as Spring finds it, from the exception
+   * and its cause, so a refusal routed elsewhere fails here.
    */
   @Test
   void GivenARevisionOfTheRulesThatLostARace_WhenTranslated_ThenItIsAConflictSayingWhatToDo()
-      throws NoSuchMethodException {
+      throws Exception {
     ConstraintsRevisedConcurrentlyException conflict =
         new ConstraintsRevisedConcurrentlyException(
             2, new IllegalStateException("what the store said"));
+    Method routed =
+        new ExceptionHandlerMethodResolver(SchedulingExceptionHandler.class)
+            .resolveMethodByThrowable(conflict);
+    assertThat(routed).describedAs("the handler Spring routes the conflict to").isNotNull();
 
-    ProblemDetail problem = handler.handleRevisedConcurrently(conflict);
+    ProblemDetail problem = (ProblemDetail) routed.invoke(handler, conflict);
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getTitle()).isEqualTo("Revised concurrently");
     assertThat(problem.getDetail())
         .isEqualTo(conflict.getMessage())
         .doesNotContain("what the store said");
-    assertThat(
-            SchedulingExceptionHandler.class
-                .getMethod(
-                    "handleRevisedConcurrently", ConstraintsRevisedConcurrentlyException.class)
-                .getAnnotation(ExceptionHandler.class)
-                .value())
-        .containsExactly(ConstraintsRevisedConcurrentlyException.class);
+    assertThat(captured.list).isEmpty();
   }
 
   @Test

@@ -2491,7 +2491,12 @@ class SchedulingServiceTest {
     rosters.save(thisWeek);
 
     assertThatThrownBy(() -> service.publish(scheduler(ACME), ACME, thisWeek.id()))
-        .isInstanceOf(RosterNotVerifiableException.class);
+        .isInstanceOfSatisfying(
+            RosterNotVerifiableException.class,
+            refused ->
+                assertThat(refused.refusedPublication())
+                    .describedAs("a refused publication, counted as one (#134)")
+                    .isTrue());
 
     assertThat(rosters.byId(thisWeek.id()).status()).isEqualTo(RosterStatus.DRAFT);
   }
