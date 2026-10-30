@@ -12,17 +12,24 @@ sees the file.
 
 `frontend/` is a React 19 SPA built by Vite (ADR-013):
 
-- `src/api/` — the typed client. `client.ts` is the **only** module that calls `fetch` or names a
-  header. Every request carries the bearer token except refresh and sign-out, whose credential is
-  the refresh cookie plus `X-Requested-With` (ADR-028). `session.ts` holds the access token in
-  memory; `problem.ts` validates the error body rather than casting it; `scheduling.ts`,
-  `workforce.ts`, `access.ts` and `notifications.ts` mirror the backend DTOs, one module per
-  context.
+- `src/api/` — the typed client. `client.ts` is the **only** module that calls `fetch` (lint
+  refuses it anywhere else) or names a header. Every request carries the bearer
+  token except refresh and sign-out, whose credential is the refresh cookie plus
+  `X-Requested-With` (ADR-028). `session.ts` holds the access token in memory; `problem.ts`
+  validates the error body rather than casting it; `scheduling.ts`, `workforce.ts`, `access.ts`
+  and `notifications.ts` mirror the backend DTOs, one module per context.
 - `src/auth/` — `SessionProvider` and the sign-in, change-password and session-bar screens
   (ADR-011, ADR-028).
-- `src/pages/` — one screen per capability. Pages never call `fetch` directly.
-- `src/components/` — what several pages share: `ErrorBoundary`, `Feedback`, `useAsync`,
-  `localDates`.
+- `src/pages/` — the screens, one `*Page` per capability, and the parts of a screen:
+  `RosterBoard`, `ApprovingRules` and `ObjectiveScores` belong to `RostersPage`, `Inbox` to
+  `MePage`. A helper only one screen uses stays beside it; once a second screen uses it, it moves
+  to `src/components/`. Pages never call `fetch` directly.
+- `src/components/` — what several screens share: `ErrorBoundary`, `Feedback`, `useAsync`,
+  `localDates`, `useShiftsById`, `swapStatus`, and the wording tables `ruleFields` and
+  `objectiveFields`. It imports `src/api` only. The folders depend one way,
+  `api ← components ← auth ← pages`, so a shared hook that needs the session takes it from its
+  caller; lint refuses an import against the direction, and production code importing
+  `src/test-support/`.
 - `src/test-support/` — `routeTo` replaces `fetch` with a router that answers anything unmatched
   with a 404. A `METHOD path` key answers that method at exactly that path, and a bare path only a
   GET there, so a write to the wrong endpoint is refused. `renderSignedIn` renders a screen as

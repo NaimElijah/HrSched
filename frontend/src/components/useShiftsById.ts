@@ -1,7 +1,6 @@
 import { scheduling } from '../api/scheduling';
 import type { Shift } from '../api/scheduling';
-import { useSessionKey } from '../auth/SessionProvider';
-import { useAsync } from '../components/useAsync';
+import { useAsync } from './useAsync';
 
 /**
  * Reads the shifts with the given identities, for a screen that knows shifts only by identity — a
@@ -14,14 +13,20 @@ import { useAsync } from '../components/useAsync';
  * The reads settle independently: a shift that cannot be read costs its own row its time, not every
  * row, and the failure is still returned to be shown.
  *
+ * The session key comes from the calling screen rather than from `auth`, because `auth` already
+ * draws on `components` and the two folders would otherwise depend on each other.
+ *
  * @param ids the shifts wanted; a repeated identity is read once
+ * @param sessionKey the caller's `useSessionKey()`, so a new session reads the shifts again
  * @returns the shifts read, by identity, and the first failure among the reads, if there was one
  */
-export function useShiftsById(ids: readonly string[]): {
+export function useShiftsById(
+  ids: readonly string[],
+  sessionKey: string,
+): {
   readonly byId: ReadonlyMap<string, Shift>;
   readonly error: unknown;
 } {
-  const sessionKey = useSessionKey();
   const wanted = [...new Set(ids)].sort();
   const reads = useAsync(
     () => Promise.allSettled(wanted.map((id) => scheduling.findShift(id))),

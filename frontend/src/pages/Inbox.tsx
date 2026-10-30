@@ -7,8 +7,8 @@ import { Busy, Failure } from '../components/Feedback';
 import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
-import { SWAP_STATUS } from './swapStatus';
-import { useShiftsById } from './useShiftsById';
+import { SWAP_STATUS } from '../components/swapStatus';
+import { useShiftsById } from '../components/useShiftsById';
 
 /**
  * The words for each kind of notification.
@@ -64,6 +64,7 @@ export function Inbox({
       const swap = swapById.get(notification.subject);
       return swap === undefined ? [] : [swap.shift];
     }),
+    sessionKey,
   );
 
   async function markRead(notification: Notification) {

@@ -1,6 +1,15 @@
 # ADR-024: Answer a request Spring cannot bind with a problem detail, from one fallback handler
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** `ActorFromHeaders`, which the text says gives a blank header the
+    "Invalid request" title, no longer exists: the actor comes from the access token
+    ([ADR-011](ADR-011-issue-our-own-access-tokens.md)), so there is no identity header to be
+    blank. `RequestBindingExceptionHandler` keeps the title.
+  - **Amended 2026-10-30:** "Nothing in this repository sends" a 415 no longer holds:
+    [ADR-053](ADR-053-bound-a-request-body-and-accept-only-utf-8-json.md) refuses JSON declared in
+    a charset other than UTF-8 with a 415, and the problem detail is written by
+    `JsonCharsetFilter`. That is the only 415 this repository sends. A multipart body also gets a
+    415, but it is Spring's default, with Spring's default body.
 - **Date:** 2026-09-14
 
 ## Context

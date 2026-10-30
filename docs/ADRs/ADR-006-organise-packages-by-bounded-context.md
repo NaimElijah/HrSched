@@ -1,6 +1,15 @@
 # ADR-006: Organise packages by bounded context, not by layer
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** "Contexts may not depend on each other" is replaced by
+    [ADR-008](ADR-008-context-integration.md): a context may reference another context's
+    `application.port.in` package and nothing else. "No `shared/` package is created" is replaced
+    by the same record, which adds the shared kernel `shared.domain.model`. The rest stands.
+  - **Erratum 2026-10-30:** `packages_are_free_of_cycles`, under Consequences, should read
+    `contexts_are_free_of_cycles` in `HexagonalArchitectureTest`. The rule named here was deleted
+    before this record merged (967215b). The one that now catches a cycle between contexts slices
+    every top-level package, the kernel and `configuration` included.
+    `layers_within_a_context_are_free_of_cycles` stands as described.
 - **Date:** 2026-08-29
 
 ## Context

@@ -1,5 +1,5 @@
 import type { ObjectiveScore } from '../api/scheduling';
-import { OBJECTIVE_FIELDS } from './objectiveFields';
+import { OBJECTIVE_FIELDS } from '../components/objectiveFields';
 
 /**
  * How a draft measures on each objective, and the weight the organisation puts on it (F34,

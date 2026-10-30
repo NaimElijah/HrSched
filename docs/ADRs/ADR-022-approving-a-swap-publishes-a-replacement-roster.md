@@ -1,6 +1,12 @@
 # ADR-022: Approve a swap by publishing a replacement roster, never by editing one
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** [ADR-023](ADR-023-the-transaction-boundary-is-the-use-case.md) made
+    each use case one transaction, so a refused approval leaves no draft behind and approving a
+    swap is atomic. The first two "Harder" entries no longer hold, as
+    [ADR-039](ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md) also
+    says. Q22 is answered: an employee may offer a transfer or a two-way exchange (F7). The
+    transfer is built, and the exchange is [#82](https://github.com/NaimElijah/HrSched/issues/82).
 - **Date:** 2026-09-01
 
 ## Context

@@ -10,9 +10,10 @@ import org.springframework.stereotype.Component;
 /**
  * Anti-corruption layer between access and workforce.
  *
- * <p>THE ONLY CLASS IN ACCESS PERMITTED TO NAME ANOTHER CONTEXT, and it may name only the published
- * driving port, never the workforce domain (ADR-008). The architecture rules enforce that; this
- * adapter is where the allowance is spent, deliberately, in one place.
+ * <p>THE ONE CLASS IN ACCESS THAT NAMES ANOTHER CONTEXT, and it may name only the published driving
+ * port, never the workforce domain. The architecture rules let only a class in a context's {@code
+ * adapter.out} name another context, and only that port (ADR-008); this adapter is where access
+ * spends the allowance, deliberately, in one place.
  *
  * <p>It narrows an answer rather than translating one. Workforce publishes the employee it finds,
  * name included, because its own screens need that; access needs only whether there is one, so the

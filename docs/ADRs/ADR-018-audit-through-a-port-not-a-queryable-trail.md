@@ -1,6 +1,14 @@
 # ADR-018: Record every change and refusal through a driven port, and build no queryable trail
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:**
+    [ADR-052](ADR-052-record-only-after-every-write-notifications-included.md) replaces where
+    `ROSTER_SUPERSEDED` is recorded: after every write, not "inside the supersede loop". The
+    decision otherwise stands. Two counts have moved, "the two ports" and "the ten that exist":
+    each context has its own `AuditTrail`, and `architecture.md` lists them. Everything the application
+    stores is now in PostgreSQL ([ADR-004](ADR-004-postgresql-behind-the-driven-ports.md)), so
+    "nothing survives a restart" holds only for the trail itself, which is still a log stream. The
+    durable one is Q20, #31.
 - **Date:** 2026-08-30
 
 ## Context

@@ -1,6 +1,10 @@
 # ADR-032: Close the security chain by default, and name every route that is open
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:**
+    [ADR-049](ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md) refuses the
+    `metrics` and `prometheus` endpoints by placing `denyAll` before the actuator `permitAll`. The
+    "anybody" in the `/actuator/**` row now holds for health, liveness, readiness and info only.
 - **Date:** 2026-09-21
 
 ## Context

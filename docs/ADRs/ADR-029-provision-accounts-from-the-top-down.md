@@ -1,6 +1,12 @@
 # ADR-029: Provision accounts from the top down, with temporary passwords, and bootstrap the operator from configuration
 
 - **Status:** Accepted
+  - **Erratum 2026-10-30:** "Q27" for the Admin who is locked out should read Q28. Q27 is the
+    security defaults.
+  - **Amended 2026-10-30:** The operator's row is not the only one besides `organisation` without
+    an `organisation_id`: the session tables carry none either, and
+    [ADR-055](ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md)
+    lists the reads that run without one.
 - **Date:** 2026-09-16
 
 ## Context

@@ -1,6 +1,15 @@
 # ADR-009: Carry tenancy in the domain and enforce it at the application boundary
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** The consequences about an in-memory store and "authentication, which
+    does not exist yet" have moved: every aggregate is stored in PostgreSQL
+    ([ADR-004](ADR-004-postgresql-behind-the-driven-ports.md)), and callers authenticate
+    ([ADR-011](ADR-011-issue-our-own-access-tokens.md)). An `Operator` no longer "may reach any"
+    organisation: [ADR-030](ADR-030-confine-the-operator-to-the-register-of-organisations.md)
+    confines it to the register of organisations, narrowing that sentence and not the decision.
+  - **Amended 2026-10-30:** Not every repository lookup takes an `OrganisationId`: the reads that
+    run before an organisation is known, and the register itself, are listed in
+    [ADR-055](ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md).
 - **Date:** 2026-08-30
 
 ## Context

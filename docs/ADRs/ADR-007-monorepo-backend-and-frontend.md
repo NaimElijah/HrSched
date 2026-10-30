@@ -1,6 +1,17 @@
 # ADR-007: Keep backend and frontend in one repository, as sibling directories
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** `frontend/` now exists
+    ([ADR-013](ADR-013-react-typescript-vite-frontend.md)), so "is not created yet" no longer
+    holds. The missing root command the text accepts as debt is
+    [ADR-014](ADR-014-root-task-runner.md)'s root task runner. Q5 is answered in shape:
+    containerised, with the provider left to its own record (reserved as ADR-035, #153).
+    Dependabot covers `/frontend`, as the text foresaw.
+  - **Amended 2026-10-30:** CI is no longer one backend job. It runs the frontend's own gate and,
+    since [ADR-047](ADR-047-audit-dependencies-in-ci-with-osv-scanner.md), a dependency audit of
+    both projects; `.github/workflows/ci.yml` holds the current set. The text's foresight that a
+    frontend means "a second job or path filters" was answered with a job, and CI has no path
+    filters.
 - **Date:** 2026-08-29
 
 ## Context

@@ -1,6 +1,9 @@
 # ADR-013: Build the frontend on React, TypeScript and Vite, talking to the backend over a dev proxy
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** The counts have moved: the API is larger than "14 endpoints" and the
+    UI than a "six-screen" one. `architecture.md` lists the screens, and `frontend/src/App.tsx`
+    mounts them.
 - **Date:** 2026-08-30
 
 ## Context

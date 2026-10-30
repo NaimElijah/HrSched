@@ -1,6 +1,9 @@
 # ADR-028: Keep the browser session as an in-memory access token and a rotating refresh cookie
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** [ADR-048](ADR-048-keep-a-browsers-tabs-on-one-session.md) extends this
+    record: one browser's tabs share one session over a channel that carries two words. The split
+    between an in-memory access token and a refresh cookie stands, and is ADR-048's premise.
 - **Date:** 2026-09-16
 
 ## Context

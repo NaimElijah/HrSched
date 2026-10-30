@@ -1,6 +1,14 @@
 # ADR-023: Make the use case the transaction boundary, wrapped at the composition root
 
 - **Status:** Accepted
+  - **Amended 2026-10-30:** [ADR-045](ADR-045-generate-outside-the-use-cases-transaction.md) takes
+    generation out of the transaction, as the text foresaw for a real solver. Q20 is answered, so
+    a durable trail is to be built (#31), and
+    [ADR-004](ADR-004-postgresql-behind-the-driven-ports.md) has landed: "blocked on the same
+    ADR-004" no longer holds.
+  - **Amended 2026-10-30:**
+    [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) records what the
+    proxy lets a transaction do: a method named `find…` runs read-only, and any other may write.
 - **Date:** 2026-09-06
 
 ## Context
