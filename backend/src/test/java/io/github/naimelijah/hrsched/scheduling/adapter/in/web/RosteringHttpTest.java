@@ -7,6 +7,7 @@ import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingH
 import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.STUCK_AFTER_SECONDS;
 import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitSomebodyWaitingOn;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -1118,6 +1119,42 @@ class RosteringHttpTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.version").value(1))
         .andExpect(jsonPath("$.constraints.length()").value(0));
+  }
+
+  /**
+   * #96: rules stored with two of a kind, which only a write past the domain could leave, are a
+   * fault in stored data. Reading them is answered by no handler, so the caller gets a 500 and the
+   * failure is logged, rather than a 400 blaming the request. Spring routes an exception by its
+   * cause when its own type has no handler, so the domain's refusal must not travel as one.
+   */
+  @Test
+  void GivenRulesStoredWithTwoOfAKind_WhenReadingThem_ThenNoHandlerAnswersItAsTheCallersMistake()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    jdbc.sql("INSERT INTO constraint_set (organisation_id, version) VALUES (:id, 2)")
+        .param("id", UUID.fromString(organisation))
+        .update();
+    // Invented: two daily caps, of eleven hours and of thirteen.
+    for (int ordinal = 0; ordinal < 2; ordinal++) {
+      jdbc.sql(
+              """
+              INSERT INTO working_time_constraint
+                  (organisation_id, version, ordinal, kind, duration_seconds, day_count)
+              VALUES (:id, 2, :ordinal, 'MAXIMUM_DAILY_WORKING_TIME', :seconds, NULL)
+              """)
+          .param("id", UUID.fromString(organisation))
+          .param("ordinal", ordinal)
+          .param("seconds", TimeUnit.HOURS.toSeconds(11 + 2L * ordinal))
+          .update();
+    }
+
+    Throwable unanswered =
+        catchThrowable(
+            () -> mockMvc.perform(as(mockMvc, get("/api/constraints"), organisation, "ADMIN")));
+
+    assertThat(unanswered)
+        .describedAs("left to the server's error handling, so a 500, not a 400")
+        .hasRootCauseInstanceOf(IllegalStateException.class);
   }
 
   @Test

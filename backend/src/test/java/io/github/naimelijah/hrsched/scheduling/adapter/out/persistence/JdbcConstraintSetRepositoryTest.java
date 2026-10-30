@@ -9,7 +9,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
-import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWorkingDays;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
@@ -122,8 +121,9 @@ class JdbcConstraintSetRepositoryTest {
    * to be built otherwise, so no revision can store two. The schema still permits them (V1), so a
    * set holding two could only have been written past the domain. Read back, it is refused rather
    * than loaded as rules that are not what they say, and refused as a fault in stored data, not as
-   * the caller's mistake: a loud failure naming the set and R24, carrying the domain's refusal
-   * (#96). Whichever way it is read.
+   * the caller's mistake: a loud failure naming the set and saying what the domain refused (#96),
+   * whichever way it is read. It carries no cause, because Spring would route the domain's refusal
+   * as its cause to the 400 handler; {@code RosteringHttpTest} pins that it is answered by none.
    */
   @Test
   void GivenTwoConstraintsOfOneKindStoredPastTheDomain_WhenReadBack_ThenItFailsAsStoredData() {
@@ -150,11 +150,11 @@ class JdbcConstraintSetRepositoryTest {
         .isExactlyInstanceOf(IllegalStateException.class)
         .hasMessageContaining(ACME.value().toString())
         .hasMessageContaining("version 2")
-        .hasMessageContaining("R24")
-        .hasCauseInstanceOf(InvalidConstraintException.class);
+        .hasMessageContaining("maximum daily working time is given twice")
+        .hasNoCause();
     assertThatThrownBy(() -> repository.findVersion(ACME, 2))
         .isExactlyInstanceOf(IllegalStateException.class)
-        .hasCauseInstanceOf(InvalidConstraintException.class);
+        .hasNoCause();
   }
 
   /**

@@ -180,20 +180,22 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
   /**
    * One stored version, rebuilt with its rules.
    *
-   * <p>The schema permits what the domain refuses, two rules of one kind (R24, #96), so a set
-   * written past the domain could be stored. It is a fault in stored data, not the caller's
+   * <p>The schema permits what the domain refuses, such as two rules of one kind (R24, #96), so a
+   * set written past the domain could be stored. It is a fault in stored data, not the caller's
    * mistake, so it fails loudly rather than as the domain's refusal of a request.
    *
-   * @throws IllegalStateException naming the set, if what is stored is no set the domain allows
+   * @throws IllegalStateException naming the set and what the domain refused in it, if what is
+   *     stored is no set the domain allows
    */
   private ConstraintSet rebuilt(OrganisationId organisation, int version) {
     try {
       return new ConstraintSet(organisation, version, constraintsOf(organisation, version));
     } catch (InvalidConstraintException refused) {
+      // The refusal's words are carried, not the refusal: Spring routes an exception its handlers
+      // do not name by its cause, and the domain's refusal of a request is answered 400.
       throw new IllegalStateException(
-          "Stored constraint set version %d of organisation %s breaks R24: it holds two rules of one kind"
-              .formatted(version, organisation.value()),
-          refused);
+          "Stored constraint set version %d of organisation %s is not one the domain allows: %s"
+              .formatted(version, organisation.value(), refused.getMessage()));
     }
   }
 

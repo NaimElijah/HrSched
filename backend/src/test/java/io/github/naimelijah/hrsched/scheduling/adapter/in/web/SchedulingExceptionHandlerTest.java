@@ -210,9 +210,10 @@ class SchedulingExceptionHandlerTest {
   }
 
   /**
-   * Called directly, the method renders whatever it is handed; Spring routes it only the types its
-   * annotation names. So each row is also one of those, or it could pass above and still reach a
-   * client as a 500.
+   * Called directly, the method renders whatever it is handed; Spring routes it the types its
+   * annotation names, and also an exception no handler names whose cause is one of them, as it
+   * resolves by the cause next. So each row is also one of the named types, or it could pass above
+   * and still reach a client as a 500.
    */
   @ParameterizedTest
   @MethodSource("invalidInput")

@@ -17,7 +17,9 @@
     - "Two constraints of the same kind in one set" is no longer something the domain permits:
       `ConstraintSet` refuses it (R24, [#96](https://github.com/NaimElijah/HrSched/issues/96)).
       The schema still permits it, so that invariant is held by the domain alone, and a set stored
-      with two of a kind fails on reading as a fault in stored data, naming the set.
+      with two of a kind fails on reading as a fault in stored data, naming the set. Revising,
+      generating, publishing and reading the rules each read the current set first, so its
+      organisation can do none of them until the rows are fixed by hand.
     - `EXCLUDE` constraints, rejected "in this change", have been adopted:
       [ADR-026](ADR-026-make-overlapping-published-rosters-unrepresentable.md) and
       [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md).
