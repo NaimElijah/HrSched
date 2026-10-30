@@ -361,6 +361,30 @@ describe('a session renewed underneath somebody', () => {
     expect(await screen.findByText(/^ADMIN in/)).toBeInTheDocument();
   });
 
+  /**
+   * What a page loaded was loaded under the old role, the shell's list of colleagues included, and
+   * a demoted account may no longer read it: a changed role reads everything on screen again.
+   */
+  it('GivenARenewalCarryingAChangedRole_WhenItIsHeld_ThenWhatIsOnScreenIsReadAgain', async () => {
+    const routed = await renewedAs(
+      { ...A_TENANT, role: 'ADMIN' },
+      { ...A_TENANT, role: 'SCHEDULER' },
+      '/api/qualifications',
+    );
+    const colleaguesRead = callsTo(routed, 'GET', '/api/employees').length;
+    const qualificationsRead = callsTo(routed, 'GET', '/api/qualifications').length;
+
+    await userEvent.click(screen.getByRole('button', { name: 'Qualifications' }));
+
+    // Refused, retried after the renewal, and read again under the new role.
+    await waitFor(() =>
+      expect(callsTo(routed, 'GET', '/api/qualifications').length).toBeGreaterThanOrEqual(
+        qualificationsRead + 3,
+      ),
+    );
+    expect(callsTo(routed, 'GET', '/api/employees').length).toBeGreaterThan(colleaguesRead);
+  });
+
   /** A password reset by an Admin since sign-in leaves the account able to do one thing only. */
   it('GivenARenewalRequiringAPasswordChange_WhenItIsHeld_ThenOnlyTheChangePasswordScreenIsShown', async () => {
     await renewedAs(A_TENANT, { ...A_TENANT, passwordChangeRequired: true }, '/api/qualifications');
