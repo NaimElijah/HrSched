@@ -7,6 +7,10 @@
     [ADR-020](ADR-020-refuse-a-request-naming-an-unknown-organisation.md), which
     [ADR-031](ADR-031-take-the-organisation-from-the-account.md) superseded. "There is still no
     authentication" no longer holds ([ADR-011](ADR-011-issue-our-own-access-tokens.md)).
+  - **Amended 2026-10-30:** `OrganisationRepository` is no longer the one repository here whose
+    reads are not scoped to a tenant: the credential reads listed in
+    [ADR-055](ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md)
+    are not either.
 - **Date:** 2026-09-01
 
 ## Context
