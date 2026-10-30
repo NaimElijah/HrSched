@@ -473,24 +473,32 @@ class SchedulingServiceTest {
   @Test
   void GivenAnAdmin_WhenPublishingADraft_ThenItIsRefusedAndItStaysADraft() {
     Roster draft = emptyDraft(ACME);
+    rosters.log().forget();
 
     assertThatThrownBy(() -> service.publish(admin(ACME), ACME, draft.id()))
         .isInstanceOf(NotPermittedException.class);
 
     assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
     assertThat(audit.changes()).doesNotContain(SchedulingChange.ROSTER_PUBLISHED);
+    assertThat(rosters.log().calls())
+        .describedAs("refused before the publication lock or any read")
+        .isEmpty();
   }
 
   @Test
   void GivenAnEmployee_WhenPublishingADraft_ThenItIsRefusedAndItStaysADraft() {
     Roster draft = emptyDraft(ACME);
     TenantActor employee = themself(ACME, available(ACME, "Ada"));
+    rosters.log().forget();
 
     assertThatThrownBy(() -> service.publish(employee, ACME, draft.id()))
         .isInstanceOf(NotPermittedException.class);
 
     assertThat(rosters.byId(draft.id()).status()).isEqualTo(RosterStatus.DRAFT);
     assertThat(audit.changes()).doesNotContain(SchedulingChange.ROSTER_PUBLISHED);
+    assertThat(rosters.log().calls())
+        .describedAs("refused before the publication lock or any read")
+        .isEmpty();
   }
 
   @Test
