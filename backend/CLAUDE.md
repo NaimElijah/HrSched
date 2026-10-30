@@ -21,7 +21,8 @@ dependency rule — see ADR-003 and ADR-006. Every context repeats the same shap
   translation) everywhere, and `bootstrap/` and `token/` in access. May use Spring.
 - `<context>/adapter/out/<kind>/` — driven port implementations, one package per thing driven:
   `persistence/` and `audit/` everywhere, `generation/`, `password/` and `token/` where a context
-  needs one, and a package named after another context it consumes. May use Spring. Each
+  needs one, and, for a context that consumes another's published port, a package named for what it
+  consumes: `workforce/`, and `notification/` for the `notifications` context. May use Spring. Each
   `Jdbc*Repository` owns its own SQL; there is deliberately no shared helper package, because
   `ContextPackages` would treat a new top-level package as a bounded context and every context
   touching it would fail the cross-context rule.
@@ -94,8 +95,9 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
   one `V<n>__<rule_in_snake_case>.sql`, opening with a comment giving the rule, ADR and reasoning.
   **Never edit an applied migration**; correct it in the next, as V6 and V8 do. A backfill is
   explicit and invents nothing. An index on a root leads with `organisation_id`; a foreign key
-  stays inside one context. A migration rewriting stored rows gets a test that migrates to the
-  version before, inserts rows as it stored them, then migrates on (see
+  stays inside one context, bar the one every root table has to `organisation (id)`, the tenant
+  register `access` owns (ADR-004). A migration rewriting stored rows gets a test that migrates to
+  the version before, inserts rows as it stored them, then migrates on (see
   `AppendOnlyRosterHistoryMigrationTest`).
 - **Conflicts come from the database, not from version columns.** A use case changing an aggregate
   reads it with `findForUpdate`, so a concurrent change waits and both apply (ADR-041). A published
@@ -166,8 +168,8 @@ them — so JPA would need a parallel annotated model, buying only what an adapt
 
 - **Entities vs value objects.** `Shift` and `Employee` are classes with identity equality,
   because two shifts with the same period — or two people with the same name — are still
-  different things. `ShiftId`, `ShiftPeriod` and `EmployeeId` are records because they *are*
-  their values. Do not turn an entity into a record.
+  different things. `ShiftId`, `EmployeeId` and `TimeRange` (a shift's period) are records because
+  they *are* their values. Do not turn an entity into a record.
 - **Invariants live in constructors,** so illegal states cannot be represented and callers
   never have to check.
 - **No working-time threshold is a constant** — the statute rule in `.claude/CLAUDE.md`.
