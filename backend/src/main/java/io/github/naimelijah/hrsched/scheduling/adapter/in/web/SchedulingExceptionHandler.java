@@ -3,7 +3,9 @@ package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationsStoppedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidObjectiveWeightException;
@@ -153,11 +155,18 @@ public class SchedulingExceptionHandler {
    * A roster naming a shift that cannot be resolved is refused, not published with that work
    * unchecked. Like a rule breach it is a 422: the request was well formed, the roster is not
    * publishable.
+   *
+   * <p>Assigning, assessing a draft and reading one's own schedule refuse the same way, and answer
+   * the same; only a refused publication is counted and logged as one (#134).
    */
   @ExceptionHandler(RosterNotVerifiableException.class)
   public ProblemDetail handleNotVerifiable(RosterNotVerifiableException exception) {
-    log.warn("Publication refused: the roster names work that cannot be checked");
-    count(REFUSED, "reason", "not_verifiable", "Publications refused, by what refused them");
+    if (exception.refusedPublication()) {
+      log.warn("Publication refused: the roster names work that cannot be checked");
+      count(REFUSED, "reason", "not_verifiable", "Publications refused, by what refused them");
+    } else {
+      log.warn("Refused: the roster names work that cannot be checked");
+    }
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Roster cannot be checked against the rules");
@@ -183,6 +192,22 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("Published concurrently");
+    return problem;
+  }
+
+  /**
+   * Two Admins revised the rules at once, and the other's revision was stored first under the
+   * version this one would have taken (#238). A 409 rather than a 400: nothing about the request
+   * was wrong, and reloading the rules and revising again is the remedy. Not logged: revisions do
+   * not take turns, so losing a race is ordinary, and the store refused it before anything was
+   * kept.
+   */
+  @ExceptionHandler(ConstraintsRevisedConcurrentlyException.class)
+  public ProblemDetail handleRevisedConcurrently(
+      ConstraintsRevisedConcurrentlyException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    problem.setTitle("Revised concurrently");
     return problem;
   }
 
@@ -298,6 +323,21 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
     problem.setTitle("Generation is busy");
+    return problem;
+  }
+
+  /**
+   * The instance asked has stopped taking generations, because it is shutting down (ADR-046). A
+   * 503, as a busy instance's is: nothing about the request was wrong, and asking again shortly may
+   * reach one that is not stopping. Not saturation, so the busy counter is left alone and the line
+   * says what happened instead.
+   */
+  @ExceptionHandler(GenerationsStoppedException.class)
+  public ProblemDetail handleGenerationsStopped(GenerationsStoppedException exception) {
+    log.atWarn().log("Generation refused: the instance is shutting down");
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
+    problem.setTitle("Generation is unavailable");
     return problem;
   }
 

@@ -126,6 +126,16 @@ describe('what it is about', () => {
     ).toBeInTheDocument();
   });
 
+  /** A status a newer server sends is named, never rendered as "undefined". Invented for the test. */
+  it('GivenASwapStatusThisBuildDoesNotKnow_WhenRendered_ThenItSaysSoByName', async () => {
+    serving([told('SWAP_REQUESTED')], [{ ...SWAP, status: 'ESCALATED' }]);
+
+    show();
+
+    expect(await screen.findByText(/cannot describe \(ESCALATED\)\.$/)).toBeInTheDocument();
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
+  });
+
   /** A swap the reader may no longer see is not invented; the notification still stands on its own. */
   it('GivenASwapTheReaderCannotSee_WhenRendered_ThenOnlyTheNotificationIsShown', async () => {
     serving([told('SWAP_REQUESTED')], []);

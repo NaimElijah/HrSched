@@ -4,23 +4,34 @@ import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
 
-/** Admin: the qualifications this organisation recognises. Defining one takes an Admin. */
+/**
+ * Admin: the qualifications this organisation recognises. Defining one takes an Admin.
+ *
+ * A qualification cannot be deleted, so a definition is sent once: the button waits for the answer.
+ */
 export function QualificationsPage() {
   const sessionKey = useSessionKey();
   const [name, setName] = useState('');
   const [failure, setFailure] = useState<unknown>(null);
+  const [defining, setDefining] = useState(false);
 
   const qualifications = useAsync(() => workforce.findQualifications(), sessionKey);
 
   async function define(event: React.FormEvent) {
     event.preventDefault();
+    if (defining) {
+      return;
+    }
     setFailure(null);
+    setDefining(true);
     try {
       await workforce.defineQualification(name);
       setName('');
       qualifications.reload();
     } catch (error) {
       setFailure(error);
+    } finally {
+      setDefining(false);
     }
   }
 
@@ -37,7 +48,9 @@ export function QualificationsPage() {
           Name
           <input value={name} onChange={(event) => setName(event.target.value)} required />
         </label>
-        <button type="submit">Define</button>
+        <button type="submit" disabled={defining}>
+          Define
+        </button>
       </form>
 
       <Failure error={failure} />

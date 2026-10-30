@@ -51,11 +51,7 @@ final class FakeWorkforce implements WorkforceDirectory {
     theirs.set(
         at,
         new RosterCandidate(
-            before.id(),
-            before.name(),
-            before.qualifications(),
-            unavailability,
-            before.preferences()));
+            before.id(), before.qualifications(), unavailability, before.preferences()));
   }
 
   void define(OrganisationId organisation, QualificationId qualification) {

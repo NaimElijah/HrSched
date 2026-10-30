@@ -52,7 +52,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-043](ADR-043-defer-typescript-7-until-typescript-eslint-supports-it.md) | Stay on TypeScript 6 until typescript-eslint supports TypeScript 7 | Accepted | 2026-10-20 |
 | [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md) | Generate rosters with CP-SAT from Google OR-Tools | Accepted | 2026-10-22 |
 | [ADR-045](ADR-045-generate-outside-the-use-cases-transaction.md) | Generate outside the use case's transaction, between a read and a write | Accepted | 2026-10-22 |
-| [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) | Generate in the background, and keep each generation in PostgreSQL | Accepted | 2026-10-23 |
+| [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) | Generate in the background, and keep each generation in PostgreSQL | Accepted, amended | 2026-10-23 |
 | [ADR-047](ADR-047-audit-dependencies-in-ci-with-osv-scanner.md) | Audit dependencies for known vulnerabilities in CI with OSV-Scanner | Accepted | 2026-10-27 |
 | [ADR-048](ADR-048-keep-a-browsers-tabs-on-one-session.md) | Keep one browser's tabs on one session, over a channel that carries two words | Accepted | 2026-10-27 |
 | [ADR-049](ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md) | Refuse the metrics endpoints to every caller until a scraper exists | Accepted | 2026-10-27 |
@@ -60,7 +60,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-051](ADR-051-record-why-each-frontend-dependency-is-there.md) | Record why each frontend dependency is there | Accepted | 2026-10-29 |
 | [ADR-052](ADR-052-record-only-after-every-write-notifications-included.md) | Record an audit line only after every write, a notification included | Accepted | 2026-10-30 |
 | [ADR-053](ADR-053-bound-a-request-body-and-accept-only-utf-8-json.md) | Bound a request body in bytes, and accept nothing but UTF-8 JSON | Accepted | 2026-10-30 |
-| [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) | Run a use case read-only when its name starts with `find` | Accepted | 2026-10-30 |
+| [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) | Run a use case read-only when its name starts with `find` | Accepted, amended | 2026-10-30 |
 | [ADR-055](ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md) | Read an account or a session without an organisation where none is known | Accepted | 2026-10-30 |
 
 ## Decisions waiting to be recorded

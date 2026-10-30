@@ -35,6 +35,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationPolicy;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationsStoppedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.HeldWork;
 import io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ObjectiveWeights;
@@ -101,7 +102,7 @@ public class SchedulingService
 
   /**
    * Building rosters belongs to the Scheduler alone. An Admin manages people, qualifications and
-   * the constraint set — {@link Role#ADMIN} says so, and so does requirements F1/F3/F11/F12.
+   * the constraint set — {@link Role#ADMIN} says so, and so does requirements F1/F3/F11.
    */
   private static final Set<Role> MAY_SCHEDULE = Set.of(Role.SCHEDULER);
 
@@ -224,7 +225,7 @@ public class SchedulingService
   }
 
   @Override
-  public ConstraintSet currentConstraints(Actor actor, OrganisationId organisation) {
+  public ConstraintSet findCurrentConstraints(Actor actor, OrganisationId organisation) {
     actor.requireAccessTo(organisation);
     return currentOrInitial(organisation);
   }
@@ -272,7 +273,8 @@ public class SchedulingService
    * stored in a unit of work of its own, which commits before the solve is handed to a thread, so
    * that thread always finds it. Then this answers, and the solve runs in the background.
    *
-   * <p>One refused because too many are running is stored as failed, so nobody polling it waits.
+   * <p>One refused because too many are running, or because the instance has stopped taking them,
+   * is stored as failed, so nobody polling it waits.
    */
   @Override
   public GenerationState startGeneration(Actor actor, GenerateRosterCommand command) {
@@ -298,13 +300,13 @@ public class SchedulingService
         requested.id().value());
     try {
       background.start(() -> complete(actor, command, requested));
-    } catch (TooManyGenerationsException busy) {
+    } catch (TooManyGenerationsException | GenerationsStoppedException notStarted) {
       units.writing(
           () -> {
             generations.save(requested.failed(clock.instant()));
             return requested;
           });
-      throw busy;
+      throw notStarted;
     }
     return GenerationState.of(requested, clock.instant());
   }
@@ -356,17 +358,21 @@ public class SchedulingService
    * judges it again.
    *
    * @throws IllegalStateException if {@code requested} is lost by the time the solve ends, before
-   *     anything is written (ADR-046)
+   *     anything is written, or by the time its draft is stored, which takes the draft back with it
+   *     (ADR-046)
    */
   private void draftFor(Actor actor, GenerateRosterCommand command, RosterGeneration requested) {
     GenerationRequest request = units.reading(() -> generationRequestFor(actor, command));
 
     Roster draft = generated(request, generator.generate(request));
-    RosterGeneration succeeded = requested.succeeded(draft.id(), clock.instant());
+    // A solve that outlasted the lost-at instant is refused before anything is written.
+    requested.requireEndableAt(clock.instant());
     units.writing(
         () -> {
           rosters.save(draft);
-          generations.save(succeeded);
+          // From the clock as it reads once the draft is stored, so a save outlasting the lost-at
+          // instant leaves the generation lost: the store's guard asks only whether it is pending.
+          generations.save(requested.succeeded(draft.id(), clock.instant()));
           return draft;
         });
     recorded(actor, command.organisation(), SchedulingChange.ROSTER_GENERATED, draft.id().value());
@@ -643,7 +649,7 @@ public class SchedulingService
     List<Roster> existing = rosters.findByOrganisation(organisation);
 
     List<ConstraintViolation> violations =
-        violationsOf(
+        violationsForPublication(
             organisation,
             draft,
             constraints,
@@ -685,6 +691,25 @@ public class SchedulingService
         request ->
             recorded(actor, organisation, SchedulingChange.SWAP_LAPSED, request.id().value()));
     return published;
+  }
+
+  /**
+   * {@link #violationsOf}, refusing a roster that cannot be checked as a refused publication: the
+   * same check refuses an assignment or a read, which are not (#134).
+   *
+   * @throws RosterNotVerifiableException saying it refused a publication
+   */
+  private List<ConstraintViolation> violationsForPublication(
+      OrganisationId organisation,
+      Roster draft,
+      ConstraintSet constraints,
+      List<Roster> existing,
+      List<RosterCandidate> candidates) {
+    try {
+      return violationsOf(organisation, draft, constraints, existing, candidates);
+    } catch (RosterNotVerifiableException unverifiable) {
+      throw unverifiable.refusingPublication();
+    }
   }
 
   /**

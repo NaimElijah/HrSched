@@ -15,6 +15,7 @@ import io.github.naimelijah.hrsched.access.domain.model.UnlinkedEmployeeAccountE
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
+import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -32,9 +33,9 @@ import tools.jackson.core.exc.StreamConstraintsException;
  *
  * <p>There is deliberately no catch-all, so an unexpected failure stays a 500 and stays visible.
  *
- * <p>As in the other two handlers, a cross-tenant attempt returns 404 rather than 403, because a
- * 403 would confirm that the organisation exists. Being refused as "not the operator" is a
- * different thing and is a 403: it discloses nothing, since the caller already knows whether they
+ * <p>As in the other three contexts' handlers, a cross-tenant attempt returns 404 rather than 403,
+ * because a 403 would confirm that the organisation exists. Being refused as "not the operator" is
+ * a different thing and is a 403: it discloses nothing, since the caller already knows whether they
  * claimed to be the operator.
  *
  * <p>It is also where these refusals are recorded, because it is the only place that sees every one
@@ -72,8 +73,9 @@ public class AccessExceptionHandler {
         .increment();
   }
 
-  // InvalidSignInNameException's message names the rule and never the name, so it can be the
-  // detail. Without it here a blank or over-long name escaped every handler and answered 500.
+  // The two invalid-name exceptions' messages name the rule and never the name, so they can be the
+  // detail. Without them here a refused name - blank, over-long, or carrying a NUL or an unpaired
+  // surrogate - would escape every handler and answer 500.
   @ExceptionHandler({
     InvalidOrganisationNameException.class,
     InvalidSignInNameException.class,
@@ -265,6 +267,24 @@ public class AccessExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "Only the platform operator may do this.");
+    problem.setTitle("Not permitted");
+    return problem;
+  }
+
+  /**
+   * A use case refusing the role its actor holds, as account administration refuses anybody but an
+   * Admin. The URL rules refuse such a caller first today; this keeps the use case's own refusal a
+   * 403 rather than a 500 if a rule is ever loosened. The answer never names the role required.
+   */
+  @ExceptionHandler(NotPermittedException.class)
+  public ProblemDetail handleNotPermitted(NotPermittedException exception) {
+    log.atWarn()
+        .addKeyValue("actor", exception.actor().value())
+        .addKeyValue("role", exception.held())
+        .log("Refused: the actor's role does not permit this");
+    denied("role");
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your role does not permit this.");
     problem.setTitle("Not permitted");
     return problem;
   }

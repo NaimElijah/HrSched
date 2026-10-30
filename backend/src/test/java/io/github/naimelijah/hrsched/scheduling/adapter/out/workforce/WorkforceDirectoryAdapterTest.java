@@ -62,8 +62,7 @@ class WorkforceDirectoryAdapterTest {
             ada, "Ada", Set.of(), List.of(), Optional.empty(), List.of(), List.of()));
 
     assertThat(adapter.candidatesFor(scheduler(), ACME))
-        .containsExactly(
-            new RosterCandidate(ada, "Ada", Set.of(), List.of(), StatedPreferences.none()));
+        .containsExactly(new RosterCandidate(ada, Set.of(), List.of(), StatedPreferences.none()));
   }
 
   @Test

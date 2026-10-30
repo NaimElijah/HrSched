@@ -28,9 +28,14 @@ export interface Shortfall {
   readonly shortBy: number;
 }
 
-/** How a draft measures on one objective. Mirrors ObjectiveResponse (ADR-010). */
+/**
+ * How a draft measures on one objective. Mirrors ObjectiveResponse (ADR-010).
+ *
+ * `objective` is a plain string because a newer server may score one this build has never heard
+ * of, and that has to be shown by name rather than cast away: it counts towards the total.
+ */
 export interface ObjectiveScore {
-  readonly objective: 'FAIRNESS' | 'PREFERENCES' | 'DISRUPTION';
+  readonly objective: string;
   /** A count; lower is better. */
   readonly measure: number;
   /** The organisation's weight on it, or null when it is not weighed. */
@@ -62,16 +67,32 @@ export interface Roster {
   readonly validatedAgainstConstraintVersion: number | null;
 }
 
+/** The ways a generation can stand that this build knows how to put into words. */
+const GENERATION_STATUSES = ['PENDING', 'SUCCEEDED', 'REFUSED', 'FAILED', 'LOST'] as const;
+
+/** One of the {@link GENERATION_STATUSES}, so a comparison against a misspelt one does not compile. */
+export type GenerationStatus = (typeof GENERATION_STATUSES)[number];
+
+/**
+ * @param status how a generation stands, as the server sent it
+ * @returns whether this build knows that status
+ */
+export function isGenerationStatus(status: string): status is GenerationStatus {
+  return (GENERATION_STATUSES as readonly string[]).includes(status);
+}
+
 /**
  * How a draft's generation stands. Mirrors GenerationResponse (ADR-046).
  *
  * A solve at the largest stated size takes minutes, so asking for a draft starts a generation, and
- * the draft is read once it has ended. `LOST` is one still pending when it should long since have
- * ended: the server solving it stopped.
+ * the draft is read once it has ended. `PENDING` is one still running, then `SUCCEEDED`, `REFUSED`
+ * or `FAILED`; `LOST` is one still pending when it should long since have ended: the server solving
+ * it stopped. `status` is a plain string rather than `GenerationStatus` because a newer server may
+ * send one this build has never heard of, and waiting must not stop without saying so.
  */
 export interface Generation {
   readonly id: string;
-  readonly status: 'PENDING' | 'SUCCEEDED' | 'REFUSED' | 'FAILED' | 'LOST';
+  readonly status: string;
   /** The draft, once it succeeded. */
   readonly roster: string | null;
   /** What the work it would carry over from a published roster breaks, when it was refused. */
@@ -114,14 +135,20 @@ export interface RosteredShift {
   readonly roster: string;
 }
 
-/** Mirrors SwapRequestResponse. */
+/** Where a swap request can stand, of the places this build knows how to put into words. */
+export type SwapStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'LAPSED';
+
+/**
+ * Mirrors SwapRequestResponse. `status` is a plain string rather than `SwapStatus` because a newer
+ * server may send one this build has never heard of, and that has to be said rather than cast away.
+ */
 export interface SwapRequest {
   readonly id: string;
   readonly roster: string;
   readonly shift: string;
   readonly requester: string;
   readonly counterparty: string;
-  readonly status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'LAPSED';
+  readonly status: string;
 }
 
 /** Mirrors RequestSwapRequest: whose shift, on which published roster, and who is asked to take it. */

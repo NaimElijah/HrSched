@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.scheduling.application.port.in;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationId;
+import io.github.naimelijah.hrsched.scheduling.domain.model.GenerationsStoppedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException;
@@ -26,7 +27,10 @@ public interface PlanRostersUseCase {
    * @param actor whoever is generating it; must be a Scheduler
    * @param command which organisation and which period
    * @return the generation, pending, to be read back with {@link #findGeneration}
-   * @throws TooManyGenerationsException if as many generations as may run at once already are
+   * @throws TooManyGenerationsException if as many generations as may run at once already are; the
+   *     generation is stored as failed
+   * @throws GenerationsStoppedException if the instance has stopped taking generations because it
+   *     is shutting down; the generation is stored as failed
    */
   GenerationState startGeneration(Actor actor, GenerateRosterCommand command);
 

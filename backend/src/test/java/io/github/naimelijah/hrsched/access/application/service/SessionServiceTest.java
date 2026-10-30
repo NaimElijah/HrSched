@@ -1,10 +1,12 @@
 package io.github.naimelijah.hrsched.access.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.access.application.port.in.AccountKind;
 import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordOutcome;
+import io.github.naimelijah.hrsched.access.application.port.in.CurrentPasswordRefusal;
 import io.github.naimelijah.hrsched.access.application.port.in.RefreshOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.RefreshRefusal;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInCommand;
@@ -12,6 +14,7 @@ import io.github.naimelijah.hrsched.access.application.port.in.SignInOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.SignInRefusal;
 import io.github.naimelijah.hrsched.access.application.port.out.AccessChange;
 import io.github.naimelijah.hrsched.access.application.port.out.AccessTokenIssuer;
+import io.github.naimelijah.hrsched.access.application.port.out.AuditedChange;
 import io.github.naimelijah.hrsched.access.application.port.out.AuthenticatedSession;
 import io.github.naimelijah.hrsched.access.application.port.out.IssuedAccessToken;
 import io.github.naimelijah.hrsched.access.application.port.out.RefreshTokenSecret;
@@ -359,6 +362,9 @@ class SessionServiceTest {
             refused -> assertThat(refused.reason()).isEqualTo(RefreshRefusal.REUSED));
     assertThat(sessions.revocationOf(session.id())).contains(SessionRevocation.REFRESH_REUSED);
     assertThat(audit.of(AccessChange.REFRESH_TOKEN_REUSED)).hasSize(1);
+    assertThat(audit.of(AccessChange.REFRESH_TOKEN_REUSED).getFirst().organisation())
+        .describedAs("filed under the account's organisation, not the operator's empty one")
+        .contains(ACME);
   }
 
   @Test
@@ -375,6 +381,68 @@ class SessionServiceTest {
     service.refresh("a-spent-token");
 
     assertThat(sessions.revocationOf(session.id())).contains(SessionRevocation.REFRESH_REUSED);
+  }
+
+  /**
+   * A session's account is never deleted from under it, so its absence is a fault. Recorded anyway,
+   * the line would carry no organisation, which the audit port reserves for an act that belongs to
+   * none: it would say something false rather than nothing.
+   */
+  @Test
+  void GivenASessionWhoseAccountIsGone_WhenSigningOut_ThenItFailsLoudlyAndRecordsNothing() {
+    SignInSession orphaned =
+        new SignInSession(
+            SignInSessionId.newId(), UserId.newId(), NOW, NOW.plus(Duration.ofHours(12)));
+    sessions.given(
+        "an-orphaned-token",
+        new StoredRefreshToken(orphaned, NOW.plus(Duration.ofHours(1)), Optional.empty()));
+
+    assertThatThrownBy(() -> service.signOut("an-orphaned-token"))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /** The same fault on the other path that records about a session: a refresh token reused. */
+  @Test
+  void
+      GivenASessionWhoseAccountIsGone_WhenItsSpentTokenIsReused_ThenItFailsLoudlyAndRecordsNothing() {
+    SignInSession orphaned =
+        new SignInSession(
+            SignInSessionId.newId(), UserId.newId(), NOW, NOW.plus(Duration.ofHours(12)));
+    sessions.given(
+        "an-orphaned-spent-token",
+        new StoredRefreshToken(
+            orphaned, NOW.plus(Duration.ofHours(1)), Optional.of(NOW.minusSeconds(60))));
+
+    assertThatThrownBy(() -> service.refresh("an-orphaned-spent-token"))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * A sign-out is filed under the account's own organisation, made by that account, and about the
+   * session it ended. An empty organisation would read as the operator's (see {@code
+   * AuditedChange}).
+   */
+  @Test
+  void GivenALiveSession_WhenSigningOut_ThenItIsRecordedUnderTheAccountsOrganisation() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    SignInSession session =
+        new SignInSession(
+            SignInSessionId.newId(), account.id(), NOW, NOW.plus(Duration.ofHours(12)));
+    sessions.given(
+        "a-live-token",
+        new StoredRefreshToken(session, NOW.plus(Duration.ofHours(1)), Optional.empty()));
+
+    service.signOut("a-live-token");
+
+    assertThat(audit.changes()).containsExactly(AccessChange.SIGNED_OUT);
+    assertThat(audit.of(AccessChange.SIGNED_OUT))
+        .containsExactly(
+            new AuditedChange(
+                Optional.of(ACME), account.id(), AccessChange.SIGNED_OUT, session.id().value()));
   }
 
   // --- the idle limit: a refresh token that sat unused too long, and the successor's expiry -----
@@ -427,8 +495,12 @@ class SessionServiceTest {
     Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
     SignInSession ended =
         new SignInSession(
-                SignInSessionId.newId(), account.id(), AN_HOUR_AGO, NOW.plus(Duration.ofHours(11)))
-            .revoked(SessionRevocation.SIGNED_OUT, NOW.minusSeconds(1));
+            SignInSessionId.newId(),
+            account.id(),
+            AN_HOUR_AGO,
+            NOW.plus(Duration.ofHours(11)),
+            Optional.of(SessionRevocation.SIGNED_OUT),
+            Optional.of(NOW.minusSeconds(1)));
     sessions.given(
         "a-token-outliving-its-session",
         new StoredRefreshToken(ended, NOW.plus(Duration.ofMinutes(5)), Optional.empty()));
@@ -519,6 +591,113 @@ class SessionServiceTest {
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
     assertThat(accounts.heldForUpdate()).containsExactly(account.id());
+  }
+
+  /**
+   * The request was authenticated before an Admin's disable committed, and its held read sees the
+   * disable. A session begun here would be opened after the disable ended every other, and would
+   * outlive a later restore (R17, ADR-041), so nothing changes and nothing is counted.
+   */
+  @Test
+  void GivenTheAccountDisabledOnceHeld_WhenChangingItsPassword_ThenItIsRefusedAndNothingChanges() {
+    Account disabled = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()).disabled());
+    TenantActor themself = new TenantActor(disabled.id(), ACME, Role.SCHEDULER);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            ChangePasswordOutcome.CurrentPasswordRejected.class,
+            rejected -> assertThat(rejected.reason()).isEqualTo(CurrentPasswordRefusal.DISABLED));
+    Account after = accounts.find(ACME, disabled.id()).orElseThrow();
+    assertThat(after.passwordHash()).isEqualTo(disabled.passwordHash());
+    assertThat(after.active()).isFalse();
+    assertThat(after.failedSignIns()).isEqualTo(disabled.failedSignIns());
+    assertThat(sessions.started()).isEmpty();
+    assertThat(sessions.everySessionEndedFor(disabled.id())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * A disable that a password change finds once held refuses before a wrong password is counted.
+   * Counted, the failure would be saved over the Admin's disable, and here, one short of the lock,
+   * would lock an account the Admin had just switched off and record that it was.
+   */
+  @Test
+  void
+      GivenTheAccountDisabledOnceHeldAndOneFailureShortOfTheLock_WhenAWrongCurrentPasswordIsGiven_ThenNothingIsCounted() {
+    Account disabled =
+        accounts.given(
+            tenant(ADA, Role.SCHEDULER, Optional.empty())
+                .recordFailedSignIn(NOW, LOCK_AFTER_THREE)
+                .recordFailedSignIn(NOW, LOCK_AFTER_THREE)
+                .disabled());
+    assertThat(disabled.isLockedAt(NOW)).describedAs("precondition: not yet locked").isFalse();
+    TenantActor themself = new TenantActor(disabled.id(), ACME, Role.SCHEDULER);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            new ChangePasswordCommand(WRONG_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            ChangePasswordOutcome.CurrentPasswordRejected.class,
+            rejected -> assertThat(rejected.reason()).isEqualTo(CurrentPasswordRefusal.DISABLED));
+    Account after = accounts.find(ACME, disabled.id()).orElseThrow();
+    assertThat(after.failedSignIns()).isEqualTo(disabled.failedSignIns());
+    assertThat(after.isLockedAt(NOW)).isFalse();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The new session is written after the password, and its write can still fail, taking the change
+   * back with it. A line recorded before it would outlive that rollback, a record of a change that
+   * never happened (#133).
+   */
+  @Test
+  void GivenANewSessionThatCannotBeStored_WhenChangingThePassword_ThenNothingIsRecorded() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+    sessions.whereStartingASessionFails();
+
+    assertThatThrownBy(
+            () ->
+                service.changePassword(
+                    themself,
+                    new ChangePasswordCommand(
+                        RIGHT_PASSWORD, "another invented password for a test")))
+        .isInstanceOf(StubSessionRepository.SessionNotStored.class);
+
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The new session is recorded as it is begun, and the change only once that session's writes are
+   * made (#133). The change is the account's own: filed under its organisation, made by it, and
+   * about it rather than about the session.
+   */
+  @Test
+  void GivenTheRightCurrentPassword_WhenChangingIt_ThenTheNewSessionAndThenTheChangeAreRecorded() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+
+    service.changePassword(
+        themself,
+        new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(audit.changes())
+        .containsExactly(AccessChange.SIGNED_IN, AccessChange.PASSWORD_CHANGED);
+    assertThat(audit.of(AccessChange.PASSWORD_CHANGED))
+        .containsExactly(
+            new AuditedChange(
+                Optional.of(ACME),
+                account.id(),
+                AccessChange.PASSWORD_CHANGED,
+                account.id().value()));
   }
 
   /** The operator belongs to no organisation, so its account is held where it is: in none. */
@@ -749,13 +928,21 @@ class SessionServiceTest {
   /**
    * Remembers the sessions it was asked to start, the revocations it was asked to make, each
    * account whose every session it was asked to end, and when each successor token it issued
-   * expires; and lets a test say that the conditional update found nothing to change.
+   * expires; and lets a test say that the conditional update found nothing to change, or that a
+   * session cannot be stored.
    *
-   * <p>That last part is the only way to reach the race the real adapter guards against: two
+   * <p>The first of those is the only way to reach the race the real adapter guards against: two
    * refreshes holding one token, where the database awards the exchange to one of them. Here the
    * test simply says the exchange was already taken.
    */
   private static final class StubSessionRepository implements SessionRepository {
+
+    /** What a session that cannot be stored throws, told apart from any refusal of the use case. */
+    static final class SessionNotStored extends RuntimeException {
+      SessionNotStored() {
+        super("Invented: the session could not be stored");
+      }
+    }
 
     private final List<SignInSession> started = new ArrayList<>();
     private final Map<SignInSessionId, SessionRevocation> revocations = new LinkedHashMap<>();
@@ -763,6 +950,7 @@ class SessionServiceTest {
     private final Map<UserId, SessionRevocation> accountsWhoseSessionsEnded = new LinkedHashMap<>();
     private final Map<SignInSessionId, Instant> successorExpiries = new LinkedHashMap<>();
     private boolean exchangeAlreadyTaken;
+    private boolean startingFails;
 
     List<SignInSession> started() {
       return List.copyOf(started);
@@ -786,12 +974,20 @@ class SessionServiceTest {
       exchangeAlreadyTaken = true;
     }
 
+    /** Makes every session this is asked to start fail to be stored. */
+    void whereStartingASessionFails() {
+      startingFails = true;
+    }
+
     void given(String tokenValue, StoredRefreshToken token) {
       tokens.put(tokenValue, token);
     }
 
     @Override
     public void start(SignInSession session, byte[] refreshDigest, Instant refreshExpiresAt) {
+      if (startingFails) {
+        throw new SessionNotStored();
+      }
       started.add(session);
     }
 

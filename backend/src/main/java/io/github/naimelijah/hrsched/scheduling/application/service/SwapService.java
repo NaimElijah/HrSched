@@ -43,10 +43,10 @@ import java.util.UUID;
 /**
  * Orchestrates the swap use cases (requirement F7).
  *
- * <p>Its own service rather than more of {@code SchedulingService}, which already implements four
- * driving ports over eight collaborators. Swapping is a distinct workflow with its own aggregate
- * and its own audience, and putting it beside roster planning would have made one class nobody can
- * hold in their head.
+ * <p>Its own service rather than more of {@code SchedulingService}, which already implements every
+ * other driving port of this context and holds what each of them needs. Swapping is a distinct
+ * workflow with its own aggregate and its own audience, and putting it beside roster planning would
+ * have made one class nobody can hold in their head.
  *
  * <p><strong>It publishes through {@link PlanRostersUseCase} rather than repeating what publishing
  * does.</strong> That is the important decision in this class. Approving a swap has to check the
