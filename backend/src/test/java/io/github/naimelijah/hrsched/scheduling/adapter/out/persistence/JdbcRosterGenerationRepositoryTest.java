@@ -116,7 +116,7 @@ class JdbcRosterGenerationRepositoryTest {
 
     assertThatThrownBy(() -> repository.save(ours.succeeded(theirs.id(), ASKED.plusSeconds(3))))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .hasMessageContaining("roster_generation_names_a_draft_of_its_organisation");
+        .hasMessageContaining("roster_generation_names_a_roster_of_its_organisation");
     assertThat(repository.findById(ACME, ours.id()).orElseThrow().status())
         .isEqualTo(GenerationStatus.PENDING);
   }

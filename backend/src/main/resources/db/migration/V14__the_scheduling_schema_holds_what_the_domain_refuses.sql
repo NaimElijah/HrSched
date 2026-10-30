@@ -49,15 +49,21 @@ ALTER TABLE working_time_constraint
 -- to, this refuses it.
 --
 -- That foreign key has an index of its own, which departs from the rule that an index on a root
--- leads with organisation_id (ADR-004). It answers no repository lookup, but the check PostgreSQL
--- runs on every assignment a draft save deletes, which carries no organisation because
--- roster_assignment has none: without it, each deleted assignment is checked by reading the whole
--- of swap_request, which grows without end. Measured on an invented 200,000 requests, deleting a
--- draft's 2,000 assignments took 187 s without it and 0.18 s with it.
+-- leads with organisation_id (V1's header, backend/CLAUDE.md). It answers no repository lookup,
+-- but the check PostgreSQL runs on every assignment a draft save deletes, which carries no
+-- organisation because roster_assignment has none: without it, each deleted assignment is checked
+-- by reading the whole of swap_request, which grows without end. Measured on an invented 200,000
+-- requests, deleting a draft's 2,000 assignments took 187 s without it and 0.18 s with it.
 --
--- Each foreign key is added NOT VALID and then validated. A database already holding a reference
--- that dangles, or crosses organisations, fails here, deliberately: which roster such a row meant is
--- not something a migration can decide.
+-- Each foreign key is added validated, in one statement. A database already holding a reference
+-- that dangles, or crosses organisations, fails here, deliberately: which roster such a row meant
+-- is not something a migration can decide.
+--
+-- Flyway runs this migration in one transaction, so adding a key NOT VALID and validating it later
+-- would release no lock before the commit, and is not done. V14 holds every lock it takes until it
+-- commits, and on roster that lock is ACCESS EXCLUSIVE, so even a read of roster waits for V14 to
+-- finish. Holding these tables for its duration is accepted while nothing is deployed; the rule for
+-- changing a live database is #160's.
 --
 -- None of these is translated. Each refuses only a writer that went past the domain, and its
 -- violation surfaces as the store reports it.
@@ -66,7 +72,7 @@ ALTER TABLE working_time_constraint
 -- V12, is a sixth: it is reached only through its generation, which does. V1 also gave
 -- roster_assignment no foreign key to shift, explaining it by context, but only employee belongs
 -- to another context; shift is this one's own table. roster_assignment.shift_id still has no
--- foreign key to shift, and nothing records why.
+-- foreign key to shift; whether it should have one is #329's to decide.
 
 ALTER TABLE roster
     ADD CONSTRAINT roster_identity_within_organisation UNIQUE (organisation_id, id);
@@ -75,19 +81,15 @@ DROP INDEX roster_by_organisation;
 
 ALTER TABLE roster_generation DROP CONSTRAINT roster_generation_roster_id_fkey;
 ALTER TABLE roster_generation
-    ADD CONSTRAINT roster_generation_names_a_draft_of_its_organisation
-        FOREIGN KEY (organisation_id, roster_id) REFERENCES roster (organisation_id, id) NOT VALID;
-ALTER TABLE roster_generation
-    VALIDATE CONSTRAINT roster_generation_names_a_draft_of_its_organisation;
+    ADD CONSTRAINT roster_generation_names_a_roster_of_its_organisation
+        FOREIGN KEY (organisation_id, roster_id) REFERENCES roster (organisation_id, id);
 
 ALTER TABLE swap_request
     ADD CONSTRAINT swap_request_names_a_roster_of_its_organisation
-        FOREIGN KEY (organisation_id, roster_id) REFERENCES roster (organisation_id, id) NOT VALID,
+        FOREIGN KEY (organisation_id, roster_id) REFERENCES roster (organisation_id, id),
     ADD CONSTRAINT swap_request_names_an_assignment_on_its_roster
         FOREIGN KEY (roster_id, shift_id, requester_id)
-        REFERENCES roster_assignment (roster_id, shift_id, employee_id) NOT VALID;
-ALTER TABLE swap_request VALIDATE CONSTRAINT swap_request_names_a_roster_of_its_organisation;
-ALTER TABLE swap_request VALIDATE CONSTRAINT swap_request_names_an_assignment_on_its_roster;
+        REFERENCES roster_assignment (roster_id, shift_id, employee_id);
 
 CREATE INDEX swap_request_by_assignment ON swap_request (roster_id, shift_id, requester_id);
 
@@ -112,8 +114,8 @@ ALTER TABLE roster_generation
 -- Every check is named for what it holds -------------------------------------------------------
 --
 -- V11 and V12 left PostgreSQL to name four checks after their columns, so a refusal said which
--- column but not which rule. Each is renamed for the rule it holds, as every other constraint in
--- the schema is. Nothing matches a violation of any of them by name.
+-- column but not which rule. Each is renamed for the rule it holds, as every other check in the
+-- schema is. Nothing matches a violation of any of them by name.
 
 ALTER TABLE objective_weights
     RENAME CONSTRAINT objective_weights_fairness_check TO objective_weights_fairness_at_least_one;
