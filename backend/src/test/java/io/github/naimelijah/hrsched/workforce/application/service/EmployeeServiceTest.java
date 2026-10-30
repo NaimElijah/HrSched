@@ -341,7 +341,9 @@ class EmployeeServiceTest {
     assertThat(audit.of(WorkforceChange.CONTRACT_SET)).hasSize(1);
   }
 
-  // --- a refusal by the aggregate changes and records nothing (#133) ------------------------
+  // --- a refusal by the aggregate changes and records nothing --------------------------------
+  //
+  // The same class of bug as scheduling's #133, where a refusal came after something had changed.
 
   /** Zero hours is not a contract; the agreed hours stay, and only their setting is recorded. */
   @Test
@@ -947,8 +949,11 @@ class EmployeeServiceTest {
 
   /**
    * In-memory stand-in for the driven port, scoped by organisation exactly as the real one is. It
-   * copies the real adapter's refusals too, because a double accepting what the database refuses
-   * tests nothing.
+   * copies the real adapter's refusal of a save over an identity another organisation holds,
+   * because a double accepting what the database refuses tests nothing.
+   *
+   * <p>It does not copy {@code findForUpdate}'s refusal outside a writable transaction: these tests
+   * run without one, and that refusal is proven in {@code JdbcEmployeeRepositoryTest}.
    */
   private static final class StubEmployeeRepository implements EmployeeRepository {
 

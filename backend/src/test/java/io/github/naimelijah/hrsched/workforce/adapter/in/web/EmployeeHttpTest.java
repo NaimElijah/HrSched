@@ -33,8 +33,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * half of the API, and the half where self-service makes the acting identity load-bearing rather
  * than decorative.
  *
- * <p>Every instant, figure and name below is invented; contracted minutes are a term of an
- * individual agreement, and none is taken from any statute.
+ * <p>Every instant and figure below is invented; contracted minutes are a term of an individual
+ * agreement, and none is taken from any statute.
  *
  * <p>Annotated identically to {@code RosteringHttpTest} on purpose. A differing annotation set
  * would give this class its own Spring context cache key and pay a second full startup for nothing.

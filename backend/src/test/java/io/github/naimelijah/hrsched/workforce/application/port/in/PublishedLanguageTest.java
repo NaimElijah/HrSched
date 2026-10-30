@@ -25,6 +25,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * the {@code Qualification} entity behind it is not: the entity compares by identity because a
  * renamed qualification is the same qualification, whereas the published copy is a snapshot and
  * compares by everything it carries.
+ *
+ * <p>Every instant and figure below is invented. None is taken from any statute.
  */
 class PublishedLanguageTest {
 

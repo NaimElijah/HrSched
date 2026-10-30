@@ -27,6 +27,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  *
  * <p>A command checks completeness, never sensibleness. A blank name passes here and is refused by
  * {@code Employee} and {@code Qualification}, which is the correct place for it.
+ *
+ * <p>Every instant and figure below is invented. None is taken from any statute.
  */
 class WorkforceCommandsTest {
 

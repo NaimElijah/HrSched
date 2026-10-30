@@ -18,6 +18,7 @@ class ContractTermsTest {
 
   @Test
   void GivenAPositiveDuration_WhenConstructingTerms_ThenItIsAccepted() {
+    // Invented: a contracted week, a term of an individual agreement.
     assertThat(new ContractTerms(Duration.ofMinutes(2401)).weeklyContractedHours())
         .isEqualTo(Duration.ofMinutes(2401));
   }
@@ -54,6 +55,7 @@ class ContractTermsTest {
 
   @Test
   void GivenTwoTermsOfTheSameLength_WhenComparingThem_ThenTheyAreEqual() {
+    // Invented: a contracted week, a term of an individual agreement.
     assertThat(new ContractTerms(Duration.ofMinutes(2401)))
         .isEqualTo(new ContractTerms(Duration.ofMinutes(2401)))
         .hasSameHashCodeAs(new ContractTerms(Duration.ofMinutes(2401)));

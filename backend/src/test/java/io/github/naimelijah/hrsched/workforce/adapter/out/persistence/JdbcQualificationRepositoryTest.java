@@ -94,8 +94,8 @@ class JdbcQualificationRepositoryTest {
 
   /**
    * Pins a known gap, not a rule. R23 makes a qualification's name unique within its organisation,
-   * and until #95 builds that, neither the domain nor the store refuses a repeated name. When it
-   * lands the second save is refused, and this test is replaced by one that says so.
+   * and until #95 builds that, neither the domain nor the store refuses a repeated name. When #95
+   * lands, this test is revisited.
    */
   @Test
   void GivenTwoQualificationsSharingAName_WhenSaved_ThenBothAreKeptUntilR23IsBuilt() {
