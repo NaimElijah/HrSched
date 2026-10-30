@@ -106,6 +106,19 @@ class OperatorBootstrapTest {
     assertThat(everythingLogged()).doesNotContain(OPERATOR_NAME).doesNotContain(A_PASSWORD);
   }
 
+  /** What a first deployment's operator reads: that it was created, and what they must do next. */
+  @Test
+  void GivenNoOperatorYet_WhenRun_ThenItSaysOneWasCreatedAndItsPasswordMustBeChanged()
+      throws Exception {
+    new OperatorBootstrap(useCase, configured()).run(null);
+
+    assertThat(captured.list)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .describedAs("says the operator was created, not that it was there already")
+        .containsExactly(
+            "Created the platform operator; its password must be changed at first sign-in");
+  }
+
   @Test
   void GivenTheOperatorAlreadyExists_WhenRun_ThenItStillSaysSoWithoutNamingAnybody()
       throws Exception {
