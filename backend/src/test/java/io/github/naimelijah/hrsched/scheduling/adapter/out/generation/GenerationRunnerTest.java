@@ -11,6 +11,7 @@ import ch.qos.logback.core.read.ListAppender;
 import io.github.naimelijah.hrsched.scheduling.domain.model.TooManyGenerationsException;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
@@ -75,6 +76,21 @@ class GenerationRunnerTest {
     } finally {
       release.countDown();
     }
+  }
+
+  /**
+   * Once stopped, the pool refuses everything, busy or not. Saying that every run is busy would be
+   * false, and would be counted as saturation; the refusal says the runner has stopped, and keeps
+   * what the pool said.
+   */
+  @Test
+  void GivenARunnerThatHasStopped_WhenWorkIsStarted_ThenItIsRefusedAsStoppedNotAsBusy() {
+    runner.stop();
+
+    assertThatThrownBy(() -> runner.start(() -> {}))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("stopped")
+        .hasCauseInstanceOf(RejectedExecutionException.class);
   }
 
   /** The solve's log lines carry the trace id of the request that asked for it (ADR-016). */

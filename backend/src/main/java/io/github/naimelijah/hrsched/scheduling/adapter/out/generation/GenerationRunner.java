@@ -59,12 +59,20 @@ public class GenerationRunner implements BackgroundWork {
             new ThreadPoolExecutor.AbortPolicy());
   }
 
+  /**
+   * @throws TooManyGenerationsException if every thread is busy
+   * @throws IllegalStateException if the runner has stopped, which refuses all work, busy or not
+   */
   @Override
   public void start(Runnable work) {
     Map<String, String> context = MDC.getCopyOfContextMap();
     try {
       runs.execute(() -> run(work, context));
-    } catch (RejectedExecutionException everyThreadBusy) {
+    } catch (RejectedExecutionException refused) {
+      if (runs.isShutdown()) {
+        throw new IllegalStateException(
+            "Generation has stopped: the instance is shutting down", refused);
+      }
       throw new TooManyGenerationsException(concurrentRuns);
     }
   }
@@ -87,7 +95,10 @@ public class GenerationRunner implements BackgroundWork {
     }
   }
 
-  /** Stops taking generations. Any still solving are left to end, or to read as lost. */
+  /**
+   * Stops taking generations. Any still solving are left to end, or to read as lost, and so is one
+   * asked for from now on: it is refused as stopped rather than as busy.
+   */
   @PreDestroy
   void stop() {
     runs.shutdown();

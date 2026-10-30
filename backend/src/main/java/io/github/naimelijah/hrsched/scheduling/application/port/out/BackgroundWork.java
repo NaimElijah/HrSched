@@ -16,6 +16,7 @@ public interface BackgroundWork {
    * gone by then.
    *
    * @throws TooManyGenerationsException if as many generations as may run at once already are
+   * @throws IllegalStateException if nothing more will run, because the instance is stopping
    */
   void start(Runnable work);
 }
