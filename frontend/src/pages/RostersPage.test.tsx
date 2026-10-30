@@ -200,7 +200,13 @@ describe('the rosters page', () => {
 
     await screen.findByRole('button', { name: 'Open' });
 
-    for (const header of screen.getAllByRole('columnheader')) {
+    const table = screen.getByRole('table');
+    const headers = within(table).getAllByRole('columnheader');
+    // One roster is listed, so every cell is in its row.
+    expect(headers, 'one header per column of the roster row').toHaveLength(
+      within(table).getAllByRole('cell').length,
+    );
+    for (const header of headers) {
       expect(header, 'every column header has a name').toHaveAccessibleName();
     }
   });
