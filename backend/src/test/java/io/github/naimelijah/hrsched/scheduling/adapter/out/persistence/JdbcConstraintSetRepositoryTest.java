@@ -6,6 +6,7 @@ import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions
 import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.refusalsOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * What the constraint store promises.
@@ -308,6 +310,37 @@ class JdbcConstraintSetRepositoryTest {
         .singleElement()
         .isInstanceOf(ConstraintsRevisedConcurrentlyException.class);
     assertThat(repository.findCurrent(ACME)).contains(winning);
+  }
+
+  /**
+   * Only the primary key's violation is a lost race. Any other unique constraint on the table,
+   * which none is today but a later migration may add, is broken by something "reload and revise
+   * again" cannot cure, so its violation surfaces as the store reported it. The index is invented
+   * for this test and lives only in a transaction that is rolled back, so no other test sees it.
+   */
+  @Test
+  void GivenAnotherUniqueConstraintBroken_WhenSaving_ThenItIsNotTakenForARacingRevision() {
+    TransactionTemplate transaction = new TransactionTemplate(PostgresDatabase.transactions());
+
+    Throwable refused =
+        transaction.execute(
+            status -> {
+              status.setRollbackOnly();
+              PostgresDatabase.jdbcClient()
+                  .sql(
+                      "CREATE UNIQUE INDEX constraint_set_invented_one_per_organisation"
+                          + " ON constraint_set (organisation_id)")
+                  .update();
+              ConstraintSet second =
+                  ConstraintSet.initial(ACME)
+                      .revisedTo(List.of(new MaximumConsecutiveWorkingDays(4)));
+              repository.save(second);
+              return catchThrowable(() -> repository.save(second.revisedTo(List.of())));
+            });
+
+    assertThat(refused)
+        .isInstanceOf(DuplicateKeyException.class)
+        .hasMessageContaining("constraint_set_invented_one_per_organisation");
   }
 
   /** A different set claiming a version already taken — the shape a lost update arrives in. */

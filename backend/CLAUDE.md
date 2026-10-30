@@ -119,7 +119,8 @@ so JPA would need a parallel annotated model, buying only what an adapter must n
   reads it with `findForUpdate`, so a concurrent change waits and both apply (ADR-041). A published
   save's exclusion violation or deadlock (23P01, 40P01) is a 409; a revision losing a race is
   refused by its unique violation (23505), translated into a domain conflict answered 409, never
-  absorbed by `ON CONFLICT DO NOTHING`. Upserts keep `organisation_id` equal to
+  absorbed by `ON CONFLICT DO NOTHING`. An adapter translates only the constraint it means,
+  matched by the name its migration gave it, and lets any other violation surface. Upserts keep `organisation_id` equal to
   `EXCLUDED`'s, and a write touching no row is refused.
 
 ## Transactions, concurrency and time

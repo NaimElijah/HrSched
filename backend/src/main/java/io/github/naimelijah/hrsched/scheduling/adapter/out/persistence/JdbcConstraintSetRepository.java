@@ -16,7 +16,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -46,8 +45,11 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
   private static final String MAXIMUM_WEEKLY = "MAXIMUM_WEEKLY_WORKING_TIME";
   private static final String MAXIMUM_CONSECUTIVE_DAYS = "MAXIMUM_CONSECUTIVE_WORKING_DAYS";
 
-  /** PostgreSQL's SQLSTATE for {@code unique_violation}. */
-  private static final String UNIQUE_VIOLATION = "23505";
+  /**
+   * The primary key of {@code constraint_set}, as PostgreSQL named it in {@code V1}: two revisions
+   * taking one version break it.
+   */
+  private static final String VERSION_TAKEN = "constraint_set_pkey";
 
   private final JdbcClient jdbc;
 
@@ -79,8 +81,9 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
           .param("version", constraintSet.version())
           .update();
     } catch (DataAccessException refused) {
-      // The primary key is the only unique index this insert can break.
-      if (isUniqueViolation(refused)) {
+      // Matched by name, so only two revisions taking one version are a lost race; any other unique
+      // constraint a later migration adds surfaces as the store reported it.
+      if (UniqueViolations.isViolationOf(refused, VERSION_TAKEN)) {
         throw new ConstraintsRevisedConcurrentlyException(constraintSet.version(), refused);
       }
       throw refused;
@@ -142,11 +145,6 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
         .param("durationSeconds", durationSeconds)
         .param("dayCount", dayCount)
         .update();
-  }
-
-  private static boolean isUniqueViolation(DataAccessException refused) {
-    return NestedExceptionUtils.getMostSpecificCause(refused) instanceof SQLException cause
-        && UNIQUE_VIOLATION.equals(cause.getSQLState());
   }
 
   @Override
