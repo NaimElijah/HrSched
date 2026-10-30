@@ -356,17 +356,22 @@ public class SchedulingService
    * judges it again.
    *
    * @throws IllegalStateException if {@code requested} is lost by the time the solve ends, before
-   *     anything is written (ADR-046)
+   *     anything is written, or by the time its draft is stored, which takes the draft back with it
+   *     (ADR-046)
    */
   private void draftFor(Actor actor, GenerateRosterCommand command, RosterGeneration requested) {
     GenerationRequest request = units.reading(() -> generationRequestFor(actor, command));
 
     Roster draft = generated(request, generator.generate(request));
-    RosterGeneration succeeded = requested.succeeded(draft.id(), clock.instant());
+    // Asked here only to refuse a solve that outlasted the lost-at instant before anything is
+    // written; the ending stored is the one asked for again below.
+    requested.succeeded(draft.id(), clock.instant());
     units.writing(
         () -> {
           rosters.save(draft);
-          generations.save(succeeded);
+          // From the clock as it reads once the draft is stored, so a save outlasting the lost-at
+          // instant leaves the generation lost: the store's guard asks only whether it is pending.
+          generations.save(requested.succeeded(draft.id(), clock.instant()));
           return draft;
         });
     recorded(actor, command.organisation(), SchedulingChange.ROSTER_GENERATED, draft.id().value());

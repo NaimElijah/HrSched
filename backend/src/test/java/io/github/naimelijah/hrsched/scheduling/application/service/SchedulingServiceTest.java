@@ -877,6 +877,32 @@ class SchedulingServiceTest {
   }
 
   /**
+   * ADR-046, as the solve outlasting its lost-at instant is, but reaching it while the draft is
+   * stored: the generation is ended from the clock read after that save, so it stays lost rather
+   * than becoming a success nobody is waiting for. The store does not refuse it: its guard asks
+   * only whether the row is pending.
+   */
+  @Test
+  void GivenADraftSaveOutlastingTheLostAtInstant_WhenTheSolveEnds_ThenTheGenerationStaysLost() {
+    available(ACME, "Ada");
+    aShift(ACME, Set.of());
+    MovableClock clock = new MovableClock(NOW);
+    rosters.observeSaves(() -> clock.moveTo(NOW.plus(LOST_AFTER.lostAfter())));
+    SchedulingService slowToStore = withClock(clock);
+
+    assertThatThrownBy(
+            () ->
+                slowToStore.startGeneration(
+                    scheduler(ACME), new GenerateRosterCommand(ACME, THE_WEEK)))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(generations.all())
+        .singleElement()
+        .extracting(generation -> generation.statusAt(clock.instant()))
+        .isEqualTo(GenerationStatus.LOST);
+  }
+
+  /**
    * ADR-046: whatever ends a solve unhandled ends its generation failed, so nobody polling it waits
    * until it reads as lost. An Error too: a solve at the largest stated size runs to gigabytes.
    */
