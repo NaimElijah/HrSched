@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { auth } from '../api/client';
-import { onSessionEnded, onSessionHeld } from '../api/session';
+import { forgetSessionHere, onSessionEnded, onSessionHeld } from '../api/session';
 import type { Session } from '../api/session';
 
 /**
@@ -151,8 +151,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // effect, so it is current from the commit that draws the screen: a passive one can still be
   // pending when a session ends.
   const somethingOnScreen = useRef(false);
+  const sessionOnScreen = useRef<Session | null>(null);
   useLayoutEffect(() => {
     somethingOnScreen.current = session !== null || signOutUnconfirmed;
+    sessionOnScreen.current = session;
   }, [session, signOutUnconfirmed]);
 
   useEffect(
@@ -172,14 +174,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   // A session held for the account on screen is that session renewed, and carries its role,
-  // employee link and password flag as the backend holds them now (#254). One held while
-  // nothing is on screen, or for another account, is a sign-in or a restore, and each of those sets
-  // the session itself once it has been read back.
+  // employee link and password flag as the backend holds them now (#254). One held while nothing is
+  // on screen is left alone: a sign-in sets the session it was answered with, and a restore the one
+  // it reads back. One held for another account while this one is on screen is refused before it
+  // is held today; were it held, the client would act as that account under a shell naming this
+  // one (#250), so this tab forgets its session instead.
   useEffect(
     () =>
-      onSessionHeld((held) =>
-        setSession((shown) => (shown === null || shown.userId !== held.userId ? shown : held)),
-      ),
+      onSessionHeld((held) => {
+        const shown = sessionOnScreen.current;
+        if (shown === null) {
+          return;
+        }
+        if (shown.userId === held.userId) {
+          setSession(held);
+        } else {
+          forgetSessionHere();
+        }
+      }),
     [],
   );
 

@@ -1,8 +1,8 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
-import { currentAccessToken, endSession } from '../api/session';
+import { currentAccessToken, endSession, holdSession } from '../api/session';
 import type { Session } from '../api/session';
 import { SessionProvider } from './SessionProvider';
 import { callsTo, routeTo } from '../test-support/routeTo';
@@ -318,6 +318,7 @@ describe('a session that ends underneath somebody', () => {
 describe('a session renewed underneath somebody', () => {
   const EMPLOYEE_BEFORE = '66666666-6666-4666-8666-666666666666';
   const EMPLOYEE_AFTER = '88888888-8888-4888-8888-888888888888';
+  const ANOTHER_ACCOUNT = '99999999-9999-4999-8999-999999999999';
 
   /**
    * Restores `before`, then renews as `after` on the next read of `refused`: that read is refused
@@ -371,6 +372,29 @@ describe('a session renewed underneath somebody', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'People' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Qualifications' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * The client never holds another account's session while one is on screen today: a renewal for
+   * another account is refused before it is held. Were one held anyway, the client would act as
+   * that account under a shell naming this one (#250), so this tab's session is forgotten instead.
+   */
+  it('GivenASessionOnScreen_WhenAnotherAccountsSessionIsHeld_ThenThisTabsSessionIsForgotten', async () => {
+    serving({
+      'POST /api/auth/refresh': { status: 200, body: signedInBody() },
+      '/api/auth/session': { status: 200, body: A_TENANT },
+    });
+    show();
+    await screen.findByRole('button', { name: 'People' });
+
+    act(() => {
+      holdSession(
+        signedInBody({ ...A_TENANT, userId: ANOTHER_ACCOUNT, signInName: 'grace@example.com' }),
+      );
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+    expect(currentAccessToken()).toBeNull();
   });
 
   it('GivenARenewalCarryingAMovedEmployeeLink_WhenItIsHeld_ThenOwnRecordsAreReadForTheNewLink', async () => {
