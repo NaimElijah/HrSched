@@ -8,7 +8,8 @@ import java.time.Duration;
  *
  * <p>One tick is the greatest common divisor, in nanoseconds, of every span the model mentions, so
  * each of them is a whole number of ticks and nothing is rounded. Rounding is not harmless here: a
- * rest gap of exactly the minimum passes, and one a nanosecond short does not.
+ * day whose shares of work add up to exactly the daily cap passes, and one a nanosecond over does
+ * not.
  */
 final class Ticks {
 
