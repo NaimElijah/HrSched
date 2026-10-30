@@ -338,19 +338,19 @@ class EmployeeHttpTest {
     mockMvc
         .perform(
             as(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, "ADMIN")
-                .content("{\"weeklyContractedMinutes\":1380}"))
+                .content("{\"weeklyContractedMinutes\":1381}"))
         .andExpect(status().isNoContent());
 
     mockMvc
         .perform(
             asThemself(mockMvc, put("/api/employees/" + ada + "/contract"), organisation, ada)
-                .content("{\"weeklyContractedMinutes\":570}"))
+                .content("{\"weeklyContractedMinutes\":571}"))
         .andExpect(status().isForbidden());
 
     mockMvc
         .perform(as(mockMvc, get("/api/employees/" + ada), organisation, "ADMIN"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.weeklyContractedMinutes").value(1380));
+        .andExpect(jsonPath("$.weeklyContractedMinutes").value(1381));
   }
 
   @Test

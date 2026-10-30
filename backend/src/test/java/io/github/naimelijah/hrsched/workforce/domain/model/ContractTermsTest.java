@@ -23,7 +23,8 @@ class ContractTermsTest {
   }
 
   @ParameterizedTest
-  @ValueSource(longs = {0L, -1L, -2400L})
+  // Invented: zero, the smallest step below it, and a negative week.
+  @ValueSource(longs = {0L, -1L, -2401L})
   void GivenANonPositiveDuration_WhenConstructingTerms_ThenItIsRejected(long minutes) {
     assertThatThrownBy(() -> new ContractTerms(Duration.ofMinutes(minutes)))
         .isInstanceOf(InvalidContractTermsException.class);

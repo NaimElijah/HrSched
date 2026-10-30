@@ -251,11 +251,11 @@ class EmployeeTest {
   @Test
   void GivenAnEmployee_WhenContracted_ThenTheTermsAreHeld() {
     // Invented: contracted hours are a term of an individual agreement, never a statute's.
-    Employee parttime = ada().contractedTo(new ContractTerms(Duration.ofHours(20)));
+    Employee parttime = ada().contractedTo(new ContractTerms(Duration.ofMinutes(1201)));
 
     assertThat(parttime.contractTerms())
         .map(ContractTerms::weeklyContractedHours)
-        .contains(Duration.ofHours(20));
+        .contains(Duration.ofMinutes(1201));
   }
 
   @Test

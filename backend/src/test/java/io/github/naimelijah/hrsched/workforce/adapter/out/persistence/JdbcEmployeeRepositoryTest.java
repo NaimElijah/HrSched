@@ -149,13 +149,14 @@ class JdbcEmployeeRepositoryTest {
 
   @Test
   void GivenContractedHours_WhenReadBack_ThenTheyComeBackExactly() {
-    Employee ada = employee(ACME, "Ada").contractedTo(new ContractTerms(Duration.ofHours(21)));
+    // Invented: contracted hours are a term of an individual agreement, never a statute's.
+    Employee ada = employee(ACME, "Ada").contractedTo(new ContractTerms(Duration.ofMinutes(1261)));
     repository.save(ada);
 
     assertThat(repository.findById(ACME, ada.id()))
         .get()
         .extracting(employee -> employee.contractTerms().orElseThrow().weeklyContractedHours())
-        .isEqualTo(Duration.ofHours(21));
+        .isEqualTo(Duration.ofMinutes(1261));
   }
 
   @Test
@@ -224,7 +225,8 @@ class JdbcEmployeeRepositoryTest {
     Employee ada =
         employee(ACME, "Ada")
             .holding(forklift)
-            .contractedTo(new ContractTerms(Duration.ofHours(20)))
+            // Invented: contracted hours are a term of an individual agreement.
+            .contractedTo(new ContractTerms(Duration.ofMinutes(1201)))
             .unavailableFor(A_FORTNIGHT_OFF)
             .unavailableFor(A_WEEK_OFF)
             .preferring(wants);
@@ -238,7 +240,7 @@ class JdbcEmployeeRepositoryTest {
     assertThat(stored.qualifications()).containsExactly(forklift);
     assertThat(stored.contractTerms())
         .map(ContractTerms::weeklyContractedHours)
-        .contains(Duration.ofHours(20));
+        .contains(Duration.ofMinutes(1201));
   }
 
   /**

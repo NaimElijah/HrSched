@@ -43,10 +43,10 @@ import org.springframework.test.web.servlet.MockMvc;
 class CrossTenantEmployeeWriteHttpTest {
 
   /** Invented: their employee's contract, a term of an individual agreement, never a statute's. */
-  private static final long THEIR_CONTRACTED_MINUTES = 1800;
+  private static final long THEIR_CONTRACTED_MINUTES = 1801;
 
   /** Invented: what our Admin tries to set it to. */
-  private static final long OUR_CONTRACTED_MINUTES = 600;
+  private static final long OUR_CONTRACTED_MINUTES = 601;
 
   /** Invented: when their employee's span begins, as declared or stated by their own Admin. */
   private static final String THEIR_START = "2026-11-18T08:00:00Z";

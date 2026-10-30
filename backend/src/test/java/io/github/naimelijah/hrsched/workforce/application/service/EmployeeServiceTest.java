@@ -281,10 +281,10 @@ class EmployeeServiceTest {
   // never a statutory figure, so both durations below are invented.
 
   /** Invented: the hours an Admin agreed with Ada. */
-  private static final Duration AGREED_HOURS = Duration.ofHours(23);
+  private static final Duration AGREED_HOURS = Duration.ofMinutes(1381);
 
   /** Invented: the hours somebody without the right tries to put in their place. */
-  private static final Duration OTHER_HOURS = Duration.ofHours(29);
+  private static final Duration OTHER_HOURS = Duration.ofMinutes(1741);
 
   private EmployeeId adaContractedByAnAdmin() {
     EmployeeId ada = service.addEmployee(admin(ACME), new AddEmployeeCommand(ACME, "Ada"));
@@ -865,7 +865,7 @@ class EmployeeServiceTest {
 
     // Invented: contracted hours are a term of an individual agreement, never a statute's.
     service.setContractTerms(
-        admin(ACME), new SetContractTermsCommand(ACME, ada, Duration.ofHours(30)));
+        admin(ACME), new SetContractTermsCommand(ACME, ada, Duration.ofMinutes(1801)));
 
     assertThat(employees.heldForUpdate()).containsExactly(ada);
   }
@@ -1090,7 +1090,7 @@ class EmployeeServiceTest {
 
     // Invented: contracted hours are a term of an individual agreement, never a statutory figure.
     service.setContractTerms(
-        manager, new SetContractTermsCommand(ACME, subject, Duration.ofHours(20)));
+        manager, new SetContractTermsCommand(ACME, subject, Duration.ofMinutes(1201)));
 
     assertThat(audit.of(WorkforceChange.CONTRACT_SET))
         .containsExactly(
@@ -1196,7 +1196,8 @@ class EmployeeServiceTest {
             () ->
                 service.setContractTerms(
                     anOperator(),
-                    new SetContractTermsCommand(ACME, EmployeeId.newId(), Duration.ofHours(20))))
+                    new SetContractTermsCommand(
+                        ACME, EmployeeId.newId(), Duration.ofMinutes(1201))))
         .isInstanceOf(NotATenantMemberException.class);
   }
 
