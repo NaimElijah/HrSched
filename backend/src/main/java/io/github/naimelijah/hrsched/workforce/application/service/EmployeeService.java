@@ -193,7 +193,6 @@ public class EmployeeService
         employee.name(),
         employee.qualifications(),
         employee.unavailability(),
-        employee.contractTerms().map(ContractTerms::weeklyContractedHours),
         spansStated(employee, PreferenceStrength.PREFERS),
         spansStated(employee, PreferenceStrength.PREFERS_NOT));
   }

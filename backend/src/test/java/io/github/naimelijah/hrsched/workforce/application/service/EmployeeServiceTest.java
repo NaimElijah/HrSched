@@ -293,7 +293,10 @@ class EmployeeServiceTest {
   }
 
   private Optional<Duration> contractedHoursOf(EmployeeId employee) {
-    return service.findEmployee(admin(ACME), ACME, employee).orElseThrow().weeklyContractedHours();
+    return service
+        .findEmployeeRecord(admin(ACME), ACME, employee)
+        .orElseThrow()
+        .weeklyContractedHours();
   }
 
   @Test

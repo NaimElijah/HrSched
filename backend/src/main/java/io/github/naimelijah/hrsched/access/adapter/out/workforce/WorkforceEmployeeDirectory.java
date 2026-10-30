@@ -14,8 +14,8 @@ import org.springframework.stereotype.Component;
  * driving port, never the workforce domain (ADR-008). The architecture rules enforce that; this
  * adapter is where the allowance is spent, deliberately, in one place.
  *
- * <p>It narrows an answer rather than translating one. Workforce publishes the employee it finds,
- * name included, because its own screens need that; access needs only whether there is one, so the
+ * <p>It narrows an answer rather than translating one. Workforce answers in its published record,
+ * name included, because scheduling needs that; access needs only whether there is one, so the
  * record is reduced to a boolean here and never leaves this method. That is the whole reason the
  * driven port asks a yes-or-no question: a colleague's name has no business in the context that
  * writes the access audit trail.

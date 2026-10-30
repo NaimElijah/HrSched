@@ -19,7 +19,6 @@ import io.github.naimelijah.hrsched.workforce.application.port.in.FindRosterable
 import io.github.naimelijah.hrsched.workforce.application.port.in.ManageQualificationsUseCase;
 import io.github.naimelijah.hrsched.workforce.application.port.in.PublishedQualification;
 import io.github.naimelijah.hrsched.workforce.application.port.in.RosterableEmployee;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,10 +33,8 @@ import org.junit.jupiter.api.Test;
  * where the two models can quietly fuse. Its whole job is translation and narrowing: scheduling
  * asks its own question through its own port and receives its own type back.
  *
- * <p>The narrowing is worth asserting rather than assuming. A {@code RosterableEmployee} carries
- * contracted hours; a {@code RosterCandidate} deliberately does not, because the generator has no
- * business knowing them. If that field were ever added, generation would start depending on data
- * workforce is free to change.
+ * <p>Contracted hours are kept out one step earlier: {@code RosterableEmployee} has nowhere to put
+ * them, which {@code PublishedLanguageTest} pins, so no candidate can carry them either.
  */
 class WorkforceDirectoryAdapterTest {
 
@@ -58,8 +55,7 @@ class WorkforceDirectoryAdapterTest {
   void GivenARosterableEmployee_WhenTranslated_ThenSchedulingReceivesItsOwnType() {
     EmployeeId ada = EmployeeId.newId();
     workforce.publish(
-        new RosterableEmployee(
-            ada, "Ada", Set.of(), List.of(), Optional.empty(), List.of(), List.of()));
+        new RosterableEmployee(ada, "Ada", Set.of(), List.of(), List.of(), List.of()));
 
     assertThat(adapter.candidatesFor(scheduler(), ACME))
         .containsExactly(
@@ -72,45 +68,12 @@ class WorkforceDirectoryAdapterTest {
     QualificationId forklift = QualificationId.newId();
     workforce.publish(
         new RosterableEmployee(
-            ada, "Ada", Set.of(forklift), List.of(MONDAY), Optional.empty(), List.of(), List.of()));
+            ada, "Ada", Set.of(forklift), List.of(MONDAY), List.of(), List.of()));
 
     RosterCandidate candidate = adapter.candidatesFor(scheduler(), ACME).getFirst();
 
     assertThat(candidate.qualifications()).containsExactly(forklift);
     assertThat(candidate.unavailability()).containsExactly(MONDAY);
-  }
-
-  /**
-   * The narrowing itself: hours are workforce's business and must not cross into scheduling. Two
-   * employees identical but for their contract translate to the same candidate, which is only true
-   * while the candidate has nowhere to put the difference.
-   *
-   * <p>The figure is invented; contracted hours are a term of an agreement, not a statute.
-   */
-  @Test
-  void GivenTwoEmployeesDifferingOnlyInContract_WhenTranslated_ThenTheCandidatesAreIdentical() {
-    EmployeeId ada = EmployeeId.newId();
-    workforce.publish(
-        new RosterableEmployee(
-            ada,
-            "Ada",
-            Set.of(),
-            List.of(),
-            Optional.of(Duration.ofMinutes(2401)),
-            List.of(),
-            List.of()));
-    RosterCandidate withContract = adapter.candidatesFor(scheduler(), ACME).getFirst();
-
-    FakeWorkforce withoutContract = new FakeWorkforce();
-    withoutContract.publish(
-        new RosterableEmployee(
-            ada, "Ada", Set.of(), List.of(), Optional.empty(), List.of(), List.of()));
-    RosterCandidate uncontracted =
-        new WorkforceDirectoryAdapter(withoutContract, qualifications)
-            .candidatesFor(scheduler(), ACME)
-            .getFirst();
-
-    assertThat(withContract).isEqualTo(uncontracted);
   }
 
   /**
@@ -123,8 +86,7 @@ class WorkforceDirectoryAdapterTest {
     TimeRange tuesday =
         new TimeRange(Instant.parse("2026-09-08T08:00:00Z"), Instant.parse("2026-09-08T16:00:00Z"));
     workforce.publish(
-        new RosterableEmployee(
-            ada, "Ada", Set.of(), List.of(), Optional.empty(), List.of(MONDAY), List.of(tuesday)));
+        new RosterableEmployee(ada, "Ada", Set.of(), List.of(), List.of(MONDAY), List.of(tuesday)));
 
     RosterCandidate candidate = adapter.candidatesFor(scheduler(), ACME).getFirst();
 

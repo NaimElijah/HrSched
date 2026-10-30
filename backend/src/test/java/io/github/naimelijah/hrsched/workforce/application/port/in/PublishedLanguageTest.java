@@ -6,10 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
-import java.time.Duration;
+import java.lang.reflect.RecordComponent;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
@@ -38,44 +37,24 @@ class PublishedLanguageTest {
   private static RosterableEmployee ada(
       Set<QualificationId> qualifications, List<TimeRange> unavailability) {
     return new RosterableEmployee(
-        EmployeeId.newId(),
-        "Ada",
-        qualifications,
-        unavailability,
-        Optional.empty(),
-        List.of(),
-        List.of());
+        EmployeeId.newId(), "Ada", qualifications, unavailability, List.of(), List.of());
   }
 
   private static Stream<ThrowingCallable> nullFields() {
     return Stream.of(
+        () -> new RosterableEmployee(null, "Ada", Set.of(), List.of(), List.of(), List.of()),
         () ->
             new RosterableEmployee(
-                null, "Ada", Set.of(), List.of(), Optional.empty(), List.of(), List.of()),
+                EmployeeId.newId(), null, Set.of(), List.of(), List.of(), List.of()),
         () ->
             new RosterableEmployee(
-                EmployeeId.newId(),
-                null,
-                Set.of(),
-                List.of(),
-                Optional.empty(),
-                List.of(),
-                List.of()),
+                EmployeeId.newId(), "Ada", null, List.of(), List.of(), List.of()),
         () ->
-            new RosterableEmployee(
-                EmployeeId.newId(), "Ada", null, List.of(), Optional.empty(), List.of(), List.of()),
+            new RosterableEmployee(EmployeeId.newId(), "Ada", Set.of(), null, List.of(), List.of()),
         () ->
-            new RosterableEmployee(
-                EmployeeId.newId(), "Ada", Set.of(), null, Optional.empty(), List.of(), List.of()),
+            new RosterableEmployee(EmployeeId.newId(), "Ada", Set.of(), List.of(), null, List.of()),
         () ->
-            new RosterableEmployee(
-                EmployeeId.newId(), "Ada", Set.of(), List.of(), null, List.of(), List.of()),
-        () ->
-            new RosterableEmployee(
-                EmployeeId.newId(), "Ada", Set.of(), List.of(), Optional.empty(), null, List.of()),
-        () ->
-            new RosterableEmployee(
-                EmployeeId.newId(), "Ada", Set.of(), List.of(), Optional.empty(), List.of(), null),
+            new RosterableEmployee(EmployeeId.newId(), "Ada", Set.of(), List.of(), List.of(), null),
         () -> new PublishedQualification(null, "Forklift"),
         () -> new PublishedQualification(QualificationId.newId(), null));
   }
@@ -113,24 +92,23 @@ class PublishedLanguageTest {
     assertThat(ada(Set.of(), List.of(TUESDAY_DAY)).isAvailableFor(MONDAY_DAY)).isTrue();
   }
 
+  /**
+   * The published record carries exactly what a roster generator needs, and in particular no
+   * contracted hours: those are personal data no other context needs, kept to workforce's own
+   * {@code EmployeeRecord}. Adding a component here widens what every consuming context is told,
+   * which is a decision, so it fails this test first.
+   */
   @Test
-  void GivenNoContract_WhenPublished_ThenTheHoursAreAbsentRatherThanNull() {
-    assertThat(ada(Set.of(), List.of()).weeklyContractedHours()).isEmpty();
-  }
-
-  @Test
-  void GivenAContract_WhenPublished_ThenTheHoursTravelWithTheEmployee() {
-    RosterableEmployee contracted =
-        new RosterableEmployee(
-            EmployeeId.newId(),
-            "Ada",
-            Set.of(),
-            List.of(),
-            Optional.of(Duration.ofMinutes(2401)),
-            List.of(),
-            List.of()); // invented
-
-    assertThat(contracted.weeklyContractedHours()).contains(Duration.ofMinutes(2401));
+  void GivenThePublishedEmployee_WhenListingWhatItCarries_ThenItIsExactlyWhatAGeneratorNeeds() {
+    assertThat(RosterableEmployee.class.getRecordComponents())
+        .extracting(RecordComponent::getName)
+        .containsExactly(
+            "id",
+            "name",
+            "qualifications",
+            "unavailability",
+            "wouldLikeToWork",
+            "wouldRatherNotWork");
   }
 
   @Test

@@ -14,9 +14,9 @@ import java.util.Optional;
  *
  * <p>For this context's own adapters, and consumed by no other context. Scheduling reads people
  * through {@link FindRosterableEmployeesUseCase} and access through {@link
- * ManageEmployeesUseCase#findEmployee}, and both answer with {@link RosterableEmployee}. Each read
- * here is restricted exactly as its published counterpart is, because it carries the same absences
- * and more.
+ * ManageEmployeesUseCase#findEmployee}, and both answer with {@link RosterableEmployee}, which
+ * carries no contracted hours. Each read here is restricted exactly as its published counterpart
+ * is, because it carries the same absences and more.
  */
 public interface FindEmployeeRecordsUseCase {
 

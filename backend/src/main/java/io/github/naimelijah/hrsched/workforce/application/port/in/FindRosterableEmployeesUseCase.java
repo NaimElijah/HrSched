@@ -10,8 +10,9 @@ import java.util.List;
  *
  * <p>Scheduling consumes it, beside {@link ManageQualificationsUseCase}; access consumes {@link
  * ManageEmployeesUseCase}. Each answers in the published language, {@link RosterableEmployee},
- * never the aggregate. Workforce's own screens read people through {@link
- * FindEmployeeRecordsUseCase} instead. This context's aggregate, services and storage stay private.
+ * never the aggregate, and without contracted hours: those reach workforce's own screens through
+ * {@link FindEmployeeRecordsUseCase} alone. This context's aggregate, services and storage stay
+ * private.
  */
 public interface FindRosterableEmployeesUseCase {
 
