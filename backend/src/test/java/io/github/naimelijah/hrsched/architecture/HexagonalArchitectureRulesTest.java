@@ -29,6 +29,8 @@ import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.no
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesIntoAnotherContextsDrivenPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.out.notifications.ReachesThroughThePublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.in.FixturePayUseCase;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.out.ScopedPayslipRepository;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.out.UnscopedPayslipRepository;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.FixturePayrollService;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceCallingOverHttp;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceKnowingTheEntryPoint;
@@ -52,6 +54,7 @@ import io.github.naimelijah.hrsched.architecture.fixtures.stereotypes.FixtureExc
 import io.github.naimelijah.hrsched.configuration.UseCaseConfiguration;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -413,6 +416,46 @@ class HexagonalArchitectureRulesTest {
             FixtureKernelValue.class);
 
     assertHolds(result);
+  }
+
+  @Test
+  void
+      GivenARepositoryLookupWithoutAnOrganisation_WhenTheTenancyRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repository_lookups_take_an_organisation,
+            UnscopedPayslipRepository.class);
+
+    assertViolatedNaming(result, "UnscopedPayslipRepository.findByReference");
+  }
+
+  @Test
+  void
+      GivenARepositoryWhoseLookupAndLockTakeAnOrganisation_WhenTheTenancyRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.repository_lookups_take_an_organisation,
+            ScopedPayslipRepository.class);
+
+    assertHolds(result);
+  }
+
+  /**
+   * The allow-list names methods by string, so a renamed or deleted method would leave an entry
+   * that exempts nothing, and a new method taking the old name would inherit its exemption unseen.
+   */
+  @Test
+  void
+      GivenTheUnscopedLookupsAllowed_WhenEachIsLookedUpOnItsPort_ThenEveryOneNamesAMethodItDeclares() {
+    assertThat(HexagonalArchitectureTest.UNSCOPED_LOOKUPS)
+        .as("allowed unscoped lookups")
+        .isNotEmpty()
+        .allSatisfy(
+            lookup ->
+                assertThat(lookup.port().getDeclaredMethods())
+                    .extracting(Method::getName)
+                    .as("methods %s declares", lookup.port().getSimpleName())
+                    .contains(lookup.method()));
   }
 
   @Test

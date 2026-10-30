@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.architecture;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
@@ -12,6 +13,7 @@ import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaAnnotation;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaConstructor;
+import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -19,8 +21,12 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
+import io.github.naimelijah.hrsched.access.application.port.out.OrganisationRepository;
+import io.github.naimelijah.hrsched.access.application.port.out.SessionRepository;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import java.io.Console;
 import java.io.File;
@@ -32,6 +38,7 @@ import java.io.Reader;
 import java.io.Writer;
 import java.lang.annotation.Annotation;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -680,5 +687,114 @@ class HexagonalArchitectureTest {
               }
             })
         .because("a class outside every layer escapes every rule written against the layers");
+  }
+
+  /**
+   * A repository lookup allowed to take no {@code OrganisationId}.
+   *
+   * @param port the driven port declaring it, by class literal so a renamed port fails compilation
+   * @param method its name; every overload of it is allowed
+   * @param reason why it cannot be scoped, as its port's javadoc gives it
+   */
+  record UnscopedLookup(Class<?> port, String method, String reason) {}
+
+  /**
+   * The repository lookups that take no organisation, each named, with the reason its port gives.
+   *
+   * <p>All belong to access, where the tenant is still being discovered: signing in and
+   * authenticating come before there is an organisation, the operator belongs to none, and the
+   * register of tenants is the one thing with no tenant above it.
+   */
+  static final List<UnscopedLookup> UNSCOPED_LOOKUPS =
+      List.of(
+          new UnscopedLookup(
+              AccountRepository.class,
+              "findBySignInName",
+              "a sign-in request carries a name and a password, and no organisation to scope by"
+                  + " until the account is found"),
+          new UnscopedLookup(
+              AccountRepository.class,
+              "findForAuthentication",
+              "authentication works before there is an organisation, and the operator's account"
+                  + " belongs to none"),
+          new UnscopedLookup(
+              AccountRepository.class,
+              "findForUpdate",
+              "scoped by an Optional<OrganisationId>, whose empty value names the operator's"
+                  + " account, which belongs to no organisation"),
+          new UnscopedLookup(
+              SessionRepository.class,
+              "findRefreshToken",
+              "a session belongs to an account rather than a tenant, and is reached only by the"
+                  + " digest of a token this system issued"),
+          new UnscopedLookup(
+              SessionRepository.class,
+              "findAuthenticatedSession",
+              "the read that discovers which organisation the caller belongs to, and the operator"
+                  + " belongs to none"),
+          new UnscopedLookup(
+              OrganisationRepository.class,
+              "findAll",
+              "the register of tenants has no outer scope to filter by, and listing it is"
+                  + " operator-only at the use case above"));
+
+  /** The method names of a repository lookup: a read, or a lock taken before one. */
+  private static final String LOOKUP = "(find|lock).*";
+
+  /**
+   * Every repository lookup takes the organisation it reads in.
+   *
+   * <p>ADR-009 makes the tenant part of the signature, so a cross-tenant read cannot be written by
+   * forgetting a {@code WHERE organisation_id = ?}, only by passing the wrong organisation, which a
+   * reviewer sees. That holds only while every {@code find…} and {@code lock…} on a driven-port
+   * repository takes an {@code OrganisationId}; a {@code findById(EmployeeId)} added later would
+   * compile, pass review by habit, and read across tenants. The few that cannot take one are named
+   * in {@link #UNSCOPED_LOOKUPS}, each with its port's own reason, so a new one is a decision
+   * written down rather than an omission. {@code HexagonalArchitectureRulesTest} watches it reject
+   * a fixture repository's unscoped lookup and permit a scoped one, and checks that every allowed
+   * lookup still names a method its port declares.
+   */
+  @ArchTest
+  static final ArchRule repository_lookups_take_an_organisation =
+      methods()
+          .that()
+          .areDeclaredInClassesThat(
+              JavaClass.Predicates.resideInAPackage("..application.port.out..")
+                  .and(JavaClass.Predicates.simpleNameEndingWith("Repository"))
+                  .and(JavaClass.Predicates.INTERFACES))
+          .and()
+          .haveNameMatching(LOOKUP)
+          .and(DescribedPredicate.not(oneOf(UNSCOPED_LOOKUPS)))
+          .should(takeAnOrganisation())
+          .because(
+              "a lookup without the tenant in its signature is a cross-tenant read waiting to be"
+                  + " written (ADR-009)");
+
+  private static DescribedPredicate<JavaMethod> oneOf(List<UnscopedLookup> lookups) {
+    return DescribedPredicate.describe(
+        "are an allowed unscoped lookup",
+        method ->
+            lookups.stream()
+                .anyMatch(
+                    lookup ->
+                        method.getOwner().isEquivalentTo(lookup.port())
+                            && method.getName().equals(lookup.method())));
+  }
+
+  private static ArchCondition<JavaMethod> takeAnOrganisation() {
+    return new ArchCondition<>("take an " + OrganisationId.class.getSimpleName()) {
+      @Override
+      public void check(JavaMethod method, ConditionEvents events) {
+        boolean scoped =
+            method.getRawParameterTypes().stream()
+                .anyMatch(parameter -> parameter.isEquivalentTo(OrganisationId.class));
+        if (!scoped) {
+          events.add(
+              SimpleConditionEvent.violated(
+                  method,
+                  method.getFullName() + " takes no " + OrganisationId.class.getSimpleName()));
+        }
+      }
+    };
   }
 }
