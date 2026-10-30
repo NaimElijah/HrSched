@@ -43,13 +43,23 @@ import org.springframework.security.oauth2.jwt.JwtException;
  * <p>No Spring context. The issuer and the decoder are built here exactly as their beans are, over
  * an ephemeral key generated for this test, with a fixed clock so that expiry is arithmetic rather
  * than timing.
+ *
+ * <p>Every issuer, audience, lifetime and instant here is invented for the test.
  */
 class AccessTokenDecoderTest {
 
+  /** Invented, and unlike the application's own, so nothing here passes by matching it. */
   private static final String ISSUER = "hrsched-test";
+
+  /** Invented, for the same reason. */
   private static final String AUDIENCE = "hrsched-api-test";
+
+  /** Invented: a token's lifetime, which is configuration rather than a rule. */
   private static final Duration LIFETIME = Duration.ofMinutes(10);
+
+  /** Invented: the fixed instant the clock reads. */
   private static final Instant NOW = Instant.parse("2026-09-20T09:00:00Z");
+
   private static final UserId ACCOUNT = UserId.newId();
   private static final SignInSessionId SESSION = SignInSessionId.newId();
   private static final String SESSION_CLAIM = "sid";

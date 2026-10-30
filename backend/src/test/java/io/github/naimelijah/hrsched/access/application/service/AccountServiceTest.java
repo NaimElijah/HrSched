@@ -43,10 +43,16 @@ class AccountServiceTest {
   private final RecordingAuditTrail audit = new RecordingAuditTrail();
 
   /**
-   * Bootstrapping touches neither sessions nor the workforce, and deliberately not the password
-   * policy either: the configured password is the deployment's own choice and is not assessed
-   * (ADR-029). Those three collaborators are therefore wired to doubles that refuse, so that a
-   * bootstrap which started using one would fail here rather than quietly work.
+   * Invented, and refusing every password in this class: it asks for as many characters as the
+   * hasher accepts bytes. The configured password is the deployment's own choice and is not
+   * assessed (ADR-029), so a bootstrap that began assessing it would fail here.
+   */
+  private final PasswordPolicy refusingEveryPasswordHere =
+      new PasswordPolicy(hasher.maximumBytes(), hasher.maximumBytes());
+
+  /**
+   * Bootstrapping touches neither sessions nor the workforce. The session double refuses every
+   * read, and the directory employs nobody; the policy is {@link #refusingEveryPasswordHere}.
    */
   private final AccountService service =
       new AccountService(
@@ -54,7 +60,7 @@ class AccountServiceTest {
           new RecordingSessionRevocations(),
           new StubEmployeeDirectory(),
           hasher,
-          new PasswordPolicy(1, hasher.maximumBytes()),
+          refusingEveryPasswordHere,
           audit,
           Clock.fixed(NOW, ZoneOffset.UTC));
 
@@ -72,6 +78,23 @@ class AccountServiceTest {
     assertThat(operator.failedSignIns()).isZero();
     assertThat(operator.createdAt()).isEqualTo(NOW);
     assertThat(hasher.matches(A_PASSWORD, operator.passwordHash())).isTrue();
+  }
+
+  /**
+   * The configured password must be changed at first sign-in, and the policy applies to that
+   * change; assessing it here would only stop a deployment starting (ADR-029).
+   */
+  @Test
+  void GivenAPasswordThePolicyRefuses_WhenEnsuringTheOperator_ThenTheOperatorIsStillCreated() {
+    assertThat(refusingEveryPasswordHere.assess(A_PASSWORD))
+        .describedAs("precondition: the policy refuses this password")
+        .isPresent();
+
+    boolean created =
+        service.ensureOperator(new BootstrapOperatorCommand(OPERATOR_NAME, A_PASSWORD));
+
+    assertThat(created).isTrue();
+    assertThat(accounts.findBySignInName(new SignInName(OPERATOR_NAME))).isPresent();
   }
 
   @Test

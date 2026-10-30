@@ -555,6 +555,7 @@ class AccountAdministrationTest {
                 service.setAccountActive(
                     admin(acme), new SetAccountActiveCommand(acme, theirs.id(), false)))
         .isInstanceOf(UnknownAccountException.class);
+    assertThat(sessions.everySessionEndedFor(theirs.id())).isEmpty();
   }
 
   // --- #33: a change holds the account from its read (ADR-041)
@@ -671,6 +672,193 @@ class AccountAdministrationTest {
                     actor(acme, Role.SCHEDULER),
                     new ResetPasswordCommand(acme, account.id(), A_PASSWORD)))
         .isInstanceOf(NotPermittedException.class);
+  }
+
+  // Who may change, disable and reset: every refusal its own test, so a failure names who got in
+
+  @Test
+  void GivenASchedulerRole_WhenChangingSomebodysRole_ThenItIsRefused() {
+    Account account = existing(acme, Role.SCHEDULER, true);
+
+    assertThatThrownBy(
+            () ->
+                service.changeMembership(
+                    actor(acme, Role.SCHEDULER),
+                    new ChangeMembershipCommand(acme, account.id(), Role.ADMIN, Optional.empty())))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(accounts.find(acme, account.id()).orElseThrow().membership())
+        .isEqualTo(account.membership());
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  @Test
+  void GivenAnEmployeeRole_WhenChangingSomebodysRole_ThenItIsRefused() {
+    Account account = existing(acme, Role.SCHEDULER, true);
+
+    assertThatThrownBy(
+            () ->
+                service.changeMembership(
+                    actor(acme, Role.EMPLOYEE),
+                    new ChangeMembershipCommand(acme, account.id(), Role.ADMIN, Optional.empty())))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(accounts.find(acme, account.id()).orElseThrow().membership())
+        .isEqualTo(account.membership());
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /** The operator administers the register of tenants, never the people inside one (ADR-030). */
+  @Test
+  void GivenTheOperator_WhenChangingSomebodysRole_ThenItIsRefused() {
+    Account account = existing(acme, Role.SCHEDULER, true);
+
+    assertThatThrownBy(
+            () ->
+                service.changeMembership(
+                    new Operator(UserId.newId()),
+                    new ChangeMembershipCommand(acme, account.id(), Role.ADMIN, Optional.empty())))
+        .isInstanceOf(NotATenantMemberException.class);
+
+    assertThat(accounts.find(acme, account.id()).orElseThrow().membership())
+        .isEqualTo(account.membership());
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The failure that would let one customer change who may do what inside another's organisation.
+   */
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenChangingSomebodysRole_ThenItIsRefused() {
+    Account account = existing(acme, Role.SCHEDULER, true);
+
+    assertThatThrownBy(
+            () ->
+                service.changeMembership(
+                    admin(rival),
+                    new ChangeMembershipCommand(acme, account.id(), Role.ADMIN, Optional.empty())))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(accounts.find(acme, account.id()).orElseThrow().membership())
+        .isEqualTo(account.membership());
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  @Test
+  void GivenASchedulerRole_WhenDisablingSomebody_ThenItIsRefused() {
+    Account account = existing(acme, Role.SCHEDULER, true);
+
+    assertThatThrownBy(
+            () ->
+                service.setAccountActive(
+                    actor(acme, Role.SCHEDULER),
+                    new SetAccountActiveCommand(acme, account.id(), false)))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(accounts.find(acme, account.id()).orElseThrow().active()).isTrue();
+    assertThat(sessions.everySessionEndedFor(account.id())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  @Test
+  void GivenAnEmployeeRole_WhenDisablingSomebody_ThenItIsRefused() {
+    Account account = existing(acme, Role.SCHEDULER, true);
+
+    assertThatThrownBy(
+            () ->
+                service.setAccountActive(
+                    actor(acme, Role.EMPLOYEE),
+                    new SetAccountActiveCommand(acme, account.id(), false)))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(accounts.find(acme, account.id()).orElseThrow().active()).isTrue();
+    assertThat(sessions.everySessionEndedFor(account.id())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /** The operator administers the register of tenants, never the people inside one (ADR-030). */
+  @Test
+  void GivenTheOperator_WhenDisablingSomebody_ThenItIsRefused() {
+    Account account = existing(acme, Role.SCHEDULER, true);
+
+    assertThatThrownBy(
+            () ->
+                service.setAccountActive(
+                    new Operator(UserId.newId()),
+                    new SetAccountActiveCommand(acme, account.id(), false)))
+        .isInstanceOf(NotATenantMemberException.class);
+
+    assertThat(accounts.find(acme, account.id()).orElseThrow().active()).isTrue();
+    assertThat(sessions.everySessionEndedFor(account.id())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /** The failure that would let one customer lock somebody out of another's organisation. */
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenDisablingSomebody_ThenItIsRefused() {
+    Account account = existing(acme, Role.SCHEDULER, true);
+
+    assertThatThrownBy(
+            () ->
+                service.setAccountActive(
+                    admin(rival), new SetAccountActiveCommand(acme, account.id(), false)))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(accounts.find(acme, account.id()).orElseThrow().active()).isTrue();
+    assertThat(sessions.everySessionEndedFor(account.id())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  @Test
+  void GivenAnEmployeeRole_WhenResettingSomebodysPassword_ThenItIsRefused() {
+    Account account = existing(acme, Role.SCHEDULER, true);
+
+    assertThatThrownBy(
+            () ->
+                service.resetPassword(
+                    actor(acme, Role.EMPLOYEE),
+                    new ResetPasswordCommand(acme, account.id(), A_PASSWORD)))
+        .isInstanceOf(NotPermittedException.class);
+
+    assertThat(accounts.find(acme, account.id()).orElseThrow().passwordChangeRequired()).isFalse();
+    assertThat(sessions.everySessionEndedFor(account.id())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /** The operator administers the register of tenants, never the people inside one (ADR-030). */
+  @Test
+  void GivenTheOperator_WhenResettingSomebodysPassword_ThenItIsRefused() {
+    Account account = existing(acme, Role.SCHEDULER, true);
+
+    assertThatThrownBy(
+            () ->
+                service.resetPassword(
+                    new Operator(UserId.newId()),
+                    new ResetPasswordCommand(acme, account.id(), A_PASSWORD)))
+        .isInstanceOf(NotATenantMemberException.class);
+
+    assertThat(accounts.find(acme, account.id()).orElseThrow().passwordChangeRequired()).isFalse();
+    assertThat(sessions.everySessionEndedFor(account.id())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The failure that would let one customer take over an account in another's organisation, by
+   * choosing the password it signs in with.
+   */
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenResettingSomebodysPassword_ThenItIsRefused() {
+    Account account = existing(acme, Role.SCHEDULER, true);
+
+    assertThatThrownBy(
+            () ->
+                service.resetPassword(
+                    admin(rival), new ResetPasswordCommand(acme, account.id(), A_PASSWORD)))
+        .isInstanceOf(CrossTenantAccessException.class);
+
+    assertThat(accounts.find(acme, account.id()).orElseThrow().passwordChangeRequired()).isFalse();
+    assertThat(sessions.everySessionEndedFor(account.id())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
   }
 
   /**

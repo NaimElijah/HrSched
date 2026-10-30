@@ -10,9 +10,11 @@ import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.LockoutPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
+import io.github.naimelijah.hrsched.configuration.observability.TraceIdResponseFilter;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -82,6 +84,7 @@ class LockedAccountPasswordChangeHttpTest {
         .describedAs("a locked account is refused as a wrong current password is")
         .isEqualTo(wrongCurrent.getStatus());
     assertThat(whenLocked.getContentAsString()).isEqualTo(wrongCurrent.getContentAsString());
+    assertThat(headersOf(whenLocked)).isEqualTo(headersOf(wrongCurrent));
   }
 
   @Test
@@ -158,6 +161,18 @@ class LockedAccountPasswordChangeHttpTest {
         .describedAs("precondition: %d failed sign-ins lock the account", lockout.threshold())
         .isTrue();
     return locked;
+  }
+
+  /**
+   * Every header but the trace id, which the trace filter sets on every response and which differs
+   * on each, whatever it answers.
+   */
+  private static List<String> headersOf(MockHttpServletResponse response) {
+    return response.getHeaderNames().stream()
+        .filter(name -> !TraceIdResponseFilter.TRACE_ID_HEADER.equalsIgnoreCase(name))
+        .sorted()
+        .map(name -> name + "=" + response.getHeaderValues(name))
+        .toList();
   }
 
   private Account stored(Account account) {

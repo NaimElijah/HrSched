@@ -9,6 +9,7 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.access.LoggedText;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
@@ -82,7 +83,7 @@ class AuthHttpTest {
   @BeforeEach
   void captureTheLog() {
     root = ((LoggerContext) LoggerFactory.getILoggerFactory()).getLogger(Logger.ROOT_LOGGER_NAME);
-    captured = new ListAppender<>();
+    captured = LoggedText.capturing();
     captured.start();
     root.addAppender(captured);
   }
@@ -116,12 +117,19 @@ class AuthHttpTest {
     assertThat(cookie).isNotNull();
     assertThat(cookie).startsWith("__Secure-hrsched-refresh=");
     assertThat(cookie).contains("HttpOnly");
-    assertThat(cookie).contains("Secure");
+    assertThat(cookie)
+        .describedAs("the attribute, not the word inside the cookie's own name")
+        .contains("; Secure");
     assertThat(cookie).contains("SameSite=Strict");
     assertThat(cookie).contains("Path=/api/auth");
     assertThat(cookie).contains("Max-Age=");
-    assertThat(cookie)
+    String refreshToken = cookie.substring(cookie.indexOf('=') + 1, cookie.indexOf(';'));
+    assertThat(refreshToken).isNotBlank();
+    assertThat(body)
         .describedAs("the refresh token is never in the body, only in the cookie")
+        .doesNotContain(refreshToken);
+    assertThat(cookie)
+        .describedAs("and the access token is never in the cookie, only in the body")
         .doesNotContain(JsonPath.<String>read(body, "$.accessToken"));
   }
 
@@ -351,14 +359,9 @@ class AuthHttpTest {
     return account;
   }
 
+  /** Everything the captured events carry, as one string to search: see {@link LoggedText}. */
   private String everythingLogged() {
-    return captured.list.stream()
-        .map(
-            event ->
-                event.getFormattedMessage()
-                    + " "
-                    + (event.getKeyValuePairs() == null ? "" : event.getKeyValuePairs()))
-        .reduce("", (all, line) -> all + "\n" + line);
+    return LoggedText.of(captured.list);
   }
 
   private static String quoted(String value) {

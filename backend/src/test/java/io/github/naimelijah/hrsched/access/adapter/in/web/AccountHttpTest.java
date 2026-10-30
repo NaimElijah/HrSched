@@ -147,6 +147,27 @@ class AccountHttpTest {
   }
 
   /**
+   * Stores, through the repository, a member linked to nobody who has already replaced the password
+   * they were given, so the token they sign in with holds their role from the first request. An
+   * account created over HTTP would hold no role until it had (ADR-029).
+   *
+   * @return its identifier
+   */
+  private String aMemberWhoChoseTheirOwnPassword(
+      OrganisationId organisation, Role role, String signInName) {
+    UserId id = UserId.newId();
+    accounts.save(
+        new Account(
+            id,
+            new SignInName(signInName),
+            passwords.hash(A_PASSWORD),
+            new TenantMembership(organisation, role, Optional.empty()),
+            false,
+            Instant.now()));
+    return id.value().toString();
+  }
+
+  /**
    * @return the identifier of an Employee account this Admin just created, linked to that employee
    */
   private String createLinked(String adminToken, String signInName, String employee)
@@ -310,6 +331,54 @@ class AccountHttpTest {
     mockMvc
         .perform(with(post("/api/accounts"), admin).content(linkedTo(anInventedSignInName(), ada)))
         .andExpect(status().isConflict());
+  }
+
+  // ADR-031: the organisation comes from the acting account, never from what the request says
+
+  /** An organisation named in a header is not believed: the account lands in the Admin's own. */
+  @Test
+  void
+      GivenAnAdminNamingAnotherOrganisationInAnXOrganisationHeader_WhenCreatingAnAccount_ThenItIsCreatedInTheirOwn()
+          throws Exception {
+    OrganisationId acme = anOrganisation();
+    OrganisationId rival = anOrganisation();
+    String signInName = anInventedSignInName();
+
+    mockMvc
+        .perform(
+            with(post("/api/accounts"), admin(acme))
+                .header("X-Organisation", rival.value().toString())
+                .content(creating(signInName, Role.SCHEDULER)))
+        .andExpect(status().isCreated());
+
+    mockMvc
+        .perform(signInAs(signInName, A_PASSWORD))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.session.organisation").value(acme.value().toString()));
+  }
+
+  /** An organisation named in the body is not believed either. */
+  @Test
+  void
+      GivenAnAdminNamingAnotherOrganisationInTheBody_WhenCreatingAnAccount_ThenItIsCreatedInTheirOwn()
+          throws Exception {
+    OrganisationId acme = anOrganisation();
+    OrganisationId rival = anOrganisation();
+    String signInName = anInventedSignInName();
+
+    mockMvc
+        .perform(
+            with(post("/api/accounts"), admin(acme))
+                .content(
+                    ("{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\",\"role\":\"SCHEDULER\","
+                            + "\"organisation\":\"%s\"}")
+                        .formatted(signInName, A_PASSWORD, rival.value())))
+        .andExpect(status().isCreated());
+
+    mockMvc
+        .perform(signInAs(signInName, A_PASSWORD))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.session.organisation").value(acme.value().toString()));
   }
 
   @Test
@@ -506,6 +575,49 @@ class AccountHttpTest {
         .andExpect(jsonPath("$.session.role").value("ADMIN"));
   }
 
+  /**
+   * The role is read from the account on every request, never from the token: a demotion takes away
+   * what the role allowed on the next request, without the demoted person signing in again. The
+   * token is used once before the demotion, so a role remembered from that first use would still
+   * let it in.
+   */
+  @Test
+  void GivenAnAdminHoldingAToken_WhenDemotedToScheduler_ThenThatTokenIsRefusedTheAccountList()
+      throws Exception {
+    OrganisationId acme = anOrganisation();
+    String signInName = anInventedSignInName();
+    String demoted = aMemberWhoChoseTheirOwnPassword(acme, Role.ADMIN, signInName);
+    String theirToken = tokenFromSignIn(signInName, A_PASSWORD);
+    mockMvc.perform(with(get("/api/accounts"), theirToken)).andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            with(put("/api/accounts/%s/membership".formatted(demoted)), admin(acme))
+                .content("{\"role\":\"SCHEDULER\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc.perform(with(get("/api/accounts"), theirToken)).andExpect(status().isForbidden());
+  }
+
+  /** The mirror of the demotion: what a new role allows, a token already held is allowed. */
+  @Test
+  void GivenASchedulerHoldingAToken_WhenPromotedToAdmin_ThenThatTokenIsGrantedTheAccountList()
+      throws Exception {
+    OrganisationId acme = anOrganisation();
+    String signInName = anInventedSignInName();
+    String promoted = aMemberWhoChoseTheirOwnPassword(acme, Role.SCHEDULER, signInName);
+    String theirToken = tokenFromSignIn(signInName, A_PASSWORD);
+    mockMvc.perform(with(get("/api/accounts"), theirToken)).andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(
+            with(put("/api/accounts/%s/membership".formatted(promoted)), admin(acme))
+                .content("{\"role\":\"ADMIN\"}"))
+        .andExpect(status().isNoContent());
+
+    mockMvc.perform(with(get("/api/accounts"), theirToken)).andExpect(status().isOk());
+  }
+
   /** There is no way back from an organisation with no Admin: nobody outside it may act inside. */
   @Test
   void GivenTheLastActiveAdmin_WhenDemoted_ThenItIsAConflict() throws Exception {
@@ -534,13 +646,19 @@ class AccountHttpTest {
   /** A 404 rather than a 403: saying otherwise would confirm that account exists. */
   @Test
   void GivenAnAccountOfAnotherOrganisation_WhenChangingIt_ThenItIsNotFound() throws Exception {
-    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.SCHEDULER);
+    String theirName = anInventedSignInName();
+    String theirs = create(admin(anOrganisation()), theirName, Role.SCHEDULER);
 
     mockMvc
         .perform(
             with(put("/api/accounts/%s/membership".formatted(theirs)), admin(anOrganisation()))
                 .content("{\"role\":\"ADMIN\"}"))
         .andExpect(status().isNotFound());
+
+    mockMvc
+        .perform(signInAs(theirName, A_PASSWORD))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.session.role").value("SCHEDULER"));
   }
 
   @Test
@@ -572,6 +690,39 @@ class AccountHttpTest {
 
     mockMvc
         .perform(with(get("/api/accounts"), afterChoosingTheirOwnPassword(signInName)))
+        .andExpect(status().isOk());
+  }
+
+  /**
+   * R16 on the routes every member uses, which a separate rule guards from account administration.
+   * The Actor behind a pending password change still carries its role, and only the authority the
+   * URL rule reads is withheld, so this rule is the one thing between whoever knows the password an
+   * Admin chose and acting as that Scheduler. Listing qualifications is open to every member, so
+   * the same request answers once the Scheduler has chosen their own password.
+   */
+  @Test
+  void
+      GivenASchedulerOnThePasswordAnAdminChose_WhenCallingATenantRoute_ThenItIsForbiddenUntilTheyChooseTheirOwn()
+          throws Exception {
+    String signInName = anInventedSignInName();
+    create(admin(anOrganisation()), signInName, Role.SCHEDULER);
+    String pending = tokenFromSignIn(signInName, A_PASSWORD);
+
+    mockMvc.perform(with(get("/api/qualifications"), pending)).andExpect(status().isForbidden());
+
+    String changed =
+        mockMvc
+            .perform(
+                with(post("/api/auth/password"), pending)
+                    .content(
+                        "{\"currentPassword\":\"%s\",\"newPassword\":\"%s\"}"
+                            .formatted(A_PASSWORD, THEIR_OWN_PASSWORD)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    mockMvc
+        .perform(with(get("/api/qualifications"), JsonPath.read(changed, "$.accessToken")))
         .andExpect(status().isOk());
   }
 
@@ -631,6 +782,31 @@ class AccountHttpTest {
         .andExpect(status().isNoContent());
 
     mockMvc.perform(signInAs(signInName, A_PASSWORD)).andExpect(status().isOk());
+  }
+
+  /**
+   * A 404 rather than a 403, and nothing reached the account: the session it already holds goes on
+   * working, and it still signs in. Ending sessions is keyed by account alone, so what keeps a
+   * rival's Admin from signing anybody out by identifier is the use case checking tenancy first,
+   * and the refusal rolling back the one transaction the change runs in. {@code
+   * AccountAdministrationTest} pins the order on its own; this test fails once both give way, as
+   * when the sessions are ended before the check and outside that transaction.
+   */
+  @Test
+  void GivenAnAccountOfAnotherOrganisation_WhenDisablingIt_ThenItIsNotFoundAndItsSessionGoesOn()
+      throws Exception {
+    String theirName = anInventedSignInName();
+    String theirs = create(admin(anOrganisation()), theirName, Role.SCHEDULER);
+    String theirToken = tokenFromSignIn(theirName, A_PASSWORD);
+
+    mockMvc
+        .perform(
+            with(put("/api/accounts/%s/activation".formatted(theirs)), admin(anOrganisation()))
+                .content("{\"active\":false}"))
+        .andExpect(status().isNotFound());
+
+    mockMvc.perform(with(get("/api/auth/session"), theirToken)).andExpect(status().isOk());
+    mockMvc.perform(signInAs(theirName, A_PASSWORD)).andExpect(status().isOk());
   }
 
   @Test
@@ -704,13 +880,18 @@ class AccountHttpTest {
   @Test
   void GivenAnAccountOfAnotherOrganisation_WhenResettingItsPassword_ThenItIsNotFound()
       throws Exception {
-    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.SCHEDULER);
+    String theirName = anInventedSignInName();
+    String theirs = create(admin(anOrganisation()), theirName, Role.SCHEDULER);
+    String replacement = "an invented password the rival would choose";
 
     mockMvc
         .perform(
             with(post("/api/accounts/%s/password".formatted(theirs)), admin(anOrganisation()))
-                .content("{\"temporaryPassword\":\"%s\"}".formatted(A_PASSWORD)))
+                .content("{\"temporaryPassword\":\"%s\"}".formatted(replacement)))
         .andExpect(status().isNotFound());
+
+    mockMvc.perform(signInAs(theirName, A_PASSWORD)).andExpect(status().isOk());
+    mockMvc.perform(signInAs(theirName, replacement)).andExpect(status().isUnauthorized());
   }
 
   /** Onboards an organisation whose first — and for now only — Admin signs in under this name. */
@@ -784,7 +965,7 @@ class AccountHttpTest {
    * way a cross-tenant attempt is.
    */
   @Test
-  void GivenAnAccountThatIsNotTheirs_WhenNamed_ThenTheRefusalIsCounted() throws Exception {
+  void GivenAnAccountIdentifierNobodyHolds_WhenNamed_ThenTheRefusalIsCounted() throws Exception {
     String admin = admin(anOrganisation());
     double before = refusalsOfKind("unknown_account");
 
