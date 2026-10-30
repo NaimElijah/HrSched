@@ -82,13 +82,17 @@ final class StubAccountRepository implements AccountRepository {
 
   /**
    * Gives way on a taken sign-in name and on nothing else, as the adapter's {@code ON CONFLICT
-   * (sign_in_name) DO NOTHING} does: every other refusal {@link #save} makes, the adapter makes
-   * here too.
+   * (sign_in_name) DO NOTHING} does. It inserts and never updates, so an identity already stored
+   * under another name is refused, as the primary key refuses it there, rather than stored over;
+   * every other refusal {@link #save} makes, the adapter makes here too.
    */
   @Override
   public boolean saveIfAbsent(Account account) {
     if (findBySignInName(account.signInName()).isPresent()) {
       return false;
+    }
+    if (findForAuthentication(account.id()).isPresent()) {
+      throw new IllegalStateException("this fake already holds that identity");
     }
     save(account);
     return true;
