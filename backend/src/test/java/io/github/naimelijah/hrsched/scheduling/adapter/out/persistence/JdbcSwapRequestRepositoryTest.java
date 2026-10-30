@@ -229,7 +229,7 @@ class JdbcSwapRequestRepositoryTest {
    * its requests come back, nor are lapsed by our publication.
    */
   @Test
-  void GivenAnotherOrganisationsRequestNamingTheRoster_WhenFindingOursPending_ThenItIsNotThere() {
+  void GivenAPendingRequestOnAnotherOrganisationsRoster_WhenWeAskForItsPending_ThenNoneComeBack() {
     RosterId roster = aRoster(RIVAL);
     repository.save(naming(RIVAL, roster, TEN));
 
