@@ -4,7 +4,7 @@ import type { ConstraintSet, ConstraintSetRequest } from '../api/scheduling';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
-import { RULE_FIELDS, type RuleField } from './ruleFields';
+import { RULE_FIELDS, type RuleField } from '../components/ruleFields';
 
 function configured(set: ConstraintSet | null, key: RuleField): string {
   const value = set === null ? null : set[key];
