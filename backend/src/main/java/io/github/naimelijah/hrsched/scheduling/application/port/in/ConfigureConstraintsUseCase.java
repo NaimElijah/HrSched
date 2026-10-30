@@ -1,6 +1,8 @@
 package io.github.naimelijah.hrsched.scheduling.application.port.in;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
+import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.Optional;
@@ -17,6 +19,11 @@ public interface ConfigureConstraintsUseCase {
    * @param actor whoever is configuring them; must be an Admin of the organisation
    * @param command the rules that should apply from now on
    * @return the newly created version
+   * @throws InvalidConstraintException if the rules hold two of one kind (R24)
+   * @throws ConstraintsRevisedConcurrentlyException if another revision took the same next version
+   *     first: reload the rules and revise again
+   * @throws IllegalStateException if the current rules are stored as no set the domain allows, a
+   *     fault in stored data that only fixing the rows cures (#96)
    */
   ConstraintSet reviseConstraints(Actor actor, ReviseConstraintsCommand command);
 

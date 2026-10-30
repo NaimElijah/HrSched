@@ -23,6 +23,8 @@ public interface ConstraintSetRepository {
   /**
    * @param organisation whose rules to read
    * @return the highest version stored, empty if the organisation has never revised its rules
+   * @throws IllegalStateException if that version is stored as no set the domain allows, such as
+   *     two rules of one kind (R24): a fault in stored data, not the caller's mistake (#96)
    */
   Optional<ConstraintSet> findCurrent(OrganisationId organisation);
 
@@ -35,6 +37,8 @@ public interface ConstraintSetRepository {
    * @param organisation whose rules to read; another organisation's version is never found
    * @param version which revision
    * @return that version, empty if this organisation never stored it
+   * @throws IllegalStateException if it is stored as no set the domain allows, as {@link
+   *     #findCurrent} does
    */
   Optional<ConstraintSet> findVersion(OrganisationId organisation, int version);
 }
