@@ -565,7 +565,7 @@ describe('changing an account', () => {
    * copy of the account read before the last change was stored, it would put back what that change
    * replaced: the row waits until the list has been read again.
    */
-  it('GivenAChangeStoredButNotYetReadBack_WhenTheRowIsUsedAgain_ThenItWaitsAndThenSendsWhatIsStored', async () => {
+  it('GivenAChangeStoredButNotYetReadBack_WhenTheRowIsUsedAgain_ThenItWaitsForTheReadBack', async () => {
     const membership = `/api/accounts/${GRACE.id}/membership`;
     const server: Record<string, Answer> = {
       '/api/accounts': { status: 200, body: [ADA, GRACE] },
@@ -603,6 +603,9 @@ describe('changing an account', () => {
     const changeRole = screen.getByRole('button', { name: 'Change the role of grace@example.com' });
     expect(role).toBeDisabled();
     expect(changeRole).toBeDisabled();
+    expect(
+      within(rowFor('grace@example.com')).getByRole('button', { name: 'Reset password' }),
+    ).toBeDisabled();
     server['/api/accounts'] = { status: 200, body: [ADA, { ...GRACE, employee: ROBIN.id }] };
     readBack();
     await waitFor(() => expect(role).toBeEnabled());

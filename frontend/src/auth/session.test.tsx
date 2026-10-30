@@ -216,6 +216,37 @@ describe('changing a password', () => {
     expect(form.getByLabelText('Current password')).toHaveValue('');
   });
 
+  it('GivenAChangeFromThePasswordTab_WhenRefused_ThenNothingSaysItWasChanged', async () => {
+    serving({
+      'POST /api/auth/refresh': { status: 200, body: signedInBody() },
+      '/api/auth/session': { status: 200, body: A_TENANT },
+      'POST /api/auth/password': {
+        status: 403,
+        body: { detail: 'The current password is not right.' },
+      },
+    });
+    show();
+    await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
+    const heading = await screen.findByRole('heading', { name: 'Change your password' });
+    const form = within(heading.closest('section') as HTMLElement);
+
+    await userEvent.type(form.getByLabelText('Current password'), PASSWORD, WITHOUT_PAUSES);
+    await userEvent.type(
+      form.getByLabelText('New password'),
+      'another invented password',
+      WITHOUT_PAUSES,
+    );
+    await userEvent.type(
+      form.getByLabelText('New password again'),
+      'another invented password',
+      WITHOUT_PAUSES,
+    );
+    await userEvent.click(form.getByRole('button', { name: 'Change password' }));
+
+    expect(await form.findByRole('alert')).toHaveTextContent('The current password is not right.');
+    expect(form.queryByText('Your password has been changed.')).not.toBeInTheDocument();
+  });
+
   it('GivenTwoNewPasswordsThatDiffer_WhenSubmitted_ThenNothingIsSent', async () => {
     const stub = serving({
       'POST /api/auth/refresh': {

@@ -778,6 +778,24 @@ describe('what a failure carries', () => {
     expect(error.message).toBe('The server returned 502.');
   });
 
+  /** A media type is case-insensitive (RFC 9110), so a server's capitals change nothing. */
+  it('GivenAPlainTextBodyTypedInCapitals_WhenItFails_ThenTheTextIsTheMessage', async () => {
+    failingWith(502, 'Text/Plain; Charset=UTF-8', 'Bad gateway: the upstream did not answer.');
+
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+
+    expect(error.message).toBe('Bad gateway: the upstream did not answer.');
+  });
+
+  /** An empty detail would be an alert that says nothing. */
+  it('GivenAnEmptyPlainTextBody_WhenItFails_ThenTheMessageNamesTheStatus', async () => {
+    failingWith(502, 'text/plain', '');
+
+    const error = (await api.get('/api/shifts').catch((e: unknown) => e)) as ApiError;
+
+    expect(error.message).toBe('The server returned 502.');
+  });
+
   it('GivenANonJsonBodyOfNoStatedType_WhenItFails_ThenTheMessageNamesTheStatus', async () => {
     failingWith(503, null, 'upstream connect error');
 

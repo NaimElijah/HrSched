@@ -1146,7 +1146,7 @@ describe('the board of a draft', () => {
    * the page has to say why, by name, rather than stop without a word. Invented for the test.
    */
   it('GivenAGenerationEndingInAStatusThisBuildDoesNotKnow_WhenItEnds_ThenItSaysSoByName', async () => {
-    routeTo({
+    const stub = routeTo({
       'POST /api/rosters/generations': {
         status: 202,
         body: { id: 'gen-1', status: 'CANCELLED', roster: null, violations: [] },
@@ -1154,13 +1154,17 @@ describe('the board of a draft', () => {
       '/api/rosters': { status: 200, body: [] },
     });
     renderPage();
+    const generate = await screen.findByRole('button', { name: 'Generate a draft for this span' });
+    const listedBefore = callsTo(stub, 'GET', '/api/rosters').length;
 
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Generate a draft for this span' }),
-    );
+    await userEvent.click(generate);
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       /^The generation ended as CANCELLED, which this version of HrSched cannot describe\./,
+    );
+    // The message points at the rosters below, so they are read again to hold any draft it made.
+    await waitFor(() =>
+      expect(callsTo(stub, 'GET', '/api/rosters').length).toBeGreaterThan(listedBefore),
     );
   });
 
