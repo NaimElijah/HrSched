@@ -40,6 +40,9 @@ class JdbcSessionRepositoryTest {
   /** Invented, and hashes nothing. */
   private static final PasswordHash HASH = new PasswordHash("{bcrypt}$2a$04$invented.test.value");
 
+  /** The smallest step {@code timestamptz} stores. */
+  private static final Duration ONE_MICROSECOND = Duration.ofNanos(1_000);
+
   /** PostgreSQL's {@code foreign_key_violation}. */
   private static final String FOREIGN_KEY_VIOLATION = "23503";
 
@@ -191,12 +194,14 @@ class JdbcSessionRepositoryTest {
   }
 
   /**
-   * A revocation says something ended a session early. One that had already run out ended of its
-   * own accord, and stamping it would make "how many sessions did disabling end?" count every
-   * sign-in the account ever made.
+   * Revoking every session stamps every one not yet revoked, an expired one included. Which have
+   * expired is a question for a clock, and the revoking instance's clock is not the one that later
+   * judges a session live: skipping what it calls expired would leave a session a slower instance
+   * still serves. How many an act ended early is read from the rows, by revoked_at before
+   * expires_at.
    */
   @Test
-  void GivenAnExpiredAndALiveSession_WhenEverySessionOfTheAccountIsRevoked_ThenOnlyTheLiveOneIs() {
+  void GivenAnExpiredAndALiveSession_WhenEverySessionOfTheAccountIsRevoked_ThenBothAreStamped() {
     Account account = anAccount();
     SignInSession expired =
         new SignInSession(
@@ -211,27 +216,36 @@ class JdbcSessionRepositoryTest {
     repository.revokeEverySessionOf(account.id(), SessionRevocation.ACCOUNT_DISABLED, NOW);
 
     assertThat(storedSessionRevocation(expired.id()))
-        .describedAs("it ended when it expired, and nothing ended it early")
-        .isNull();
+        .describedAs("no clock decides which sessions are ended, so an expired one is stamped too")
+        .isEqualTo("ACCOUNT_DISABLED");
     assertThat(storedSessionRevocation(live.id())).isEqualTo("ACCOUNT_DISABLED");
   }
 
   /**
-   * A session is live only strictly before its expiry, as {@link SignInSession#isLiveAt} says, so
-   * one expiring at the very instant of the revocation has already ended and is not stamped.
+   * Both sides of the instant of revocation: a session ending at that very instant, and one ending
+   * a microsecond, the store's precision, after it. Neither is told apart from the other, because
+   * the revocation compares no expiry with its own clock.
    */
   @Test
   void
-      GivenASessionExpiringAtTheInstantOfRevocation_WhenEverySessionIsRevoked_ThenItIsNotStamped() {
+      GivenSessionsEndingAtAndJustAfterTheRevocation_WhenEverySessionIsRevoked_ThenBothAreStamped() {
     Account account = anAccount();
     SignInSession endingNow =
         new SignInSession(
             SignInSessionId.newId(), account.id(), NOW.minus(Duration.ofHours(12)), NOW);
+    SignInSession endingJustAfter =
+        new SignInSession(
+            SignInSessionId.newId(),
+            account.id(),
+            NOW.minus(Duration.ofHours(12)),
+            NOW.plus(ONE_MICROSECOND));
     repository.start(endingNow, digest("ending-now"), NOW);
+    repository.start(endingJustAfter, digest("ending-just-after"), NOW.plus(ONE_MICROSECOND));
 
     repository.revokeEverySessionOf(account.id(), SessionRevocation.PASSWORD_RESET, NOW);
 
-    assertThat(storedSessionRevocation(endingNow.id())).isNull();
+    assertThat(storedSessionRevocation(endingNow.id())).isEqualTo("PASSWORD_RESET");
+    assertThat(storedSessionRevocation(endingJustAfter.id())).isEqualTo("PASSWORD_RESET");
   }
 
   /**

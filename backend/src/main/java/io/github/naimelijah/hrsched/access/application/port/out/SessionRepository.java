@@ -98,15 +98,18 @@ public interface SessionRepository {
   void revoke(SignInSessionId session, SessionRevocation reason, Instant now);
 
   /**
-   * Ends every live session of one account.
+   * Ends every session of one account that nothing has ended yet.
    *
    * <p>For the acts that invalidate everything opened under the old state: a password changed, an
    * account disabled, a password reset. Leaving one session alive after any of those would leave
    * the door somebody was being shut out of standing open.
    *
-   * <p>Live means not yet revoked and not yet expired at {@code now}. A session that has run out is
-   * left as it is: it ended of its own accord, and recording a revocation on it would count it
-   * among the sessions this act ended.
+   * <p>Every session not yet revoked is stamped, whatever its expiry, and deliberately so: no clock
+   * decides which. {@code now} is the revoking instance's clock, while whether a session is still
+   * live is judged later on the serving instance's, and the two never exactly agree. Skipping the
+   * sessions this clock calls expired would leave one that a slower instance still serves. How many
+   * sessions an act ended early is answered when reading, by the rows whose {@code revoked_at} is
+   * before their {@code expires_at}.
    *
    * @param account whose sessions to end, never {@code null}
    * @param reason why they are ending, never {@code null}
