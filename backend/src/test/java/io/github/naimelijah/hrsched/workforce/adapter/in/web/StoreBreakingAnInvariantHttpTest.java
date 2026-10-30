@@ -92,4 +92,41 @@ class StoreBreakingAnInvariantHttpTest {
         .hasMessageNotContaining("Ada")
         .hasMessageNotContaining("2026-08");
   }
+
+  /**
+   * The schema's {@code btrim} trims spaces only, so a name that is only a tab stores, while the
+   * domain refuses every blank name (R2) and answers a caller sending one with a 400.
+   */
+  @Test
+  void GivenABlankNameInTheStore_WhenListingEmployees_ThenItFailsAsOurDefect() throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada =
+        JsonPath.read(
+            mockMvc
+                .perform(
+                    as(mockMvc, post("/api/employees"), organisation, "ADMIN")
+                        .content("{\"name\":\"Ada\"}"))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(),
+            "$.id");
+    PostgresDatabase.jdbcClient()
+        .sql("UPDATE employee SET name = :name WHERE id = :id")
+        .param("name", "\t")
+        .param("id", UUID.fromString(ada))
+        .update();
+
+    Throwable failure =
+        catchThrowable(
+            () -> mockMvc.perform(as(mockMvc, get("/api/employees"), organisation, "ADMIN")));
+
+    assertThat(failure)
+        .describedAs("answered as the caller's mistake rather than escaping as our defect")
+        .isNotNull()
+        .rootCause()
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(ada)
+        .hasMessageContaining("R2");
+  }
 }

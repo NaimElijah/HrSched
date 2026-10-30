@@ -14,6 +14,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import io.github.naimelijah.hrsched.workforce.domain.model.ContractTerms;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
+import io.github.naimelijah.hrsched.workforce.domain.model.InvalidEmployeeNameException;
 import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
 import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
@@ -56,6 +57,9 @@ class JdbcEmployeeRepositoryTest {
       new TimeRange(Instant.parse("2026-12-20T00:00:00Z"), Instant.parse("2026-12-27T00:00:00Z"));
   private static final TimeRange MONDAY_DAY =
       new TimeRange(Instant.parse("2026-09-07T08:00:00Z"), Instant.parse("2026-09-07T16:00:00Z"));
+
+  /** Blank to {@link String#isBlank}, but not to the schema's {@code btrim}, which trims spaces. */
+  private static final String BLANK_TO_THE_DOMAIN_ONLY = "\t";
 
   private final JdbcEmployeeRepository repository =
       new JdbcEmployeeRepository(PostgresDatabase.jdbcClient());
@@ -336,6 +340,48 @@ class JdbcEmployeeRepositoryTest {
     assertThat(failure.getSuppressed())
         .singleElement()
         .isInstanceOf(OverlappingUnavailabilityException.class);
+  }
+
+  /**
+   * {@code employee_name_not_blank} trims spaces only, so a name that is only a tab stores, while
+   * the domain refuses every blank name (R2). A row written by hand, a restore or a bug can hold
+   * one, and loading it fails as our defect for the reasons the overlap test gives: the domain's
+   * refusal is answered 400 as the caller's mistake, so it travels suppressed rather than as the
+   * cause, and the message names the identity and the rule only.
+   */
+  @Test
+  void GivenABlankNameInTheStore_WhenLoaded_ThenItFailsAsADefect() {
+    Employee ada = employee(ACME, "Ada");
+    repository.save(ada);
+    storeNameDirectly(ada, BLANK_TO_THE_DOMAIN_ONLY);
+
+    assertThatThrownBy(() -> repository.findById(ACME, ada.id()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasNoCause()
+        .satisfies(JdbcEmployeeRepositoryTest::carriesTheNameRefusalSuppressed)
+        .hasMessageContaining(ada.id().value().toString())
+        .hasMessageContaining("R2");
+    assertThatThrownBy(() -> repository.findByOrganisation(ACME))
+        .isInstanceOf(IllegalStateException.class)
+        .hasNoCause()
+        .satisfies(JdbcEmployeeRepositoryTest::carriesTheNameRefusalSuppressed)
+        .hasMessageContaining(ada.id().value().toString())
+        .hasMessageContaining("R2");
+  }
+
+  private static void carriesTheNameRefusalSuppressed(Throwable failure) {
+    assertThat(failure.getSuppressed())
+        .singleElement()
+        .isInstanceOf(InvalidEmployeeNameException.class);
+  }
+
+  /** Writes past the adapter, because no {@code Employee} can carry a blank name. */
+  private static void storeNameDirectly(Employee employee, String name) {
+    PostgresDatabase.jdbcClient()
+        .sql("UPDATE employee SET name = :name WHERE id = :id")
+        .param("name", name)
+        .param("id", employee.id().value())
+        .update();
   }
 
   /** Writes past the adapter, because no {@code Employee} can carry what this stores. */

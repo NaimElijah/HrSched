@@ -7,6 +7,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.workforce.application.port.out.EmployeeRepository;
 import io.github.naimelijah.hrsched.workforce.domain.model.ContractTerms;
 import io.github.naimelijah.hrsched.workforce.domain.model.Employee;
+import io.github.naimelijah.hrsched.workforce.domain.model.InvalidEmployeeNameException;
 import io.github.naimelijah.hrsched.workforce.domain.model.OverlappingUnavailabilityException;
 import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import io.github.naimelijah.hrsched.workforce.domain.model.ShiftPreference;
@@ -34,11 +35,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * rather than diffed, because {@code Employee} compares by identity alone and so gives an adapter
  * no way to tell what changed.
  *
- * <p>Reading rebuilds through the aggregate's own withers rather than a back door, so every
- * invariant is re-checked on the way out of the database. If stored unavailability overlapped,
- * loading that employee fails loudly, with an {@link IllegalStateException} reporting a defect of
- * the store rather than the refusal a caller is given, instead of quietly handing the domain a
- * state it forbids.
+ * <p>Reading rebuilds through the aggregate's own constructor and withers rather than a back door,
+ * so every invariant is re-checked on the way out of the database. If a stored name were blank or
+ * stored unavailability overlapped, loading that employee would fail loudly, with an {@link
+ * IllegalStateException} reporting a defect of the store rather than the refusal a caller is given,
+ * instead of quietly handing the domain a state it forbids.
  *
  * <p>A read loads the employees' own rows, then, if it found any, each kind of owned or referenced
  * row - their qualifications, unavailability and preferences - in one query for all of them rather
@@ -219,48 +220,68 @@ public class JdbcEmployeeRepository implements EmployeeRepository {
     List<Employee> employees = new ArrayList<>(bare.size());
     for (BareEmployee one : bare) {
       UUID id = one.id().value();
+      employees.add(
+          rebuilt(
+              one,
+              qualifications.getOrDefault(id, List.of()),
+              unavailability.getOrDefault(id, List.of()),
+              preferences.getOrDefault(id, List.of())));
+    }
+    return employees;
+  }
+
+  /**
+   * Rebuilds through the aggregate's own constructor and withers, so every rule they check is
+   * checked again on the way out of the store.
+   *
+   * <p>The domain's refusal is how a caller is told their own request breaks a rule, and is
+   * answered as their mistake without a log line. Stored rows breaking one are this system's defect
+   * instead, so each refusal stored rows can reach is replaced by one, naming the identity and the
+   * rule and never the name or a span: a name blank to the domain but not to the schema's {@code
+   * btrim} (R2), and overlapping unavailability (R7).
+   *
+   * <p>The refusal is deliberately not attached as the cause. Spring resolves an exception handler
+   * by an exception's causes when none takes its own type, so a cause would route this straight
+   * back to the 400 it exists to avoid. It travels suppressed instead, which Spring does not walk,
+   * so its stack still reaches the log; its message is a constant naming neither.
+   */
+  private static Employee rebuilt(
+      BareEmployee one,
+      List<QualificationId> qualifications,
+      List<TimeRange> unavailability,
+      List<ShiftPreference> preferences) {
+    try {
       Employee employee = new Employee(one.id(), one.organisation(), one.name());
-      for (QualificationId qualification : qualifications.getOrDefault(id, List.of())) {
+      for (QualificationId qualification : qualifications) {
         employee = employee.holding(qualification);
       }
-      employee = withStoredUnavailability(employee, unavailability.getOrDefault(id, List.of()));
-      for (ShiftPreference preference : preferences.getOrDefault(id, List.of())) {
+      for (TimeRange period : unavailability) {
+        employee = employee.unavailableFor(period);
+      }
+      for (ShiftPreference preference : preferences) {
         employee = employee.preferring(preference);
       }
       if (one.contractedSeconds() != null) {
         employee =
             employee.contractedTo(new ContractTerms(Duration.ofSeconds(one.contractedSeconds())));
       }
-      employees.add(employee);
+      return employee;
+    } catch (InvalidEmployeeNameException refusal) {
+      throw defectOfTheStore(
+          "Stored name of employee %s is blank, which breaks R2".formatted(one.id().value()),
+          refusal);
+    } catch (OverlappingUnavailabilityException refusal) {
+      throw defectOfTheStore(
+          "Stored unavailability of employee %s overlaps, which breaks R7"
+              .formatted(one.id().value()),
+          refusal);
     }
-    return employees;
   }
 
-  /**
-   * The domain's refusal is how a caller is told their own declaration overlaps, and is answered as
-   * their mistake without a log line. Stored rows breaking R7 are this system's defect instead, so
-   * the refusal is replaced by one, naming the identity and the rule and never the name or a span.
-   *
-   * <p>The refusal is deliberately not attached as the cause. Spring resolves an exception handler
-   * by an exception's causes when none takes its own type, so a cause would route this straight
-   * back to the 400 it exists to avoid. It travels suppressed instead, which Spring does not walk,
-   * so its stack still reaches the log; its message is a constant naming no span.
-   */
-  private static Employee withStoredUnavailability(Employee employee, List<TimeRange> periods) {
-    Employee rebuilt = employee;
-    try {
-      for (TimeRange period : periods) {
-        rebuilt = rebuilt.unavailableFor(period);
-      }
-    } catch (OverlappingUnavailabilityException refusal) {
-      IllegalStateException defect =
-          new IllegalStateException(
-              "Stored unavailability of employee %s overlaps, which breaks R7"
-                  .formatted(employee.id().value()));
-      defect.addSuppressed(refusal);
-      throw defect;
-    }
-    return rebuilt;
+  private static IllegalStateException defectOfTheStore(String message, RuntimeException refusal) {
+    IllegalStateException defect = new IllegalStateException(message);
+    defect.addSuppressed(refusal);
+    return defect;
   }
 
   /** One owned or referenced row, still attached to the employee it belongs to. */

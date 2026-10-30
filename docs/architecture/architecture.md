@@ -759,6 +759,15 @@ are not audited. Nothing at runtime depends on any of it.
   Contracted hours travel on `RosterableEmployee` too, as `weeklyContractedHours`, but
   scheduling's `WorkforceDirectoryAdapter` drops them, so nothing in scheduling reads them until
   [#103](https://github.com/NaimElijah/HrSched/issues/103) bounds a roster by them.
+- **An employee stored breaking a rule is this system's defect, not the caller's mistake.**
+  `JdbcEmployeeRepository` rebuilds every employee it reads through the aggregate's own
+  constructor and withers, so each rule they check is checked again on the way out of the store.
+  A refusal stored rows can reach, a name the schema's `btrim` lets through, as it trims spaces
+  only, but the domain calls blank (R2), or overlapping unavailability (R7), is replaced by an
+  `IllegalStateException` naming the employee's identity and the rule, never the name or a span.
+  No workforce handler takes it, so it is answered as a server error rather than the 400 the same
+  refusal earns a caller. The refusal travels suppressed rather than as the cause, because Spring
+  resolves a handler by an exception's causes too.
 - **A declaration is withdrawn by what it says, because it has no identity** (F26). Unavailability
   is a `TimeRange` and a preference a `ShiftPreference` value inside the `Employee` aggregate, and
   their rows are keyed by an ordinal the repository renumbers on every save. So
