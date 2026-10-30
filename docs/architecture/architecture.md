@@ -89,11 +89,20 @@ flowchart TB
     wfStore --> db
 ```
 
-Three rules hold this together, and each fails the build when broken:
+These rules hold this together, and each fails the build when broken:
 
 1. Inside a context, dependencies point inward. The domain imports nothing but the JDK.
-2. A context may reference another context's `application.port.in` package and nothing else.
+2. A context may reference another context's `application.port.in` package and nothing else, and
+   only from its own `adapter.out`.
 3. The shared kernel depends on no context.
+4. Contexts depend one way, with no cycle (`contexts_are_free_of_cycles`).
+
+`HexagonalArchitectureTest` holds the full set. Its other structural rules: the application layer
+depends only on an allow-list of the JDK, SLF4J and HrSched's own core; neither the domain nor the
+application layer does I/O through the JDK; every class of a context sits in one of its layers;
+only the `@Configuration` wiring sees inside a context; every `@RestController` is handled by its
+own context's exception handler; and every repository and directory method but a save takes an
+`OrganisationId`, bar those named in `UNSCOPED_LOOKUPS`.
 
 ## Components
 
