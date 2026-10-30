@@ -2,7 +2,7 @@ package io.github.naimelijah.hrsched.architecture.fixtures.configuration;
 
 import io.github.naimelijah.hrsched.architecture.fixtures.notifications.application.port.out.FixtureNoticeStore;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.FixturePayslip;
-import io.github.naimelijah.hrsched.architecture.fixtures.stereotypes.FixtureConfiguration;
+import io.github.naimelijah.hrsched.architecture.stereotypes.FixtureConfiguration;
 
 /**
  * Keeps the composition-root rule: wiring, which must see inside every context to build it, and a

@@ -13,13 +13,13 @@ import io.github.naimelijah.hrsched.HrSchedApplication;
 import io.github.naimelijah.hrsched.access.application.service.SessionService;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.architecture.HexagonalArchitectureTest.UnscopedLookup;
+import io.github.naimelijah.hrsched.architecture.actors.AsksAnAccountForItsActor;
+import io.github.naimelijah.hrsched.architecture.actors.BuildsATenantActor;
+import io.github.naimelijah.hrsched.architecture.actors.BuildsAnOperator;
+import io.github.naimelijah.hrsched.architecture.actors.ReferencesAccountActor;
+import io.github.naimelijah.hrsched.architecture.actors.ReferencesTheOperatorConstructor;
 import io.github.naimelijah.hrsched.architecture.fixtures.FixtureApplication;
 import io.github.naimelijah.hrsched.architecture.fixtures.RosterTranslator;
-import io.github.naimelijah.hrsched.architecture.fixtures.actors.AsksAnAccountForItsActor;
-import io.github.naimelijah.hrsched.architecture.fixtures.actors.BuildsATenantActor;
-import io.github.naimelijah.hrsched.architecture.fixtures.actors.BuildsAnOperator;
-import io.github.naimelijah.hrsched.architecture.fixtures.actors.ReferencesAccountActor;
-import io.github.naimelijah.hrsched.architecture.fixtures.actors.ReferencesTheOperatorConstructor;
 import io.github.naimelijah.hrsched.architecture.fixtures.configuration.HelperReachingAPublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.configuration.HelperReachingIntoADomain;
 import io.github.naimelijah.hrsched.architecture.fixtures.configuration.WiringReachingIntoContexts;
@@ -66,9 +66,9 @@ import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.Ke
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoAnUnlistedContext;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoConfiguration;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoNotifications;
-import io.github.naimelijah.hrsched.architecture.fixtures.stereotypes.FixtureConfiguration;
-import io.github.naimelijah.hrsched.architecture.fixtures.stereotypes.FixtureController;
-import io.github.naimelijah.hrsched.architecture.fixtures.stereotypes.FixtureExceptionHandler;
+import io.github.naimelijah.hrsched.architecture.stereotypes.FixtureConfiguration;
+import io.github.naimelijah.hrsched.architecture.stereotypes.FixtureController;
+import io.github.naimelijah.hrsched.architecture.stereotypes.FixtureExceptionHandler;
 import io.github.naimelijah.hrsched.configuration.UseCaseConfiguration;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
@@ -77,6 +77,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Component;
 
@@ -94,7 +95,14 @@ import org.springframework.stereotype.Component;
  */
 class HexagonalArchitectureRulesTest {
 
-  private static final String FIXTURE_ROOT = "io.github.naimelijah.hrsched.architecture.fixtures";
+  /** The architecture tests' own package: the fixtures, their stand-ins and these tests. */
+  private static final String ARCHITECTURE_TESTS = "io.github.naimelijah.hrsched.architecture";
+
+  /**
+   * Where the fixture contexts are rooted. Every subpackage is read as a context there, so the
+   * stand-ins and the actor rules' fixtures live beside it rather than in it.
+   */
+  private static final String FIXTURE_ROOT = ARCHITECTURE_TESTS + ".fixtures";
 
   private static final ContextPackages FIXTURES = new ContextPackages(FIXTURE_ROOT);
 
@@ -798,10 +806,10 @@ class HexagonalArchitectureRulesTest {
   }
 
   /**
-   * The fixtures break the rules on purpose, so the build's own analysis must never see them: if it
-   * did, they would fail it, or a rule loosened to let them pass would let production pass too.
-   * Read from {@code HexagonalArchitectureTest}'s own annotation, so a change there is a change
-   * here.
+   * The fixtures break the rules on purpose, so the build's own analysis must never see them, nor
+   * anything else of the architecture tests': if it did, they would fail it, or a rule loosened to
+   * let them pass would let production pass too. Read from {@code HexagonalArchitectureTest}'s own
+   * annotation, so a change there is a change here.
    */
   @Test
   void
@@ -814,30 +822,37 @@ class HexagonalArchitectureRulesTest {
     List<String> fixtures =
         classes.stream()
             .map(JavaClass::getName)
-            .filter(name -> name.startsWith(FIXTURE_ROOT + "."))
+            .filter(name -> name.startsWith(ARCHITECTURE_TESTS + "."))
             .toList();
-    assertThat(fixtures).as("fixture classes in the build's own analysis").isEmpty();
+    assertThat(fixtures).as("architecture test classes in the build's own analysis").isEmpty();
   }
 
   /**
-   * The fixtures sit under {@code @SpringBootApplication}'s component-scan base, and the test
-   * classes are on the classpath of every {@code @SpringBootTest}, so a fixture carrying a Spring
-   * stereotype would join the shared test context, and a final one carrying {@code @Configuration}
-   * would fail its startup. The rules that need one take the annotation as a parameter instead.
+   * The fixtures and their stand-ins sit under {@code @SpringBootApplication}'s component-scan
+   * base, and the test classes are on the classpath of every {@code @SpringBootTest}, so a fixture
+   * carrying a Spring stereotype would join the shared test context, and a final one carrying
+   * {@code @Configuration} would fail its startup. {@code HrSchedApplication}'s
+   * {@code @ConfigurationPropertiesScan} has the same base, so a fixture carrying
+   * {@code @ConfigurationProperties} would be bound as well. The rules that need a stereotype take
+   * the annotation as a parameter instead. The import is checked for a known fixture first, so a
+   * package that moved, or an import that found nothing, cannot pass this as an empty list.
    */
   @Test
-  void GivenTheFixtures_WhenTheirAnnotationsAreRead_ThenNoneIsASpringStereotype() {
-    List<String> stereotyped =
-        new ClassFileImporter()
-            .importPackages(FIXTURE_ROOT).stream()
-                .filter(
-                    fixture ->
-                        fixture.isAnnotatedWith(Component.class)
-                            || fixture.isMetaAnnotatedWith(Component.class))
-                .map(JavaClass::getName)
-                .toList();
+  void
+      GivenTheFixtures_WhenTheirAnnotationsAreRead_ThenNoneIsASpringStereotypeOrConfigurationProperties() {
+    JavaClasses fixtures = new ClassFileImporter().importPackages(ARCHITECTURE_TESTS);
 
-    assertThat(stereotyped).as("fixtures a component scan would pick up").isEmpty();
+    assertThat(fixtures.contain(FixturePayslip.class)).as("the import holds the fixtures").isTrue();
+    List<String> picked =
+        fixtures.stream()
+            .filter(
+                fixture ->
+                    fixture.isMetaAnnotatedWith(Component.class)
+                        || fixture.isAnnotatedWith(Component.class)
+                        || fixture.isAnnotatedWith(ConfigurationProperties.class))
+            .map(JavaClass::getName)
+            .toList();
+    assertThat(picked).as("fixtures a component or properties scan would pick up").isEmpty();
   }
 
   /**

@@ -1,6 +1,6 @@
 package io.github.naimelijah.hrsched.architecture.fixtures.payroll.adapter.in.web.payruns;
 
-import io.github.naimelijah.hrsched.architecture.fixtures.stereotypes.FixtureExceptionHandler;
+import io.github.naimelijah.hrsched.architecture.stereotypes.FixtureExceptionHandler;
 
 /**
  * A payroll exception handler scoped to a package by name, as Spring's {@code basePackages} scopes

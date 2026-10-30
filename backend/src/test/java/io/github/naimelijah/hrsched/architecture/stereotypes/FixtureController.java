@@ -1,4 +1,4 @@
-package io.github.naimelijah.hrsched.architecture.fixtures.stereotypes;
+package io.github.naimelijah.hrsched.architecture.stereotypes;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
