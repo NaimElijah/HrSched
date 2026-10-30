@@ -88,10 +88,10 @@ two for a refresh token, which reaches its account through its session.
   fails the build on any method but a `save…` of a driven-port `*Repository` or `*Directory` that
   takes no `OrganisationId`, except those its `UNSCOPED_METHODS` list names: `findBySignInName`,
   `findForAuthentication`, `findRefreshToken`, `findAuthenticatedSession`, `findAll`,
-  `findForUpdate` for its `Optional`, and the five session writes. Each entry names the whole
-  signature, so the list allows these and no others, an overload included. `findById` passes the
-  rule, because it takes an `OrganisationId`, so for it and for the session writes the guard in the
-  table is review's to check, as is every caller.
+  `findForUpdate` for its `Optional`, and the session writes. Each entry names the whole signature,
+  so the list allows these and no others, an overload included. `findById` passes the rule because
+  it takes an `OrganisationId`; the session writes are allowed by the list. For both, the guard in
+  the table is review's to check, as is every caller.
 - **A failed sign-in writes to an account the caller does not hold.** `findBySignInName` finds the
   account by a name anybody can submit, and a wrong password is counted against it, so a stranger
   who knows a name can lock it out ([#142](https://github.com/NaimElijah/HrSched/issues/142)).

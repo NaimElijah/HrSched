@@ -81,11 +81,11 @@ fails the architecture test.
   the organisation from it through `actingIn` (`organisationOf` in `AccountController`).
   `GET /api/organisations/{id}` names what to read, not who acts; a tenant naming another gets a
   404. Nothing reads `X-User`, `X-Role`, `X-Organisation` or `X-Employee`; never bring them back.
-- **Tenancy is in every signature.** Repository lookups take an `OrganisationId`; there is no
-  `findById(EmployeeId)`. The exceptions are the access context's credential reads and its register
-  of organisations, which ADR-055 lists with its reasons. Use cases take an `Actor` and call
-  `requireAccessTo` first. A cross-tenant attempt is a 404, never a 403 — a 403 confirms the
-  resource exists.
+- **Tenancy is in every signature.** Repository methods but a save take an `OrganisationId`; there
+  is no `findById(EmployeeId)`. The exceptions are the access context's credential reads and
+  session writes, and its register of organisations, which ADR-055 lists with its reasons. Use
+  cases take an `Actor` and call `requireAccessTo` first. A cross-tenant attempt is a 404, never a
+  403 — a 403 confirms the resource exists.
 - **`UserId` and `EmployeeId` are never compared.** They are different identities on purpose. To
   ask whether an actor is the person being acted on, use `TenantActor.isThemself` — the link is
   carried, not inferred from matching UUIDs (ADR-012).
