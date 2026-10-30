@@ -365,9 +365,8 @@ public class SchedulingService
     GenerationRequest request = units.reading(() -> generationRequestFor(actor, command));
 
     Roster draft = generated(request, generator.generate(request));
-    // Asked here only to refuse a solve that outlasted the lost-at instant before anything is
-    // written; the ending stored is the one asked for again below.
-    requested.succeeded(draft.id(), clock.instant());
+    // A solve that outlasted the lost-at instant is refused before anything is written.
+    requested.requireEndableAt(clock.instant());
     units.writing(
         () -> {
           rosters.save(draft);

@@ -164,7 +164,14 @@ public final class RosterGeneration {
         id, organisation, period, requestedAt, lostAt, outcome, draft, broken, finished);
   }
 
-  private void requireEndableAt(Instant at) {
+  /**
+   * Whether it could still end at {@code at}, for a caller that must not start writing toward an
+   * ending that would be refused. Each ending checks again when it is made.
+   *
+   * @param at what the clock reads now
+   * @throws IllegalStateException if it has already ended, or is lost by {@code at}
+   */
+  public void requireEndableAt(Instant at) {
     Objects.requireNonNull(at, "at must not be null");
     if (status != GenerationStatus.PENDING) {
       throw new IllegalStateException(
