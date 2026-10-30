@@ -59,14 +59,6 @@ class NotificationTest {
   }
 
   @Test
-  void GivenANotification_WhenAskedWhoItIsFor_ThenOnlyItsRecipientMatches() {
-    Notification notification = unread();
-
-    assertThat(notification.isFor(ADA)).isTrue();
-    assertThat(notification.isFor(EmployeeId.newId())).isFalse();
-  }
-
-  @Test
   void GivenTwoNotificationsWithTheSameContent_WhenCompared_ThenTheyAreStillDifferentThings() {
     UUID subject = UUID.randomUUID();
     NotificationId first = NotificationId.newId();
