@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.adapter.in.web;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
@@ -190,6 +191,22 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("Published concurrently");
+    return problem;
+  }
+
+  /**
+   * Two Admins revised the rules at once, and the other's revision was stored first under the
+   * version this one would have taken (#238). A 409 rather than a 400: nothing about the request
+   * was wrong, and reloading the rules and revising again is the remedy. Not logged: revisions do
+   * not take turns, so losing a race is ordinary, and the store refused it before anything was
+   * kept.
+   */
+  @ExceptionHandler(ConstraintsRevisedConcurrentlyException.class)
+  public ProblemDetail handleRevisedConcurrently(
+      ConstraintsRevisedConcurrentlyException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    problem.setTitle("Revised concurrently");
     return problem;
   }
 

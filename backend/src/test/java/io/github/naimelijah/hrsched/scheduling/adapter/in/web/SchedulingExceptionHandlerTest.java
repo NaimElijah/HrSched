@@ -9,6 +9,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidHeadcountException;
@@ -370,6 +371,34 @@ class SchedulingExceptionHandlerTest {
         .isEqualTo(conflict.getMessage())
         .doesNotContain("what the store said")
         .doesNotContain(replacement.value().toString());
+  }
+
+  /**
+   * #238: a revision of the rules that lost a race is a conflict too, rather than the 500 the
+   * store's own exception became. The store's words stay out of the response. Checked as Spring
+   * routes it as well, since calling the method directly would pass whatever its annotation said.
+   */
+  @Test
+  void GivenARevisionOfTheRulesThatLostARace_WhenTranslated_ThenItIsAConflictSayingWhatToDo()
+      throws NoSuchMethodException {
+    ConstraintsRevisedConcurrentlyException conflict =
+        new ConstraintsRevisedConcurrentlyException(
+            2, new IllegalStateException("what the store said"));
+
+    ProblemDetail problem = handler.handleRevisedConcurrently(conflict);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getTitle()).isEqualTo("Revised concurrently");
+    assertThat(problem.getDetail())
+        .isEqualTo(conflict.getMessage())
+        .doesNotContain("what the store said");
+    assertThat(
+            SchedulingExceptionHandler.class
+                .getMethod(
+                    "handleRevisedConcurrently", ConstraintsRevisedConcurrentlyException.class)
+                .getAnnotation(ExceptionHandler.class)
+                .value())
+        .containsExactly(ConstraintsRevisedConcurrentlyException.class);
   }
 
   @Test

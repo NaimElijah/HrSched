@@ -2,6 +2,7 @@ package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
 import io.github.naimelijah.hrsched.scheduling.application.port.out.ConstraintSetRepository;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWorkingDays;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumWeeklyWorkingTime;
@@ -14,6 +15,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import org.springframework.core.NestedExceptionUtils;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -42,6 +45,9 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
   private static final String MAXIMUM_WEEKLY = "MAXIMUM_WEEKLY_WORKING_TIME";
   private static final String MAXIMUM_CONSECUTIVE_DAYS = "MAXIMUM_CONSECUTIVE_WORKING_DAYS";
 
+  /** PostgreSQL's SQLSTATE for {@code unique_violation}. */
+  private static final String UNIQUE_VIOLATION = "23505";
+
   private final JdbcClient jdbc;
 
   public JdbcConstraintSetRepository(JdbcClient jdbc) {
@@ -55,17 +61,29 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
    * Admins computed the same next version from the same current one, and exactly one of them is
    * about to lose their revision. Silencing that with {@code ON CONFLICT DO NOTHING} would let the
    * second overwrite the first's constraints while its audit line claimed success — so the unique
-   * violation is allowed to surface and take its transaction with it (ADR-023).
+   * violation refuses the second and takes its transaction with it (ADR-023), as a conflict the
+   * caller can act on by reloading the rules (#238).
+   *
+   * @throws ConstraintsRevisedConcurrentlyException if that version is already stored
    */
   @Override
   public void save(ConstraintSet constraintSet) {
-    jdbc.sql(
-            """
-            INSERT INTO constraint_set (organisation_id, version) VALUES (:organisation, :version)
-            """)
-        .param("organisation", constraintSet.organisation().value())
-        .param("version", constraintSet.version())
-        .update();
+    try {
+      jdbc.sql(
+              """
+              INSERT INTO constraint_set (organisation_id, version)
+              VALUES (:organisation, :version)
+              """)
+          .param("organisation", constraintSet.organisation().value())
+          .param("version", constraintSet.version())
+          .update();
+    } catch (DataAccessException refused) {
+      // The primary key is the only unique index this insert can break.
+      if (isUniqueViolation(refused)) {
+        throw new ConstraintsRevisedConcurrentlyException(constraintSet.version(), refused);
+      }
+      throw refused;
+    }
 
     jdbc.sql(
             """
@@ -123,6 +141,11 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
         .param("durationSeconds", durationSeconds)
         .param("dayCount", dayCount)
         .update();
+  }
+
+  private static boolean isUniqueViolation(DataAccessException refused) {
+    return NestedExceptionUtils.getMostSpecificCause(refused) instanceof SQLException cause
+        && UNIQUE_VIOLATION.equals(cause.getSQLState());
   }
 
   @Override

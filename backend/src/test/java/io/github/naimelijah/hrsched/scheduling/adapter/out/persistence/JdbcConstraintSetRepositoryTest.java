@@ -1,9 +1,14 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.persistence;
 
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.STUCK_AFTER_SECONDS;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.awaitWaitingOnALock;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.backendServingThisTransaction;
+import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions.refusalsOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.InvalidConstraintException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumConsecutiveWorkingDays;
 import io.github.naimelijah.hrsched.scheduling.domain.model.MaximumDailyWorkingTime;
@@ -14,8 +19,10 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.springframework.dao.DuplicateKeyException;
 
 /**
@@ -241,7 +248,8 @@ class JdbcConstraintSetRepositoryTest {
    * Two Admins revising at once both read the same current version and compute the same next one,
    * and exactly one of them is about to lose their revision. The store refuses the second rather
    * than absorbing it: silencing the conflict would let it overwrite the first's constraints while
-   * its audit line claimed success. The refusal takes its transaction with it (ADR-023).
+   * its audit line claimed success. The refusal takes its transaction with it (ADR-023), and is a
+   * conflict the caller can act on (#238).
    */
   @Test
   void GivenAVersionAlreadyStored_WhenSavedAgain_ThenItIsRefusedRatherThanOverwritten() {
@@ -250,9 +258,48 @@ class JdbcConstraintSetRepositoryTest {
     repository.save(set);
 
     assertThatThrownBy(() -> repository.save(sameVersionDifferently(set)))
-        .isInstanceOf(DuplicateKeyException.class);
+        .isInstanceOf(ConstraintsRevisedConcurrentlyException.class)
+        .hasCauseInstanceOf(DuplicateKeyException.class);
 
     assertThat(storedVersions()).containsExactly(2);
+  }
+
+  /**
+   * #238: the race itself, rather than one save after another. Both revisions read version one and
+   * store version two; the second waits on the first's uncommitted row, and once the first commits
+   * it is refused as a conflict the caller can act on, reloading the rules and revising again,
+   * rather than with the store's own exception, which nothing translates and which answers 500.
+   *
+   * <p>The first commits only once the second is waiting on its row, so the test cannot pass by the
+   * second simply arriving after the first had committed.
+   */
+  @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void GivenTwoRevisionsOfOneVersion_WhenTheyRace_ThenTheLoserIsRefusedAsAConflict()
+      throws Exception {
+    ConstraintSet current = ConstraintSet.initial(ACME);
+    // Invented: four days running for the winner, five for the loser, so the two are told apart.
+    ConstraintSet winning = current.revisedTo(List.of(new MaximumConsecutiveWorkingDays(4)));
+    ConstraintSet losing = current.revisedTo(List.of(new MaximumConsecutiveWorkingDays(5)));
+    AtomicInteger loser = new AtomicInteger();
+
+    List<Throwable> refusals =
+        refusalsOf(
+            waitForTheOther -> {
+              repository.save(winning);
+              waitForTheOther.run();
+              awaitWaitingOnALock(loser.get());
+            },
+            waitForTheOther -> {
+              loser.set(backendServingThisTransaction());
+              waitForTheOther.run();
+              repository.save(losing);
+            });
+
+    assertThat(refusals)
+        .singleElement()
+        .isInstanceOf(ConstraintsRevisedConcurrentlyException.class);
+    assertThat(repository.findCurrent(ACME)).contains(winning);
   }
 
   /** A different set claiming a version already taken — the shape a lost update arrives in. */

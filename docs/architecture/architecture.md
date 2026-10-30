@@ -657,6 +657,12 @@ are not audited. Nothing at runtime depends on any of it.
   constraint and kept that translation; the constraint began under
   [ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md), which it
   superseded).
+- **Two revisions of one organisation's rules cannot both take the same version.** A revision
+  reads the current rules without holding them and stores the next version with a plain `INSERT`,
+  so of two Admins revising at once, the second waits on the first's row and is then refused by
+  `constraint_set`'s primary key. `JdbcConstraintSetRepository` turns that unique violation into
+  `ConstraintsRevisedConcurrentlyException`, which is answered 409: reload the rules and revise
+  again ([#238](https://github.com/NaimElijah/HrSched/issues/238)).
 - **Assigning by hand asks the same questions generation asks, and no more.** `assign` enforces the
   three rules that are about one assignment — the person belongs to the organisation (R5), holds
   what the shift demands (R4), and has not declared they cannot work when it runs (F6) — plus that

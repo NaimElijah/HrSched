@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.scheduling.application.port.out;
 
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintSet;
+import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.Optional;
 
@@ -14,6 +15,8 @@ public interface ConstraintSetRepository {
 
   /**
    * @param constraintSet a new version of its organisation's rules
+   * @throws ConstraintsRevisedConcurrentlyException if that version is already stored: another
+   *     revision computed the same next version and was stored first
    */
   void save(ConstraintSet constraintSet);
 
