@@ -7,7 +7,7 @@
     broke that tie by the
     notification's identity, a random UUID, so the approval landed anywhere among the lapses
     ([#254](https://github.com/NaimElijah/HrSched/issues/254)). Since `V13` it breaks the tie by
-    `notification.sequence`, the order the rows were inserted in, last first:
+    `notification.sequence`, the order rows have been inserted in since `V13`, last first:
     `JdbcNotificationRepositoryTest.GivenNotificationsRaisedAtOneInstant_WhenListed_ThenTheLastRaisedComesFirst`.
     The decision stands.
 - **Date:** 2026-10-30

@@ -29,9 +29,10 @@ import org.springframework.stereotype.Repository;
  * <p>{@code occurred_at} is written from the value the aggregate carries, never from the database's
  * own clock: when something happened is an input the caller supplies.
  *
- * <p>Notifications raised at one instant are listed by {@code sequence}, the order the database
- * inserted them in (V13), because the order somebody was told in is ADR-052's to decide and an
- * identity is random. The column never leaves this class.
+ * <p>Notifications raised at one instant are listed by {@code sequence}, the order the database has
+ * inserted them in since V13, because the order somebody was told in is ADR-052's to decide and an
+ * identity is random. Rows stored before V13 were numbered in no recorded order. The column never
+ * leaves this class.
  */
 @Repository
 public class JdbcNotificationRepository implements NotificationRepository {
