@@ -19,8 +19,8 @@ Forces:
 - **A sign-in request carries a name and a password and nothing else.** There is no organisation to
   scope by until the account has been found. Sign-in names are unique platform-wide (R13), so the
   question has one answer.
-- **A token names an account and a session.** The platform operator belongs to no organisation, so a
-  scoped lookup could not find its account under any argument.
+- **A token, or the session a refresh token belongs to, names an account.** The platform operator
+  belongs to no organisation, so a scoped lookup could not find its account under any argument.
 - **A refresh request carries a cookie.** The refresh token is stored as a digest, never as itself,
   so the digest is the only thing to look one up by.
 - **A session belongs to an account, not to a tenant.** `sign_in_session` and `refresh_token` carry
@@ -34,30 +34,40 @@ Forces:
 
 ## Decision
 
-**We read an account or a session without an organisation in exactly the places below, and nowhere
-else in the access context. Each port says so in its javadoc.** Every other read in the context
-takes the organisation.
+**We read or write an account, a session or the register of organisations without an organisation
+in exactly the places below, and nowhere else in the access context. Each port says so in its
+javadoc.** Every other read in the context takes the organisation.
 
 | Port | Method | Why it takes no organisation | What keeps it safe |
 | --- | --- | --- | --- |
 | `AccountRepository` | `findBySignInName(SignInName)` | Sign-in has a name and a password, and the operator bootstrap has no request | Whoever signs in is then the account found. The bootstrap reads only whether the account in the way is the operator, after its own insert was refused, and returns nothing |
-| `AccountRepository` | `findForAuthentication(UserId)` | A token names an account, and the operator's belongs to no organisation | The result decides who the caller *is*, never an answer about somebody else |
+| `AccountRepository` | `findForAuthentication(UserId)` | A token, or the session a refresh token belongs to, names an account, and the operator's belongs to no organisation | The result decides who the caller *is*, never an answer about somebody else |
 | `SessionRepository` | `findRefreshToken(byte[])` | Only the digest of the presented token is known | The digest is the credential: a caller can only find a token it holds |
 | `SessionRepository` | `findAuthenticatedSession(UserId, SignInSessionId)` | It discovers which organisation the caller belongs to | Both identifiers come out of a token this system signed |
-| `SessionRepository` | every other method: `start`, `markReplaced`, `issueSuccessor`, `revoke`, `revokeEverySessionOf` | A session belongs to an account, and the operator's belong to no tenant | Each is reached by an identifier from a verified token, or by the account it belongs to |
+| `SessionRepository` | every other method: `start`, `markReplaced`, `issueSuccessor`, `revoke`, `revokeEverySessionOf` | A session belongs to an account, and the operator's belong to no tenant | Each is reached by an identifier from a verified token, or from a refresh token the caller holds. `revokeEverySessionOf` is the exception, explained below |
 | `OrganisationRepository` | `findAll()` | It *is* the register of tenants | The use case above it refuses listing to anyone who belongs to a tenant |
+| `OrganisationRepository` | `findById(OrganisationId)` | Its id is the target, taken from the URL path, and an operator may read any organisation ([ADR-030](ADR-030-confine-the-operator-to-the-register-of-organisations.md)) | `OrganisationService.findOrganisation` calls `requireAccessTo` first for every actor but the operator, so forgetting that call is forgetting the filter |
 
-Two methods look unscoped and are not exempt, and a rule must treat them so:
+**`ReadSessionUseCase.findSession` takes no organisation, even for a `TenantActor`.** The same use
+case serves the operator, who has none, so it reads the account by `findForAuthentication` for both.
+
+**`revokeEverySessionOf` takes an account id and no organisation, and its SQL has no tenant
+predicate.** Two of its three callers read that id from the URL path. What keeps it safe is the
+scoped `findForUpdate` earlier in the same use case: `AccountService.setAccountActive` and
+`resetPassword` load the account under its organisation before they revoke anything. The third
+caller, the password change, passes the caller's own account. A new "sign out everywhere" use case
+has to load the account under an organisation before it revokes.
+
+One method looks unscoped and is not exempt, and a rule must treat it so:
 
 - **`AccountRepository.findForUpdate(Optional<OrganisationId>, UserId)` is scoped.** An empty
   organisation names the operator's scope, `organisation_id IS NULL`. A tenant's account is never
   found under it, nor the operator's under an organisation. Its parameter is optional, so a rule that
   looks for an `OrganisationId` parameter must accept the `Optional` form.
-- **`OrganisationRepository.findById(OrganisationId)` takes the organisation's own identity,** which
-  is its key.
 
 **`sign_in_session` and `refresh_token` carry no `organisation_id`, and none is added.** Their
-organisation is the one their account has, one join away through `account_id`.
+organisation is the one their account has: one join away through `account_id` for a session, and
+two for a refresh token, which reaches its account through its session.
 
 ## Consequences
 
@@ -74,8 +84,15 @@ organisation is the one their account has, one join away through `account_id`.
   the protection is what each caller does with the result. `findBySignInName`'s javadoc says so: do
   not reuse it to look up an account for somebody who already has an organisation.
 - **A new caller of one of them can read across tenants,** and today only the javadoc and review
-  stop it. Naming the methods exactly is what lets an architecture rule allow these and no others.
-  That rule is a separate change (#253).
+  stop it. Naming the methods exactly is what lets an architecture rule allow these and no others:
+  a rule in `HexagonalArchitectureTest` requires every repository `find…` or `lock…` method to take
+  an `OrganisationId`, and this table's methods are its allow-list.
+- **A failed sign-in writes to an account the caller does not hold.** `findBySignInName` finds the
+  account by a name anybody can submit, and a wrong password is counted against it, so a stranger
+  who knows a name can lock it out ([#142](https://github.com/NaimElijah/HrSched/issues/142)).
+- **The platform-wide name check answers across tenants.** Creating an account under a name another
+  organisation holds is a 409, so an Admin can learn that a name is in use elsewhere
+  ([#141](https://github.com/NaimElijah/HrSched/issues/141)).
 - **Sessions cannot be listed or ended by organisation without a join through `account`.**
 - **A row-level security policy, if one is ever adopted, would have to exempt these reads too,**
   beside the two exemptions ADR-004 already names. Its triggers are in ADR-011.
