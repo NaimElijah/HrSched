@@ -644,4 +644,41 @@ class HexagonalArchitectureTest {
         .flatMap(Arrays::stream)
         .anyMatch(listed -> listed.getName().equals(controller.getName()));
   }
+
+  /**
+   * Every class in a context sits in its {@code domain}, its {@code application} or its {@code
+   * adapter} package.
+   *
+   * <p>Every context repeats the same shape (ADR-003, ADR-006), and the rules above lean on it: the
+   * domain's and the application's are written against those package names, and {@link
+   * #dependencies_point_inward} considers only classes inside a layer. A class in {@code
+   * scheduling.util} would escape all three, free to depend on anything and to be depended on by
+   * anything. {@code HexagonalArchitectureRulesTest} watches it reject such a class, and permit a
+   * class from each layer.
+   */
+  @ArchTest
+  static final ArchRule every_class_in_a_context_is_in_a_layer =
+      everyClassInAContextIsInALayer(ContextPackages.HRSCHED);
+
+  /**
+   * @param packages where the contexts are; {@link ContextPackages#HRSCHED} for the build's rule
+   * @return the layer rule over those contexts
+   */
+  static ArchRule everyClassInAContextIsInALayer(ContextPackages packages) {
+    return classes()
+        .that(DescribedPredicate.describe("belong to a bounded context", inAContext(packages)))
+        .should(
+            new ArchCondition<>(
+                "reside in their context's domain, application or adapter package") {
+              @Override
+              public void check(JavaClass clazz, ConditionEvents events) {
+                if (!packages.isInALayer(clazz)) {
+                  events.add(
+                      SimpleConditionEvent.violated(
+                          clazz, clazz.getName() + " is in no layer of its context"));
+                }
+              }
+            })
+        .because("a class outside every layer escapes every rule written against the layers");
+  }
 }

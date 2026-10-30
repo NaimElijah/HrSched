@@ -40,6 +40,7 @@ import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.D
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainWithAWireFormat;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.FixturePayslip;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.SerializablePayslip;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.util.PayslipFormatting;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.FixtureKernelValue;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoAPublishedPort;
 import io.github.naimelijah.hrsched.architecture.fixtures.shared.domain.model.KernelReachingIntoAnUnlistedContext;
@@ -386,6 +387,30 @@ class HexagonalArchitectureRulesTest {
                 FIXTURES, FixtureController.class, FixtureExceptionHandler.class),
             PayrollController.class,
             PayrollExceptionHandler.class);
+
+    assertHolds(result);
+  }
+
+  @Test
+  void GivenAContextClassOutsideEveryLayer_WhenTheLayerRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyClassInAContextIsInALayer(FIXTURES),
+            PayslipFormatting.class);
+
+    assertViolatedNaming(result, "PayslipFormatting");
+  }
+
+  /** One class from each layer, and a kernel class the rule does not ask about. */
+  @Test
+  void GivenContextClassesInTheirLayersAndAKernelClass_WhenTheLayerRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(
+            HexagonalArchitectureTest.everyClassInAContextIsInALayer(FIXTURES),
+            FixturePayslip.class,
+            FixturePayUseCase.class,
+            ReachesThroughThePublishedPort.class,
+            FixtureKernelValue.class);
 
     assertHolds(result);
   }

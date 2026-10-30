@@ -32,6 +32,9 @@ final class ContextPackages {
   private static final Set<String> NOT_A_CONTEXT =
       Set.of(COMPOSITION_ROOT, "architecture", "shared");
 
+  /** The packages every context is made of, and nothing else (ADR-003, ADR-006). */
+  private static final Set<String> LAYERS = Set.of("domain", "application", "adapter");
+
   /** The only part of a context other contexts may reference: its driving ports. */
   private static final String PUBLISHED = ".application.port.in.";
 
@@ -76,6 +79,23 @@ final class ContextPackages {
    */
   boolean isInTheCompositionRoot(JavaClass clazz) {
     return (clazz.getPackageName() + ".").startsWith(rootPrefix + COMPOSITION_ROOT + ".");
+  }
+
+  /**
+   * @param clazz any class
+   * @return whether it sits in one of the layers of the context it belongs to; false for a class in
+   *     no context
+   */
+  boolean isInALayer(JavaClass clazz) {
+    return contextOf(clazz)
+        .map(
+            context -> {
+              String below =
+                  (clazz.getPackageName() + ".").substring((rootPrefix + context + ".").length());
+              int dot = below.indexOf('.');
+              return dot > 0 && LAYERS.contains(below.substring(0, dot));
+            })
+        .orElse(false);
   }
 
   /**

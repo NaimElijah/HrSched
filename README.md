@@ -108,15 +108,15 @@ published rosters, supersedes what it overlaps, and lapses those rosters' pendin
 constraint as the backstop. The answer is `200`, a `422` listing every violation, or a `409` if an
 overlapping roster was published at the same moment.
 
-These rules fail the build when they are broken. `HexagonalArchitectureTest` runs seventeen ArchUnit
+These rules fail the build when they are broken. `HexagonalArchitectureTest` runs eighteen ArchUnit
 rules on every build. They cover a domain that depends on nothing but the JDK and HrSched's own
-domain, dependency direction, an application layer that depends on nothing but the JDK and HrSched's
-core, no file, stream or network I/O in either, published ports between contexts, consumed only in
-an adapter, only the `@Configuration` wiring seeing inside a context, a kernel that knows no context,
-cycles between contexts and between a context's layers, printing, logging in the domain,
-instrumentation inward of an adapter, the solver kept in its one adapter, reading the acting
-identity from a thread-local, who may build an actor or ask an account for one, and every controller
-listed by its context's exception handler.
+domain, dependency direction, an application layer that depends on nothing but the JDK and
+HrSched's core, no file, stream or network I/O in either, every class of a context in one of its
+layers, published ports between contexts, consumed only in an adapter, only the `@Configuration`
+wiring seeing inside a context, a kernel that knows no context, cycles between contexts and between
+a context's layers, printing, logging in the domain, instrumentation inward of an adapter, the
+solver kept in its one adapter, reading the acting identity from a thread-local, who may build an
+actor or ask an account for one, and every controller listed by its context's exception handler.
 Components, the authentication sequence and the data flow are in
 [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
 
@@ -311,7 +311,7 @@ tests coordinate real threads with barriers and latches.
 | Application | Use cases against hand-written fakes of their own ports: no Spring, no mocking framework | `SchedulingServiceTest`, `SwapServiceTest` |
 | Persistence | Every query scoped to its organisation, on a real PostgreSQL 18; migrations pinned; concurrent publications and edits raced on real threads | `JdbcRosterRepositoryTest`, `AppendOnlyRosterHistoryMigrationTest` |
 | HTTP | Every endpoint through the real security chain: who reaches what, every problem body, and a trace id on every response | `RosteringHttpTest`, `SwapHttpTest`, `AccountHttpTest` |
-| Architecture | The seventeen architecture rules above, ten of them also watched failing on classes that break them on purpose | `HexagonalArchitectureTest`, `HexagonalArchitectureRulesTest` |
+| Architecture | The eighteen architecture rules above, eleven of them also watched failing on classes that break them on purpose | `HexagonalArchitectureTest`, `HexagonalArchitectureRulesTest` |
 | Frontend | The one module that calls `fetch`, error-body validation, session renewal, and one test file per screen | `api/client.test.ts`, `pages/*.test.tsx` |
 
 CI runs both gates, and a dependency audit, on every push and on every pull request into `main` or
