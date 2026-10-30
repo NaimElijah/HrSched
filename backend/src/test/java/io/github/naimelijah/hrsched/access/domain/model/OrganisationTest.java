@@ -22,6 +22,13 @@ class OrganisationTest {
         .isInstanceOf(InvalidOrganisationNameException.class);
   }
 
+  /** PostgreSQL's {@code text} cannot hold a NUL, so a name carrying one could never be stored. */
+  @Test
+  void GivenANameCarryingANul_WhenConstructingAnOrganisation_ThenItIsRejected() {
+    assertThatThrownBy(() -> new Organisation(OrganisationId.newId(), "Acme\0Logistics"))
+        .isInstanceOf(InvalidOrganisationNameException.class);
+  }
+
   @Test
   void GivenANullName_WhenConstructingAnOrganisation_ThenItIsRejected() {
     assertThatThrownBy(() -> new Organisation(OrganisationId.newId(), null))

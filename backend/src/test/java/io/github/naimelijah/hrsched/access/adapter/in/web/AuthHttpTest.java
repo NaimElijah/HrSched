@@ -145,6 +145,22 @@ class AuthHttpTest {
     assertIndistinguishable(wrongPassword, unknownName);
   }
 
+  /**
+   * A NUL is a name no account can hold, since PostgreSQL's {@code text} cannot store one. Looking
+   * it up anyway made the database refuse the query, and the sign-in answered 500 and logged an
+   * ERROR for a request that should have been one more refusal (#254).
+   */
+  @Test
+  void GivenASignInNameCarryingANul_WhenSigningIn_ThenTheAnswerIsIdenticalToAnUnknownName()
+      throws Exception {
+    MockHttpServletResponse unknownName =
+        signIn("nobody-%s@example.com".formatted(UUID.randomUUID()), WRONG_PASSWORD);
+    MockHttpServletResponse carryingANul =
+        signIn("nobody-%s@example.com\0".formatted(UUID.randomUUID()), WRONG_PASSWORD);
+
+    assertIndistinguishable(unknownName, carryingANul);
+  }
+
   @Test
   void
       GivenADisabledAccount_WhenSigningInWithTheRightPassword_ThenTheAnswerIsIdenticalToAWrongPassword()
@@ -364,7 +380,8 @@ class AuthHttpTest {
     return LoggedText.of(captured.list);
   }
 
+  /** Without escaping the NUL as JSON does, Jackson would refuse the body before sign-in ran. */
   private static String quoted(String value) {
-    return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\0", "\\u0000") + "\"";
   }
 }

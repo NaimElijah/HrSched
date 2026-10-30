@@ -20,7 +20,7 @@ import java.util.Objects;
  * personal data that must never reach a log by accident; a type that cannot print itself makes that
  * hard rather than merely discouraged.
  *
- * @param value the normalised name, never {@code null}, never blank
+ * @param value the normalised name, never {@code null}, never blank, and never carrying a NUL
  */
 public record SignInName(String value) {
 
@@ -32,10 +32,22 @@ public record SignInName(String value) {
    */
   private static final int MAXIMUM_LENGTH = 254;
 
+  /**
+   * A character no name may carry, because PostgreSQL's {@code text} cannot hold it: a name with
+   * one could be neither stored nor looked up, and the database would refuse it as a fault rather
+   * than as the caller's mistake. A technical limit of the store, not a rule about names.
+   */
+  private static final char NUL = '\0';
+
+  /**
+   * @throws NullPointerException if {@code value} is null
+   * @throws InvalidSignInNameException if the normalised name is empty, longer than the maximum, or
+   *     carries a NUL
+   */
   public SignInName {
     Objects.requireNonNull(value, "value must not be null");
     value = value.strip().toLowerCase(Locale.ROOT);
-    if (value.isEmpty() || value.length() > MAXIMUM_LENGTH) {
+    if (value.isEmpty() || value.length() > MAXIMUM_LENGTH || value.indexOf(NUL) >= 0) {
       throw new InvalidSignInNameException();
     }
   }

@@ -76,6 +76,17 @@ class SignInNameTest {
     assertThat(new SignInName("a".repeat(254)).value()).hasSize(254);
   }
 
+  /**
+   * PostgreSQL's {@code text} cannot hold a NUL, so a name carrying one could never be stored or
+   * looked up: it is refused here, as a name that cannot be one, rather than by the database as a
+   * fault. Normalising leaves it in place, because a NUL is not whitespace.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"ada\0", "\0ada", "a\0da", "\0"})
+  void GivenANameCarryingANul_WhenCreatingASignInName_ThenItIsRefused(String name) {
+    assertThatThrownBy(() -> new SignInName(name)).isInstanceOf(InvalidSignInNameException.class);
+  }
+
   /** A refusal that quoted the name would put it in whatever log caught the exception. */
   @Test
   void GivenARefusedName_WhenReadingTheRefusal_ThenItDoesNotContainTheName() {

@@ -26,9 +26,10 @@ import org.springframework.test.web.servlet.MockMvc;
 /**
  * A sign-in name that cannot be one, submitted where an account is created.
  *
- * <p>A blank name, or one longer than {@code SignInName} accepts, is the caller's mistake: a 400
- * problem detail, the answer every other malformed field here gets, and never a 500. A 500 says the
- * server failed and pages whoever watches it, for a request nobody should be woken for.
+ * <p>A blank name, one longer than {@code SignInName} accepts, or one carrying a NUL the database
+ * could not store, is the caller's mistake: a 400 problem detail, the answer every other malformed
+ * field here gets, and never a 500. A 500 says the server failed and pages whoever watches it, for
+ * a request nobody should be woken for.
  *
  * <p>Both routes that create an account from a submitted name are driven: an Admin creating one in
  * their organisation, and the operator onboarding an organisation with its first Admin. Onboarding
@@ -54,6 +55,12 @@ class InvalidSignInNameHttpTest {
    * can be.
    */
   private static final String TOO_LONG = "a".repeat(255);
+
+  /**
+   * Invented, and carrying a NUL as JSON escapes one: PostgreSQL's {@code text} cannot store it, so
+   * a name that reached the database with it answered 500.
+   */
+  private static final String CARRYING_A_NUL = "ada-carrying-a-nul@example.com\\u0000";
 
   @Autowired private MockMvc mockMvc;
   @Autowired private AccountRepository accounts;
@@ -107,6 +114,22 @@ class InvalidSignInNameHttpTest {
   void GivenAnOverLongFirstAdminSignInName_WhenTheOperatorOnboards_ThenItIsABadRequestProblem()
       throws Exception {
     MockHttpServletResponse response = onboard(aName(), TOO_LONG);
+
+    assertBadRequestProblem(response);
+  }
+
+  @Test
+  void GivenASignInNameCarryingANul_WhenAnAdminCreatesAnAccount_ThenItIsABadRequestProblem()
+      throws Exception {
+    MockHttpServletResponse response = create(admin(anOrganisation()), CARRYING_A_NUL);
+
+    assertBadRequestProblem(response);
+  }
+
+  @Test
+  void GivenAFirstAdminSignInNameCarryingANul_WhenTheOperatorOnboards_ThenItIsABadRequestProblem()
+      throws Exception {
+    MockHttpServletResponse response = onboard(aName(), CARRYING_A_NUL);
 
     assertBadRequestProblem(response);
   }

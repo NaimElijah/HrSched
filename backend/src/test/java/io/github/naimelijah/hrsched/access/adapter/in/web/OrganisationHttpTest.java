@@ -2,6 +2,8 @@ package io.github.naimelijah.hrsched.access.adapter.in.web;
 
 import static io.github.naimelijah.hrsched.shared.testsupport.TestTenants.with;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -306,6 +308,22 @@ class OrganisationHttpTest {
     mockMvc
         .perform(with(post("/api/organisations"), operator()).content(TestTenants.onboarding("  ")))
         .andExpect(status().isBadRequest());
+  }
+
+  /**
+   * A name carrying a NUL, as JSON escapes one. PostgreSQL's {@code text} cannot store it, so it
+   * reached the database and answered 500; it is the caller's mistake, and a problem detail that
+   * never repeats the name (ADR-024).
+   */
+  @Test
+  void GivenANameCarryingANul_WhenOnboarding_ThenItIsABadRequestProblem() throws Exception {
+    mockMvc
+        .perform(
+            with(post("/api/organisations"), operator())
+                .content(TestTenants.onboarding("Acme carrying a nul\\u0000")))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail").value(not(containsString("Acme"))));
   }
 
   @Test
