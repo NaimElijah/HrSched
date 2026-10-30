@@ -321,7 +321,7 @@ public class SessionService
     // their own password change.
     sessions.revokeEverySessionOf(changed.id(), SessionRevocation.PASSWORD_CHANGED, now);
     record(changed, AccessChange.PASSWORD_CHANGED, changed.id().value());
-    return new ChangePasswordOutcome.Changed(beginSession(changed, now, AccessChange.SIGNED_IN));
+    return new ChangePasswordOutcome.Changed(beginSession(changed, now));
   }
 
   @Override
@@ -396,18 +396,18 @@ public class SessionService
     if (account.failedSignIns() > 0 || account.lockedUntil().isPresent()) {
       accounts.save(account.recordSuccessfulSignIn());
     }
-    return new SignInOutcome.SignedIn(beginSession(account, now, AccessChange.SIGNED_IN));
+    return new SignInOutcome.SignedIn(beginSession(account, now));
   }
 
   /**
-   * Opens a session and hands back everything a client needs to use it.
+   * Opens a session, records it as {@link AccessChange#SIGNED_IN} once its writes are made, and
+   * hands back everything a client needs to use it. A session begun by a password change is
+   * recorded as a sign-in too.
    *
    * @param account whose session it is
    * @param now when it begins
-   * @param change what is recorded about it, since a session begun by a password change is not a
-   *     sign-in and should not be counted as one
    */
-  private IssuedSession beginSession(Account account, Instant now, AccessChange change) {
+  private IssuedSession beginSession(Account account, Instant now) {
     SignInSession session =
         new SignInSession(
             SignInSessionId.newId(), account.id(), now, now.plus(sessionPolicy.absoluteLifetime()));
@@ -417,7 +417,7 @@ public class SessionService
     RefreshTokenSecret refresh = secrets.generate();
     sessions.start(session, refresh.digest(), refreshExpiresAt);
     IssuedAccessToken accessToken = tokens.issue(account.id(), session.id());
-    record(account, change, session.id().value());
+    record(account, AccessChange.SIGNED_IN, session.id().value());
     return new IssuedSession(
         accessToken.value(),
         accessToken.expiresAt(),
