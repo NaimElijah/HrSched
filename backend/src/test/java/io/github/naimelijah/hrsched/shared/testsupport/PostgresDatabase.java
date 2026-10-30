@@ -27,9 +27,9 @@ public final class PostgresDatabase {
 
   /**
    * Pinned rather than floating: a test suite whose database changes underneath it on a Tuesday is
-   * a test suite nobody trusts. To the release and the base image, because {@code postgres:18}
-   * floats across minor releases, and {@code compose.yaml} names the same tag so the local database
-   * is the one the tests ran against.
+   * a test suite nobody trusts. The tag names the release and the base image, because {@code
+   * postgres:18} floats across minor releases. {@code compose.yaml} names the same tag, so the
+   * local database is the one the tests ran against.
    */
   private static final String IMAGE = "postgres:18.6-trixie";
 
