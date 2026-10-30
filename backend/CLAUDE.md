@@ -42,8 +42,11 @@ A context may reference another context's `application.port.in` package and **no
 - **Dependencies point inward, and contexts are independent. Both are enforced.**
   `HexagonalArchitectureTest` fails the build if the domain depends on anything but the JDK and
   HrSched's own domain packages; the application on anything but the JDK and HrSched's packages
-  outside the adapters and `configuration`; either reaches a file, stream or network through the
-  JDK; a context reaches past another's published ports, or reaches them from outside its
+  outside the adapters and `configuration`; either reaches a database, a network, a remote object,
+  a disk, a stream or another program through the JDK (`java.sql`, `java.net` but `URI`,
+  `java.rmi`, `java.nio.file`, `java.nio.channels`, `java.io`'s streams, readers, writers and files
+  but the in-memory ones, `ZipFile`, `ProcessBuilder`, `Process`, `Runtime`), so a port takes no
+  `OutputStream` either, as the adapter does the I/O; a context reaches past another's published ports, or reaches them from outside its
   `adapter/out`; a class in `configuration` other than the `@Configuration` wiring reaches past
   them; the kernel depends on a context; contexts, or a context's layers, form a cycle; a class in a
   context sits outside its `domain`, `application` and `adapter` packages; a `@RestController` is

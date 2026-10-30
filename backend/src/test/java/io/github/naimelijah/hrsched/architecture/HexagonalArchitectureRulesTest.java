@@ -34,12 +34,16 @@ import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.po
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.out.UnscopedPayeeDirectory;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.port.out.UnscopedPayslipRepository;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.FixturePayrollService;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceCallingARemoteObject;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceCallingOverHttp;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceKnowingTheEntryPoint;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceReachingAPublishedPort;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceStartingAProcess;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.application.service.ServiceWithAWireFormat;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainKnowingTheEntryPoint;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainReadingAFile;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainReadingAnArchive;
+import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainUsingInMemoryText;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainUsingSpring;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.DomainWithAWireFormat;
 import io.github.naimelijah.hrsched.architecture.fixtures.payroll.domain.model.FixturePayslip;
@@ -354,6 +358,45 @@ class HexagonalArchitectureRulesTest {
         evaluate(HexagonalArchitectureTest.the_core_does_no_io, ServiceCallingOverHttp.class);
 
     assertViolatedNaming(result, "java.net.http.HttpClient");
+  }
+
+  @Test
+  void GivenAUseCaseHoldingAProcess_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, ServiceStartingAProcess.class);
+
+    assertViolatedNaming(result, "java.lang.ProcessBuilder");
+    assertViolatedNaming(result, "<java.lang.Process>");
+    assertViolatedNaming(result, "java.lang.Runtime");
+  }
+
+  @Test
+  void GivenAUseCaseHoldingARemoteObjectRegistry_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, ServiceCallingARemoteObject.class);
+
+    assertViolatedNaming(result, "java.rmi.registry.Registry");
+  }
+
+  @Test
+  void GivenADomainClassHoldingAnArchive_WhenTheIoRuleIsEvaluated_ThenItIsViolated() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, DomainReadingAnArchive.class);
+
+    assertViolatedNaming(result, "java.util.zip.ZipFile");
+  }
+
+  /**
+   * A location is a value, and a reader, writer or stream over memory reaches nothing outside the
+   * process, though each is in a package or a type hierarchy the rule otherwise refuses.
+   */
+  @Test
+  void
+      GivenADomainClassUsingAUriAndInMemoryReadersWritersAndStreams_WhenTheIoRuleIsEvaluated_ThenItHolds() {
+    EvaluationResult result =
+        evaluate(HexagonalArchitectureTest.the_core_does_no_io, DomainUsingInMemoryText.class);
+
+    assertHolds(result);
   }
 
   /** {@code java.io} is a package, not a verdict: its exceptions and markers do no I/O. */

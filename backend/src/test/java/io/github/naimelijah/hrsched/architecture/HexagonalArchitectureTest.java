@@ -33,6 +33,10 @@ import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.CharArrayReader;
+import java.io.CharArrayWriter;
 import java.io.Console;
 import java.io.File;
 import java.io.FileDescriptor;
@@ -40,8 +44,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.io.Reader;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.io.Writer;
 import java.lang.annotation.Annotation;
+import java.net.URI;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
@@ -49,6 +56,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.IntStream;
+import java.util.zip.ZipFile;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -121,7 +129,16 @@ class HexagonalArchitectureTest {
                   + " annotated by it");
 
   /**
-   * The JDK types that read or write a disk, a terminal or a stream, whatever package they are in.
+   * The JDK packages that reach a database, a network, a remote object or a disk, whatever their
+   * types are called.
+   */
+  private static final String[] JDK_IO_PACKAGES = {
+    "java.sql..", "java.net..", "java.rmi..", "java.nio.file..", "java.nio.channels.."
+  };
+
+  /**
+   * The JDK types that read or write a disk, a terminal, a stream or another program, whatever
+   * package they are in. Their subtypes are refused with them.
    */
   private static final Set<Class<?>> JDK_IO_TYPES =
       Set.of(
@@ -132,21 +149,49 @@ class HexagonalArchitectureTest {
           File.class,
           RandomAccessFile.class,
           FileDescriptor.class,
-          Console.class);
+          Console.class,
+          ZipFile.class,
+          ProcessBuilder.class,
+          Process.class,
+          Runtime.class);
 
   /**
-   * The domain and the application layer do no I/O.
+   * The JDK types in those packages or hierarchies that reach nothing outside the process: a
+   * location, which is a value, and the readers, writers and streams over memory. Exempt by exact
+   * type, so a subclass of one is not.
+   */
+  private static final Set<Class<?>> JDK_IN_MEMORY_TYPES =
+      Set.of(
+          URI.class,
+          StringReader.class,
+          StringWriter.class,
+          ByteArrayInputStream.class,
+          ByteArrayOutputStream.class,
+          CharArrayReader.class,
+          CharArrayWriter.class);
+
+  /**
+   * The domain and the application layer do no I/O through the JDK.
    *
-   * <p>Both allow-lists admit the whole JDK, and the JDK is not only collections and time: {@code
-   * java.sql}, {@code java.net}, {@code java.nio.file} and {@code java.nio.channels}, and {@code
-   * java.io}'s streams, readers, writers and files reach a database, a network or a disk as surely
-   * as a library does. Reaching outside is a driven port's job, so the use case can be tested with
-   * a fake and the domain with {@code new}.
+   * <p>Both allow-lists admit the whole JDK, and the JDK is not only collections and time. So this
+   * rule refuses, in either layer, any dependency on {@code java.sql} (a database), {@code
+   * java.net} (a network), {@code java.rmi} (a remote object), {@code java.nio.file} or {@code
+   * java.nio.channels} (a disk or a channel), and on {@code InputStream}, {@code OutputStream},
+   * {@code Reader}, {@code Writer}, {@code File}, {@code RandomAccessFile}, {@code FileDescriptor},
+   * {@code Console}, {@code ZipFile}, {@code ProcessBuilder}, {@code Process} or {@code Runtime},
+   * or any subtype of one. It exempts {@code java.net.URI} and the in-memory {@code StringReader},
+   * {@code StringWriter}, {@code ByteArrayInputStream}, {@code ByteArrayOutputStream}, {@code
+   * CharArrayReader} and {@code CharArrayWriter}. Reaching outside is a driven port's job, so the
+   * use case can be tested with a fake and the domain with {@code new}. A port therefore cannot
+   * declare an {@code OutputStream} parameter either, and that is intended: the adapter does the
+   * I/O.
    *
    * <p>{@code java.io}'s exceptions and {@code Serializable} do no I/O and stay allowed, as do
    * {@code java.nio.charset} and {@code java.security}, which the core uses to measure a password
-   * and to draw a token. {@code HexagonalArchitectureRulesTest} watches it reject a file in the
-   * domain and an HTTP client in a use case, and permit {@code Serializable}.
+   * and to draw a token. A library that does I/O is the allow-lists' to refuse, not this rule's.
+   * {@code HexagonalArchitectureRulesTest} watches it reject a file and an archive in the domain,
+   * and an HTTP client, a process and a remote-object registry in a use case, and permit {@code
+   * Serializable}, a {@code URI} and the in-memory types.
    */
   @ArchTest
   static final ArchRule the_core_does_no_io =
@@ -155,13 +200,18 @@ class HexagonalArchitectureTest {
           .resideInAnyPackage("..domain..", "..application..")
           .should()
           .dependOnClassesThat(
-              JavaClass.Predicates.resideInAnyPackage(
-                      "java.sql..", "java.net..", "java.nio.file..", "java.nio.channels..")
+              JavaClass.Predicates.resideInAnyPackage(JDK_IO_PACKAGES)
                   .or(
                       DescribedPredicate.describe(
-                          "are JDK streams, readers, writers or files",
-                          target -> JDK_IO_TYPES.stream().anyMatch(target::isAssignableTo))))
-          .because("reaching a database, a network or a disk is a driven port's job");
+                          "are JDK streams, readers, writers, files, archives or processes",
+                          target -> JDK_IO_TYPES.stream().anyMatch(target::isAssignableTo)))
+                  .and(
+                      DescribedPredicate.describe(
+                          "are not a URI or an in-memory reader, writer or stream",
+                          target ->
+                              JDK_IN_MEMORY_TYPES.stream().noneMatch(target::isEquivalentTo))))
+          .because(
+              "reaching a database, a network, a disk or another program is a driven port's job");
 
   @ArchTest
   static final ArchRule dependencies_point_inward =
