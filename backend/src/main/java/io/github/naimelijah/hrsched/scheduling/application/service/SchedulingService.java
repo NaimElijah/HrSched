@@ -664,14 +664,15 @@ public class SchedulingService
     // Every write comes before anything is recorded: the saves, then the tellings, each of which
     // stores a notification. A failure part-way through takes the writes back, but never an audit
     // line (ADR-023, #133). The approval is stored first, so the lapse that follows never takes it
-    // for a request still pending.
+    // for a request still pending. It is told last, so it is the newest line in its parties'
+    // inboxes, above the lapses it caused.
     approving.ifPresent(swaps::save);
     List<SwapRequest> lapsed = lapsePendingSwapsOn(organisation, replaced);
     supersede(replaced, at);
     Roster published = draft.publishedUnder(constraints.version(), at);
     rosters.save(published);
-    approving.ifPresent(request -> tellOfApproval(actor, organisation, request));
     tellOfLapses(actor, organisation, lapsed);
+    approving.ifPresent(request -> tellOfApproval(actor, organisation, request));
 
     // Recorded per roster, not once for the publication that caused it. Nobody asked for these
     // demotions, so without an entry each a roster appears to demote itself.

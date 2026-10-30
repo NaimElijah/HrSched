@@ -136,8 +136,9 @@ public interface PlanRostersUseCase {
    * <p>Exactly {@link #publish}, with one difference. The roster it supersedes is the one the
    * approved request names, so every other request still pending on that roster lapses (R33) and
    * this one must not. Storing the approval here, with the publication and before the lapse, is
-   * what keeps it from being taken for one of them (ADR-039). Its parties are told here too, before
-   * the publication records anything, because a telling is a write that can still fail (#133).
+   * what keeps it from being taken for one of them (ADR-039). Its parties are told here too, after
+   * the parties of every request it lapses and before the publication records anything, because a
+   * telling is a write that can still fail (#133).
    *
    * <p>Only {@code SwapService} has a reason to call this. It records the approval itself once this
    * returns, when every write the approval makes has run.

@@ -1014,6 +1014,26 @@ class SwapServiceTest {
             new Told("LAPSED", grace, two.alans()));
   }
 
+  /**
+   * The lapses an approval causes are told before the approval, and each party in a fixed order. An
+   * inbox lists the newest first, so the approval, told last, stays at the top of the
+   * counterparty's, where it was before the approval's tellings moved into the publication (#133).
+   */
+  @Test
+  void GivenTwoPendingSwapsOnOneRoster_WhenOneIsApproved_ThenTheLapseIsToldBeforeTheApproval() {
+    TwoPending two = twoPendingOnOneRoster();
+    notifier.told.clear();
+
+    service.approveSwap(scheduler(ACME), ACME, two.adas());
+
+    assertThat(notifier.told)
+        .containsExactly(
+            new Told("LAPSED", two.alan(), two.alans()),
+            new Told("LAPSED", grace, two.alans()),
+            new Told("APPROVED", grace, two.adas()),
+            new Told("APPROVED", ada, two.adas()));
+  }
+
   /** One publication can supersede several rosters, and each takes its pending requests with it. */
   @Test
   void GivenPendingSwapsOnTwoRosters_WhenOnePublicationSupersedesBoth_ThenBothLapse() {
