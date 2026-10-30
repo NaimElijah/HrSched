@@ -43,6 +43,9 @@ public final class Roster {
    */
   private static final ChronoUnit MOMENT_OF_RECORD = ChronoUnit.MICROS;
 
+  /** The version every constraint set starts at, as {@link ConstraintSet} holds. */
+  private static final int FIRST_CONSTRAINT_VERSION = 1;
+
   private final RosterId id;
   private final OrganisationId organisation;
   private final TimeRange period;
@@ -159,10 +162,16 @@ public final class Roster {
    * @param at the moment it begins to govern its days; see {@link #nextMomentOfRecord}
    * @return the published roster
    * @throws RosterNotEditableException if this roster is not a draft
-   * @throws IllegalArgumentException if {@code at} is finer than a microsecond
+   * @throws IllegalArgumentException if {@code constraintVersion} is below one, which no constraint
+   *     set version is, or {@code at} is finer than a microsecond
    */
   public Roster publishedUnder(int constraintVersion, Instant at) {
     requireDraft();
+    if (constraintVersion < FIRST_CONSTRAINT_VERSION) {
+      throw new IllegalArgumentException(
+          "A constraint set version starts at one, so roster %s cannot be published under %d"
+              .formatted(id.value(), constraintVersion));
+    }
     return new Roster(
         id,
         organisation,
