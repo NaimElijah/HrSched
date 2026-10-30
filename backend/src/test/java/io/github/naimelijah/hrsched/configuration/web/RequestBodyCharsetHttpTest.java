@@ -2,6 +2,7 @@ package io.github.naimelijah.hrsched.configuration.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
@@ -259,6 +260,7 @@ class RequestBodyCharsetHttpTest {
                 TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
                     .content(
                         TestTenants.onboarding("Organisation %s".formatted(UUID.randomUUID()))))
+            .andExpect(status().isCreated())
             .andReturn()
             .getResponse()
             .getContentAsString();
