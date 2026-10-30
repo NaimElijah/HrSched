@@ -5,7 +5,7 @@ import { App } from '../App';
 import { currentAccessToken, endSession } from '../api/session';
 import type { Session } from '../api/session';
 import { SessionProvider } from './SessionProvider';
-import { routeTo } from '../test-support/routeTo';
+import { callsTo, routeTo } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
 import { A_TENANT } from '../test-support/session';
 import { WITHOUT_PAUSES } from '../test-support/typing';
@@ -93,9 +93,7 @@ describe('signing in', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     await screen.findByRole('button', { name: 'People' });
-    const sent = stub.mock.calls.filter(
-      ([path, init]) => path === '/api/auth/sign-in' && init?.method === 'POST',
-    );
+    const sent = callsTo(stub, 'POST', '/api/auth/sign-in');
     expect(sent, 'the sign-ins sent').toHaveLength(1);
     expect(JSON.parse(String(sent[0]?.[1]?.body))).toEqual({
       signInName: 'ada@example.com',
@@ -175,9 +173,7 @@ describe('changing a password', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
 
     expect(await screen.findByRole('button', { name: 'People' })).toBeInTheDocument();
-    const sent = stub.mock.calls.filter(
-      ([path, init]) => path === '/api/auth/password' && init?.method === 'POST',
-    );
+    const sent = callsTo(stub, 'POST', '/api/auth/password');
     expect(sent, 'the password changes sent').toHaveLength(1);
     expect(JSON.parse(String(sent[0]?.[1]?.body))).toEqual({
       currentPassword: PASSWORD,
