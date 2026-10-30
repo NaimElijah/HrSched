@@ -2,7 +2,9 @@ package io.github.naimelijah.hrsched.configuration.security;
 
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.Filter;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Stream;
 import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -139,7 +141,7 @@ public class SecurityConfiguration {
   };
 
   /** Any member of an organisation. Deliberately excludes the operator, which belongs to none. */
-  private static final String[] EVERY_TENANT_ROLE = {"ADMIN", "SCHEDULER", "EMPLOYEE"};
+  private static final String[] EVERY_TENANT_ROLE = {ADMIN, "SCHEDULER", "EMPLOYEE"};
 
   /**
    * Spring Security's own convention drops the {@code ROLE_} prefix in these, and the token adapter
@@ -148,7 +150,9 @@ public class SecurityConfiguration {
    */
   private static final String OPERATOR = "OPERATOR";
 
-  private static final String[] EVERY_ROLE = {"OPERATOR", "ADMIN", "SCHEDULER", "EMPLOYEE"};
+  /** Anybody holding a role at all: the operator, or any member of an organisation. */
+  private static final String[] EVERY_ROLE =
+      Stream.concat(Stream.of(OPERATOR), Arrays.stream(EVERY_TENANT_ROLE)).toArray(String[]::new);
 
   /**
    * The {@code Content-Security-Policy} on every response: nothing may load and nothing may frame.
