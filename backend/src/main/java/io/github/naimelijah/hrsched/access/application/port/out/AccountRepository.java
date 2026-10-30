@@ -12,10 +12,11 @@ import java.util.Optional;
 /**
  * Driven port: storing the accounts that may sign in.
  *
- * <p>Reads are scoped to an organisation, as everywhere else (ADR-009), with exactly one named
- * exception below. An account is personal data about a colleague — who they are, what they may do,
- * and whether somebody has been guessing their password — so a read that forgot its tenant
- * predicate would hand one customer another's staff list.
+ * <p>Reads are scoped to an organisation, as everywhere else (ADR-009), with the two named
+ * exceptions below; ADR-055 lists every read in access that takes no organisation, and why. An
+ * account is personal data about a colleague — who they are, what they may do, and whether somebody
+ * has been guessing their password — so a read that forgot its tenant predicate would hand one
+ * customer another's staff list.
  *
  * <p>The platform operator belongs to no organisation and is therefore invisible to every scoped
  * read here. That is the intended behaviour rather than a gap: an operator is not a member of any
@@ -67,10 +68,10 @@ public interface AccountRepository {
   /**
    * Finds an account by the name it signs in with, across every organisation.
    *
-   * <p><strong>The one unscoped read in this port,</strong> and it has to be: a sign-in request
-   * carries a name and a password and nothing else, so there is no organisation to scope by until
-   * the account has been found. Sign-in names are unique platform-wide precisely so that this
-   * question has one answer.
+   * <p><strong>The first of the two unscoped reads in this port,</strong> and it has to be: a
+   * sign-in request carries a name and a password and nothing else, so there is no organisation to
+   * scope by until the account has been found. Sign-in names are unique platform-wide precisely so
+   * that this question has one answer.
    *
    * <p>Safe only because of what each caller does with it, and there are two. Whoever signs in is
    * then the account that was found, so no caller can reach another tenant's data through it. The
