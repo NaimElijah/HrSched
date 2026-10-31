@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { currentAccessToken, endSession, holdSession } from '../api/session';
 import type { Session } from '../api/session';
@@ -465,6 +465,370 @@ describe('a session renewed underneath somebody', () => {
       expect(
         callsTo(routed, 'GET', `/api/employees/${EMPLOYEE_AFTER}/unavailability`).length,
       ).toBeGreaterThan(0),
+    );
+  });
+});
+
+/**
+ * Routes as {@link serving} does, but holds one request until the returned `release` is called,
+ * and records each time that request was sent. Only the one named is held: the refresh every load
+ * begins with is a write too, so holding every write would hold the app in `restoring`.
+ *
+ * @param answers what the server answers, the held request included
+ * @param held the `METHOD path` to hold
+ */
+function holding(answers: Readonly<Record<string, Answer>>, held: string) {
+  const routed = serving(answers);
+  const sent: unknown[] = [];
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((path: string, init?: RequestInit) => {
+      if (`${init?.method ?? 'GET'} ${path}` !== held) {
+        return routed(path, init);
+      }
+      sent.push(init?.body);
+      return released.then(() => routed(path, init));
+    }),
+  );
+  return { sent, release };
+}
+
+const MUST_CHANGE: Session = { ...A_TENANT, passwordChangeRequired: true };
+
+/** An invented replacement password, typed into both new-password fields. */
+const REPLACEMENT = 'another invented password';
+
+async function signInAs(signInName: string) {
+  await userEvent.type(await screen.findByLabelText('Sign-in name'), signInName, WITHOUT_PAUSES);
+  await userEvent.type(screen.getByLabelText('Password'), PASSWORD, WITHOUT_PAUSES);
+  await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+}
+
+async function fillChangePassword(
+  scope: Pick<typeof screen, 'getByLabelText'>,
+  replacement = REPLACEMENT,
+  confirmation = REPLACEMENT,
+) {
+  await userEvent.type(scope.getByLabelText('Current password'), PASSWORD, WITHOUT_PAUSES);
+  await userEvent.type(scope.getByLabelText('New password'), replacement, WITHOUT_PAUSES);
+  await userEvent.type(scope.getByLabelText('New password again'), confirmation, WITHOUT_PAUSES);
+}
+
+/**
+ * Signing in and finishing the first password change each replace the whole screen, and the button
+ * that was pressed goes with it, so focus moves to the heading of what appeared (#257, C4).
+ */
+describe('where focus goes when the session changes', () => {
+  beforeEach(() => {
+    document.title = '';
+  });
+
+  it('GivenTheRightCredentials_WhenSignedIn_ThenFocusIsOnTheLandingViewsHeading', async () => {
+    serving({
+      'POST /api/auth/refresh': NO_COOKIE,
+      'POST /api/auth/sign-in': { status: 200, body: signedInBody() },
+      '/api/auth/session': { status: 200, body: A_TENANT },
+    });
+    show();
+
+    await signInAs(A_TENANT.signInName);
+
+    const heading = await screen.findByRole('heading', { name: 'People' });
+    await waitFor(() => expect(heading, 'focus on the "People" heading').toHaveFocus());
+  });
+
+  it('GivenTheRightCredentials_WhenSignedIn_ThenTheDocumentTitleNamesTheLandingView', async () => {
+    serving({
+      'POST /api/auth/refresh': NO_COOKIE,
+      'POST /api/auth/sign-in': { status: 200, body: signedInBody() },
+      '/api/auth/session': { status: 200, body: A_TENANT },
+    });
+    show();
+
+    await signInAs(A_TENANT.signInName);
+
+    await screen.findByRole('heading', { name: 'People' });
+    await waitFor(() => expect(document.title).toBe('People · HrSched'));
+  });
+
+  it('GivenATemporaryPassword_WhenSignedIn_ThenFocusIsOnTheChangePasswordHeading', async () => {
+    serving({
+      'POST /api/auth/refresh': NO_COOKIE,
+      'POST /api/auth/sign-in': { status: 200, body: signedInBody(MUST_CHANGE) },
+      '/api/auth/session': { status: 200, body: MUST_CHANGE },
+    });
+    show();
+
+    await signInAs(MUST_CHANGE.signInName);
+
+    const heading = await screen.findByRole('heading', { name: 'Change your password' });
+    await waitFor(() =>
+      expect(heading, 'focus on the "Change your password" heading').toHaveFocus(),
+    );
+  });
+
+  /**
+   * The change screen goes the moment the change is accepted, its own status with it, so the shell
+   * is what says the change happened.
+   */
+  it('GivenTheFirstPasswordChange_WhenAccepted_ThenTheShellSaysSo', async () => {
+    serving({
+      'POST /api/auth/refresh': { status: 200, body: signedInBody(MUST_CHANGE) },
+      '/api/auth/session': { status: 200, body: MUST_CHANGE },
+      'POST /api/auth/password': { status: 200, body: signedInBody() },
+    });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+
+    await fillChangePassword(screen);
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    await screen.findByRole('button', { name: 'People' });
+    await waitFor(() =>
+      expect(
+        screen.queryAllByRole('status').map((status) => status.textContent),
+        'what the status regions in the shell say',
+      ).toContainEqual(expect.stringContaining('Your password has been changed')),
+    );
+  });
+
+  it('GivenTheFirstPasswordChange_WhenAccepted_ThenFocusIsOnTheLandingViewsHeading', async () => {
+    serving({
+      'POST /api/auth/refresh': { status: 200, body: signedInBody(MUST_CHANGE) },
+      '/api/auth/session': { status: 200, body: MUST_CHANGE },
+      'POST /api/auth/password': { status: 200, body: signedInBody() },
+    });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+
+    await fillChangePassword(screen);
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    const heading = await screen.findByRole('heading', { name: 'People' });
+    await waitFor(() => expect(heading, 'focus on the "People" heading').toHaveFocus());
+  });
+});
+
+/**
+ * A button that is `disabled` while its request is out drops focus to the page, so a keyboard user
+ * who pressed it is sent back to the top. It says it cannot act yet with `aria-disabled` instead,
+ * and a second press does nothing (#257, C1). jsdom moves no focus off a disabled element, so the
+ * attribute is what proves it.
+ */
+describe('a submit in flight', () => {
+  it('GivenASignInInFlight_WhenItsButtonIsPressed_ThenItIsAriaDisabledAndKeepsFocus', async () => {
+    const { release } = holding(
+      {
+        'POST /api/auth/refresh': NO_COOKIE,
+        'POST /api/auth/sign-in': { status: 200, body: signedInBody() },
+        '/api/auth/session': { status: 200, body: A_TENANT },
+      },
+      'POST /api/auth/sign-in',
+    );
+    show();
+    await userEvent.type(
+      await screen.findByLabelText('Sign-in name'),
+      A_TENANT.signInName,
+      WITHOUT_PAUSES,
+    );
+    await userEvent.type(screen.getByLabelText('Password'), PASSWORD, WITHOUT_PAUSES);
+    const button = screen.getByRole('button', { name: 'Sign in' });
+
+    await userEvent.click(button);
+
+    try {
+      expect(button, 'the Sign in button while it is in flight').toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      expect(button).not.toBeDisabled();
+      expect(button).toHaveFocus();
+    } finally {
+      release();
+      await screen.findByRole('button', { name: 'People' });
+    }
+  });
+
+  it('GivenASignInInFlight_WhenItsButtonIsPressedAgain_ThenNoSecondSignInIsSent', async () => {
+    const { sent, release } = holding(
+      {
+        'POST /api/auth/refresh': NO_COOKIE,
+        'POST /api/auth/sign-in': { status: 200, body: signedInBody() },
+        '/api/auth/session': { status: 200, body: A_TENANT },
+      },
+      'POST /api/auth/sign-in',
+    );
+    show();
+    await signInAs(A_TENANT.signInName);
+    // Named by what it starts with, because what it says while in flight is the page's to choose.
+    const button = screen.getByRole('button', { name: /^Sign/ });
+
+    try {
+      expect(button, 'the Sign in button while it is in flight').toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      await userEvent.click(button);
+      expect(sent, 'the sign-ins sent').toHaveLength(1);
+    } finally {
+      release();
+      await screen.findByRole('button', { name: 'People' });
+    }
+  });
+
+  it('GivenAPasswordChangeInFlight_WhenItsButtonIsPressed_ThenItIsAriaDisabledAndKeepsFocus', async () => {
+    const { release } = holding(
+      {
+        'POST /api/auth/refresh': { status: 200, body: signedInBody(MUST_CHANGE) },
+        '/api/auth/session': { status: 200, body: MUST_CHANGE },
+        'POST /api/auth/password': { status: 200, body: signedInBody() },
+      },
+      'POST /api/auth/password',
+    );
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await fillChangePassword(screen);
+    const button = screen.getByRole('button', { name: 'Change password' });
+
+    await userEvent.click(button);
+
+    try {
+      expect(button, 'the Change password button while it is in flight').toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      expect(button).not.toBeDisabled();
+      expect(button).toHaveFocus();
+    } finally {
+      release();
+      await screen.findByRole('button', { name: 'People' });
+    }
+  });
+
+  it('GivenAPasswordChangeInFlight_WhenItsButtonIsPressedAgain_ThenNoSecondChangeIsSent', async () => {
+    const { sent, release } = holding(
+      {
+        'POST /api/auth/refresh': { status: 200, body: signedInBody(MUST_CHANGE) },
+        '/api/auth/session': { status: 200, body: MUST_CHANGE },
+        'POST /api/auth/password': { status: 200, body: signedInBody() },
+      },
+      'POST /api/auth/password',
+    );
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await fillChangePassword(screen);
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+    // Named by what it starts with, because what it says while in flight is the page's to choose.
+    const button = screen.getByRole('button', { name: /^Chang/ });
+
+    try {
+      expect(button, 'the Change password button while it is in flight').toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      await userEvent.click(button);
+      expect(sent, 'the password changes sent').toHaveLength(1);
+    } finally {
+      release();
+      await screen.findByRole('button', { name: 'People' });
+    }
+  });
+});
+
+/**
+ * A refusal about one field is shown at that field: it is marked invalid, it is described by the
+ * message, and a screen-reader user landing on it hears why (#257, C6).
+ */
+describe('a password change refused at a field', () => {
+  it('GivenTwoNewPasswordsThatDiffer_WhenSubmitted_ThenTheConfirmationIsInvalidDescribedAndFocused', async () => {
+    serving({
+      'POST /api/auth/refresh': { status: 200, body: signedInBody(MUST_CHANGE) },
+      '/api/auth/session': { status: 200, body: MUST_CHANGE },
+    });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+
+    await fillChangePassword(screen, 'one invented password', 'a different one');
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    const confirmation = screen.getByLabelText('New password again');
+    await waitFor(() => expect(confirmation).toHaveAttribute('aria-invalid', 'true'));
+    expect(confirmation).toHaveAccessibleDescription(
+      expect.stringContaining('The two new passwords do not match.'),
+    );
+    expect(confirmation, 'focus on "New password again"').toHaveFocus();
+  });
+
+  it('GivenANewPasswordTheBackendRefuses_WhenShown_ThenTheNewPasswordIsInvalidAndDescribedByTheReason', async () => {
+    const refusal = 'An invented refusal: that password is on a list of common ones.';
+    serving({
+      'POST /api/auth/refresh': { status: 200, body: signedInBody(MUST_CHANGE) },
+      '/api/auth/session': { status: 200, body: MUST_CHANGE },
+      'POST /api/auth/password': { status: 422, body: { detail: refusal } },
+    });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+
+    await fillChangePassword(screen);
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    const replacement = screen.getByLabelText('New password');
+    await waitFor(() => expect(replacement).toHaveAttribute('aria-invalid', 'true'));
+    expect(replacement).toHaveAccessibleDescription(expect.stringContaining(refusal));
+  });
+});
+
+/**
+ * "Your password has been changed." is about the change that was sent. Left on screen while the
+ * fields are filled in again, it reads as being about what is being typed (#257, C9).
+ */
+describe('a success that does not outlive its edit', () => {
+  it.each(['Current password', 'New password', 'New password again'])(
+    'GivenAChangeFromThePasswordTab_WhenTypingIn %s Afterwards_ThenTheSuccessIsCleared',
+    async (field) => {
+      serving({
+        'POST /api/auth/refresh': { status: 200, body: signedInBody() },
+        '/api/auth/session': { status: 200, body: A_TENANT },
+        'POST /api/auth/password': { status: 200, body: signedInBody() },
+      });
+      show();
+      await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
+      const heading = await screen.findByRole('heading', { name: 'Change your password' });
+      const form = within(heading.closest('section') as HTMLElement);
+      await fillChangePassword(form);
+      await userEvent.click(form.getByRole('button', { name: 'Change password' }));
+      await form.findByText('Your password has been changed.');
+
+      await userEvent.type(form.getByLabelText(field), 'x', WITHOUT_PAUSES);
+
+      expect(form.queryByText(/Your password has been changed/)).not.toBeInTheDocument();
+    },
+  );
+});
+
+/**
+ * One refusal for every way a sign-in fails, and it says what somebody can do about it without
+ * saying which of the reasons it was (#257).
+ */
+describe('what a refused sign-in suggests', () => {
+  it('GivenASignInRefused_WhenShown_ThenItSaysWhatToDoNext', async () => {
+    serving({
+      'POST /api/auth/refresh': NO_COOKIE,
+      'POST /api/auth/sign-in': {
+        status: 401,
+        body: { title: 'Sign-in refused', detail: 'Those credentials were not accepted.' },
+      },
+    });
+    show();
+
+    await signInAs('nobody@example.com');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Check your sign-in name and password, or ask your organisation's Admin to reset your password.",
     );
   });
 });

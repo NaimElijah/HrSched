@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError } from './api/problem';
 import { workforce } from './api/workforce';
-import { ChangePasswordPage } from './auth/ChangePasswordPage';
+import { ChangePasswordPage, PASSWORD_CHANGED } from './auth/ChangePasswordPage';
 import { SessionBar } from './auth/SessionBar';
 import { SignInPage } from './auth/SignInPage';
 import { SignOutUnconfirmedPage } from './auth/SignOutUnconfirmedPage';
 import { useSession } from './auth/SessionProvider';
+import type { SessionState } from './auth/SessionProvider';
 import { Failure } from './components/Feedback';
 import { defaultSpan, localDate, startOfLocalDay } from './components/localDates';
 import { useAsync } from './components/useAsync';
@@ -40,6 +41,37 @@ const OPERATOR_TABS = ['Organisations', 'Password'] as const;
 
 type Tab = (typeof TENANT_TABS)[number] | (typeof OPERATOR_TABS)[number];
 
+/** What each screen outside the shell is called, in the document title as on the screen. */
+const SCREEN_NAMES: Readonly<Record<Exclude<SessionState, 'signed-in'>, string>> = {
+  restoring: 'Restoring your session',
+  'restore-failed': 'Your session could not be restored',
+  'signed-out': 'Sign in',
+  'sign-out-unconfirmed': 'Sign-out not confirmed',
+  'password-change-required': 'Change your password',
+};
+
+const APPLICATION = 'HrSched';
+
+/** The document title for a view: what a browser's tab list and a screen reader's window list say. */
+function titleOf(view: string): string {
+  return `${view} · ${APPLICATION}`;
+}
+
+/**
+ * Moves focus to the first `h2` in `main`, which every view opens with. The pages give it no
+ * `tabIndex`, and a heading takes focus only with one, so it is given one here.
+ */
+function focusHeadingIn(main: HTMLElement | null) {
+  const heading = main?.querySelector('h2');
+  if (heading === null || heading === undefined) {
+    return;
+  }
+  if (!heading.hasAttribute('tabindex')) {
+    heading.tabIndex = -1;
+  }
+  heading.focus();
+}
+
 /**
  * The shell: who is signed in, tab navigation, and the planning span the scheduling pages share.
  *
@@ -54,6 +86,12 @@ type Tab = (typeof TENANT_TABS)[number] | (typeof OPERATOR_TABS)[number];
  * password still pending there is nothing but the password screen — not because the tabs would be
  * empty, but because the backend refuses that account everything else, and offering tabs that all
  * answer 403 would be a lie the UI told.
+ *
+ * **A view change moves focus to the heading of what appeared, and the title names it** (#257,
+ * C4): a tab, a sign-in, the end of a forced password change, a retried restore. Everything in
+ * `main` is replaced, and the control that was pressed either stays where it was or is gone, so a
+ * screen-reader user would otherwise hear nothing of it. A first load takes no focus: nothing was
+ * pressed, and the page begins where a page does.
  *
  * **Tabs are chosen by account kind, never by role.** A role's refusal is still rendered as the 403
  * it is: the UI enforces nothing, and a screen that looked like it satisfied a requirement would be
@@ -72,10 +110,42 @@ export function App() {
   // so nobody signing in after is shown a wait, or an outcome, that was somebody else's.
   const [generation, setGeneration] = useState<{ session: string; id: string } | null>(null);
   const waitingFor = generation?.session === key ? generation.id : null;
+  // Set a render after the shell appears, because a live region announces a change to what it
+  // holds, not what it was inserted holding.
+  const [notice, setNotice] = useState<string | null>(null);
+  const main = useRef<HTMLElement>(null);
+  // The view last settled on, or null until the first restore has ended.
+  const shown = useRef<string | null>(null);
 
   const operator = session?.kind === 'OPERATOR';
   const tabs = operator ? OPERATOR_TABS : TENANT_TABS;
   const current: Tab = (tabs as readonly Tab[]).includes(tab) ? tab : (tabs[0] as Tab);
+  const view = state === 'signed-in' ? current : SCREEN_NAMES[state];
+
+  useEffect(() => {
+    document.title = titleOf(view);
+    const previous = shown.current;
+    if (state === 'restoring') {
+      // A retry removes the button that had focus, so what it ends in is a view change even when
+      // it fails the same way again. The first restore is not one.
+      if (previous !== null) {
+        shown.current = view;
+      }
+      return;
+    }
+    shown.current = view;
+    if (previous === null || previous === view) {
+      return;
+    }
+    focusHeadingIn(main.current);
+    // The forced change screen goes the moment the change is accepted, its own status with it, so
+    // the shell says it; any other view change ends what it said.
+    setNotice(
+      previous === SCREEN_NAMES['password-change-required'] && state === 'signed-in'
+        ? PASSWORD_CHANGED
+        : null,
+    );
+  }, [state, view]);
 
   // The pickers need the employee list, and an EMPLOYEE is not permitted to read it — that one
   // refusal is expected and is answered with an empty list. Every other failure is surfaced,
@@ -108,11 +178,13 @@ export function App() {
         <header>
           <h1>HrSched</h1>
         </header>
-        <h2>Your session could not be restored</h2>
-        <Failure error={restoreFailure} />
-        <button type="button" onClick={retryRestore}>
-          Try again
-        </button>
+        <main ref={main}>
+          <h2>Your session could not be restored</h2>
+          <Failure error={restoreFailure} />
+          <button type="button" onClick={retryRestore}>
+            Try again
+          </button>
+        </main>
       </div>
     );
   }
@@ -123,7 +195,7 @@ export function App() {
         <header>
           <h1>HrSched</h1>
         </header>
-        <main>
+        <main ref={main}>
           <SignOutUnconfirmedPage />
         </main>
       </div>
@@ -137,7 +209,9 @@ export function App() {
           <h1>HrSched</h1>
           <p className="subtitle">Staff shift scheduling. Rules are configuration, never code.</p>
         </header>
-        <SignInPage />
+        <main ref={main}>
+          <SignInPage />
+        </main>
       </div>
     );
   }
@@ -148,7 +222,9 @@ export function App() {
         <header>
           <h1>HrSched</h1>
         </header>
-        <ChangePasswordPage />
+        <main ref={main}>
+          <ChangePasswordPage />
+        </main>
       </div>
     );
   }
@@ -158,10 +234,10 @@ export function App() {
       <header>
         <h1>HrSched</h1>
         <p className="subtitle">Staff shift scheduling. Rules are configuration, never code.</p>
+        <SessionBar onChangePassword={() => setTab('Password')} />
+        {/* The shell's own read, so it is said in the shell's landmark, apart from the screen's. */}
+        <Failure error={people.error} />
       </header>
-
-      <SessionBar onChangePassword={() => setTab('Password')} />
-      <Failure error={people.error} />
 
       <nav>
         {tabs.map((candidate) => (
@@ -177,39 +253,42 @@ export function App() {
         ))}
       </nav>
 
-      {operator ? null : (
-        <fieldset className="span">
-          <legend>Planning span</legend>
-          <label>
-            Span from
-            <input
-              type="date"
-              value={localDate(span.from)}
-              onChange={(event) => {
-                const changed = startOfLocalDay(event.target.value);
-                if (changed !== null) {
-                  setSpan({ ...span, from: changed });
-                }
-              }}
-            />
-          </label>
-          <label>
-            Span to
-            <input
-              type="date"
-              value={localDate(span.to)}
-              onChange={(event) => {
-                const changed = startOfLocalDay(event.target.value);
-                if (changed !== null) {
-                  setSpan({ ...span, to: changed });
-                }
-              }}
-            />
-          </label>
-        </fieldset>
-      )}
+      <main ref={main}>
+        <p className="done" role="status">
+          {notice}
+        </p>
+        {operator ? null : (
+          <fieldset className="span">
+            <legend>Planning span</legend>
+            <label>
+              Span from
+              <input
+                type="date"
+                value={localDate(span.from)}
+                onChange={(event) => {
+                  const changed = startOfLocalDay(event.target.value);
+                  if (changed !== null) {
+                    setSpan({ ...span, from: changed });
+                  }
+                }}
+              />
+            </label>
+            <label>
+              Span to
+              <input
+                type="date"
+                value={localDate(span.to)}
+                onChange={(event) => {
+                  const changed = startOfLocalDay(event.target.value);
+                  if (changed !== null) {
+                    setSpan({ ...span, to: changed });
+                  }
+                }}
+              />
+            </label>
+          </fieldset>
+        )}
 
-      <main>
         {current === 'People' ? <PeoplePage /> : null}
         {current === 'Accounts' ? <AccountsPage /> : null}
         {current === 'Qualifications' ? <QualificationsPage /> : null}

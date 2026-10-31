@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import type { Session } from './api/session';
 import { endSession } from './api/session';
@@ -467,5 +467,126 @@ describe('navigating', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
 
     expect(screen.getByRole('heading', { name: 'Change your password' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * A tab change replaces everything inside `main`, and the tab that was pressed stays where it was,
+ * so a screen-reader user hears nothing of what appeared unless focus moves to it (#257, C4). The
+ * title names the view too, because it is what a browser's tab list and a screen reader's window
+ * list read out.
+ */
+describe('what a tab change says', () => {
+  beforeEach(() => {
+    document.title = '';
+  });
+
+  it.each([
+    ['Shifts', 'Shifts'],
+    ['Qualifications', 'Qualifications'],
+    ['Rules', 'Working-time rules'],
+    ['Password', 'Change your password'],
+  ])('GivenTheShell_WhenThe %s TabIsPressed_ThenFocusIsOnItsHeading', async (tab, heading) => {
+    loadingAs(A_TENANT);
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: tab }));
+
+    const appeared = await screen.findByRole('heading', { name: heading });
+    await waitFor(() => expect(appeared, `focus on the "${heading}" heading`).toHaveFocus());
+  });
+
+  it.each(['Shifts', 'Qualifications', 'Rules', 'Password'])(
+    'GivenTheShell_WhenThe %s TabIsPressed_ThenTheDocumentTitleNamesIt',
+    async (tab) => {
+      loadingAs(A_TENANT);
+      show();
+
+      await userEvent.click(await screen.findByRole('button', { name: tab }));
+
+      await waitFor(() => expect(document.title).toBe(`${tab} · HrSched`));
+    },
+  );
+});
+
+/**
+ * Landmarks are how a screen-reader user jumps past what repeats to what this screen is for, so
+ * every screen has a `main`, and what identifies the session sits in the `banner` (#257).
+ */
+describe('the landmarks', () => {
+  it('GivenNoSession_WhenTheSignInPageIsShown_ThenItIsInTheMainLandmark', async () => {
+    loadingAs(null);
+
+    show();
+
+    const heading = await screen.findByRole('heading', { name: 'Sign in' });
+    expect(screen.getByRole('main'), 'the main landmark').toContainElement(heading);
+  });
+
+  it('GivenAPasswordChangeRequired_WhenItsScreenIsShown_ThenItIsInTheMainLandmark', async () => {
+    loadingAs({ ...A_TENANT, passwordChangeRequired: true });
+
+    show();
+
+    const heading = await screen.findByRole('heading', { name: 'Change your password' });
+    expect(screen.getByRole('main'), 'the main landmark').toContainElement(heading);
+  });
+
+  it('GivenARestoreThatFailed_WhenItsScreenIsShown_ThenItIsInTheMainLandmark', async () => {
+    loadingThrough(A_TENANT, () => ({ '/api/auth/refresh': UNREACHABLE }));
+
+    show();
+
+    const heading = await screen.findByRole('heading', {
+      name: 'Your session could not be restored',
+    });
+    const main = screen.getByRole('main');
+    expect(main, 'the main landmark').toContainElement(heading);
+    expect(main).toContainElement(screen.getByRole('button', { name: 'Try again' }));
+  });
+
+  it('GivenTheShell_WhenShown_ThenWhoIsSignedInAndSignOutAreInTheBanner', async () => {
+    loadingAs(A_TENANT);
+
+    show();
+
+    await screen.findByRole('button', { name: 'Sign out' });
+    const banner = screen.getByRole('banner');
+    expect(within(banner).getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(banner).toHaveTextContent(`Signed in as ${A_TENANT.signInName}`);
+  });
+
+  it('GivenTheShell_WhenShown_ThenThePlanningSpanIsInTheMainLandmark', async () => {
+    loadingAs(A_TENANT);
+
+    show();
+
+    await screen.findByRole('group', { name: 'Planning span' });
+    expect(within(screen.getByRole('main')).getByLabelText('Span from')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Pressing "Try again" removes the button that had focus. When the retry finds nobody signed in,
+ * the sign-in page replaces the screen, and unless focus moves to it a screen-reader user is left
+ * on nothing (#257, C4). A first load with no session still takes no focus; that rule is
+ * `signInNotice.test.tsx`'s.
+ */
+describe('a retried restore that finds nobody', () => {
+  it('GivenARestoreThatFailed_WhenTheRetryFindsNoSession_ThenFocusIsOnTheSignInHeading', async () => {
+    let down = true;
+    loadingThrough(A_TENANT, () =>
+      down
+        ? { '/api/auth/refresh': UNREACHABLE }
+        : { '/api/auth/refresh': { status: 401, body: { detail: 'No session.' } } },
+    );
+    show();
+    await screen.findByRole('button', { name: 'Try again' });
+
+    down = false;
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    const heading = await screen.findByRole('heading', { name: 'Sign in' });
+    await waitFor(() => expect(heading, 'focus on the "Sign in" heading').toHaveFocus());
   });
 });

@@ -14,9 +14,10 @@ const SIGNED_OUT = 'You have been signed out. Sign in to continue.';
  * The backend answers an unknown name, a wrong password, a disabled account and a locked one
  * identically, and this must not undo that by guessing at a friendlier message. "That name is not
  * registered" would tell somebody trying names which ones exist here; "your account is locked"
- * would tell them their guessing had been noticed.
+ * would tell them their guessing had been noticed. What it suggests is true of every reason alike.
  */
-const REFUSED = 'Those credentials were not accepted.';
+const REFUSED =
+  "Those credentials were not accepted. Check your sign-in name and password, or ask your organisation's Admin to reset your password.";
 
 /**
  * The way into the application: there is nothing else to do until this succeeds.
@@ -47,6 +48,9 @@ export function SignInPage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (submitting) {
+      return;
+    }
     setFailure(null);
     setSubmitting(true);
     try {
@@ -86,7 +90,8 @@ export function SignInPage() {
             required
           />
         </label>
-        <button type="submit" disabled={submitting}>
+        {/* aria-disabled rather than disabled, so focus stays on the button while it is in flight. */}
+        <button type="submit" aria-disabled={submitting}>
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
