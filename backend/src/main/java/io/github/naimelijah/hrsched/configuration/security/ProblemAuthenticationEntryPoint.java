@@ -62,9 +62,8 @@ public class ProblemAuthenticationEntryPoint implements AuthenticationEntryPoint
   private static final Logger log = LoggerFactory.getLogger(ProblemAuthenticationEntryPoint.class);
 
   /**
-   * The meter every refusing class records, so one query answers "who was refused" across all of
-   * it: each context's exception handler, the access {@code AuthController} and the other handler
-   * in this package each declare the same name.
+   * The meter name shared by every class that counts a refusal of access, told apart by its {@code
+   * kind} tag, so one query counts across them.
    */
   private static final String DENIED = "hrsched.access.denied";
 

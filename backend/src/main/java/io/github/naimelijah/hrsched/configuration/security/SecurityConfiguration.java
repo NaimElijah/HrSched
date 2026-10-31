@@ -39,18 +39,20 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
  * that was meant to be (ADR-032).
  *
  * <p>Every route under {@code /api} requires a token except the three that are authentication
- * itself, and every controller takes the acting identity from the account that token names. The
- * four identity headers are gone; nothing reads them, and a request that still sends them is
- * answered as whoever its token says it is.
+ * itself, and every controller takes the acting identity from the account that token names. Nothing
+ * reads an identity header, so a request that sends one is answered as whoever its token says it
+ * is.
  *
  * <p>These rules are the <strong>coarse outer line</strong>, and the use case behind each route is
  * what actually decides. Stating the fine-grained answer twice would mean two places to keep in
  * step, and the one that is easy to forget is the one that fails open.
  *
- * <p>The decoder, the converter and the two refusal handlers are all injected <em>by type</em>.
- * Configuration may not name an adapter class (the architecture test fails on it), and that is not
- * a technicality here: it is what keeps every piece of knowledge about tokens inside the {@code
- * access} context rather than leaking into the composition root.
+ * <p>The decoder and the converter are injected <em>by type</em>, because configuration may not
+ * name an adapter class (the architecture test fails on it). That is not a technicality here: it is
+ * what keeps every piece of knowledge about tokens inside the {@code access} context rather than
+ * leaking into the composition root. The two refusal handlers live in this package, so that rule
+ * would let this class name them; the chain takes them as Spring Security's {@code
+ * AuthenticationEntryPoint} and {@code AccessDeniedHandler}, the only types it asks of them.
  *
  * <p>The chain is stateless, because nothing relies on an {@code HttpSession}: a bearer token is
  * presented fresh on every call. CSRF, form login, HTTP Basic, logout and the request cache are all

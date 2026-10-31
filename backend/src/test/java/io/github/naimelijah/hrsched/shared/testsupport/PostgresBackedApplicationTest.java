@@ -20,8 +20,10 @@ import org.springframework.jdbc.core.simple.JdbcClient;
  *
  * <p>The context is started by hand rather than by {@code @SpringBootTest}, so closing it is this
  * test's own act and the suite's cached context is never touched. It goes through the same {@code
- * SpringApplication} start every test context does, so Boot's Testcontainers lifecycle is
- * registered on it just as it is there.
+ * SpringApplication} start every test context does. A container held as a bean would be stopped
+ * when its context closes, by Spring's inferred {@code close()} and, should Boot's Testcontainers
+ * module return to the classpath, by its lifecycle too. This test fails if either takes the
+ * database away.
  */
 class PostgresBackedApplicationTest {
 

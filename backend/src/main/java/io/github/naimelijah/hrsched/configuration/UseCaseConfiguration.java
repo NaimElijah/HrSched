@@ -57,7 +57,7 @@ import org.springframework.transaction.PlatformTransactionManager;
  *
  * <p>It is also wiring, so it names what no class in a context may: another context's services and
  * driven ports. The architecture test exempts exactly the classes annotated {@code @Configuration}
- * and the classes nested in one from the rule that holds {@code configuration} to other contexts'
+ * and the classes nested in one from the rule that holds {@code configuration} to every context's
  * published driving ports. Any other class in {@code configuration} stays under that rule, and a
  * context's driven adapters reach another context through those ports alone (ADR-008).
  *
