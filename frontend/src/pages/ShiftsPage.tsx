@@ -3,6 +3,7 @@ import { scheduling } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { spanLabel } from '../components/localDates';
+import { TableRegion } from '../components/TableRegion';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
 
@@ -93,7 +94,8 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
         obey.
       </p>
 
-      <form onSubmit={define} className="grid">
+      {/* Change events bubble, so any edit clears a success that would read as the next one's. */}
+      <form onSubmit={define} onChange={() => setDone(null)} className="grid">
         <label>
           Starts
           <input
@@ -146,7 +148,9 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
           />
           Unpopular
         </label>
-        <button type="submit" disabled={defining}>
+        {/* aria-disabled rather than disabled, so focus stays on the button while its request is
+            on its way. */}
+        <button type="submit" aria-disabled={defining}>
           Define shift
         </button>
       </form>
@@ -158,34 +162,40 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
       <Failure error={shifts.error} />
       <Busy busy={shifts.busy} />
 
-      <table>
-        <thead>
-          <tr>
-            <th>Starts</th>
-            <th>Ends</th>
-            <th>Needs</th>
-            <th>Requires</th>
-            <th>Unpopular</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(shifts.value ?? []).map((shift) => (
-            <tr key={shift.id}>
-              <td>{new Date(shift.start).toLocaleString()}</td>
-              <td>{new Date(shift.end).toLocaleString()}</td>
-              <td>{shift.requiredHeadcount}</td>
-              <td>
-                {shift.requiredQualifications.length === 0
-                  ? '—'
-                  : shift.requiredQualifications
-                      .map((id) => qualificationNames.get(id) ?? id)
-                      .join(', ')}
-              </td>
-              <td>{shift.unpopular ? 'Unpopular' : '—'}</td>
+      {/* Only an answer says what the span holds: while loading, or after a refusal, there is no
+          list to show, and an empty table would read as no shifts. */}
+      {shifts.value === null ? null : shifts.value.length === 0 ? (
+        <p>No shifts in this span.</p>
+      ) : (
+        <TableRegion caption="Shifts in the planning span">
+          <thead>
+            <tr>
+              <th>Starts</th>
+              <th>Ends</th>
+              <th>Needs</th>
+              <th>Requires</th>
+              <th>Unpopular</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {shifts.value.map((shift) => (
+              <tr key={shift.id}>
+                <td>{new Date(shift.start).toLocaleString()}</td>
+                <td>{new Date(shift.end).toLocaleString()}</td>
+                <td>{shift.requiredHeadcount}</td>
+                <td>
+                  {shift.requiredQualifications.length === 0
+                    ? '—'
+                    : shift.requiredQualifications
+                        .map((id) => qualificationNames.get(id) ?? id)
+                        .join(', ')}
+                </td>
+                <td>{shift.unpopular ? 'Unpopular' : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </TableRegion>
+      )}
     </section>
   );
 }

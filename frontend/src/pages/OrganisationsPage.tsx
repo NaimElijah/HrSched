@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { access } from '../api/access';
 import { useSessionKey } from '../auth/SessionProvider';
 import { Busy, Failure } from '../components/Feedback';
+import { TableRegion } from '../components/TableRegion';
 import { useAsync } from '../components/useAsync';
 
 /**
@@ -71,8 +72,13 @@ export function OrganisationsPage() {
       {/* Both credentials are the first Admin's, never the operator's. new-password keeps the
           browser from autofilling the operator's saved password into a new organisation or
           offering it as an update to the operator's own entry; off asks it not to autofill the
-          name. A browser may still offer to save what is typed, under the new Admin's name (#250). */}
-      <form className="row" onSubmit={(event) => void onboard(event)}>
+          name. A browser may still offer to save what is typed, under the new Admin's name (#250).
+          Change events bubble, so any edit clears a success that would read as the next one's. */}
+      <form
+        className="row"
+        onSubmit={(event) => void onboard(event)}
+        onChange={() => setDone(null)}
+      >
         <label>
           Name
           <input value={name} onChange={(event) => setName(event.target.value)} required />
@@ -96,7 +102,9 @@ export function OrganisationsPage() {
             required
           />
         </label>
-        <button type="submit" disabled={onboarding}>
+        {/* aria-disabled rather than disabled, so focus stays on the button while its request is
+            on its way. */}
+        <button type="submit" aria-disabled={onboarding}>
           Onboard organisation
         </button>
       </form>
@@ -108,24 +116,30 @@ export function OrganisationsPage() {
       <Failure error={organisations.error} />
       <Busy busy={organisations.busy} />
 
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Identifier</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(organisations.value ?? []).map((organisation) => (
-            <tr key={organisation.id}>
-              <td>{organisation.name}</td>
-              <td>
-                <code>{organisation.id}</code>
-              </td>
+      {/* Only an answer says which organisations there are: while loading, or after a refusal,
+          there is no list to show, and an empty table would read as none. */}
+      {organisations.value === null ? null : organisations.value.length === 0 ? (
+        <p>No organisations yet.</p>
+      ) : (
+        <TableRegion caption="Organisations on the platform">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Identifier</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {organisations.value.map((organisation) => (
+              <tr key={organisation.id}>
+                <td>{organisation.name}</td>
+                <td>
+                  <code>{organisation.id}</code>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </TableRegion>
+      )}
     </section>
   );
 }

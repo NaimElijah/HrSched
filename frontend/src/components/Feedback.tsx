@@ -40,6 +40,17 @@ export function Violations({
 }
 
 /**
+ * Whether a refusal is about the value a control sent, so that control is marked with it (#257,
+ * C6). That is a 422 the rules raised, a 409 such as the last Admin's, or a 400: the workforce
+ * context rejects invalid contract terms with a 400 "Invalid request", not a 422. A 401, 403 or
+ * 404, or a request that never arrived, says nothing about the value, and marking the control
+ * would send somebody to correct what nothing was wrong with. The refusal is shown either way.
+ */
+export function isAboutTheValue(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 400 || error.isRefused || error.isConflict);
+}
+
+/**
  * Renders whatever went wrong, distinguishing the refusals that mean different things.
  *
  * A rule breach is not an error in the usual sense: the request was well formed and the rules said

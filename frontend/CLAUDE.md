@@ -25,10 +25,10 @@ sees the file.
   `MePage`. A helper only one screen uses stays beside it; once a second screen uses it, it moves
   to `src/components/`. Pages never call `fetch` directly.
 - `src/components/` — what several screens share: `ErrorBoundary`, `Feedback`, `focus`,
-  `useAsync`, `localDates`, `useShiftsById`, `swapStatus`, and the wording tables `ruleFields` and
-  `objectiveFields`. It imports `src/api` only. The folders depend one way,
-  `api ← components ← auth ← pages`, so a shared hook that needs the session takes it from its
-  caller; lint refuses an import against the direction, and production code importing
+  `useAsync`, `localDates`, `useShiftsById`, `swapStatus`, `TableRegion`, `RowRefusal`, and the
+  wording tables `ruleFields` and `objectiveFields`. It imports `src/api` only. The folders depend
+  one way, `api ← components ← auth ← pages`, so a shared hook that needs the session takes it
+  from its caller; lint refuses an import against the direction, and production code importing
   `src/test-support/`.
 - `src/test-support/` — `routeTo` replaces `fetch` with a router that answers anything unmatched
   with a 404. A `METHOD path` key answers that method at exactly that path, and a bare path only a
