@@ -106,18 +106,8 @@ published rosters, supersedes what it overlaps, and lapses those rosters' pendin
 constraint as the backstop. The answer is `200`, a `422` listing every violation, or a `409` if an
 overlapping roster was published at the same moment.
 
-These rules fail the build when they are broken. `HexagonalArchitectureTest` runs twenty ArchUnit
-rules on every build. They cover a domain that depends on nothing but the JDK and HrSched's own
-domain, dependency direction, an application layer that depends on nothing but the JDK, SLF4J and
-HrSched's core, no database, network, remote-object, disk, stream or process I/O through the JDK
-in either (a `URI` and the in-memory readers, writers and streams excepted), every class of a
-context in one of its layers, nothing but `HrSchedApplication` in the root package, published ports
-between contexts, consumed only in an adapter, only the `@Configuration` wiring seeing inside a
-context, a kernel that knows no context, cycles between contexts and between a context's layers,
-printing, logging in the domain, instrumentation inward of an adapter, the solver kept in its one
-adapter, reading the acting identity from a thread-local, who may build an actor or ask an account
-for one, every `@RestController` handled by its own context's exception handler, and an
-organisation in every repository and directory method but a save and a named few.
+[`HexagonalArchitectureTest`](backend/src/test/java/io/github/naimelijah/hrsched/architecture/HexagonalArchitectureTest.java)
+runs twenty ArchUnit rules on every build, and a broken one fails it.
 Components, the authentication sequence and the data flow are in
 [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
 
