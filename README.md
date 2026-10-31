@@ -41,8 +41,7 @@ owner has chosen to leave open for now ([Q15](docs/requirements/requirements.md#
 ## Features
 
 - **Run many organisations on one deployment.** An Operator onboards each with its first Admin.
-- **Provision accounts from the top down.** Admin, Scheduler or Employee; nobody signs themselves
-  up.
+- **Provision accounts from the top down.** Admin, Scheduler or Employee; there is no self-sign-up.
 - **Describe your people.** Qualifications, absences, preferences and weekly contracted hours.
 - **Configure the working-time rules.** Every limit is optional, none has a default, and any version
   can be read back.
@@ -53,8 +52,7 @@ owner has chosen to leave open for now ([Q15](docs/requirements/requirements.md#
   rules allow, a Scheduler edits the draft, and publishing is refused with every violation listed.
 - **Swap a shift.** An employee asks a colleague to cover, a Scheduler decides, and approval
   publishes a replacement roster judged by the same rules.
-- **See your own work.** Assignments on published rosters, and the absences and preferences you
-  declared.
+- **See your own work.** Published assignments, and the absences and preferences you declared.
 
 The rules behind each, and what is decided but not yet built, are in
 [`requirements.md`](docs/requirements/requirements.md).
@@ -148,8 +146,7 @@ choose a password of at least 15 characters before the account can do anything. 
 
 The operator only onboards organisations. In the Organisations tab, onboard one together with its
 first Admin, then sign out and sign in as that Admin. There is no seed data; the
-[Walkthrough in `docs/api.md`](docs/api.md#walkthrough) scripts the whole path to a published
-roster.
+[Walkthrough in `docs/api.md`](docs/api.md#walkthrough) scripts the path to a published roster.
 
 > [!CAUTION]
 > The database keeps its rows between runs, so after the first sign-in only your new password
@@ -323,8 +320,7 @@ HrSched/
 ([ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md),
 [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md)). Rostering rules should be
 testable without Spring or a database, and a convention nobody enforces rots; multi-module Maven
-was too much for one developer. Cost: more classes per use case, and the enforcement is a test, not
-the compiler.
+was too much for one developer. Cost: more classes per use case, enforced by a test, not a compiler.
 
 **PostgreSQL, hand-written SQL, and a real database in every test**
 ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). Real transactions and check
@@ -342,8 +338,7 @@ HrSched stores password hashes.
 ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md),
 [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)). A lock per organisation
 queues concurrent publications, where `SERIALIZABLE` still needs a retry on abort and
-`SELECT … FOR UPDATE` would lock another context's row. Cost: publications in one organisation
-queue.
+`SELECT … FOR UPDATE` would lock another context's row. Cost: publications queue per organisation.
 
 **Generation with CP-SAT behind a port**
 ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md),
@@ -358,8 +353,7 @@ Every decision, and every one still waiting to be recorded, is in the
 
 ## Status and limitations
 
-**Alpha.** It works end to end on a developer's machine, has never been deployed, and has no release
-or tag yet.
+**Alpha.** It works end to end on a developer's machine, has never been deployed, and is unreleased.
 
 **Shipped:** everything under [Features](#features), running locally against a PostgreSQL in
 Docker. The [requirements](docs/requirements/requirements.md) mark each row decided but `not yet`
