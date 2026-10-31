@@ -87,6 +87,24 @@ function loadingThrough(
 }
 
 /**
+ * C1: a control waiting for a request is marked so, and is not `disabled`, which would drop the
+ * keyboard focus to the body.
+ */
+function expectWaiting(control: HTMLElement) {
+  expect(control, 'aria-disabled while the request is in flight').toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  expect(control, 'not disabled, which would drop the keyboard focus').toBeEnabled();
+}
+
+/** A control that may act again: neither disabled nor marked as unable to act. */
+function expectActionable(control: HTMLElement) {
+  expect(control).toBeEnabled();
+  expect(control, 'no longer aria-disabled').not.toHaveAttribute('aria-disabled', 'true');
+}
+
+/**
  * The text a screen reader reads from `element`: everything but what is hidden from it, with each
  * run of white space read as one.
  */
@@ -434,10 +452,10 @@ describe('navigating', () => {
       await user.click(screen.getByRole('button', { name: 'Rosters' }));
 
       expect(await screen.findByText('Generating a draft…')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeDisabled();
+      expectWaiting(screen.getByRole('button', { name: 'Generate a draft for this span' }));
       await vi.advanceTimersByTimeAsync(1000);
       expect(await screen.findByText(/^Generation refused/)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeEnabled();
+      expectActionable(screen.getByRole('button', { name: 'Generate a draft for this span' }));
     } finally {
       vi.useRealTimers();
     }

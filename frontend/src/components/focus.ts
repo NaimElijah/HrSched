@@ -19,3 +19,15 @@ export function focusHeading(container: ParentNode | null, selector = 'h2'): boo
   heading.focus();
   return true;
 }
+
+/**
+ * Whether focus can be moved without taking it from anybody: it is still on the control that
+ * acted, or it was dropped to the body when that control went (#257, C2).
+ *
+ * @param control the control whose action is moving focus on; null when it is already gone
+ * @returns true when moving focus would take it from nobody
+ */
+export function focusIsUnclaimed(control: Element | null): boolean {
+  const active = document.activeElement;
+  return active === null || active === document.body || active === control;
+}

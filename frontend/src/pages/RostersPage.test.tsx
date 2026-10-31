@@ -6,7 +6,7 @@ import type { Session } from '../api/session';
 import type { Employee } from '../api/workforce';
 import { dayLabel, timeLabel } from '../components/localDates';
 import { A_TENANT, SignedIn } from '../test-support/session';
-import { callsTo, holdingWrites, routeTo, type Answer } from '../test-support/routeTo';
+import { callsTo, holdingWrites, routeTo, writes, type Answer } from '../test-support/routeTo';
 import { RostersPage } from './RostersPage';
 
 /**
@@ -108,9 +108,65 @@ function AsTheShellHoldsIt({ people }: { people: readonly Employee[] }) {
   );
 }
 
+/**
+ * How a row names its roster: the period, in local dates, as the row shows it. Each repeated button
+ * starts with its visible text and then names the roster by this (C7).
+ */
+function labelOf(roster: { start: string; end: string }): string {
+  return `${new Date(roster.start).toLocaleDateString()} to ${new Date(roster.end).toLocaleDateString()}`;
+}
+
+/** Text as a pattern source that matches it literally. */
+function literally(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** A pattern matching text that starts with these parts, in order, read literally. */
+function startingWith(...parts: string[]): RegExp {
+  return new RegExp(`^${parts.map(literally).join('')}`);
+}
+
+/**
+ * The board's region. `\b` keeps out a region named "Rosters", which the rosters table may sit in
+ * once it scrolls on its own (C8).
+ */
+const THE_BOARD = /^Roster\b/;
+
+/**
+ * C1: a control waiting for a request is marked so, and is not `disabled`, which would drop the
+ * keyboard focus to the body. jsdom does not drop it either way, so the attribute is the proof.
+ */
+function expectWaiting(control: HTMLElement) {
+  expect(control, 'aria-disabled while the request is in flight').toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  expect(control, 'not disabled, which would drop the keyboard focus').toBeEnabled();
+}
+
+/** A control that may act again: neither disabled nor marked as unable to act. */
+function expectActionable(control: HTMLElement) {
+  expect(control).toBeEnabled();
+  expect(control, 'no longer aria-disabled').not.toHaveAttribute('aria-disabled', 'true');
+}
+
+/** C3: the live region that says this. Several are on the page, so each is looked at. */
+function findStatus(saying: RegExp): Promise<HTMLElement> {
+  return waitFor(() => {
+    const statuses = screen.getAllByRole('status');
+    const found = statuses.find((status) => saying.test(status.textContent ?? ''));
+    if (found === undefined) {
+      throw new Error(
+        `no status says ${String(saying)}; the statuses say ${JSON.stringify(statuses.map((status) => status.textContent))}`,
+      );
+    }
+    return found;
+  });
+}
+
 async function openBoard(): Promise<HTMLElement> {
-  await userEvent.click(await screen.findByRole('button', { name: 'Open' }));
-  return screen.findByRole('region', { name: /^Roster/ });
+  await userEvent.click(await screen.findByRole('button', { name: /^Open roster/ }));
+  return screen.findByRole('region', { name: THE_BOARD });
 }
 
 async function assignGrace(board: HTMLElement) {
@@ -162,7 +218,7 @@ describe('the rosters page', () => {
     });
     renderPage([ADA]);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Publish' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Publish roster/ }));
 
     const alert = await screen.findByRole('alert');
     // Resolved to a name: the reason the 422 payload is structured at all.
@@ -170,7 +226,7 @@ describe('the rosters page', () => {
     expect(alert).toHaveTextContent('maximum daily working time');
     expect(alert).toHaveTextContent('exceeds the maximum of PT1H');
     expect(alert).toHaveTextContent('There is no override');
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Publish' })).toBeEnabled());
+    await waitFor(() => expectActionable(screen.getByRole('button', { name: /^Publish roster/ })));
   });
 
   /** F3: a draft that breaks no rule is published, and the list then says so, as the server does. */
@@ -183,7 +239,7 @@ describe('the rosters page', () => {
     };
     const stub = routeTo(server);
     renderPage([ADA]);
-    const publish = await screen.findByRole('button', { name: 'Publish' });
+    const publish = await screen.findByRole('button', { name: /^Publish roster/ });
     // What the server holds once the publication has landed; the page is told only by reading again.
     server['/api/rosters'] = { status: 200, body: [published] };
 
@@ -191,7 +247,7 @@ describe('the rosters page', () => {
 
     expect(await screen.findByRole('cell', { name: 'PUBLISHED' })).toBeInTheDocument();
     expect(callsTo(stub, 'POST', '/api/rosters/roster-1/publication')).toHaveLength(1);
-    expect(screen.queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Publish roster/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -208,7 +264,7 @@ describe('the rosters page', () => {
     const routed = routeTo(server);
     const release = holdingWrites(routed);
     renderPage([ADA]);
-    const [publish] = await screen.findAllByRole('button', { name: 'Publish' });
+    const [publish] = await screen.findAllByRole('button', { name: /^Publish roster/ });
     if (publish === undefined) {
       throw new Error('no draft offers to be published');
     }
@@ -217,28 +273,48 @@ describe('the rosters page', () => {
     await userEvent.click(publish);
     await userEvent.click(publish);
 
-    expect(publish).toBeDisabled();
+    expectWaiting(publish);
+    expect(publish, 'the pressed Publish keeps the keyboard focus').toHaveFocus();
     release();
     expect(await screen.findByRole('cell', { name: 'PUBLISHED' })).toBeInTheDocument();
     expect(callsTo(routed, 'POST', '/api/rosters/roster-1/publication')).toHaveLength(1);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Publish' })).toBeEnabled());
+    await waitFor(() => expectActionable(screen.getByRole('button', { name: /^Publish roster/ })));
   });
 
   it('GivenTheRosterTable_WhenRendered_ThenEveryColumnHasAHeader', async () => {
     aDraft();
     renderPage();
 
-    await screen.findByRole('button', { name: 'Open' });
+    await screen.findByRole('button', { name: /^Open roster/ });
 
     const table = screen.getByRole('table');
     const headers = within(table).getAllByRole('columnheader');
-    // One roster is listed, so every cell is in its row.
+    // One roster is listed, so every cell is in its row: its data cells and its header cell (C2).
     expect(headers, 'one header per column of the roster row').toHaveLength(
-      within(table).getAllByRole('cell').length,
+      within(table).getAllByRole('cell').length + within(table).queryAllByRole('rowheader').length,
     );
     for (const header of headers) {
       expect(header, 'every column header has a name').toHaveAccessibleName();
     }
+    expect(headers.map((header) => header.textContent)).toEqual([
+      'Roster',
+      'Identifier',
+      'Status',
+      'Assignments',
+      'Approved under',
+      'Actions',
+    ]);
+  });
+
+  /** A screen reader reads the row header on every move along the row, so it holds no UUID. */
+  it('GivenARoster_WhenListed_ThenItsRowHeaderIsThePeriodAndItsIdentifierHasItsOwnColumn', async () => {
+    aDraft();
+    renderPage();
+
+    const table = await theRostersTable();
+
+    expect(within(table).getByRole('rowheader')).toHaveAccessibleName(labelOf(ROSTER));
+    expect(within(table).getByRole('cell', { name: ROSTER.id })).toBeInTheDocument();
   });
 
   /**
@@ -311,7 +387,7 @@ describe('the rosters page', () => {
     });
     renderPage();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Version 2' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Version 2\b/ }));
 
     const rules = await screen.findByRole('region', { name: 'Rules of version 2' });
     expect(await within(rules).findByText('601')).toBeInTheDocument();
@@ -337,7 +413,7 @@ describe('the rosters page', () => {
     });
     renderPage();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Version 1' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Version 1\b/ }));
 
     const rules = await screen.findByRole('region', { name: 'Rules of version 1' });
     expect(
@@ -368,7 +444,7 @@ describe('the rosters page', () => {
     });
     renderPage();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Version 3' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Version 3\b/ }));
 
     const rules = await screen.findByRole('region', { name: 'Rules of version 3' });
     expect(
@@ -385,7 +461,7 @@ describe('the rosters page', () => {
     });
     renderPage();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Version 2' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Version 2\b/ }));
 
     const rules = await screen.findByRole('region', { name: 'Rules of version 2' });
     expect(await within(rules).findByRole('alert')).toHaveTextContent(
@@ -397,7 +473,7 @@ describe('the rosters page', () => {
     aDraft();
     renderPage();
 
-    expect(await screen.findByRole('button', { name: 'Open' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^Open roster/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Version/ })).not.toBeInTheDocument();
   });
 });
@@ -566,10 +642,18 @@ describe('the board of a draft', () => {
 
     await assignGrace(board);
 
-    expect(within(board).getByRole('button', { name: /^Remove Ada from/ })).toBeDisabled();
-    expect(within(board).getByRole('button', { name: /^Assign to/ })).toBeDisabled();
+    const assign = within(board).getByRole('button', { name: /^Assign to/ });
+    const remove = within(board).getByRole('button', { name: /^Remove Ada from/ });
+    expectWaiting(remove);
+    expectWaiting(assign);
+    expectWaiting(within(board).getByRole('combobox', { name: /^Who to assign/ }));
+    expect(assign, 'the pressed Assign keeps the keyboard focus').toHaveFocus();
+    // aria-disabled stops nothing by itself (C1): pressing a waiting control must send nothing.
+    await userEvent.click(remove);
+    await userEvent.click(assign);
     release();
-    expect(await within(board).findByRole('button', { name: /^Remove Grace from/ })).toBeEnabled();
+    expectActionable(await within(board).findByRole('button', { name: /^Remove Grace from/ }));
+    expect(writes(routed), 'only the first change was sent').toHaveLength(1);
   });
 
   /** Left selected, the picker would send the same person again on the next press. */
@@ -1083,7 +1167,7 @@ describe('the board of a draft', () => {
       });
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderPage();
-      await screen.findByRole('button', { name: 'Open' });
+      await screen.findByRole('button', { name: /^Open roster/ });
       const listedBefore = callsTo(stub, 'GET', '/api/rosters').length;
 
       await user.click(screen.getByRole('button', { name: 'Generate a draft for this span' }));
@@ -1094,7 +1178,7 @@ describe('the board of a draft', () => {
         expect(callsTo(stub, 'GET', '/api/rosters').length).toBeGreaterThan(listedBefore),
       );
       expect(callsTo(stub, 'GET', '/api/rosters/generations/gen-1')).toHaveLength(1);
-      expect(await screen.findByRole('region', { name: /^Roster/ })).toBeInTheDocument();
+      expect(await screen.findByRole('region', { name: THE_BOARD })).toBeInTheDocument();
       expect(screen.queryByText('Generating a draft…')).not.toBeInTheDocument();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     } finally {
@@ -1120,10 +1204,12 @@ describe('the board of a draft', () => {
       await user.click(
         await screen.findByRole('button', { name: 'Generate a draft for this span' }),
       );
+      // The poll's pause is scheduled only once the POST has answered: advancing sooner races it.
+      await screen.findByText('Generating a draft…');
       await vi.advanceTimersByTimeAsync(1000);
 
       expect(await screen.findByText(/asking again/)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeDisabled();
+      expectWaiting(screen.getByRole('button', { name: 'Generate a draft for this span' }));
 
       aDraft({
         ...starting,
@@ -1134,8 +1220,8 @@ describe('the board of a draft', () => {
       });
       await vi.advanceTimersByTimeAsync(1000);
 
-      expect(await screen.findByRole('region', { name: /^Roster/ })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeEnabled();
+      expect(await screen.findByRole('region', { name: THE_BOARD })).toBeInTheDocument();
+      expectActionable(screen.getByRole('button', { name: 'Generate a draft for this span' }));
       expect(screen.queryByText(/asking again/)).not.toBeInTheDocument();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     } finally {
@@ -1166,7 +1252,7 @@ describe('the board of a draft', () => {
       await vi.advanceTimersByTimeAsync(1000);
 
       expect(await screen.findByRole('alert')).toHaveTextContent(/^Nothing here/);
-      expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeEnabled();
+      expectActionable(screen.getByRole('button', { name: 'Generate a draft for this span' }));
       const asked = callsTo(stub, 'GET', '/api/rosters/generations/gen-1').length;
       await vi.advanceTimersByTimeAsync(3000);
       expect(callsTo(stub, 'GET', '/api/rosters/generations/gen-1')).toHaveLength(asked);
@@ -1296,7 +1382,7 @@ describe('the board of a draft', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The generation failed. Generate again, and report it if it fails again.',
     );
-    expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeEnabled();
+    expectActionable(screen.getByRole('button', { name: 'Generate a draft for this span' }));
   });
 
   it('GivenEveryRunBusy_WhenGenerating_ThenWhatTheServerSaidIsShown', async () => {
@@ -1314,5 +1400,966 @@ describe('the board of a draft', () => {
     );
 
     expect(await screen.findByRole('alert')).toHaveTextContent('already running');
+  });
+});
+
+// --- #257 (WCAG 2.2 AA) and #185: the page as a keyboard and screen-reader user meets it --------
+
+/** A second draft over the following week, so its row and its buttons are told apart by name. */
+const NEXT_WEEK = {
+  ...ROSTER,
+  id: 'roster-2',
+  start: '2026-11-09T00:00:00Z',
+  end: '2026-11-16T00:00:00Z',
+  assignments: [],
+};
+
+/** The rosters table, found before anything is opened, while it is the only table on the page. */
+async function theRostersTable(): Promise<HTMLElement> {
+  await screen.findAllByRole('button', { name: /^Open roster/ });
+  return screen.getByRole('table');
+}
+
+/** The row right after the one headed by this roster's period: where a refusal of it belongs (C6). */
+function rowAfterTheRowOf(table: HTMLElement, roster: { start: string; end: string }): HTMLElement {
+  const rows = within(table).getAllByRole('row');
+  const index = rows.findIndex(
+    (row) => within(row).queryByRole('rowheader', { name: startingWith(labelOf(roster)) }) !== null,
+  );
+  const next = rows[index + 1];
+  if (index < 0 || next === undefined) {
+    throw new Error(`no row follows the row of ${labelOf(roster)}`);
+  }
+  return next;
+}
+
+/** The board's own heading, which is what focus lands on when the board appears (C4). */
+function headingOf(board: HTMLElement): HTMLElement {
+  return within(board).getByRole('heading', { level: 3 });
+}
+
+describe('generating, for a keyboard and screen-reader user', () => {
+  const PENDING_GENERATION = { id: 'gen-1', status: 'PENDING', roster: null, violations: [] };
+
+  it('GivenAGenerationInFlight_WhenGenerateIsPressed_ThenItIsAriaDisabledKeepsFocusAndSendsOnce', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const stub = aDraft({
+        'POST /api/rosters/generations': { status: 202, body: PENDING_GENERATION },
+        'GET /api/rosters/generations/gen-1': { status: 200, body: PENDING_GENERATION },
+      });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderPage();
+      const generate = await screen.findByRole('button', {
+        name: 'Generate a draft for this span',
+      });
+
+      await user.click(generate);
+      await screen.findByText('Generating a draft…');
+      await user.click(generate);
+
+      expectWaiting(generate);
+      expect(generate, 'Generate keeps the keyboard focus while it waits').toHaveFocus();
+      expect(callsTo(stub, 'POST', '/api/rosters/generations')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('GivenAGenerationThatSucceeds_WhenItsDraftOpens_ThenAStatusSaysDraftReadyAndFocusMovesToTheBoard', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      aDraft({
+        'POST /api/rosters/generations': { status: 202, body: PENDING_GENERATION },
+        'GET /api/rosters/generations/gen-1': {
+          status: 200,
+          body: { ...PENDING_GENERATION, status: 'SUCCEEDED', roster: 'roster-1' },
+        },
+      });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderPage();
+
+      await user.click(
+        await screen.findByRole('button', { name: 'Generate a draft for this span' }),
+      );
+      // The poll is scheduled only once the POST has answered, so the clock waits for that.
+      await screen.findByText('Generating a draft…');
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const board = await screen.findByRole('region', { name: THE_BOARD });
+      await findStatus(new RegExp(`^${literally(`Draft ready: ${labelOf(ROSTER)}.`)}$`));
+      await waitFor(() =>
+        expect(headingOf(board), 'focus follows the draft that opened').toHaveFocus(),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * C4: the draft opens only from Generate. Whoever moved on meanwhile keeps both their focus and
+   * the board in front of them, and is told where to find the draft.
+   */
+  it('GivenFocusMovedElsewhereWhileAGenerationRuns_WhenItsDraftIsReady_ThenNothingOpensAndFocusIsNotTaken', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      aDraft({
+        'POST /api/rosters/generations': { status: 202, body: PENDING_GENERATION },
+        'GET /api/rosters/generations/gen-1': {
+          status: 200,
+          body: { ...PENDING_GENERATION, status: 'SUCCEEDED', roster: 'roster-1' },
+        },
+      });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderPage();
+      const elsewhere = await screen.findByRole('button', { name: /^Publish roster/ });
+      await user.click(screen.getByRole('button', { name: 'Generate a draft for this span' }));
+      await screen.findByText('Generating a draft…');
+      elsewhere.focus();
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      await findStatus(
+        new RegExp(`^${literally(`Draft ready: ${labelOf(ROSTER)}. Open it from the list.`)}$`),
+      );
+      expect(screen.queryByRole('region', { name: THE_BOARD })).not.toBeInTheDocument();
+      expect(elsewhere, 'focus stays where the user moved it').toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A finished generation does not tear down the board somebody is working in, or their focus. */
+  it('GivenFocusInAnOpenBoard_WhenAGenerationSucceeds_ThenTheBoardAndItsFocusStay', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      aDraft({
+        '/api/rosters': { status: 200, body: [ROSTER, NEXT_WEEK] },
+        'POST /api/rosters/generations': { status: 202, body: PENDING_GENERATION },
+        'GET /api/rosters/generations/gen-1': {
+          status: 200,
+          body: { ...PENDING_GENERATION, status: 'SUCCEEDED', roster: NEXT_WEEK.id },
+        },
+      });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderPage();
+      await user.click(
+        await screen.findByRole('button', { name: startingWith('Open roster ', labelOf(ROSTER)) }),
+      );
+      const board = await screen.findByRole('region', { name: THE_BOARD });
+      const picker = await within(board).findByRole('combobox', { name: /^Who to assign/ });
+      await user.click(screen.getByRole('button', { name: 'Generate a draft for this span' }));
+      await screen.findByText('Generating a draft…');
+      picker.focus();
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      await findStatus(
+        new RegExp(`^${literally(`Draft ready: ${labelOf(NEXT_WEEK)}. Open it from the list.`)}$`),
+      );
+      expect(picker, 'the board was not rebuilt under the user').toBeInTheDocument();
+      expect(picker, 'focus stays in the board').toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('opening and closing what the list opens (#185)', () => {
+  const PUBLISHED_UNDER_2 = {
+    ...ROSTER,
+    status: 'PUBLISHED',
+    validatedAgainstConstraintVersion: 2,
+  };
+
+  /** A roster published under version 2, whose one rule has an invented limit. */
+  function publishedUnderVersion2() {
+    return aDraft({
+      '/api/rosters': { status: 200, body: [PUBLISHED_UNDER_2] },
+      '/api/rosters/roster-1': { status: 200, body: PUBLISHED_UNDER_2 },
+      '/api/constraints/2': {
+        status: 200,
+        body: {
+          version: 2,
+          constraints: ['maximum daily working time'],
+          minimumRestMinutes: null,
+          maximumDailyMinutes: 601,
+          maximumWeeklyMinutes: null,
+          maximumConsecutiveDays: null,
+        },
+      },
+    });
+  }
+
+  it('GivenARoster_WhenListed_ThenItsOpenButtonNamesTheRosterAndIsCollapsed', async () => {
+    aDraft();
+    renderPage();
+
+    const open = await screen.findByRole('button', {
+      name: startingWith('Open roster ', labelOf(ROSTER)),
+    });
+
+    expect(open).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('GivenARoster_WhenOpened_ThenItsButtonIsExpandedAndFocusMovesToTheBoardsHeading', async () => {
+    aDraft();
+    renderPage();
+    const open = await screen.findByRole('button', { name: /^Open roster/ });
+
+    await userEvent.click(open);
+
+    const board = await screen.findByRole('region', { name: THE_BOARD });
+    expect(open).toHaveAttribute('aria-expanded', 'true');
+    await waitFor(() => expect(headingOf(board)).toHaveFocus());
+  });
+
+  it('GivenAnOpenBoard_WhenClosed_ThenItIsGoneCollapsedAndFocusIsBackOnItsOpenButton', async () => {
+    aDraft();
+    renderPage();
+    const board = await openBoard();
+    const open = screen.getByRole('button', { name: /^Open roster/ });
+
+    await userEvent.click(within(board).getByRole('button', { name: /^Close/ }));
+
+    expect(screen.queryByRole('region', { name: THE_BOARD })).not.toBeInTheDocument();
+    expect(open).toHaveAttribute('aria-expanded', 'false');
+    expect(open, 'focus returns to the button that opened the board').toHaveFocus();
+  });
+
+  it('GivenAPublishedRoster_WhenListed_ThenItsVersionButtonNamesTheRosterAndIsCollapsed', async () => {
+    publishedUnderVersion2();
+    renderPage();
+
+    const version = await screen.findByRole('button', {
+      // Starts with its visible text, then names the roster whose approval it opens (C7).
+      name: new RegExp(`^Version 2\\b.*${literally(labelOf(ROSTER))}`),
+    });
+
+    expect(version).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('GivenAPublishedRoster_WhenItsVersionIsOpened_ThenItIsExpandedAndFocusMovesToTheRulesHeading', async () => {
+    publishedUnderVersion2();
+    renderPage();
+    const version = await screen.findByRole('button', { name: /^Version 2\b/ });
+
+    await userEvent.click(version);
+
+    const rules = await screen.findByRole('region', { name: 'Rules of version 2' });
+    expect(version).toHaveAttribute('aria-expanded', 'true');
+    await waitFor(() =>
+      expect(within(rules).getByRole('heading', { name: 'Rules of version 2' })).toHaveFocus(),
+    );
+  });
+
+  it('GivenOpenRules_WhenClosed_ThenTheyAreGoneCollapsedAndFocusIsBackOnTheVersionButton', async () => {
+    publishedUnderVersion2();
+    renderPage();
+    const version = await screen.findByRole('button', { name: /^Version 2\b/ });
+    await userEvent.click(version);
+    const rules = await screen.findByRole('region', { name: 'Rules of version 2' });
+
+    await userEvent.click(within(rules).getByRole('button', { name: /^Close/ }));
+
+    expect(screen.queryByRole('region', { name: 'Rules of version 2' })).not.toBeInTheDocument();
+    expect(version).toHaveAttribute('aria-expanded', 'false');
+    expect(version, 'focus returns to the button that opened the rules').toHaveFocus();
+  });
+
+  it('GivenAnOpenBoard_WhenItsOpenButtonIsPressedAgain_ThenItClosesAndFocusStaysOnTheButton', async () => {
+    aDraft();
+    renderPage();
+    await openBoard();
+    const open = screen.getByRole('button', { name: /^Open roster/ });
+
+    await userEvent.click(open);
+
+    expect(screen.queryByRole('region', { name: THE_BOARD })).not.toBeInTheDocument();
+    expect(open).toHaveAttribute('aria-expanded', 'false');
+    expect(open, 'APG Disclosure: the button keeps the focus').toHaveFocus();
+  });
+
+  it('GivenOpenRules_WhenTheirVersionButtonIsPressedAgain_ThenTheyCloseAndFocusStaysOnTheButton', async () => {
+    publishedUnderVersion2();
+    renderPage();
+    const version = await screen.findByRole('button', { name: /^Version 2\b/ });
+    await userEvent.click(version);
+    await screen.findByRole('region', { name: 'Rules of version 2' });
+
+    await userEvent.click(version);
+
+    expect(screen.queryByRole('region', { name: 'Rules of version 2' })).not.toBeInTheDocument();
+    expect(version).toHaveAttribute('aria-expanded', 'false');
+    expect(version, 'APG Disclosure: the button keeps the focus').toHaveFocus();
+  });
+
+  it('GivenTheOpenAndVersionButtons_WhenWhatTheyOpenIsShown_ThenEachControlsThatRegion', async () => {
+    publishedUnderVersion2();
+    renderPage();
+    const version = await screen.findByRole('button', { name: /^Version 2\b/ });
+    const open = screen.getByRole('button', { name: /^Open roster/ });
+
+    await userEvent.click(version);
+    await userEvent.click(open);
+
+    const rules = await screen.findByRole('region', { name: 'Rules of version 2' });
+    const board = await screen.findByRole('region', { name: THE_BOARD });
+    expect(version).toHaveAttribute('aria-controls', rules.id);
+    expect(open).toHaveAttribute('aria-controls', board.id);
+  });
+
+  /** Closing hands focus back to Version; once that row is gone, Generate is the nearest opener. */
+  it('GivenOpenRulesWhoseVersionButtonIsGone_WhenClosed_ThenFocusIsOnGenerate', async () => {
+    const server: Record<string, Answer> = {
+      '/api/rosters': { status: 200, body: [PUBLISHED_UNDER_2, NEXT_WEEK] },
+      '/api/shifts': { status: 200, body: [SHIFT] },
+      'POST /api/rosters/roster-2/publication': {
+        status: 200,
+        body: { ...NEXT_WEEK, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 },
+      },
+      '/api/constraints/2': {
+        status: 200,
+        body: {
+          version: 2,
+          constraints: [],
+          minimumRestMinutes: null,
+          maximumDailyMinutes: null,
+          maximumWeeklyMinutes: null,
+          maximumConsecutiveDays: null,
+        },
+      },
+    };
+    routeTo(server);
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: /^Version 2\b/ }));
+    const rules = await screen.findByRole('region', { name: 'Rules of version 2' });
+    // The list read again after the next publication fails, which empties the table.
+    server['/api/rosters'] = { status: 500, body: { detail: 'The server failed.' } };
+    await userEvent.click(screen.getByRole('button', { name: /^Publish roster/ }));
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^Version 2\b/ })).not.toBeInTheDocument(),
+    );
+
+    await userEvent.click(within(rules).getByRole('button', { name: /^Close/ }));
+
+    expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toHaveFocus();
+  });
+
+  /** C4: focus lands on the board's heading at once, so the heading names the roster from the start. */
+  it('GivenARosterStillLoading_WhenItsBoardOpens_ThenTheHeadingAlreadyNamesItsPeriod', async () => {
+    const routed = aDraft();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        path === '/api/rosters/roster-1' ? held.then(() => routed(path, init)) : routed(path, init),
+      ),
+    );
+    renderPage();
+
+    const board = await openBoard();
+
+    expect(headingOf(board)).toHaveTextContent(new RegExp(`${literally(labelOf(ROSTER))}$`));
+    release();
+    await within(board).findByRole('heading', { name: /^Roster draft/ });
+  });
+});
+
+describe('publishing, for a keyboard and screen-reader user', () => {
+  /** A refusal of roster-1's publication: Ada breaks a rule, whose limit is invented. */
+  const RULE_BREACH: Answer = {
+    status: 422,
+    body: {
+      detail: 'The roster breaks 1 working-time rule(s)',
+      violations: [
+        {
+          employee: 'emp-1',
+          constraint: 'maximum daily working time',
+          detail: 'PT8H worked on 2026-11-03 exceeds the maximum of PT1H',
+        },
+      ],
+    },
+  };
+
+  /** The published roster-1, as the server holds it once its publication has landed. */
+  const PUBLISHED = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
+
+  /** Both drafts listed, and roster-1's publication accepted; the server's list follows it. */
+  function twoDraftsPublishingTheFirst() {
+    const server: Record<string, Answer> = {
+      '/api/rosters': { status: 200, body: [ROSTER, NEXT_WEEK] },
+      '/api/rosters/roster-1': { status: 200, body: ROSTER },
+      '/api/rosters/roster-1/assessment': { status: 200, body: NOTHING_WRONG },
+      '/api/shifts': { status: 200, body: [SHIFT] },
+      '/api/qualifications': { status: 200, body: [FORKLIFT] },
+      'POST /api/rosters/roster-1/publication': { status: 200, body: PUBLISHED },
+      'POST /api/rosters/roster-2/publication': {
+        status: 200,
+        body: { ...NEXT_WEEK, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 },
+      },
+    };
+    return { server, routed: routeTo(server) };
+  }
+
+  it('GivenAPublicationInFlight_WhenAnotherDraftIsListed_ThenItsPublishSaysAnotherRosterIsBeingPublished', async () => {
+    const { routed } = twoDraftsPublishingTheFirst();
+    const release = holdingWrites(routed);
+    renderPage();
+    const publish = await screen.findByRole('button', {
+      name: startingWith('Publish roster ', labelOf(ROSTER)),
+    });
+    const other = screen.getByRole('button', {
+      name: startingWith('Publish roster ', labelOf(NEXT_WEEK)),
+    });
+
+    await userEvent.click(publish);
+
+    expectWaiting(publish);
+    expect(publish, 'the pressed Publish keeps the keyboard focus').toHaveFocus();
+    expectWaiting(other);
+    expect(other).toHaveAccessibleDescription(/another roster is being published/i);
+    // aria-disabled stops nothing by itself (C1): pressing the waiting Publish must send nothing.
+    await userEvent.click(other);
+    release();
+    await waitFor(() => expectActionable(other));
+    expect(writes(routed), 'only the first publication was sent').toHaveLength(1);
+  });
+
+  /** The pressed Publish is waiting on its own request, not another's, and is told so. */
+  it('GivenAPublicationInFlight_WhenThePressedPublishIsRead_ThenItSaysPublishingAndNotAnotherRoster', async () => {
+    const release = holdingWrites(aDraft());
+    renderPage();
+    const publish = await screen.findByRole('button', { name: /^Publish roster/ });
+
+    await userEvent.click(publish);
+
+    expect(await findStatus(/^Publishing…$/)).toBeInTheDocument();
+    expect(publish).toHaveAccessibleDescription('Publishing…');
+    expect(
+      screen.queryByText(/another roster is being published/i),
+      'no other roster is listed, so no other roster waits',
+    ).not.toBeInTheDocument();
+    release();
+    await waitFor(() => expectActionable(screen.getByRole('button', { name: /^Publish roster/ })));
+  });
+
+  it('GivenADraftThatBreaksNoRule_WhenPublished_ThenAStatusSaysItWasPublished', async () => {
+    const server: Record<string, Answer> = {
+      '/api/rosters': { status: 200, body: [ROSTER] },
+      '/api/shifts': { status: 200, body: [SHIFT] },
+      'POST /api/rosters/roster-1/publication': { status: 200, body: PUBLISHED },
+    };
+    routeTo(server);
+    renderPage([ADA]);
+    const publish = await screen.findByRole('button', { name: /^Publish roster/ });
+    const statusesBefore = screen.getAllByRole('status');
+    server['/api/rosters'] = { status: 200, body: [PUBLISHED] };
+
+    await userEvent.click(publish);
+
+    const status = await findStatus(new RegExp(`^${literally(`Published ${labelOf(ROSTER)}.`)}$`));
+    // C3: a live region that appeared with its text would not be announced.
+    expect(statusesBefore, 'the status was in the page before it said anything').toContain(status);
+  });
+
+  /** C2: Publish goes with the draft it published, so focus moves to that row's header cell. */
+  it('GivenADraftPublished_WhenItsPublishButtonGoes_ThenFocusIsOnThatRowsHeader', async () => {
+    const { server } = twoDraftsPublishingTheFirst();
+    renderPage([ADA]);
+    const publish = await screen.findByRole('button', {
+      name: startingWith('Publish roster ', labelOf(ROSTER)),
+    });
+    server['/api/rosters'] = { status: 200, body: [PUBLISHED, NEXT_WEEK] };
+
+    await userEvent.click(publish);
+
+    await screen.findByRole('cell', { name: 'PUBLISHED' });
+    await waitFor(() =>
+      expect(screen.getByRole('rowheader', { name: labelOf(ROSTER) })).toHaveFocus(),
+    );
+  });
+
+  it('GivenFocusMovedWhileAPublicationIsOut_WhenItLands_ThenFocusIsNotTaken', async () => {
+    const { server, routed } = twoDraftsPublishingTheFirst();
+    const release = holdingWrites(routed);
+    renderPage([ADA]);
+    const publish = await screen.findByRole('button', {
+      name: startingWith('Publish roster ', labelOf(ROSTER)),
+    });
+    server['/api/rosters'] = { status: 200, body: [PUBLISHED, NEXT_WEEK] };
+    await userEvent.click(publish);
+    const elsewhere = screen.getByRole('button', {
+      name: startingWith('Open roster ', labelOf(NEXT_WEEK)),
+    });
+    elsewhere.focus();
+
+    release();
+
+    await screen.findByRole('cell', { name: 'PUBLISHED' });
+    await findStatus(/^Published /);
+    expect(elsewhere, 'focus stays where the user moved it').toHaveFocus();
+  });
+
+  /** Publishing another roster leaves the open board as it was, unsaved choice included. */
+  it('GivenAnOpenBoard_WhenAnotherRosterIsPublished_ThenTheBoardIsNotRebuilt', async () => {
+    twoDraftsPublishingTheFirst();
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole('button', { name: startingWith('Open roster ', labelOf(ROSTER)) }),
+    );
+    const board = await screen.findByRole('region', { name: THE_BOARD });
+    const picker = await within(board).findByRole('combobox', { name: /^Who to assign/ });
+    await waitFor(() => expect(within(picker).getAllByRole('option')).toHaveLength(3));
+    await userEvent.selectOptions(picker, 'emp-2');
+
+    await userEvent.click(
+      screen.getByRole('button', { name: startingWith('Publish roster ', labelOf(NEXT_WEEK)) }),
+    );
+
+    await findStatus(new RegExp(`^${literally(`Published ${labelOf(NEXT_WEEK)}.`)}$`));
+    expect(picker, 'the board was not rebuilt').toBeInTheDocument();
+    expect(picker, 'the choice not yet assigned is kept').toHaveValue('emp-2');
+  });
+
+  /** C6: the refusal is of one row's action, so it is shown at that row, not above the table. */
+  it('GivenAPublicationRefusedForBreakingTheRules_WhenShown_ThenItIsInTheRowRightAfterThatRoster', async () => {
+    aDraft({
+      '/api/rosters': { status: 200, body: [ROSTER, NEXT_WEEK] },
+      'POST /api/rosters/roster-1/publication': RULE_BREACH,
+    });
+    renderPage();
+    const table = await theRostersTable();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: startingWith('Publish roster ', labelOf(ROSTER)) }),
+    );
+
+    const refusal = await within(table).findByRole('alert');
+    expect(refusal).toHaveTextContent('There is no override');
+    expect(refusal).toHaveTextContent('Ada');
+    expect(within(rowAfterTheRowOf(table, ROSTER)).getByRole('alert')).toBe(refusal);
+    for (const alert of screen.getAllByRole('alert')) {
+      expect(table, 'no copy of the refusal above the table').toContainElement(alert);
+    }
+  });
+
+  it.each([
+    ['Publish', startingWith('Publish roster ', labelOf(ROSTER)), /^Refused: the roster breaks/],
+    ['Generate', /^Generate a draft for this span$/, /^Generating a draft…$/],
+  ])(
+    'GivenAPublicationRefusal_WhenTheNextAttemptIsMade_ThenTheRefusalIsGone (%s)',
+    async (_pressed, button, answered) => {
+      const routed = aDraft({
+        '/api/rosters': { status: 200, body: [ROSTER, NEXT_WEEK] },
+        'POST /api/rosters/roster-1/publication': RULE_BREACH,
+        'POST /api/rosters/generations': {
+          status: 202,
+          body: { id: 'gen-1', status: 'PENDING', roster: null, violations: [] },
+        },
+        'GET /api/rosters/generations/gen-1': {
+          status: 200,
+          body: { id: 'gen-1', status: 'PENDING', roster: null, violations: [] },
+        },
+      });
+      renderPage();
+      const table = await theRostersTable();
+      await userEvent.click(
+        screen.getByRole('button', { name: startingWith('Publish roster ', labelOf(ROSTER)) }),
+      );
+      await within(table).findByRole('alert');
+      const release = holdingWrites(routed);
+
+      await userEvent.click(screen.getByRole('button', { name: button }));
+
+      expect(within(table).queryByRole('alert')).not.toBeInTheDocument();
+      release();
+      // Waits for the released request's answer, so it lands inside this test rather than after it.
+      await screen.findByText(answered);
+    },
+  );
+
+  it('GivenAPublicationRefusal_WhenThatRosterIsOpened_ThenTheRefusalStays', async () => {
+    aDraft({
+      '/api/rosters': { status: 200, body: [ROSTER, NEXT_WEEK] },
+      'POST /api/rosters/roster-1/publication': RULE_BREACH,
+    });
+    renderPage();
+    const table = await theRostersTable();
+    await userEvent.click(
+      screen.getByRole('button', { name: startingWith('Publish roster ', labelOf(ROSTER)) }),
+    );
+    const refusal = await within(table).findByRole('alert');
+
+    await userEvent.click(
+      screen.getByRole('button', { name: startingWith('Open roster ', labelOf(ROSTER)) }),
+    );
+
+    await screen.findByRole('region', { name: THE_BOARD });
+    expect(refusal, 'the board opened to fix what the refusal names').toBeInTheDocument();
+  });
+
+  it('GivenAPublicationRefusal_WhenAnotherRosterIsOpened_ThenTheRefusalIsGone', async () => {
+    aDraft({
+      '/api/rosters': { status: 200, body: [ROSTER, NEXT_WEEK] },
+      '/api/rosters/roster-2': { status: 200, body: NEXT_WEEK },
+      '/api/rosters/roster-2/assessment': {
+        status: 200,
+        body: { ...NOTHING_WRONG, roster: 'roster-2' },
+      },
+      'POST /api/rosters/roster-1/publication': RULE_BREACH,
+    });
+    renderPage();
+    const table = await theRostersTable();
+    await userEvent.click(
+      screen.getByRole('button', { name: startingWith('Publish roster ', labelOf(ROSTER)) }),
+    );
+    await within(table).findByRole('alert');
+
+    await userEvent.click(
+      screen.getByRole('button', { name: startingWith('Open roster ', labelOf(NEXT_WEEK)) }),
+    );
+
+    await screen.findByRole('region', { name: THE_BOARD });
+    expect(within(table).queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+describe('the rosters table, for a screen-reader user', () => {
+  it('GivenTheRostersTable_WhenRendered_ThenItHasAnAccessibleName', async () => {
+    aDraft();
+    renderPage();
+
+    expect(await theRostersTable()).toHaveAccessibleName('Rosters');
+  });
+
+  /** C8: a wide table scrolls in a region a keyboard can reach and a screen reader can name. */
+  it('GivenTheRostersTable_WhenRendered_ThenItSitsInANamedFocusableScrollRegion', async () => {
+    aDraft();
+    renderPage();
+    const table = await theRostersTable();
+
+    const region = screen.getByRole('region', { name: 'Rosters' });
+
+    expect(region).toHaveAttribute('tabindex', '0');
+    expect(region).toContainElement(table);
+  });
+
+  it('GivenNoRosterInTheSpan_WhenListed_ThenItSaysThereAreNoneAndShowsNoEmptyTable', async () => {
+    aDraft({ '/api/rosters': { status: 200, body: [] } });
+    renderPage();
+
+    expect(await screen.findByText('No rosters yet.')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: 'Rosters' }),
+      'no empty region to tab into',
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('the board, for a keyboard and screen-reader user', () => {
+  const SHIFT_LABEL = `${timeLabel(SHIFT.start)} to ${timeLabel(SHIFT.end)} on ${dayLabel(SHIFT.start)}`;
+
+  /** A second shift, a day later and empty, so a refusal of the first can be told from it. */
+  const NEXT_DAY = {
+    ...SHIFT,
+    id: 'shift-2',
+    start: '2026-11-04T08:00:00Z',
+    end: '2026-11-04T16:00:00Z',
+  };
+
+  /** The picker of the fixture's first shift, by the name only that shift's picker has. */
+  function pickerOfTheShift(board: HTMLElement): Promise<HTMLElement> {
+    return within(board).findByRole('combobox', { name: `Who to assign to ${SHIFT_LABEL}` });
+  }
+
+  /** The first shift's list item: the one item of the board that holds its picker. */
+  async function itemOfTheShift(board: HTMLElement): Promise<HTMLElement> {
+    const picker = await pickerOfTheShift(board);
+    const holding = within(board)
+      .getAllByRole('listitem')
+      .filter((item) => item.contains(picker));
+    // The innermost item that holds it: a shift is an item of its day's list.
+    const item = holding.at(-1);
+    if (item === undefined) {
+      throw new Error('the shift is not a list item');
+    }
+    return item;
+  }
+
+  /** Puts Grace on the first shift of a board that has two. */
+  async function assignGraceToTheShift(board: HTMLElement) {
+    const picker = await pickerOfTheShift(board);
+    await waitFor(() => expect(within(picker).getAllByRole('option')).toHaveLength(3));
+    await userEvent.selectOptions(picker, 'emp-2');
+    await userEvent.click(within(board).getByRole('button', { name: `Assign to ${SHIFT_LABEL}` }));
+  }
+
+  it('GivenARemovalInFlight_WhenRemoveIsPressed_ThenTheBoardsControlsAreAriaDisabledAndRemoveKeepsFocus', async () => {
+    const routed = aDraft({
+      'DELETE /api/rosters/roster-1/assignments/shift-1/emp-1': {
+        status: 200,
+        body: { ...ROSTER, assignments: [] },
+      },
+    });
+    const release = holdingWrites(routed);
+    renderPage();
+    const board = await openBoard();
+    const remove = await within(board).findByRole('button', { name: /^Remove Ada from/ });
+
+    await userEvent.click(remove);
+    await userEvent.click(remove);
+
+    expectWaiting(remove);
+    expect(remove, 'the pressed Remove keeps the keyboard focus').toHaveFocus();
+    expectWaiting(within(board).getByRole('button', { name: /^Assign to/ }));
+    expectWaiting(within(board).getByRole('combobox', { name: /^Who to assign/ }));
+    release();
+    await within(board).findByText(/0 of 1 assigned/);
+    expect(
+      callsTo(routed, 'DELETE', '/api/rosters/roster-1/assignments/shift-1/emp-1'),
+    ).toHaveLength(1);
+  });
+
+  /** C2: Remove goes with the person it removed, so focus moves to where the next one is chosen. */
+  it('GivenARemovalStored_WhenItsButtonGoes_ThenFocusIsOnThatShiftsPicker', async () => {
+    aDraft({
+      '/api/shifts': { status: 200, body: [SHIFT, NEXT_DAY] },
+      'DELETE /api/rosters/roster-1/assignments/shift-1/emp-1': {
+        status: 200,
+        body: { ...ROSTER, assignments: [] },
+      },
+    });
+    renderPage();
+    const board = await openBoard();
+    const picker = await pickerOfTheShift(board);
+
+    await userEvent.click(await within(board).findByRole('button', { name: /^Remove Ada from/ }));
+
+    await waitFor(() =>
+      expect(
+        within(board).queryByRole('button', { name: /^Remove Ada from/ }),
+      ).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(picker).toHaveFocus());
+  });
+
+  it('GivenARemovalStored_WhenTheServerAnswers_ThenAStatusSaysWhoWasRemovedFromWhat', async () => {
+    aDraft({
+      'DELETE /api/rosters/roster-1/assignments/shift-1/emp-1': {
+        status: 200,
+        body: { ...ROSTER, assignments: [] },
+      },
+    });
+    renderPage();
+    const board = await openBoard();
+
+    await userEvent.click(await within(board).findByRole('button', { name: /^Remove Ada from/ }));
+
+    expect(await findStatus(/removed .* from/i)).toHaveTextContent('Ada');
+  });
+
+  it('GivenAnAssignmentStored_WhenTheServerAnswers_ThenAStatusSaysWhoWasAssignedToWhat', async () => {
+    aDraft({ 'POST /api/rosters/roster-1/assignments': { status: 200, body: WITH_GRACE } });
+    renderPage();
+    const board = await openBoard();
+
+    await assignGrace(board);
+
+    expect(await findStatus(/assigned .* to/i)).toHaveTextContent('Grace');
+  });
+
+  it('GivenAnAssignmentRefused_WhenShown_ThenTheRefusalIsInsideThatShift', async () => {
+    aDraft({
+      '/api/shifts': { status: 200, body: [SHIFT, NEXT_DAY] },
+      'POST /api/rosters/roster-1/assignments': {
+        status: 422,
+        body: { detail: 'Grace does not hold every qualification the shift requires' },
+      },
+    });
+    renderPage();
+    const board = await openBoard();
+
+    await assignGraceToTheShift(board);
+
+    const item = await itemOfTheShift(board);
+    expect(await within(item).findByRole('alert')).toHaveTextContent(
+      'does not hold every qualification the shift requires',
+    );
+    for (const alert of within(board).getAllByRole('alert')) {
+      expect(item, 'no copy of the refusal at the top of the board').toContainElement(alert);
+    }
+  });
+
+  it('GivenAnAssignmentConflict_WhenShown_ThenTheRefusalIsInsideThatShift', async () => {
+    aDraft({ '/api/shifts': { status: 200, body: [SHIFT, NEXT_DAY] } });
+    renderPage();
+    const board = await openBoard();
+    aDraft({
+      '/api/shifts': { status: 200, body: [SHIFT, NEXT_DAY] },
+      '/api/rosters': { status: 200, body: [WITH_GRACE] },
+      '/api/rosters/roster-1': { status: 200, body: WITH_GRACE },
+      'POST /api/rosters/roster-1/assignments': {
+        status: 409,
+        body: {
+          title: 'Already assigned',
+          detail: 'That employee is already assigned to that shift on this roster.',
+        },
+      },
+    });
+
+    await assignGraceToTheShift(board);
+
+    await within(board).findByRole('button', { name: /^Remove Grace from/ });
+    const item = await itemOfTheShift(board);
+    expect(within(item).getByRole('alert')).toHaveTextContent(
+      'That employee is already assigned to that shift on this roster.',
+    );
+    for (const alert of within(board).getAllByRole('alert')) {
+      expect(item, 'no copy of the refusal at the top of the board').toContainElement(alert);
+    }
+  });
+
+  /** N5: the form that had focus went with the draft, so focus goes to the board's heading. */
+  it('GivenADraftPublishedMeanwhile_WhenTheAssignFormGoes_ThenFocusMovesToTheBoardsHeading', async () => {
+    aDraft();
+    renderPage();
+    const board = await openBoard();
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
+    aDraft({
+      '/api/rosters': { status: 200, body: [published] },
+      '/api/rosters/roster-1': { status: 200, body: published },
+      'POST /api/rosters/roster-1/assignments': {
+        status: 409,
+        body: {
+          title: 'Roster status forbids this',
+          detail: 'Roster roster-1 is PUBLISHED: a roster can only be changed while a draft',
+        },
+      },
+    });
+
+    await assignGrace(board);
+
+    await within(board).findByRole('heading', { name: /^Roster published/ });
+    expect(within(board).getByRole('alert')).toHaveTextContent(
+      'a roster can only be changed while a draft',
+    );
+    await waitFor(() => expect(headingOf(board)).toHaveFocus());
+  });
+
+  it('GivenAnAssignmentRefused_WhenTheAnswerArrives_ThenTheControlsCanActAgainAndAssignKeepsFocus', async () => {
+    aDraft({
+      'POST /api/rosters/roster-1/assignments': {
+        status: 422,
+        body: { detail: 'Grace does not hold every qualification the shift requires' },
+      },
+    });
+    renderPage();
+    const board = await openBoard();
+
+    await assignGrace(board);
+
+    await within(board).findByRole('alert');
+    const assign = within(board).getByRole('button', { name: /^Assign to/ });
+    expectActionable(assign);
+    expectActionable(within(board).getByRole('button', { name: /^Remove Ada from/ }));
+    expectActionable(within(board).getByRole('combobox', { name: /^Who to assign/ }));
+    expect(assign, 'a refusal leaves focus where it was').toHaveFocus();
+  });
+
+  it('GivenARefusedAssignment_WhenTheNextChangeIsStored_ThenTheShiftsRefusalIsGone', async () => {
+    const server: Record<string, Answer> = {
+      '/api/rosters': { status: 200, body: [ROSTER] },
+      '/api/rosters/roster-1': { status: 200, body: ROSTER },
+      '/api/rosters/roster-1/assessment': { status: 200, body: NOTHING_WRONG },
+      '/api/shifts': { status: 200, body: [SHIFT] },
+      '/api/qualifications': { status: 200, body: [FORKLIFT] },
+      'POST /api/rosters/roster-1/assignments': {
+        status: 422,
+        body: { detail: 'Grace does not hold every qualification the shift requires' },
+      },
+      'DELETE /api/rosters/roster-1/assignments/shift-1/emp-1': {
+        status: 200,
+        body: { ...ROSTER, assignments: [] },
+      },
+    };
+    routeTo(server);
+    renderPage();
+    const board = await openBoard();
+    await assignGrace(board);
+    const item = await itemOfTheShift(board);
+    await within(item).findByRole('alert');
+
+    await userEvent.click(within(board).getByRole('button', { name: /^Remove Ada from/ }));
+
+    await findStatus(/^Removed Ada from /);
+    expect(within(item).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  /** C9: picking the next person starts the next change, so the last one's status no longer stands. */
+  it('GivenAnAssignmentStored_WhenTheShiftsPickerIsChangedAgain_ThenTheAssignedStatusIsCleared', async () => {
+    aDraft({ 'POST /api/rosters/roster-1/assignments': { status: 200, body: WITH_GRACE } });
+    renderPage();
+    const board = await openBoard();
+    await assignGrace(board);
+    const status = await findStatus(/^Assigned Grace to /);
+
+    await userEvent.selectOptions(
+      within(board).getByRole('combobox', { name: /^Who to assign/ }),
+      'emp-1',
+    );
+
+    expect(status, 'the live region stays, so the next outcome is announced').toHaveAttribute(
+      'role',
+      'status',
+    );
+    expect(status, 'the stored change is no longer claimed').toBeEmptyDOMElement();
+  });
+
+  /** C5: a control waiting for another's answer says why it cannot act yet. */
+  it('GivenAChangeInFlight_WhenTheOtherControlsAreRead_ThenAVisibleHintSaysWhyTheyWait', async () => {
+    const release = holdingWrites(
+      aDraft({ 'POST /api/rosters/roster-1/assignments': { status: 200, body: WITH_GRACE } }),
+    );
+    renderPage();
+    const board = await openBoard();
+
+    await assignGrace(board);
+
+    const hint = within(board).getByText(/^A change is on its way/);
+    expect(hint).toBeVisible();
+    const remove = within(board).getByRole('button', { name: /^Remove Ada from/ });
+    expect(remove).toHaveAccessibleDescription(hint.textContent ?? '');
+    expect(
+      within(board).getByRole('combobox', { name: /^Who to assign/ }),
+    ).toHaveAccessibleDescription(hint.textContent ?? '');
+    release();
+    await within(board).findByRole('button', { name: /^Remove Grace from/ });
+    expect(within(board).queryByText(/^A change is on its way/)).not.toBeInTheDocument();
+  });
+
+  it('GivenFocusMovedWhileARemovalIsOut_WhenItIsStored_ThenFocusIsNotTaken', async () => {
+    const release = holdingWrites(
+      aDraft({
+        'DELETE /api/rosters/roster-1/assignments/shift-1/emp-1': {
+          status: 200,
+          body: { ...ROSTER, assignments: [] },
+        },
+      }),
+    );
+    renderPage();
+    const board = await openBoard();
+    await userEvent.click(await within(board).findByRole('button', { name: /^Remove Ada from/ }));
+    const elsewhere = within(board).getByRole('button', { name: /^Close/ });
+    elsewhere.focus();
+
+    release();
+
+    await findStatus(/^Removed Ada from /);
+    expect(elsewhere, 'focus stays where the user moved it').toHaveFocus();
   });
 });
