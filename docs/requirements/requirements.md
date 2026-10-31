@@ -220,7 +220,7 @@ Required but not yet built, each with its threshold a configured value (R25):
 
 ### What makes one legal roster better than another
 
-Three objectives, explicitly *not* constraints (ADR-005): they rank legal rosters and decide
+Three objectives, explicitly *not* constraints (ADR-010): they rank legal rosters and decide
 nothing, so a roster scoring well is still refused if it breaks a rule. Each is a count, and lower
 is better ([ADR-010](../ADRs/ADR-010-score-a-roster-by-three-objectives-each-organisation-weights.md)
 defines them, and says why):
