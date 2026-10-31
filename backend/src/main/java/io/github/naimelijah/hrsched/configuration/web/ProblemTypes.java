@@ -4,7 +4,8 @@ import java.net.URI;
 
 /**
  * The type URI of each kind of problem answered outside the contexts: by the security chain, by
- * request binding and by the filters in front of the controllers (ADR-057).
+ * request binding, by the filters in front of the controllers, and by {@link
+ * RequestRoutingExceptionHandler} for the refusals Spring MVC makes on its own (ADR-057).
  *
  * <p>A kind keeps one URI wherever it is answered, so a client can tell refusals apart without
  * reading their titles. A kind answered in more than one place is written down in each place's own
