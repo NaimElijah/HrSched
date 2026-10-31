@@ -142,6 +142,7 @@ class WorkforceExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Invalid request");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:invalid-request");
     assertThat(problem.getDetail()).isEqualTo(failure.getMessage());
   }
 
@@ -153,6 +154,7 @@ class WorkforceExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
     assertThat(problem.getTitle()).isEqualTo("Not found");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-found");
     assertThat(problem.getDetail()).isEqualTo("No such resource.");
   }
 
@@ -164,6 +166,7 @@ class WorkforceExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Malformed request");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:malformed-request");
     assertThat(problem.getDetail()).doesNotContain("raw parser noise");
   }
 
@@ -184,6 +187,7 @@ class WorkforceExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getTitle()).isEqualTo("Overlaps a declared span");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:overlaps-a-declared-span");
   }
 
   @Test
@@ -195,6 +199,7 @@ class WorkforceExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
     assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
     assertThat(problem.getDetail()).isEqualTo("Your role does not permit this.");
   }
 
@@ -211,6 +216,7 @@ class WorkforceExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
     assertThat(problem.getTitle()).isEqualTo("Not found");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-found");
     assertThat(problem.getDetail()).isEqualTo("No such resource.");
     assertThat(problem.getDetail()).doesNotContain(theirs.value().toString());
   }
@@ -289,6 +295,7 @@ class WorkforceExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
     assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
     assertThat(problem.getDetail())
         .isEqualTo("The platform operator may not act inside an organisation.");
     assertThat(denied("operator_confined")).isEqualTo(1.0);

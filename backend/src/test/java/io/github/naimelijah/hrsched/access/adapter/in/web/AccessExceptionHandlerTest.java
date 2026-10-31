@@ -7,28 +7,42 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.github.naimelijah.hrsched.access.domain.model.InvalidOrganisationNameException;
+import io.github.naimelijah.hrsched.access.domain.model.InvalidSignInNameException;
+import io.github.naimelijah.hrsched.access.domain.model.NotThePlatformOperatorException;
 import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
+import io.github.naimelijah.hrsched.access.domain.model.UnknownOrganisationException;
+import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
+import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.method.annotation.ExceptionHandlerMethodResolver;
 
 /**
- * Specification of the access refusals no HTTP test can reach today.
+ * Specification of the access refusals no HTTP test can reach today, and of the type of those whose
+ * type no HTTP test pins.
  *
  * <p>A use case behind these routes refuses a role it does not permit, as {@code AccountService}
  * does for anybody but an Admin. Over HTTP the URL rule refuses that caller first, so the use
@@ -39,6 +53,10 @@ import org.springframework.web.method.annotation.ExceptionHandlerMethodResolver;
  *
  * <p>The refusal is logged at WARN, asserted against Logback rather than the rendered JSON, and
  * counted under the metric every context's handler shares.
+ *
+ * <p>The rest are reached over HTTP, but nothing there reads their {@code type}: a malformed name
+ * or body, the operator's own and the tenant's refusals, and an organisation that is not there.
+ * Each is driven here the same way, so a handler that stopped naming its kind fails here.
  */
 class AccessExceptionHandlerTest {
 
@@ -74,6 +92,7 @@ class AccessExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
     assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
     assertThat(problem.getDetail()).isEqualTo("Your role does not permit this.");
   }
 
@@ -104,6 +123,98 @@ class AccessExceptionHandlerTest {
     var counter = meters.find("hrsched.access.denied").tag("kind", "role").counter();
     assertThat(counter).isNotNull();
     assertThat(counter.count()).isEqualTo(1.0);
+  }
+
+  /** Every failure the handler promises to render as a 400 carrying its own message. */
+  private static Stream<RuntimeException> invalidInput() {
+    return Stream.of(
+        new InvalidOrganisationNameException(),
+        new InvalidSignInNameException(),
+        new MalformedRequestException("signInName is required"));
+  }
+
+  @ParameterizedTest
+  @MethodSource("invalidInput")
+  void GivenAnInvalidInput_WhenTranslated_ThenItIsABadRequestCarryingTheMessage(
+      RuntimeException failure) throws Exception {
+    ProblemDetail problem = translated(failure);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+    assertThat(problem.getTitle()).isEqualTo("Invalid request");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:invalid-request");
+    assertThat(problem.getDetail()).isEqualTo(failure.getMessage());
+  }
+
+  @Test
+  void GivenAnUnreadableBody_WhenTranslated_ThenItIsAMalformedRequestWithAGenericDetail()
+      throws Exception {
+    ProblemDetail problem =
+        translated(new HttpMessageNotReadableException("raw parser noise", anUnreadableBody()));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+    assertThat(problem.getTitle()).isEqualTo("Malformed request");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:malformed-request");
+    assertThat(problem.getDetail()).doesNotContain("raw parser noise");
+  }
+
+  @Test
+  void GivenATenantAdministeringThePlatform_WhenTranslated_ThenItIsForbidden() throws Exception {
+    ProblemDetail problem = translated(new NotThePlatformOperatorException(UserId.newId()));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+    assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
+    assertThat(problem.getDetail()).isEqualTo("Only the platform operator may do this.");
+  }
+
+  @Test
+  void GivenTheOperatorActingInsideAnOrganisation_WhenTranslated_ThenItIsForbidden()
+      throws Exception {
+    ProblemDetail problem = translated(new NotATenantMemberException(UserId.newId()));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+    assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
+    assertThat(problem.getDetail())
+        .isEqualTo("The platform operator may not act inside an organisation.");
+  }
+
+  @Test
+  void GivenAnOrganisationThatIsNotThere_WhenTranslated_ThenItIsNotFound() throws Exception {
+    ProblemDetail problem = translated(new UnknownOrganisationException(OrganisationId.newId()));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-found");
+    assertThat(problem.getDetail()).isEqualTo("No such resource.");
+  }
+
+  /** The same 404 an organisation that is not there earns, so the two cannot be told apart. */
+  @Test
+  void GivenACrossTenantAttempt_WhenTranslated_ThenItIsNotFound() throws Exception {
+    ProblemDetail problem =
+        translated(new CrossTenantAccessException(UserId.newId(), OrganisationId.newId()));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-found");
+    assertThat(problem.getDetail()).isEqualTo("No such resource.");
+  }
+
+  /**
+   * Spring 7 dropped the message-only constructors, so an unreadable body needs an input message.
+   * Hand-written rather than mocked, like every other double here.
+   */
+  private static HttpInputMessage anUnreadableBody() {
+    return new HttpInputMessage() {
+      @Override
+      public InputStream getBody() {
+        return InputStream.nullInputStream();
+      }
+
+      @Override
+      public HttpHeaders getHeaders() {
+        return new HttpHeaders();
+      }
+    };
   }
 
   /**

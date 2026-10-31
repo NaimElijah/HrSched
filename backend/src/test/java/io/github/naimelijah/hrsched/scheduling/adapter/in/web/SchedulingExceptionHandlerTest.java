@@ -164,6 +164,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY.value());
     assertThat(problem.getTitle()).isEqualTo("Roster breaks the rules");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:roster-breaks-the-rules");
   }
 
   @Test
@@ -205,6 +206,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Invalid request");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:invalid-request");
     assertThat(problem.getDetail()).isEqualTo(failure.getMessage());
   }
 
@@ -237,6 +239,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getTitle()).isEqualTo("Roster status forbids this");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:roster-status-forbids-this");
     assertThat(problem.getDetail()).isEqualTo(moved.getMessage());
   }
 
@@ -248,6 +251,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Malformed request");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:malformed-request");
     assertThat(problem.getDetail()).doesNotContain("raw parser noise");
   }
 
@@ -259,6 +263,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
     assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
     assertThat(problem.getDetail()).isEqualTo("Your role does not permit this.");
   }
 
@@ -272,6 +277,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
     assertThat(problem.getTitle()).isEqualTo("Not found");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-found");
     assertThat(problem.getDetail()).isEqualTo("No such resource.");
   }
 
@@ -283,6 +289,7 @@ class SchedulingExceptionHandlerTest {
         handler.handleUnknown(new CrossTenantAccessException(UserId.newId(), theirs));
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-found");
     assertThat(problem.getDetail()).isEqualTo("No such resource.");
     assertThat(problem.getDetail()).doesNotContain(theirs.value().toString());
   }
@@ -395,6 +402,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getTitle()).isEqualTo("Already assigned");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:already-assigned");
   }
 
   /**
@@ -531,6 +539,18 @@ class SchedulingExceptionHandlerTest {
   }
 
   @Test
+  void GivenAnActorWithoutAPersonnelRecord_WhenTranslated_ThenItIsForbiddenSayingWhy() {
+    ProblemDetail problem =
+        handler.handleNoEmployeeRecord(new NoEmployeeRecordException(UserId.newId()));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+    assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
+    assertThat(problem.getDetail())
+        .isEqualTo("You have no personnel record, so you have no schedule.");
+  }
+
+  @Test
   void GivenAnActorWithoutAPersonnelRecord_WhenTranslated_ThenItIsLoggedAtWarnNamingOnlyThem() {
     UserId actor = UserId.newId();
 
@@ -636,6 +656,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
     assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
     assertThat(problem.getDetail())
         .isEqualTo("The platform operator may not act inside an organisation.");
     assertThat(denied("operator_confined")).isEqualTo(1.0);

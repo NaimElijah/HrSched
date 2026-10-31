@@ -540,6 +540,7 @@ class RosteringHttpTest {
                         .formatted(undefined)))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.title").value("Invalid request"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:invalid-request"))
         .andExpect(jsonPath("$.detail").value(not(containsString(undefined))));
   }
 
