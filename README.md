@@ -310,7 +310,8 @@ HrSched/
 │   └── compose.yaml   local PostgreSQL for spring-boot:run
 ├── frontend/      React SPA
 │   └── src/       api/ · auth/ · components/ · pages/ · test-support/
-├── docs/          requirements/ (what) · architecture/ (how) · ADRs/ (why) · security/ · api.md
+├── docs/          requirements/ (what) · architecture/ (how) · ADRs/ (why) · security/ · images/
+│                  api.md · operations.md (settings, meters)
 ├── scripts/       run.mjs, the root task runner for dev and verify (ADR-014)
 └── .github/       CI and Dependabot
 ```
