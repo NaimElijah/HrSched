@@ -6,6 +6,7 @@ import { callsTo, holdingWrites, routeTo, writes } from '../test-support/routeTo
 import type { Answer } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import type { Session } from '../api/session';
+import { rowAfter, rowHeadedBy } from '../test-support/rows';
 import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
@@ -78,6 +79,11 @@ function theOrganisation(overrides: Record<string, Answer> = {}) {
   });
 }
 
+/** The row an account's sign-in name heads. */
+function rowFor(signInName: string): HTMLElement {
+  return rowHeadedBy(signInName);
+}
+
 function show(session: Session = A_TENANT) {
   render(
     <SignedIn session={session}>
@@ -96,8 +102,8 @@ describe('reading the organisation', () => {
 
     show();
 
-    expect(await screen.findByRole('cell', { name: 'ada@example.com' })).toBeInTheDocument();
-    expect(screen.getByRole('cell', { name: 'grace@example.com' })).toBeInTheDocument();
+    expect(await screen.findByRole('rowheader', { name: 'ada@example.com' })).toBeInTheDocument();
+    expect(screen.getByRole('rowheader', { name: 'grace@example.com' })).toBeInTheDocument();
   });
 
   it('GivenADisabledAndLockedAccount_WhenListed_ThenBothAreShown', async () => {
@@ -105,9 +111,10 @@ describe('reading the organisation', () => {
 
     show();
 
-    const row = (await screen.findByRole('cell', { name: 'grace@example.com' })).closest('tr');
-    expect(within(row as HTMLElement).getByText(/Disabled/)).toBeInTheDocument();
-    expect(within(row as HTMLElement).getByText(/Locked/)).toBeInTheDocument();
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
+    const row = rowFor('grace@example.com');
+    expect(within(row).getByText(/Disabled/)).toBeInTheDocument();
+    expect(within(row).getByText(/Locked/)).toBeInTheDocument();
   });
 
   it('GivenASchedulerRole_WhenOpened_ThenTheRefusalIsShown', async () => {
@@ -135,7 +142,7 @@ describe('reading the organisation', () => {
 
     show();
 
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
     expect(document.body).not.toHaveTextContent(leaked);
     expect(screen.queryByText(/passwordHash/)).not.toBeInTheDocument();
   });
@@ -323,10 +330,26 @@ describe('creating an account', () => {
     await userEvent.click(create);
 
     expect(create).toHaveAttribute('aria-disabled', 'true');
+    // jsdom keeps focus on a disabled button, so this, not toHaveFocus(), is what C1 rests on.
     expect(create).not.toBeDisabled();
     expect(create).toHaveFocus();
     release();
     await screen.findByText('Created robin@example.com.');
+  });
+
+  /** The form empties on success, so without a word nothing says the account was created (C3). */
+  it('GivenAnAccountCreated_WhenItSucceeds_ThenAStatusNamesIt', async () => {
+    theOrganisation({ 'POST /api/accounts': { status: 201, body: null } });
+    show();
+    await fillIn('robin@example.com', 'SCHEDULER', A_PASSWORD);
+    // Captured before the write: a live region that appears along with its text is not read.
+    const statuses = screen.getAllByRole('status');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    await waitFor(() =>
+      expect(statuses.map((status) => status.textContent)).toContain('Created robin@example.com.'),
+    );
   });
 
   /** A success left on screen while the next account is typed reads as that one's (C9). */
@@ -344,10 +367,6 @@ describe('creating an account', () => {
 });
 
 describe('changing an account', () => {
-  function rowFor(signInName: string) {
-    return screen.getByRole('cell', { name: signInName }).closest('tr') as HTMLElement;
-  }
-
   /** The organisation, accepting a password reset for Ada, with the list it reads back editable. */
   function resettingAdasPassword() {
     const server: Record<string, Answer> = {
@@ -386,7 +405,7 @@ describe('changing an account', () => {
     });
     show();
 
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     await userEvent.selectOptions(
       within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com'),
       'EMPLOYEE',
@@ -417,7 +436,7 @@ describe('changing an account', () => {
     theOrganisation();
     show();
 
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
     const choice = within(rowFor('ada@example.com')).getByLabelText('Employee for ada@example.com');
     expect(
       await within(choice).findByRole('option', { name: `Robin Example · ${ROBIN.id}` }),
@@ -435,7 +454,7 @@ describe('changing an account', () => {
     });
     show();
 
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
     await within(rowFor('ada@example.com')).findByRole('option', {
       name: `Robin Example · ${ROBIN.id}`,
     });
@@ -469,7 +488,7 @@ describe('changing an account', () => {
     });
     show();
 
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     const choice = within(rowFor('grace@example.com')).getByLabelText(
       'Employee for grace@example.com',
     );
@@ -500,7 +519,7 @@ describe('changing an account', () => {
     });
     show();
 
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     const choice = within(rowFor('grace@example.com')).getByLabelText(
       'Employee for grace@example.com',
     );
@@ -529,7 +548,7 @@ describe('changing an account', () => {
     });
     show();
 
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     await userEvent.click(
       within(rowFor('grace@example.com')).getByRole('button', {
         name: 'Restore grace@example.com',
@@ -550,7 +569,7 @@ describe('changing an account', () => {
     });
     show();
 
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
     await userEvent.selectOptions(
       within(rowFor('ada@example.com')).getByLabelText('Role for ada@example.com'),
       'SCHEDULER',
@@ -574,7 +593,7 @@ describe('changing an account', () => {
     const stub = theOrganisation();
     show();
 
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
     await userEvent.selectOptions(
       within(rowFor('ada@example.com')).getByLabelText('Role for ada@example.com'),
       'EMPLOYEE',
@@ -587,7 +606,7 @@ describe('changing an account', () => {
     const stub = theOrganisation();
     show();
 
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
     await within(rowFor('ada@example.com')).findByRole('option', {
       name: `Robin Example · ${ROBIN.id}`,
     });
@@ -625,7 +644,7 @@ describe('changing an account', () => {
       ),
     );
     show();
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     await within(rowFor('grace@example.com')).findByRole('option', {
       name: `Robin Example · ${ROBIN.id}`,
     });
@@ -682,7 +701,7 @@ describe('changing an account', () => {
       ),
     );
     show();
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
     await userEvent.selectOptions(role, 'EMPLOYEE');
     await userEvent.click(
@@ -724,7 +743,7 @@ describe('changing an account', () => {
   it('GivenTheStoredRoleStillChosen_WhenChangeIsPressed_ThenNothingIsSentOrSaid', async () => {
     const stub = theOrganisation();
     show();
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
     const change = screen.getByRole('button', { name: 'Change the role of grace@example.com' });
 
@@ -741,7 +760,7 @@ describe('changing an account', () => {
   it('GivenTheStoredEmployeeStillChosen_WhenChangeIsPressed_ThenNothingIsSentOrSaid', async () => {
     const stub = theOrganisation();
     show();
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     const change = screen.getByRole('button', {
       name: 'Change the employee of grace@example.com',
     });
@@ -760,7 +779,7 @@ describe('changing an account', () => {
   it('GivenARoleChosenButNotSent_WhenAnotherRowsChangeIsReadBack_ThenTheChoiceIsKept', async () => {
     const stub = resettingAdasPassword();
     show();
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
     await userEvent.selectOptions(role, 'EMPLOYEE');
 
@@ -776,7 +795,7 @@ describe('changing an account', () => {
   it('GivenARoleChosenButNotSent_WhenTheStoredRoleChangesUnderIt_ThenTheStoredRoleIsShown', async () => {
     const stub = resettingAdasPassword();
     show();
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
     await userEvent.selectOptions(role, 'EMPLOYEE');
     stub.server['/api/accounts'] = { status: 200, body: [ADA, { ...GRACE, role: 'ADMIN' }] };
@@ -795,7 +814,7 @@ describe('changing an account', () => {
       },
     });
     show();
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
     const role = within(rowFor('ada@example.com')).getByLabelText('Role for ada@example.com');
 
     await userEvent.selectOptions(role, 'SCHEDULER');
@@ -817,7 +836,7 @@ describe('changing an account', () => {
     });
     show();
 
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
     await userEvent.click(
       within(rowFor('ada@example.com')).getByRole('button', { name: 'Disable ada@example.com' }),
     );
@@ -844,7 +863,7 @@ describe('changing an account', () => {
     });
     show();
 
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     await userEvent.click(
       within(rowFor('grace@example.com')).getByRole('button', {
         name: 'Restore grace@example.com',
@@ -875,10 +894,8 @@ describe('resetting a colleague’s password', () => {
     });
     show();
 
-    await screen.findByRole('cell', { name: 'grace@example.com' });
-    const row = screen
-      .getByRole('cell', { name: 'grace@example.com' })
-      .closest('tr') as HTMLElement;
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
+    const row = rowFor('grace@example.com');
     await userEvent.type(
       within(row).getByLabelText('New temporary password for grace@example.com'),
       A_PASSWORD,
@@ -905,10 +922,8 @@ describe('resetting a colleague’s password', () => {
     const stub = theOrganisation();
     show();
 
-    await screen.findByRole('cell', { name: 'grace@example.com' });
-    const row = screen
-      .getByRole('cell', { name: 'grace@example.com' })
-      .closest('tr') as HTMLElement;
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
+    const row = rowFor('grace@example.com');
     await userEvent.click(
       within(row).getByRole('button', { name: 'Reset password for grace@example.com' }),
     );
@@ -927,10 +942,8 @@ describe('resetting a colleague’s password', () => {
     });
     show();
 
-    await screen.findByRole('cell', { name: 'grace@example.com' });
-    const row = screen
-      .getByRole('cell', { name: 'grace@example.com' })
-      .closest('tr') as HTMLElement;
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
+    const row = rowFor('grace@example.com');
     const field = within(row).getByLabelText('New temporary password for grace@example.com');
     await userEvent.type(field, A_PASSWORD, WITHOUT_PAUSES);
     await userEvent.click(
@@ -956,10 +969,8 @@ describe('resetting a colleague’s password', () => {
     });
     show();
 
-    await screen.findByRole('cell', { name: 'grace@example.com' });
-    const row = screen
-      .getByRole('cell', { name: 'grace@example.com' })
-      .closest('tr') as HTMLElement;
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
+    const row = rowFor('grace@example.com');
     const field = within(row).getByLabelText('New temporary password for grace@example.com');
     await userEvent.type(field, A_SHORT_PASSWORD, WITHOUT_PAUSES);
     await userEvent.click(
@@ -977,10 +988,8 @@ describe('resetting a colleague’s password', () => {
     theOrganisation();
     show();
 
-    await screen.findByRole('cell', { name: 'grace@example.com' });
-    const row = screen
-      .getByRole('cell', { name: 'grace@example.com' })
-      .closest('tr') as HTMLElement;
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
+    const row = rowFor('grace@example.com');
     const field = within(row).getByLabelText('New temporary password for grace@example.com');
     expect(field).toHaveAttribute('type', 'password');
     expect(field).toHaveValue('');
@@ -1014,10 +1023,10 @@ describe('what the browser’s password manager is offered', () => {
   it('GivenEveryAccountRow_WhenShown_ThenEachResetFieldIsMarkedAsANewPassword', async () => {
     theOrganisation();
     show();
-    await screen.findByRole('cell', { name: GRACE.signInName });
+    await screen.findByRole('rowheader', { name: GRACE.signInName });
 
     for (const { signInName } of [ADA, GRACE]) {
-      const row = screen.getByRole('cell', { name: signInName }).closest('tr') as HTMLElement;
+      const row = rowFor(signInName);
       expect(
         within(row).getByLabelText(`New temporary password for ${signInName}`),
         `the reset field for ${signInName}`,
@@ -1028,10 +1037,6 @@ describe('what the browser’s password manager is offered', () => {
 
 /** What a keyboard or screen reader user is told about each account's row (#257). */
 describe('the accounts table, told rather than shown', () => {
-  function rowFor(signInName: string) {
-    return screen.getByRole('cell', { name: signInName }).closest('tr') as HTMLElement;
-  }
-
   /** The detail AccessExceptionHandler sends for the last Admin; the page shows it as sent. */
   const LAST_ADMIN = 'An organisation must keep at least one active Admin.';
 
@@ -1040,8 +1045,8 @@ describe('the accounts table, told rather than shown', () => {
 
     show();
 
-    await screen.findByRole('cell', { name: 'ada@example.com' });
-    expect(screen.getByRole('table')).toHaveAccessibleName();
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
+    expect(screen.getByRole('table')).toHaveAccessibleName('Accounts in this organisation');
   });
 
   /** An unnamed header is read as nothing, so the actions column is announced as no column (C8). */
@@ -1050,10 +1055,111 @@ describe('the accounts table, told rather than shown', () => {
 
     show();
 
-    await screen.findByRole('cell', { name: 'ada@example.com' });
-    screen.getAllByRole('columnheader').forEach((header, index) => {
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
+    const headers = screen.getAllByRole('columnheader');
+    expect(headers).toHaveLength(6);
+    headers.forEach((header, index) => {
       expect(header, `column header ${index + 1}`).toHaveAccessibleName();
     });
+  });
+
+  /** A table wider than the screen is scrolled from the keyboard, so its region takes focus (C8). */
+  it('GivenTheAccounts_WhenListed_ThenTheScrollRegionCanTakeFocus', async () => {
+    theOrganisation();
+    show();
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
+    const region = screen.getByRole('region', { name: 'Accounts in this organisation' });
+
+    region.focus();
+
+    expect(region).toHaveFocus();
+  });
+
+  /** A table read after a refusal is a named table of nobody (C8). */
+  it('GivenTheListingIsRefused_WhenShown_ThenNoTableIsShown', async () => {
+    theOrganisation({
+      '/api/accounts': { status: 403, body: { detail: 'Your role may not do this.' } },
+    });
+
+    show({ ...A_TENANT, role: 'SCHEDULER' });
+
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    expect(screen.queryByText(/no accounts/i)).not.toBeInTheDocument();
+  });
+
+  /** An empty table says nothing at all to somebody who cannot see that it is empty (C8). */
+  it('GivenNoAccounts_WhenListed_ThenTheListSaysSo', async () => {
+    theOrganisation({ '/api/accounts': { status: 200, body: [] } });
+
+    show();
+
+    expect(await screen.findByText(/no accounts/i)).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  /** Reset with nothing typed does nothing, so it says why rather than staying silent (C5). */
+  it('GivenNoTypedPassword_WhenShown_ThenResetIsUnavailableAndSaysToTypeOneFirst', async () => {
+    theOrganisation();
+    show();
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
+    const reset = within(rowFor('grace@example.com')).getByRole('button', {
+      name: /^Reset password/,
+    });
+
+    expect(reset).toHaveAttribute('aria-disabled', 'true');
+    expect(reset).toHaveAccessibleDescription('Type a temporary password first.');
+    await userEvent.type(
+      screen.getByLabelText('New temporary password for grace@example.com'),
+      A_PASSWORD,
+      WITHOUT_PAUSES,
+    );
+    expect(reset).not.toHaveAttribute('aria-disabled', 'true');
+  });
+
+  /** A success left on screen while the next password is typed reads as that one's (C9). */
+  it('GivenAResetSucceeded_WhenTheRowsPasswordIsTypedAgain_ThenTheSuccessIsNoLongerSaid', async () => {
+    theOrganisation({ [`POST /api/accounts/${GRACE.id}/password`]: { status: 204, body: null } });
+    show();
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
+    const field = screen.getByLabelText('New temporary password for grace@example.com');
+    await userEvent.type(field, A_PASSWORD, WITHOUT_PAUSES);
+    await userEvent.click(
+      within(rowFor('grace@example.com')).getByRole('button', { name: /^Reset password/ }),
+    );
+    await screen.findByText('Reset the password of grace@example.com.');
+
+    await userEvent.type(field, 'x', WITHOUT_PAUSES);
+
+    expect(screen.queryByText('Reset the password of grace@example.com.')).not.toBeInTheDocument();
+  });
+
+  /** The refused sign-in name is still typed in the form, so its reason stays beside it (C6). */
+  it('GivenACreationRefused_WhenARowIsThenDisabled_ThenTheCreationsRefusalStays', async () => {
+    theOrganisation({
+      'POST /api/accounts': {
+        status: 409,
+        body: { detail: 'That sign-in name is already in use.' },
+      },
+      [`PUT /api/accounts/${ADA.id}/activation`]: { status: 204, body: null },
+    });
+    show();
+    await userEvent.type(
+      await screen.findByLabelText('Sign-in name'),
+      'ada@example.com',
+      WITHOUT_PAUSES,
+    );
+    await userEvent.type(screen.getByLabelText('Temporary password'), A_PASSWORD, WITHOUT_PAUSES);
+    await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    await screen.findByRole('alert');
+
+    await userEvent.click(
+      within(rowFor('ada@example.com')).getByRole('button', { name: /^Disable/ }),
+    );
+
+    await screen.findByText('Disabled ada@example.com.');
+    expect(screen.getByRole('alert')).toHaveTextContent('That sign-in name is already in use.');
   });
 
   /** "Reset password" on every row gave a screen reader no way to tell whose it was (C7). */
@@ -1062,7 +1168,7 @@ describe('the accounts table, told rather than shown', () => {
 
     show();
 
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     const ada = within(rowFor('ada@example.com'));
     const grace = within(rowFor('grace@example.com'));
     expect(ada.getByRole('button', { name: 'Reset password for ada@example.com' })).toBeVisible();
@@ -1077,7 +1183,7 @@ describe('the accounts table, told rather than shown', () => {
   it('GivenTheStoredRoleChosen_WhenShown_ThenChangeIsUnavailableAndSaysToChooseAnother', async () => {
     theOrganisation();
     show();
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     const change = screen.getByRole('button', { name: 'Change the role of grace@example.com' });
 
     expect(change).toHaveAttribute('aria-disabled', 'true');
@@ -1093,7 +1199,7 @@ describe('the accounts table, told rather than shown', () => {
   it('GivenTheStoredEmployeeChosen_WhenShown_ThenChangeIsUnavailableAndSaysToChooseAnother', async () => {
     theOrganisation();
     show();
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
     await within(rowFor('ada@example.com')).findByRole('option', {
       name: `Robin Example · ${ROBIN.id}`,
     });
@@ -1118,7 +1224,7 @@ describe('the accounts table, told rather than shown', () => {
     const routed = theOrganisation({ [`PUT ${membership}`]: { status: 204, body: null } });
     const release = holdingWrites(routed);
     show();
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     await userEvent.selectOptions(
       within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com'),
       'EMPLOYEE',
@@ -1141,7 +1247,7 @@ describe('the accounts table, told rather than shown', () => {
     const routed = theOrganisation({ [`PUT ${membership}`]: { status: 204, body: null } });
     const release = holdingWrites(routed);
     show();
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
     await within(rowFor('ada@example.com')).findByRole('option', {
       name: `Robin Example · ${ROBIN.id}`,
     });
@@ -1168,7 +1274,7 @@ describe('the accounts table, told rather than shown', () => {
     });
     const release = holdingWrites(routed);
     show();
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     await userEvent.type(
       screen.getByLabelText('New temporary password for grace@example.com'),
       A_PASSWORD,
@@ -1196,7 +1302,7 @@ describe('the accounts table, told rather than shown', () => {
     });
     const release = holdingWrites(routed);
     show();
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
     const disable = within(rowFor('ada@example.com')).getByRole('button', { name: /^Disable/ });
 
     await userEvent.click(disable);
@@ -1211,7 +1317,7 @@ describe('the accounts table, told rather than shown', () => {
   });
 
   /** A refusal above the table says nothing about which of its rows it belongs to (C6). */
-  it('GivenAResetRefused_WhenShown_ThenTheRefusalIsInTheAccountsTable', async () => {
+  it('GivenAResetRefused_WhenShown_ThenTheRefusalIsInTheRowAfterItsOwn', async () => {
     theOrganisation({
       // The minimum this detail names is invented, as in the reset tests above.
       [`POST /api/accounts/${GRACE.id}/password`]: {
@@ -1224,7 +1330,7 @@ describe('the accounts table, told rather than shown', () => {
       },
     });
     show();
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
 
     await userEvent.type(
       screen.getByLabelText('New temporary password for grace@example.com'),
@@ -1235,11 +1341,10 @@ describe('the accounts table, told rather than shown', () => {
       within(rowFor('grace@example.com')).getByRole('button', { name: /^Reset password/ }),
     );
 
-    expect(await within(screen.getByRole('table')).findByRole('alert')).toHaveTextContent(
-      'A password must be at least 15 characters long.',
-    );
+    expect(
+      await within(rowAfter(rowFor('grace@example.com'))).findByRole('alert'),
+    ).toHaveTextContent('A password must be at least 15 characters long.');
     expect(screen.getAllByRole('alert'), 'every alert on the page').toHaveLength(1);
-    expect(within(rowFor('ada@example.com')).queryByRole('alert')).not.toBeInTheDocument();
   });
 
   /** The field the refusal is about says so, and says why, where the cursor already is (C6). */
@@ -1255,7 +1360,7 @@ describe('the accounts table, told rather than shown', () => {
       },
     });
     show();
-    await screen.findByRole('cell', { name: 'grace@example.com' });
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
     const field = screen.getByLabelText('New temporary password for grace@example.com');
 
     await userEvent.type(field, A_SHORT_PASSWORD, WITHOUT_PAUSES);
@@ -1271,12 +1376,12 @@ describe('the accounts table, told rather than shown', () => {
     );
   });
 
-  it('GivenARoleChangeRefused_WhenShown_ThenTheRefusalIsInTheAccountsTable', async () => {
+  it('GivenARoleChangeRefused_WhenShown_ThenTheRefusalIsInTheRowAfterItsOwn', async () => {
     theOrganisation({
       [`PUT /api/accounts/${ADA.id}/membership`]: { status: 409, body: { detail: LAST_ADMIN } },
     });
     show();
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
 
     await userEvent.selectOptions(
       within(rowFor('ada@example.com')).getByLabelText('Role for ada@example.com'),
@@ -1286,28 +1391,105 @@ describe('the accounts table, told rather than shown', () => {
       screen.getByRole('button', { name: 'Change the role of ada@example.com' }),
     );
 
-    expect(await within(screen.getByRole('table')).findByRole('alert')).toHaveTextContent(
+    expect(await within(rowAfter(rowFor('ada@example.com'))).findByRole('alert')).toHaveTextContent(
       LAST_ADMIN,
     );
     expect(screen.getAllByRole('alert'), 'every alert on the page').toHaveLength(1);
-    expect(within(rowFor('grace@example.com')).queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('GivenADisableRefused_WhenShown_ThenTheRefusalIsInTheAccountsTable', async () => {
+  it('GivenADisableRefused_WhenShown_ThenTheRefusalIsInTheRowAfterItsOwn', async () => {
     theOrganisation({
       [`PUT /api/accounts/${ADA.id}/activation`]: { status: 409, body: { detail: LAST_ADMIN } },
     });
     show();
-    await screen.findByRole('cell', { name: 'ada@example.com' });
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
 
     await userEvent.click(
       within(rowFor('ada@example.com')).getByRole('button', { name: /^Disable/ }),
     );
 
-    expect(await within(screen.getByRole('table')).findByRole('alert')).toHaveTextContent(
+    expect(await within(rowAfter(rowFor('ada@example.com'))).findByRole('alert')).toHaveTextContent(
       LAST_ADMIN,
     );
     expect(screen.getAllByRole('alert'), 'every alert on the page').toHaveLength(1);
-    expect(within(rowFor('grace@example.com')).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  /** The control the refusal is about says so and why; the password it is not about stays valid. */
+  it('GivenARoleChangeRefused_WhenShown_ThenTheRoleIsMarkedInvalidAndThePasswordIsNot', async () => {
+    theOrganisation({
+      [`PUT /api/accounts/${ADA.id}/membership`]: { status: 409, body: { detail: LAST_ADMIN } },
+    });
+    show();
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
+    const role = within(rowFor('ada@example.com')).getByLabelText('Role for ada@example.com');
+
+    await userEvent.selectOptions(role, 'SCHEDULER');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the role of ada@example.com' }),
+    );
+
+    await waitFor(() => expect(role).toHaveAttribute('aria-invalid', 'true'));
+    expect(role).toHaveAccessibleDescription(new RegExp(LAST_ADMIN));
+    expect(screen.getByLabelText('New temporary password for ada@example.com')).not.toHaveAttribute(
+      'aria-invalid',
+      'true',
+    );
+  });
+
+  /** Only the policy's refusal, a 422, is about the password typed; a missing account is not. */
+  it('GivenAResetRefusedForAReasonOtherThanThePassword_WhenShown_ThenThePasswordIsNotMarkedInvalid', async () => {
+    theOrganisation({
+      [`POST /api/accounts/${GRACE.id}/password`]: {
+        status: 404,
+        body: { detail: 'No such resource.' },
+      },
+    });
+    show();
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
+    const field = screen.getByLabelText('New temporary password for grace@example.com');
+
+    await userEvent.type(field, A_PASSWORD, WITHOUT_PAUSES);
+    await userEvent.click(
+      within(rowFor('grace@example.com')).getByRole('button', { name: /^Reset password/ }),
+    );
+
+    await within(rowAfter(rowFor('grace@example.com'))).findByRole('alert');
+    expect(field).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
+  /** A refusal answered by a reset that then succeeds no longer stands, nor marks the field. */
+  it('GivenAResetRefused_WhenRetriedAndItSucceeds_ThenTheRefusalAndTheMarkAreCleared', async () => {
+    const reset = `POST /api/accounts/${GRACE.id}/password`;
+    const server: Record<string, Answer> = {
+      '/api/accounts': { status: 200, body: [ADA, GRACE] },
+      '/api/employees': { status: 200, body: [GRACE_HOPPER, ROBIN] },
+      [reset]: {
+        status: 422,
+        body: {
+          title: 'Password not accepted',
+          detail: 'A password must be at least 15 characters long.',
+          reason: 'TOO_SHORT',
+        },
+      },
+    };
+    routeTo(server);
+    show();
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
+    const field = screen.getByLabelText('New temporary password for grace@example.com');
+    const button = within(rowFor('grace@example.com')).getByRole('button', {
+      name: /^Reset password/,
+    });
+    await userEvent.type(field, A_SHORT_PASSWORD, WITHOUT_PAUSES);
+    await userEvent.click(button);
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'));
+    server[reset] = { status: 204, body: null };
+
+    await userEvent.clear(field);
+    await userEvent.type(field, A_PASSWORD, WITHOUT_PAUSES);
+    await userEvent.click(button);
+
+    await screen.findByText('Reset the password of grace@example.com.');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(field).not.toHaveAttribute('aria-invalid', 'true');
   });
 });
