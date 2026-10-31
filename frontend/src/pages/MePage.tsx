@@ -4,6 +4,7 @@ import type { RosteredShift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import type { Employee, PreferenceStrength } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
+import { focusIsUnclaimed } from '../components/focus';
 import { shiftLabel, spanLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSession, useSessionKey } from '../auth/SessionProvider';
@@ -42,15 +43,6 @@ type Outcome = 'period' | 'withdrawal' | 'handOver';
 interface Done {
   readonly text: string;
   readonly of: Outcome;
-}
-
-/**
- * Whether focus can be moved without taking it from anybody: it is still on the control that
- * acted, or it was dropped to the body when that control went.
- */
-function focusIsUnclaimed(control: Element | null): boolean {
-  const active = document.activeElement;
-  return active === null || active === document.body || active === control;
 }
 
 /**

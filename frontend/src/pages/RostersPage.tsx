@@ -9,6 +9,7 @@ import {
 } from '../api/scheduling';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure, Violations } from '../components/Feedback';
+import { focusIsUnclaimed } from '../components/focus';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
 import { ApprovingRules } from './ApprovingRules';
@@ -33,15 +34,6 @@ const ROSTER_COLUMNS = 6;
 
 /** Said after a draft is ready that did not open, because opening it would have taken the focus. */
 const OPEN_FROM_THE_LIST = ' Open it from the list.';
-
-/**
- * Whether focus can be moved without taking it from anybody: it is still on the control that
- * acted, or it was dropped to the body when that control went.
- */
-function focusIsUnclaimed(control: Element | null): boolean {
-  const active = document.activeElement;
-  return active === null || active === document.body || active === control;
-}
 
 const pause = (milliseconds: number) =>
   new Promise<void>((resolve) => {

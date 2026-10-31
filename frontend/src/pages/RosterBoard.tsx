@@ -5,6 +5,7 @@ import type { Roster, Shift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure, Violations } from '../components/Feedback';
+import { focusIsUnclaimed } from '../components/focus';
 import { dayLabel, localDate, shiftLabel, timeLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
@@ -31,15 +32,6 @@ function byLocalDay(shifts: readonly Shift[]): Day[] {
     });
   }
   return [...days.values()];
-}
-
-/**
- * Whether focus can be moved without taking it from anybody: it is still on the control that
- * acted, or it was dropped to the body when that control went.
- */
-function focusIsUnclaimed(control: Element | null): boolean {
-  const active = document.activeElement;
-  return active === null || active === document.body || active === control;
 }
 
 /** How many shifts a draft leaves short, in words. */

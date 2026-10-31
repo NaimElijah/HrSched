@@ -2,6 +2,7 @@ import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { scheduling } from '../api/scheduling';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
+import { focusIsUnclaimed } from '../components/focus';
 import { shiftLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
@@ -10,15 +11,6 @@ import { useShiftsById } from '../components/useShiftsById';
 
 /** The swaps table's columns, which a row spanning all of them has to know. */
 const SWAP_COLUMNS = 5;
-
-/**
- * Whether focus can be moved without taking it from anybody: it is still on the control that
- * acted, or it was dropped to the body when that control went.
- */
-function focusIsUnclaimed(control: Element | null): boolean {
-  const active = document.activeElement;
-  return active === null || active === document.body || active === control;
-}
 
 /**
  * Scheduler: answer the swap requests (F7).
