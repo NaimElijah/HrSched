@@ -24,4 +24,4 @@
 [[IgnoredVulns]]
 id = "GHSA-g3hv-75wg-m249"
 ignoreUntil = 2026-11-30
-reason = "Needs an attacker-supplied glob pattern. minimatch is dev-only (frontend/package-lock.json), reached only by eslint and the typescript-eslint parser, whose patterns are the committed frontend/eslint.config.js; nothing in the production bundle carries it. No eslint release depends on a fixed minimatch yet. #333"
+reason = "Reached only at optimizationLevel >= 2 (minimatch/dist/esm/index.js), which none of its callers sets: eslint, @eslint/config-array and typescript-estree pass { dot: true }, with patterns that are committed or lockfile-pinned. Dev-only in frontend/package-lock.json; nothing in the production bundle carries it. No eslint release depends on minimatch >= 11.0.1 yet. #333"
