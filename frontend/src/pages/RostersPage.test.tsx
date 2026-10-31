@@ -1204,6 +1204,8 @@ describe('the board of a draft', () => {
       await user.click(
         await screen.findByRole('button', { name: 'Generate a draft for this span' }),
       );
+      // The poll's pause is scheduled only once the POST has answered: advancing sooner races it.
+      await screen.findByText('Generating a draft…');
       await vi.advanceTimersByTimeAsync(1000);
 
       expect(await screen.findByText(/asking again/)).toBeInTheDocument();
