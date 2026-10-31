@@ -53,7 +53,8 @@ export function QualificationsPage() {
           Name
           <input value={name} onChange={(event) => setName(event.target.value)} required />
         </label>
-        {/* aria-disabled rather than disabled, so focus stays on the button while it is out. */}
+        {/* aria-disabled rather than disabled, so focus stays on the button while its request is
+            on its way. */}
         <button type="submit" aria-disabled={defining}>
           Define
         </button>

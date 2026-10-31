@@ -103,7 +103,8 @@ export function OrganisationsPage() {
             required
           />
         </label>
-        {/* aria-disabled rather than disabled, so focus stays on the button while it is out. */}
+        {/* aria-disabled rather than disabled, so focus stays on the button while its request is
+            on its way. */}
         <button type="submit" aria-disabled={onboarding}>
           Onboard organisation
         </button>
@@ -116,7 +117,9 @@ export function OrganisationsPage() {
       <Failure error={organisations.error} />
       <Busy busy={organisations.busy} />
 
-      {organisations.value?.length === 0 ? (
+      {/* Only an answer says which organisations there are: while loading, or after a refusal,
+          there is no list to show, and an empty table would read as none. */}
+      {organisations.value === null ? null : organisations.value.length === 0 ? (
         <p>No organisations yet.</p>
       ) : (
         <div className="table-scroll" role="region" aria-labelledby={captionId} tabIndex={0}>
@@ -131,7 +134,7 @@ export function OrganisationsPage() {
               </tr>
             </thead>
             <tbody>
-              {(organisations.value ?? []).map((organisation) => (
+              {organisations.value.map((organisation) => (
                 <tr key={organisation.id}>
                   <td>{organisation.name}</td>
                   <td>

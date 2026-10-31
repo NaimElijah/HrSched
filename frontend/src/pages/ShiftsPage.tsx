@@ -148,7 +148,8 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
           />
           Unpopular
         </label>
-        {/* aria-disabled rather than disabled, so focus stays on the button while it is out. */}
+        {/* aria-disabled rather than disabled, so focus stays on the button while its request is
+            on its way. */}
         <button type="submit" aria-disabled={defining}>
           Define shift
         </button>
@@ -161,7 +162,9 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
       <Failure error={shifts.error} />
       <Busy busy={shifts.busy} />
 
-      {shifts.value?.length === 0 ? (
+      {/* Only an answer says what the span holds: while loading, or after a refusal, there is no
+          list to show, and an empty table would read as no shifts. */}
+      {shifts.value === null ? null : shifts.value.length === 0 ? (
         <p>No shifts in this span.</p>
       ) : (
         <div className="table-scroll" role="region" aria-labelledby={captionId} tabIndex={0}>
@@ -179,7 +182,7 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
               </tr>
             </thead>
             <tbody>
-              {(shifts.value ?? []).map((shift) => (
+              {shifts.value.map((shift) => (
                 <tr key={shift.id}>
                   <td>{new Date(shift.start).toLocaleString()}</td>
                   <td>{new Date(shift.end).toLocaleString()}</td>

@@ -60,10 +60,9 @@ describe('listing what the organisation has defined', () => {
 
     show();
 
-    // The busy region empties only once the listing has answered; until then an empty list proves
-    // nothing about what the page does with an empty answer. Found by its words rather than as the
-    // page's only status, because a definition's success has a status region of its own (#257, C3).
-    await waitFor(() => expect(screen.queryByText('Working…')).not.toBeInTheDocument());
+    // Only once the listing has answered, which the page says; until then an empty list proves
+    // nothing about what the page does with an empty answer.
+    await screen.findByText(/no qualifications/i);
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -78,6 +77,8 @@ describe('listing what the organisation has defined', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
     );
+    // A refused listing is no evidence that there are none.
+    expect(screen.queryByText(/no qualifications/i)).not.toBeInTheDocument();
   });
 });
 
@@ -166,6 +167,7 @@ describe('defining one', () => {
     await userEvent.click(define);
 
     expect(define).toHaveAttribute('aria-disabled', 'true');
+    // jsdom keeps focus on a disabled button, so this, not toHaveFocus(), is what C1 rests on.
     expect(define).not.toBeDisabled();
     expect(define).toHaveFocus();
     release();
@@ -176,14 +178,14 @@ describe('defining one', () => {
   it('GivenADefinitionSucceeds_WhenItReturns_ThenAStatusNamesWhatWasDefined', async () => {
     theOrganisation(NONE_DEFINED);
     show();
-
     await userEvent.type(screen.getByLabelText('Name'), 'Nursing', WITHOUT_PAUSES);
+    // Captured before the write: a live region that appears along with its text is not read.
+    const statuses = screen.getAllByRole('status');
+
     await userEvent.click(screen.getByRole('button', { name: 'Define' }));
 
     await waitFor(() =>
-      expect(screen.getAllByRole('status').map((status) => status.textContent)).toContainEqual(
-        expect.stringMatching(/defined nursing/i),
-      ),
+      expect(statuses.map((status) => status.textContent)).toContain('Defined Nursing.'),
     );
   });
 

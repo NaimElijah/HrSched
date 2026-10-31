@@ -335,6 +335,7 @@ describe('defining a shift', () => {
     await userEvent.click(define);
 
     expect(define).toHaveAttribute('aria-disabled', 'true');
+    // jsdom keeps focus on a disabled button, so this, not toHaveFocus(), is what C1 rests on.
     expect(define).not.toBeDisabled();
     expect(define).toHaveFocus();
     release();
@@ -370,10 +371,13 @@ describe('defining a shift', () => {
     await userEvent.type(screen.getByLabelText('People needed'), '3', WITHOUT_PAUSES);
     await userEvent.selectOptions(screen.getByLabelText('Required qualifications'), ['q-1']);
     await userEvent.click(screen.getByLabelText('Unpopular'));
+    // Captured before the write: a live region that appears along with its text is not read.
+    const statuses = screen.getAllByRole('status');
 
     await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
 
     expect(await screen.findByText(/^Defined/)).toHaveAttribute('role', 'status');
+    expect(statuses).toContain(screen.getByText(/^Defined/));
     expect(screen.getByLabelText('Starts')).toHaveValue('');
     expect(screen.getByLabelText('Ends')).toHaveValue('');
     expect(screen.getByLabelText('People needed')).toHaveValue(1);
@@ -396,7 +400,12 @@ describe('defining a shift', () => {
     await screen.findByRole('alert');
     expect(screen.getByLabelText('Starts')).toHaveValue('2026-10-05T08:00');
     expect(screen.queryByText(/^Defined/)).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Define shift' })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Define shift' })).not.toHaveAttribute(
+        'aria-disabled',
+        'true',
+      ),
+    );
   });
 });
 
@@ -416,7 +425,33 @@ describe('the shifts as a table', () => {
     show();
 
     await screen.findByRole('cell', { name: new Date(A_SHIFT.start).toLocaleString() });
-    expect(screen.getByRole('table')).toHaveAccessibleName();
+    expect(screen.getByRole('table')).toHaveAccessibleName('Shifts in the planning span');
+  });
+
+  /** A table wider than the screen is scrolled from the keyboard, so its region takes focus (C8). */
+  it('GivenShiftsInTheSpan_WhenListed_ThenTheScrollRegionCanTakeFocus', async () => {
+    theOrganisation({ '/api/shifts': { status: 200, body: [A_SHIFT] } });
+    show();
+    await screen.findByRole('cell', { name: new Date(A_SHIFT.start).toLocaleString() });
+    const region = screen.getByRole('region', { name: 'Shifts in the planning span' });
+
+    region.focus();
+
+    expect(region).toHaveFocus();
+  });
+
+  /** A refused listing is no evidence that the span is empty, and a table of nothing would say so. */
+  it('GivenTheListingIsRefused_WhenShown_ThenNeitherATableNorNoneIsShown', async () => {
+    theOrganisation({
+      '/api/shifts': { status: 403, body: { detail: 'Your role does not permit this.' } },
+    });
+
+    show();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your role may not do this.');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    expect(screen.queryByText(/no shifts/i)).not.toBeInTheDocument();
   });
 
   /** An empty table says nothing at all to somebody who cannot see that it is empty (C8). */

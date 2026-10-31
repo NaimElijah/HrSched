@@ -253,10 +253,26 @@ describe('onboarding', () => {
     await userEvent.click(onboard);
 
     expect(onboard).toHaveAttribute('aria-disabled', 'true');
+    // jsdom keeps focus on a disabled button, so this, not toHaveFocus(), is what C1 rests on.
     expect(onboard).not.toBeDisabled();
     expect(onboard).toHaveFocus();
     release();
     await screen.findByText('Onboarded Beta.');
+  });
+
+  /** The form empties on success, so without a word nothing says it was onboarded (C3). */
+  it('GivenAnOnboarding_WhenItSucceeds_ThenAStatusNamesTheOrganisation', async () => {
+    thePlatform({ 'POST /api/organisations': { status: 201, body: BETA } });
+    show();
+    await fillIn('Beta', AN_ADMIN, A_PASSWORD);
+    // Captured before the write: a live region that appears along with its text is not read.
+    const statuses = screen.getAllByRole('status');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+
+    await waitFor(() =>
+      expect(statuses.map((status) => status.textContent)).toContain('Onboarded Beta.'),
+    );
   });
 
   /** A success left on screen while the next organisation is typed reads as that one's (C9). */
@@ -280,7 +296,36 @@ describe('the register as a table', () => {
     show();
 
     await screen.findByRole('cell', { name: 'Beta' });
-    expect(screen.getByRole('table')).toHaveAccessibleName();
+    expect(screen.getByRole('table')).toHaveAccessibleName('Organisations on the platform');
+  });
+
+  /** A table wider than the screen is scrolled from the keyboard, so its region takes focus (C8). */
+  it('GivenTheOrganisations_WhenListed_ThenTheScrollRegionCanTakeFocus', async () => {
+    thePlatform();
+    show();
+    await screen.findByRole('cell', { name: 'Beta' });
+    const region = screen.getByRole('region', { name: 'Organisations on the platform' });
+
+    region.focus();
+
+    expect(region).toHaveFocus();
+  });
+
+  /** A refused listing is no evidence that there are none, and a table of nothing would say so. */
+  it('GivenTheListingIsRefused_WhenShown_ThenNeitherATableNorNoneIsShown', async () => {
+    thePlatform({
+      '/api/organisations': {
+        status: 403,
+        body: { detail: 'Only the platform operator may do this.' },
+      },
+    });
+
+    show(A_TENANT);
+
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    expect(screen.queryByText(/no organisations/i)).not.toBeInTheDocument();
   });
 
   /** An empty table says nothing at all to somebody who cannot see that it is empty (C8). */
