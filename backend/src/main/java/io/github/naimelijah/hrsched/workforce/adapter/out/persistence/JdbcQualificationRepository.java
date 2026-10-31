@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.workforce.adapter.out.persistence;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.workforce.application.port.out.QualificationRepository;
+import io.github.naimelijah.hrsched.workforce.domain.model.InvalidQualificationNameException;
 import io.github.naimelijah.hrsched.workforce.domain.model.Qualification;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -72,11 +73,34 @@ public class JdbcQualificationRepository implements QualificationRepository {
         .list();
   }
 
+  /**
+   * Rebuilds through the aggregate's own constructor, so its rule is checked again on the way out
+   * of the store.
+   *
+   * <p>The domain's refusal is how a caller is told their own name is blank, and is answered as
+   * their mistake without a log line. A stored name blank to the domain but not to the schema's
+   * {@code btrim}, which trims spaces only, is this system's defect instead (R2), so the refusal is
+   * replaced by one naming the identity and the rule, never the name.
+   *
+   * <p>The refusal is deliberately not attached as the cause. Spring resolves an exception handler
+   * by an exception's causes when none takes its own type, so a cause would route this straight
+   * back to the 400 it exists to avoid. It travels suppressed instead, which Spring does not walk,
+   * so its stack still reaches the log; its message is a constant that never repeats the name.
+   */
   private static Qualification toQualification(ResultSet row, int rowNumber) throws SQLException {
-    return new Qualification(
-        new QualificationId(row.getObject("id", UUID.class)),
-        new OrganisationId(row.getObject("organisation_id", UUID.class)),
-        row.getString("name"));
+    QualificationId id = new QualificationId(row.getObject("id", UUID.class));
+    try {
+      return new Qualification(
+          id,
+          new OrganisationId(row.getObject("organisation_id", UUID.class)),
+          row.getString("name"));
+    } catch (InvalidQualificationNameException refusal) {
+      IllegalStateException defect =
+          new IllegalStateException(
+              "Stored name of qualification %s is blank, which breaks R2".formatted(id.value()));
+      defect.addSuppressed(refusal);
+      throw defect;
+    }
   }
 
   /**

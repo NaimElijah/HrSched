@@ -25,6 +25,23 @@
       [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md).
     - The count of adapters ("Eight") has moved. `Jdbc*Repository` classes in each context's
       `adapter.out.persistence` package are the current set.
+  - **Amended 2026-10-30:** The schema now holds R24: migration `V14` adds
+    `working_time_constraint_one_of_each_kind`, so a set with two constraints of one kind can no
+    longer be stored, and the earlier note's "the schema still permits it" no longer holds. A
+    database already holding such a set fails that migration, and the row that is wrong is deleted
+    by hand ([#255](https://github.com/NaimElijah/HrSched/issues/255)). `V14` also makes a
+    reference to `roster` carry its organisation: a generation and a swap request name a roster by
+    `(organisation_id, id)`, so neither can name another organisation's. The count of child tables
+    carrying no `organisation_id` that `V1` and this record give has moved; `V14`'s header
+    corrects it.
+  - **Amended 2026-10-30:** The schema now holds R7, non-overlapping unavailability, with the
+    `employee_unavailability_does_not_overlap` exclusion constraint (migration `V15`). The
+    alternatives table said to revisit the `EXCLUDE` for it "when the `btree_gist` extension is
+    wanted for another reason", and `V2` installed `btree_gist` for the published-roster exclusion.
+    The constraint is checked immediately, not deferred, and no adapter translates its violation:
+    the domain refuses an overlap before anything is written. **Revisit when** a save needs the
+    check deferred, as one inserting a new span before deleting the one it replaces would, or when
+    a second database engine is to be supported, since `EXCLUDE` is PostgreSQL's alone.
 - **Date:** 2026-09-06
 
 ## Context

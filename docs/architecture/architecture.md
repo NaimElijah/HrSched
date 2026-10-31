@@ -343,7 +343,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 | `spring-boot-starter-jdbc` | `JdbcClient`, the connection pool, and the transaction manager | [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md). Chosen over JPA because the domain may not carry `jakarta.persistence` annotations. |
 | `spring-boot-starter-flyway` + `flyway-database-postgresql` | Versioned schema migrations, applied on startup | ADR-004. New in Boot 4.x; 3.x had no Flyway starter. |
 | `postgresql` | The JDBC driver | ADR-004. Runtime scope; nothing compiles against it. |
-| `btree_gist` (PostgreSQL extension) | The `uuid` equality the `roster_one_published_per_moment` exclusion constraint indexes on | [ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md), which widened the constraint in `V6` and kept `btree_gist`. Ships with PostgreSQL and is trusted, so the migrating role needs `CREATE` on the database, not superuser. Installed by migration `V2`, under [ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md), which ADR-037 superseded. |
+| `btree_gist` (PostgreSQL extension) | The `uuid` equality the `roster_one_published_per_moment` and `employee_unavailability_does_not_overlap` (`V15`) exclusion constraints index on | [ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md), which widened the constraint in `V6` and kept `btree_gist`. Ships with PostgreSQL and is trusted, so the migrating role needs `CREATE` on the database, not superuser. Installed by migration `V2`, under [ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md), which ADR-037 superseded. |
 | `spring-boot-docker-compose` | Starting the local database on `./mvnw spring-boot:run` | ADR-004, and it keeps `scripts/run.mjs` free of build logic as [ADR-014](../ADRs/ADR-014-root-task-runner.md) requires. Optional scope, so it never reaches a deployed artifact. |
 | `testcontainers-postgresql`, `spring-boot-testcontainers` | The real database the tests run against | ADR-004. Docker is required to build; there is deliberately no skip-when-absent. Version-managed by the Boot BOM, which imports the Testcontainers BOM. |
 | `spring-boot-starter-opentelemetry` | A W3C trace id per request, in the MDC and on the response | [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md). Supplies the OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters; export is switched off until Q19 is answered. OpenTelemetry is held at 1.67.0, ahead of the Boot BOM, for a `tracestate` parsing advisory ([#285](https://github.com/NaimElijah/HrSched/issues/285)); removing the hold once Boot catches up is [#289](https://github.com/NaimElijah/HrSched/issues/289). |
@@ -409,7 +409,29 @@ are not audited. Nothing at runtime depends on any of it.
   the operator's, row. A notification's guard also holds its recipient, kind, subject and moment,
   so a save never moves one to another inbox or rewrites what somebody was told; the upsert only
   ever sets `read`, never clears it. The register of organisations is the exception, having no
-  owner to compare.
+  owner to compare: its save is a plain insert, so an identity already stored is refused by the
+  primary key rather than renaming the tenant that holds it. `JdbcOrganisationRepository` matches
+  `organisation_pkey` by name and throws an `IllegalStateException` naming the identity, never the
+  name, as a fault rather than a refusal any caller could act on.
+- **An organisation stored breaking a rule is this system's defect, not the Operator's mistake.**
+  `JdbcOrganisationRepository` rebuilds every organisation it reads through its own constructor,
+  so the name's rule is checked again on the way out of the store. A name the schema's `btrim`
+  lets through, as it trims spaces only, but the domain calls blank (R2), is refused there, and the
+  refusal is replaced by an `IllegalStateException` naming the identity and the rule, never the
+  name. No access handler takes it, so reading or listing the register answers a server error
+  rather than the 400 the same refusal earns a caller onboarding a blank name. The refusal travels
+  suppressed rather than as the cause, because Spring resolves a handler by an exception's causes
+  too.
+- **In scheduling, a reference to a roster carries its organisation.** `roster` is unique on
+  `(organisation_id, id)` as well as on `id`, and `roster_generation` and `swap_request` name a
+  roster through both columns, so neither can store a reference to another organisation's roster,
+  nor to one that does not exist (`V14`). A swap request also names the requester's assignment on
+  that roster, `swap_request_names_an_assignment_on_its_roster`, which holds because a published
+  roster's assignments are never deleted. That key's index, `swap_request_by_assignment`, is
+  deliberately not led by `organisation_id`: it answers no repository lookup, but the check
+  PostgreSQL makes on each assignment a draft save deletes, which carries no organisation because
+  `roster_assignment` has none. No adapter translates these
+  violations; each surfaces as the store reports it.
 - **A cross-tenant attempt returns 404, never 403.** A 403 would confirm the resource exists in
   another organisation.
 - **Over HTTP that 404 is produced by the repositories, not by the tenant guard.** A request acts
@@ -527,7 +549,8 @@ are not audited. Nothing at runtime depends on any of it.
   day a working day, and a day is 23 or 25 hours long when the clocks change. Work in two zones
   lands on each zone's own date. Only ids the JVM's time zone database knows are accepted, so a raw
   offset such as `+01:00` is refused; there is no default, and shifts stored before V5 keep the UTC
-  they were judged in. The Shifts page sends the browser's zone, so a site in another zone cannot
+  they were judged in. The schema checks only that a zone is named (`V14`), as it holds no zone
+  database. The Shifts page sends the browser's zone, so a site in another zone cannot
   yet be planned for
   ([#136](https://github.com/NaimElijah/HrSched/issues/136),
   [ADR-034](../ADRs/ADR-034-count-working-days-in-each-shifts-own-time-zone.md)).
@@ -598,10 +621,14 @@ are not audited. Nothing at runtime depends on any of it.
 - **Every constraint version is stored, and any of them can be read back.** The table is keyed
   `(organisation_id, version)`, so revising never discards what came before, and
   `GET /api/constraints/{version}` answers the rules a roster naming that version was judged
-  against (Q9). **Version one is never stored:** reading the rules stores nothing, and the first
+  against (Q9). A limit is stored in whole seconds, so `JdbcConstraintSetRepository` refuses one
+  with a part of a second before it writes anything, rather than store a limit other than the one
+  configured; over HTTP a limit arrives in whole minutes, so no request reaches that refusal.
+  **Version one is never stored:** reading the rules stores nothing, and the first
   revision writes version two. Every organisation starts bound by the empty set, so
   `SchedulingService.findConstraints` answers version one from `ConstraintSet.initial` when no row
-  holds it, and `roster.validated_against_constraint_version` carries no foreign key
+  holds it, and `roster.validated_against_constraint_version` carries no foreign key, only a check
+  that it is at least one (`V14`)
   ([ADR-038](../ADRs/ADR-038-read-a-constraint-version-back-by-its-number.md)).
 - **Approving a swap publishes a replacement; it never edits.** `SwapService` builds the roster that
   would have been published had the swap been in it, and then calls
@@ -656,7 +683,9 @@ are not audited. Nothing at runtime depends on any of it.
   by PostgreSQL rather than leaving two rosters authoritative, and so is one that would record the
   past as having had two. PostgreSQL reports that as an exclusion violation, or, when two such
   writers wait on each other, by aborting one as a deadlock victim. `JdbcRosterRepository` turns
-  either into `RosterPublicationConflictException`, which is answered 409
+  either into `RosterPublicationConflictException`, which is answered 409: the exclusion violation
+  only when it names this constraint, so another a later migration adds surfaces as the store
+  reported it, and the deadlock, which names no constraint, by its SQLSTATE
   ([ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md), which widened the
   constraint and kept that translation; the constraint began under
   [ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md), which it
@@ -759,6 +788,37 @@ are not audited. Nothing at runtime depends on any of it.
   Contracted hours travel on `RosterableEmployee` too, as `weeklyContractedHours`, but
   scheduling's `WorkforceDirectoryAdapter` drops them, so nothing in scheduling reads them until
   [#103](https://github.com/NaimElijah/HrSched/issues/103) bounds a roster by them.
+- **An employee or qualification stored breaking a rule is this system's defect, not the
+  caller's mistake.** `JdbcEmployeeRepository` and `JdbcQualificationRepository` rebuild every
+  aggregate they read through its own constructor, and an employee through its withers too, so
+  each rule they check is checked again on the way out of the store. Only one refusal can be
+  reached from stored rows: a name the domain calls blank (R2). The schema's `btrim` trims spaces
+  only, so a name that is only a tab stores. The adapter replaces that refusal with an
+  `IllegalStateException` naming the identity and the rule, never the name. No workforce handler
+  takes it, so it is answered as a server error, not the 400 the same refusal earns a caller. The
+  refusal travels suppressed, not as the cause, because Spring resolves a handler by an
+  exception's causes too.
+- **An employee's unavailability cannot be stored overlapping (R7).** The domain refuses an
+  overlapping declaration, and behind it the `employee_unavailability_does_not_overlap` exclusion
+  constraint (`V15`) ranges over the employee and `[starts_at, ends_at)`, so spans that only abut
+  both store. It is checked as each statement runs, not deferred: a save deletes the employee's
+  spans before inserting the new set, so a span replaced by one overlapping it is never compared
+  with it, and two saves of one employee take turns on the employee's row
+  ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)). No adapter
+  translates a violation, as nothing the domain accepts reaches one. Both owned tables' ordinals,
+  which only keep the aggregate's list order, are list positions from 0, and a check refuses a
+  negative one.
+- **Contracted hours are stored in whole seconds, exactly or not at all.** A request carries them
+  as whole minutes. `JdbcEmployeeRepository` refuses a `ContractTerms` with a part smaller than a
+  second with an `IllegalArgumentException` before it writes anything, rather than drop the part,
+  or, for hours under a second, reach `employee_contracted_hours_positive` with 0. The refusal
+  names the employee, never the hours. Whole seconds that are not whole minutes store exactly
+  (`JdbcEmployeeRepositoryTest.GivenContractedHoursOfWholeSecondsButNotWholeMinutes_WhenReadBack_ThenTheyComeBackExactly`);
+  the refusals are pinned by
+  `JdbcEmployeeRepositoryTest.GivenContractedHoursWithASubSecondPart_WhenSaved_ThenTheyAreRefusedAndNothingIsWritten`
+  and `…GivenContractedHoursUnderASecond_WhenSaved_ThenTheyAreRefusedBeforeTheStoreSeesThem`,
+  and through the use case by
+  `EmployeeServiceTest.GivenHoursWithASubSecondPart_WhenSettingSomebodysContract_ThenItIsRefusedAndNothingIsRecorded`.
 - **A declaration is withdrawn by what it says, because it has no identity** (F26). Unavailability
   is a `TimeRange` and a preference a `ShiftPreference` value inside the `Employee` aggregate, and
   their rows are keyed by an ordinal the repository renumbers on every save. So
@@ -803,7 +863,13 @@ are not audited. Nothing at runtime depends on any of it.
   because `RosterGeneration` refuses to end. The use case checks before writing anything, and
   again once the draft is saved, inside the unit that saved it, so a save outlasting the instant
   takes the draft back with it
-  ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)).
+  ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). The
+  schema refuses an ending before its request or after its `lost_at`
+  (`roster_generation_finished_while_it_could`, `V14`); one at `lost_at` itself is stored, because
+  the column rounds to the microsecond an ending the domain made just before. That a REFUSED
+  generation, and only one, has rows in `roster_generation_violation` is not held by the schema,
+  which would take a deferred constraint trigger: `RosterGeneration` refuses to be loaded from a
+  row that breaks it.
 - **At the largest stated size, a solve takes minutes and gigabytes.** Measured on an 8-core, 16 GB
   development machine with `GenerationAtScaleRun` (`./mvnw spotless:apply test
   -Dtest=GenerationAtScaleRun`, kept out of the build): the coverage search alone spent 75 s in

@@ -357,14 +357,19 @@ class OrganisationServiceTest {
                 admin.value()));
   }
 
-  /** Hand-written, like every other double here: the repository is our own port. */
+  /**
+   * Hand-written, like every other double here: the repository is our own port. Refuses an identity
+   * already stored, as the real adapter's primary key does, rather than renaming its tenant.
+   */
   private static final class StubOrganisationRepository implements OrganisationRepository {
 
     private final Map<OrganisationId, Organisation> saved = new HashMap<>();
 
     @Override
     public void save(Organisation organisation) {
-      saved.put(organisation.id(), organisation);
+      if (saved.putIfAbsent(organisation.id(), organisation) != null) {
+        throw new IllegalStateException("An organisation is already stored under that identity");
+      }
     }
 
     @Override
