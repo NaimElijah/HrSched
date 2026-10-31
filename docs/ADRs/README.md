@@ -62,8 +62,9 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-053](ADR-053-bound-a-request-body-and-accept-only-utf-8-json.md) | Bound a request body in bytes, and accept nothing but UTF-8 JSON | Accepted, amended | 2026-10-30 |
 | [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) | Run a use case read-only when its name starts with `find` | Accepted, amended | 2026-10-30 |
 | [ADR-055](ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md) | Read an account or a session without an organisation where none is known | Accepted | 2026-10-30 |
-| [ADR-056](ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md) | Refuse a fraction where a whole number is bound | Accepted | 2026-10-30 |
+| [ADR-056](ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md) | Refuse a fraction where a whole number is bound | Accepted, amended | 2026-10-30 |
 | [ADR-057](ADR-057-name-every-kind-of-problem-with-a-urn.md) | Name every kind of problem with its own URN | Accepted | 2026-10-31 |
+| [ADR-058](ADR-058-refuse-a-request-member-the-request-type-does-not-have.md) | Refuse a request member the request type does not have | Accepted | 2026-10-31 |
 
 ## Decisions waiting to be recorded
 

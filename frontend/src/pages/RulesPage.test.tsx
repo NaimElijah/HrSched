@@ -82,8 +82,12 @@ describe('the rules page', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
 
     await waitFor(() => expect(sentBody(stub).maximumDailyMinutes).toBe(REVISED_DAILY));
-    // The rule nobody touched must survive: revising replaces the set wholesale.
-    expect(sentBody(stub).minimumRestMinutes).toBe(REST);
+    // The rule nobody touched must survive: revising replaces the set wholesale. And nothing else
+    // is sent: the backend refuses a member the request does not take (ADR-058).
+    expect(sentBody(stub)).toEqual({
+      minimumRestMinutes: REST,
+      maximumDailyMinutes: REVISED_DAILY,
+    });
   });
 
   /** The backend's own words, and the value typed stays to be corrected rather than retyped. */

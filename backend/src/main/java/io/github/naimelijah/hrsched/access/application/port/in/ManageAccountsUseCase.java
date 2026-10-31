@@ -9,6 +9,8 @@ import io.github.naimelijah.hrsched.access.domain.model.UnknownAccountException;
 import io.github.naimelijah.hrsched.access.domain.model.UnlinkedEmployeeAccountException;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
+import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
+import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import java.util.List;
@@ -38,6 +40,9 @@ public interface ManageAccountsUseCase {
    * @param command what to create
    * @return the identity of the new account
    * @throws CrossTenantAccessException if the actor may not act in that organisation
+   * @throws NotPermittedException if the actor is not an Admin
+   * @throws NotATenantMemberException if the actor is the platform operator, who acts in no
+   *     organisation (ADR-030)
    * @throws UnacceptablePasswordException if the temporary password does not satisfy the policy
    * @throws SignInNameTakenException if another account already signs in under that name
    * @throws NotAnEmployeeHereException if the employee named is not one of this organisation's
@@ -51,8 +56,27 @@ public interface ManageAccountsUseCase {
    * @param organisation whose accounts to list
    * @return every account of that organisation, oldest first
    * @throws CrossTenantAccessException if the actor may not act in that organisation
+   * @throws NotPermittedException if the actor is not an Admin
+   * @throws NotATenantMemberException if the actor is the platform operator, who acts in no
+   *     organisation (ADR-030)
    */
   List<PublishedAccount> findAccounts(Actor actor, OrganisationId organisation);
+
+  /**
+   * One account, as {@link #findAccounts} lists it: what a creation's {@code Location} names.
+   *
+   * @param actor the Admin asking
+   * @param organisation whose account it must be
+   * @param account which account
+   * @return that account
+   * @throws CrossTenantAccessException if the actor may not act in that organisation
+   * @throws NotPermittedException if the actor is not an Admin
+   * @throws NotATenantMemberException if the actor is the platform operator, who acts in no
+   *     organisation (ADR-030)
+   * @throws UnknownAccountException if that organisation holds no such account, which is also what
+   *     another organisation's account is, so the answer confirms nothing about it
+   */
+  PublishedAccount findAccount(Actor actor, OrganisationId organisation, UserId account);
 
   /**
    * Changes what an account is inside the organisation: its role, and the person it belongs to.
@@ -66,6 +90,9 @@ public interface ManageAccountsUseCase {
    * @param actor the Admin making the change
    * @param command which account, and what it becomes
    * @throws CrossTenantAccessException if the actor may not act in that organisation
+   * @throws NotPermittedException if the actor is not an Admin
+   * @throws NotATenantMemberException if the actor is the platform operator, who acts in no
+   *     organisation (ADR-030)
    * @throws UnknownAccountException if that organisation holds no such account
    * @throws LastActiveAdminException if it would leave the organisation with no active Admin
    * @throws NotAnEmployeeHereException if the employee named is not one of this organisation's
@@ -83,6 +110,9 @@ public interface ManageAccountsUseCase {
    * @param actor the Admin making the change
    * @param command which account, and whether it may act
    * @throws CrossTenantAccessException if the actor may not act in that organisation
+   * @throws NotPermittedException if the actor is not an Admin
+   * @throws NotATenantMemberException if the actor is the platform operator, who acts in no
+   *     organisation (ADR-030)
    * @throws UnknownAccountException if that organisation holds no such account
    * @throws LastActiveAdminException if disabling it would leave no active Admin
    * @throws UnlinkedEmployeeAccountException if restoring an Employee account linked to nobody,
@@ -106,6 +136,9 @@ public interface ManageAccountsUseCase {
    * @param actor the Admin making the change
    * @param command which account, and the password to give it
    * @throws CrossTenantAccessException if the actor may not act in that organisation
+   * @throws NotPermittedException if the actor is not an Admin
+   * @throws NotATenantMemberException if the actor is the platform operator, who acts in no
+   *     organisation (ADR-030)
    * @throws UnknownAccountException if that organisation holds no such account
    * @throws CannotResetOwnPasswordException if the actor aimed it at their own account
    * @throws UnacceptablePasswordException if the temporary password does not satisfy the policy

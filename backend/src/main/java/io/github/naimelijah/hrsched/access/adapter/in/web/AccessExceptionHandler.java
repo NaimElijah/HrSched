@@ -29,6 +29,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import tools.jackson.core.exc.StreamConstraintsException;
+import tools.jackson.databind.exc.UnrecognizedPropertyException;
 
 /**
  * Translates access failures into HTTP problem responses.
@@ -57,6 +58,15 @@ public class AccessExceptionHandler {
 
   /** Shared with the other handlers, so one query answers "who was refused" across all of them. */
   private static final String DENIED = "hrsched.access.denied";
+
+  /**
+   * What every body Jackson cannot bind is told, whatever was wrong with it: not JSON, a member
+   * missing or unknown, or a value of the wrong form. One constant sentence true of each, so
+   * nothing in it comes from what was sent, as Jackson's own message, which quotes it, would.
+   */
+  private static final String MALFORMED_BODY =
+      "The request body is not valid JSON, or it lacks a member this request requires, has one it"
+          + " does not take, or has one whose value is of the wrong form.";
 
   private final MeterRegistry meters;
   private final PasswordPolicy policy;
@@ -149,14 +159,21 @@ public class AccessExceptionHandler {
    * whether it never existed or belongs to another customer: telling those apart would let an Admin
    * discover, one identifier at a time, that a colleague holds an account somewhere else. Its
    * detail is the one every context's 404 gives.
+   *
+   * @param actor the acting account, taken from the access token as the controllers take it; the
+   *     exception carries only the account named. Null if the principal is not an {@code Actor}:
+   *     the refusal is then still answered and recorded, without one
    */
   @ExceptionHandler(UnknownAccountException.class)
-  public ProblemDetail handleUnknownAccount(UnknownAccountException exception) {
+  public ProblemDetail handleUnknownAccount(
+      UnknownAccountException exception, @AuthenticationPrincipal Actor actor) {
     // Counted, like a cross-tenant attempt and for the same reason. One mistyped identifier is a
     // mistake; a hundred is somebody looking for accounts that are not theirs, and the 404 is
     // deliberately indistinguishable from "that one is somebody else's" - which is exactly what
-    // makes trying the way to find out.
+    // makes trying the way to find out. Who is trying is what makes it actionable: reading an
+    // account changes nothing, so this line may be all such a search leaves behind.
     log.atWarn()
+        .addKeyValue("actor", actor == null ? null : actor.id().value())
         .addKeyValue("account", exception.account().value())
         .log("Refused: an account this organisation does not hold was named");
     denied("unknown_account");
@@ -254,9 +271,27 @@ public class AccessExceptionHandler {
    * length {@code hrsched.web.max-json-document-bytes} sets, or a nesting or value-length limit -
    * is a 413 rather than a 400 (RFC 9110 section 15.5.14). Its JSON may be perfectly well formed,
    * and calling it malformed sends a client looking for a fault that is not there.
+   *
+   * <p>A body naming a member its request type does not have is also recorded, logged at WARN and
+   * counted (ADR-058). It is bound before any use case runs, so a caller the use case would have
+   * refused for their role is answered here instead, and would otherwise leave nothing behind. The
+   * line names who asked and the request type, never the member or anything sent: a member is
+   * whatever the caller wrote, and its value may be a person's.
+   *
+   * @param actor the acting account, taken from the access token as the controllers take it. Null
+   *     if the principal is not an {@code Actor}, as when somebody signs in: the refusal is then
+   *     still answered and recorded, without one
    */
   @ExceptionHandler(HttpMessageNotReadableException.class)
-  public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException exception) {
+  public ProblemDetail handleUnreadableBody(
+      HttpMessageNotReadableException exception, @AuthenticationPrincipal Actor actor) {
+    if (exception.getMostSpecificCause() instanceof UnrecognizedPropertyException unknown) {
+      log.atWarn()
+          .addKeyValue("actor", actor == null ? null : actor.id().value())
+          .addKeyValue("requestType", unknown.getReferringClass().getSimpleName())
+          .log("Refused: a request body carried a member its request type does not have");
+      denied("unknown_member");
+    }
     if (exception.getMostSpecificCause() instanceof StreamConstraintsException) {
       ProblemDetail problem =
           ProblemDetail.forStatusAndDetail(
@@ -268,8 +303,7 @@ public class AccessExceptionHandler {
       return problem;
     }
     ProblemDetail problem =
-        ProblemDetail.forStatusAndDetail(
-            HttpStatus.BAD_REQUEST, "The request body is malformed or is missing required fields.");
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, MALFORMED_BODY);
     problem.setTitle("Malformed request");
     problem.setType(ProblemTypes.MALFORMED_REQUEST);
     return problem;

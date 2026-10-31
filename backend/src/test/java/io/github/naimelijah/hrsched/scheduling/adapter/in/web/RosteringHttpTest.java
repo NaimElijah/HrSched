@@ -1762,6 +1762,29 @@ class RosteringHttpTest {
         .andExpect(jsonPath("$.zone").value("Asia/Tokyo"));
   }
 
+  /** The zone a shift's days are counted in travels with it to the person working it. */
+  @Test
+  void GivenPublishedWorkInItsOwnZone_WhenAnEmployeeReadsTheirOwnSchedule_ThenItCarriesThatZone()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    defineShiftIn(organisation, "Asia/Tokyo", "2026-12-02T00:00:00Z", "2026-12-02T08:00:00Z");
+    String roster = generateRoster(organisation, "2026-12-02T00:00:00Z", "2026-12-03T00:00:00Z");
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, get("/api/me/schedule"), organisation, ada)
+                .param("from", "2026-12-02T00:00:00Z")
+                .param("to", "2026-12-03T00:00:00Z"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].zone").value("Asia/Tokyo"));
+  }
+
   /** ADR-010: the Scheduler says which shifts are unpopular, and the mark is kept as said. */
   @Test
   void GivenAShiftMarkedUnpopular_WhenDefined_ThenTheMarkIsEchoedAndReadBack() throws Exception {
