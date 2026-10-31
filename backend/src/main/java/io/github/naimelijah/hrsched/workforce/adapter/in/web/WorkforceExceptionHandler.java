@@ -133,15 +133,20 @@ public class WorkforceExceptionHandler {
     return problem;
   }
 
+  /**
+   * Something this organisation does not hold, answered with the sentence every context's 404
+   * gives. The exceptions' own messages name the identifier asked for, and a caller is not told
+   * back what it sent (ADR-024).
+   */
   @ExceptionHandler({
     UnknownEmployeeException.class,
     UnknownQualificationException.class,
     UnknownDeclarationException.class
   })
   public ProblemDetail handleUnknown(RuntimeException exception) {
-    ProblemDetail problem =
-        ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, exception.getMessage());
+    ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
+    problem.setDetail("No such resource.");
     return problem;
   }
 

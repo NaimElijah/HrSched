@@ -126,7 +126,7 @@ class WorkforceExceptionHandlerTest {
         new MalformedRequestException("name is required"));
   }
 
-  /** Every failure the handler promises to render as a 404 carrying its own message. */
+  /** Every failure the handler promises to render as a 404 carrying the constant detail. */
   private static Stream<RuntimeException> unknownRecords() {
     return Stream.of(
         new UnknownEmployeeException(EmployeeId.newId()),
@@ -147,13 +147,13 @@ class WorkforceExceptionHandlerTest {
 
   @ParameterizedTest
   @MethodSource("unknownRecords")
-  void GivenAnUnknownRecord_WhenTranslated_ThenItIsNotFoundCarryingTheMessage(
+  void GivenAnUnknownRecord_WhenTranslated_ThenItIsNotFoundAndTheMessageIsReplaced(
       RuntimeException failure) {
     ProblemDetail problem = handler.handleUnknown(failure);
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
     assertThat(problem.getTitle()).isEqualTo("Not found");
-    assertThat(problem.getDetail()).isEqualTo(failure.getMessage());
+    assertThat(problem.getDetail()).isEqualTo("No such resource.");
   }
 
   @Test

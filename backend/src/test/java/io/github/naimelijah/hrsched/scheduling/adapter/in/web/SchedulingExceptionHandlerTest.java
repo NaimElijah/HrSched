@@ -33,7 +33,6 @@ import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeExceptio
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
-import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -143,10 +142,10 @@ class SchedulingExceptionHandlerTest {
   private static Stream<RuntimeException> invalidInput() {
     return Stream.of(
         new InvalidTimeRangeException(),
-        new InvalidHeadcountException(0),
+        new InvalidHeadcountException(),
         new InvalidConstraintException("Minimum rest must be positive"),
         new InvalidObjectiveWeightException(Objective.FAIRNESS),
-        new UnknownRequiredQualificationException(Set.of(QualificationId.newId())),
+        new UnknownRequiredQualificationException(),
         new SwapWithThemselfException(EmployeeId.newId()),
         new MalformedRequestException("shift is required"));
   }

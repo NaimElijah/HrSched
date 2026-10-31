@@ -498,6 +498,47 @@ class RosteringHttpTest {
         .andExpect(jsonPath("$.detail").value(containsString("overlap")));
   }
 
+  /** Invented: a headcount below one, unlike any number the detail says otherwise. */
+  private static final int INVENTED_HEADCOUNT_BELOW_ONE = -7;
+
+  /** The detail states the rule; it does not repeat the number sent back to the caller. */
+  @Test
+  void GivenAHeadcountBelowOne_WhenDefiningAShift_ThenItIsRefusedRepeatingNothingSent()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
+                .content(
+                    "{\"start\":\"2026-11-19T08:00:00Z\",\"end\":\"2026-11-19T16:00:00Z\",\"zone\":\"UTC\",\"requiredHeadcount\":%d}"
+                        .formatted(INVENTED_HEADCOUNT_BELOW_ONE)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.title").value("Invalid request"))
+        .andExpect(
+            jsonPath("$.detail")
+                .value(not(containsString(String.valueOf(INVENTED_HEADCOUNT_BELOW_ONE)))));
+  }
+
+  /** The detail says a required qualification is unknown, without listing the ids sent. */
+  @Test
+  void GivenAQualificationNeverDefined_WhenAShiftRequiresIt_ThenItIsRefusedRepeatingNothingSent()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String undefined = UUID.randomUUID().toString();
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
+                .content(
+                    ("{\"start\":\"2026-11-19T08:00:00Z\",\"end\":\"2026-11-19T16:00:00Z\","
+                            + "\"zone\":\"UTC\",\"requiredHeadcount\":1,\"requiredQualifications\":[\"%s\"]}")
+                        .formatted(undefined)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.title").value("Invalid request"))
+        .andExpect(jsonPath("$.detail").value(not(containsString(undefined))));
+  }
+
   /**
    * A second press of the same assignment, as a double click sends. Nothing about the request is
    * wrong; the roster already holds it, so it is a conflict the board answers by reloading, and its

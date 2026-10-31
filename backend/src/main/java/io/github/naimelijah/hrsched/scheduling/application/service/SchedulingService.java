@@ -1097,11 +1097,8 @@ public class SchedulingService
     if (required.isEmpty()) {
       return;
     }
-    Set<QualificationId> defined = workforce.definedQualifications(actor, organisation);
-    Set<QualificationId> unknown = new LinkedHashSet<>(required);
-    unknown.removeAll(defined);
-    if (!unknown.isEmpty()) {
-      throw new UnknownRequiredQualificationException(unknown);
+    if (!workforce.definedQualifications(actor, organisation).containsAll(required)) {
+      throw new UnknownRequiredQualificationException();
     }
   }
 

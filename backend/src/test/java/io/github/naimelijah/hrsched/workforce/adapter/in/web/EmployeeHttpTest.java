@@ -702,7 +702,9 @@ class EmployeeHttpTest {
     mockMvc
         .perform(as(mockMvc, get("/api/employees/" + theirs), anOrganisation(mockMvc), "ADMIN"))
         .andExpect(status().isNotFound())
-        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+        .andExpect(jsonPath("$.detail").value("No such resource."))
+        .andExpect(jsonPath("$.detail").value(not(containsString(theirs))));
   }
 
   // --- F6: declaring on somebody's behalf (#100) -------------------------------------------

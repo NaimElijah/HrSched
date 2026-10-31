@@ -180,6 +180,7 @@ class QualificationHttpTest {
     mockMvc
         .perform(as(mockMvc, get(theirs), anOrganisation(mockMvc), "ADMIN"))
         .andExpect(status().isNotFound())
-        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+        .andExpect(jsonPath("$.detail").value("No such resource."));
   }
 }

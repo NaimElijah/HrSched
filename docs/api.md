@@ -15,7 +15,8 @@ malformed path, is written before the chain and carries neither.
 
 The security chain admits a role to a family of routes, and closes everything it does not name
 ([ADR-032](ADRs/ADR-032-close-the-security-chain-by-default.md)). Each use case then checks the
-exact role. A resource in another organisation answers `404`, the same as one that does not exist.
+exact role. A resource in another organisation answers `404`, the same as one that does not exist,
+and every `404` gives the same detail, `No such resource.`, naming nothing that was asked for.
 
 | Area | Endpoints | Who |
 | :--- | :--- | :--- |
@@ -239,6 +240,9 @@ rules`, as publishing it would. With invented identifiers and weights:
   what PostgreSQL stores; or setting a working-time value in `PUT /api/constraints` too many
   minutes to count in nanoseconds. Each answers `400` titled `Invalid request`. Nothing is stored,
   and the detail repeats no value sent; for a working-time value it names the field.
+- **A shift nobody could fill.** Defining a shift that requires fewer than one person, or a
+  qualification the organisation has not defined, answers `400` titled `Invalid request`. The detail
+  repeats neither the number nor the identifiers sent.
 - **A span that ends at or before it starts.** On any route that takes a span, the shared time
   range answers `400` titled `Invalid request`, with a constant detail that names neither instant.
 - **A sign-in name that cannot be one, or is taken.** Creating an account, or onboarding an

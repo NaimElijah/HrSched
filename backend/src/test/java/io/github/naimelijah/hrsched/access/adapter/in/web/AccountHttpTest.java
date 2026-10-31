@@ -899,7 +899,8 @@ class AccountHttpTest {
         .perform(
             with(post("/api/accounts/%s/password".formatted(theirs)), admin(anOrganisation()))
                 .content("{\"temporaryPassword\":\"%s\"}".formatted(replacement)))
-        .andExpect(status().isNotFound());
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail").value("No such resource."));
 
     mockMvc.perform(signInAs(theirName, A_PASSWORD)).andExpect(status().isOk());
     mockMvc.perform(signInAs(theirName, replacement)).andExpect(status().isUnauthorized());

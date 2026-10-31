@@ -144,7 +144,8 @@ public class AccessExceptionHandler {
   /**
    * An account named by an Admin that their organisation does not hold. A 404, and the same 404
    * whether it never existed or belongs to another customer: telling those apart would let an Admin
-   * discover, one identifier at a time, that a colleague holds an account somewhere else.
+   * discover, one identifier at a time, that a colleague holds an account somewhere else. Its
+   * detail is the one every context's 404 gives.
    */
   @ExceptionHandler(UnknownAccountException.class)
   public ProblemDetail handleUnknownAccount(UnknownAccountException exception) {
@@ -158,7 +159,7 @@ public class AccessExceptionHandler {
     denied("unknown_account");
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
-    problem.setDetail("No such account.");
+    problem.setDetail("No such resource.");
     return problem;
   }
 
