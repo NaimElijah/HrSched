@@ -338,13 +338,40 @@ HrSched/
 
 ## Design decisions
 
-| Decision | Rejected | Cost accepted |
-| :--- | :--- | :--- |
-| One hexagon per bounded context, enforced by the build ([ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md), [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md)) | Multi-module Maven, disproportionate for one developer; a convention nobody enforces | More classes per use case; enforcement is a test, not the compiler |
-| PostgreSQL, hand-written SQL, and a real database in every test ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) | JPA, Spring Data JDBC, jOOQ, an embedded database | Docker to build; every adapter maps rows by hand |
-| Its own tokens, with the organisation taken from the account ([ADR-011](docs/ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md)) | An external OIDC provider, while there is one API and one SPA; roles as token claims, unrevocable until expiry | A database read per request; HrSched stores password hashes |
-| Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
-| Generation with CP-SAT behind a port ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md), [ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)) | Timefold, whose search must drive a broken rule's penalty to zero and proves no bound; a MIP solver | About 95 MB of native libraries; no determinism under a time limit; OR-Tools held at 9.12 for the Visual C++ runtime JDK 21 bundles on Windows |
+**One hexagon per bounded context, enforced by the build**
+([ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md),
+[ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md)). A rostering rule should be
+readable and testable without Spring or a database, and a convention nobody enforces rots. Multi-module
+Maven was disproportionate for one developer. Cost: more classes per use case, and the enforcement
+is a test rather than the compiler.
+
+**PostgreSQL, hand-written SQL, and a real database in every test**
+([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). Real transactions, and check
+constraints that mirror the domain's invariants, with every tenant predicate written where a
+reviewer can see it. JPA, Spring Data JDBC, jOOQ and an embedded database lost. Cost: Docker to
+build, and every adapter maps its rows by hand.
+
+**Its own tokens, with the organisation taken from the account**
+([ADR-011](docs/ADRs/ADR-011-issue-our-own-access-tokens.md),
+[ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md)). One API and one SPA do not
+justify running an external identity provider, and loading the account on every request makes a
+revoked session stop working at once, which roles in token claims could not do. Cost: a database
+read per request, and HrSched stores password hashes.
+
+**Publications take turns, and history is written once**
+([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md),
+[ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)). A lock per organisation
+makes concurrent publications queue, where `SERIALIZABLE` still needs a retry on abort and
+`SELECT … FOR UPDATE` would lock another context's row. Cost: publications in one organisation
+queue.
+
+**Generation with CP-SAT behind a port**
+([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md),
+[ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)). The rules are hard
+and the objectives soft, which an exact solver models directly. Timefold lost because its search
+must drive a broken rule's penalty to zero and proves no bound; a MIP solver lost too. Cost: about
+95 MB of native libraries, no determinism under a time limit, and OR-Tools held at 9.12 for the
+Visual C++ runtime that JDK 21 bundles on Windows.
 
 Every decision, and every one still waiting to be recorded, is in the
 [ADR index](docs/ADRs/README.md).
