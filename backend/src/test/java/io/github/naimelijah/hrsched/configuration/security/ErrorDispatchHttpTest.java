@@ -1,15 +1,20 @@
 package io.github.naimelijah.hrsched.configuration.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,9 +28,14 @@ import org.springframework.test.web.servlet.MockMvc;
  * Specification that the security chain lets the container render an error, and lets nobody ask for
  * the error page.
  *
- * <p>When Spring MVC answers a request with an error status, the container renders it by
+ * <p>When a request fails in a way no handler answers, the container renders the error by
  * dispatching once more, to {@code /error}, and that second dispatch passes through the security
- * chain too. The chain lets every {@code ERROR} dispatch through, because {@code denyAll} would
+ * chain too. A wrong method on a mapped path used to be such a failure; Spring's own refusals are
+ * now answered with a problem detail in the request itself (issue #275), which the first test pins
+ * on a real port. What still reaches the error page is a form body over the server's form limit,
+ * which the server refuses while Spring is reading the body (see {@code FormPostLimitHttpTest}),
+ * and any failure nothing handles. The tests use the first, because nothing here can provoke the
+ * second. The chain lets every {@code ERROR} dispatch through, because {@code denyAll} would
  * otherwise turn the error into a refusal and hide what went wrong. A request a caller makes to
  * {@code /error} is a {@code REQUEST} dispatch, and no rule opens it, so it is refused like any
  * other route nobody decided was safe (ADR-032).
@@ -46,7 +56,20 @@ class ErrorDispatchHttpTest {
 
   private static final String HEALTH = "/actuator/health";
 
+  private static final String EMPLOYEES = "/api/employees";
+
   private static final int METHOD_NOT_ALLOWED = 405;
+
+  private static final int CONTENT_TOO_LARGE = 413;
+
+  /** Over the default 1 MiB limit, under Tomcat's default 2 MiB swallow, as in the form test. */
+  private static final int FORM_BYTES = 3 * 512 * 1024;
+
+  /** Invented: the one field the form holds. */
+  private static final String INVENTED_FIELD = "name=";
+
+  /** Invented: what its value is filled with. */
+  private static final String INVENTED_CHARACTER = "x";
 
   private static final int UNAUTHORIZED = 401;
 
@@ -61,34 +84,54 @@ class ErrorDispatchHttpTest {
 
   private static final String JSON = "application/json";
   private static final String HTML = "text/html";
+  private static final String PROBLEM_JSON = "application/problem+json";
 
   private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
   @LocalServerPort private int port;
 
-  /** Signs the operator in, for a token to send over the real port. */
+  /** Signs accounts in, for tokens to send over the real port. */
   @Autowired private MockMvc mockMvc;
 
   /**
-   * Health answers {@code GET} to anybody and has no {@code POST}, so Spring MVC answers a POST
-   * with an error status, and the container renders it at {@code /error}. The error page names the
-   * path that failed, which a refusal written by the chain would not.
+   * Health answers {@code GET} to anybody and has no {@code POST}. Spring MVC's 405 for it used to
+   * be rendered at {@code /error}; it is now a problem detail written in the request, with the
+   * chain's headers, and never reaches the error page.
    */
   @Test
-  void GivenNoToken_WhenPostingToARouteThatOnlyReads_ThenTheContainersErrorIsRendered()
+  void GivenNoToken_WhenPostingToARouteThatOnlyReads_ThenItIsAProblemDetailNotTheErrorPage()
       throws Exception {
     HttpResponse<String> response = send(HttpRequest.newBuilder(uri(HEALTH)).POST(noBody()));
 
     assertThat(response.statusCode())
         .describedAs("status, which answered: %s", response.body())
         .isEqualTo(METHOD_NOT_ALLOWED);
+    assertThat(response.headers().firstValue("Content-Type"))
+        .hasValueSatisfying(type -> assertThat(type).startsWith(PROBLEM_JSON));
+    assertThat(JsonPath.<String>read(response.body(), "$.type"))
+        .isEqualTo("urn:hrsched:problem:method-not-allowed");
+    assertThat(response.headers().firstValue(CONTENT_SECURITY_POLICY))
+        .as("the Content-Security-Policy of the problem detail")
+        .hasValue(NOTHING_LOADS_AND_NOTHING_FRAMES);
+  }
+
+  /**
+   * The server refuses a form over its limit while Spring reads the body, and the container renders
+   * that at {@code /error}. The error page names the path that failed, which a refusal written by
+   * the chain or by a handler would not.
+   */
+  @Test
+  void GivenAFormOverTheServersLimit_WhenPosted_ThenTheContainersErrorIsRendered()
+      throws Exception {
+    HttpResponse<String> response = renderedError(JSON);
+
     assertThat(JsonPath.<String>read(response.body(), "$.path"))
         .describedAs("the path the rendered error names")
-        .isEqualTo(HEALTH);
+        .isEqualTo(EMPLOYEES);
   }
 
   @Test
-  void GivenNoToken_WhenPostingToARouteThatOnlyReads_ThenTheRenderedErrorCarriesTheCsp()
+  void GivenAFormOverTheServersLimit_WhenPosted_ThenTheRenderedErrorCarriesTheCsp()
       throws Exception {
     HttpResponse<String> response = renderedError(JSON);
 
@@ -98,7 +141,7 @@ class ErrorDispatchHttpTest {
   }
 
   @Test
-  void GivenNoToken_WhenPostingToARouteThatOnlyReads_ThenTheRenderedErrorForbidsSniffing()
+  void GivenAFormOverTheServersLimit_WhenPosted_ThenTheRenderedErrorForbidsSniffing()
       throws Exception {
     HttpResponse<String> response = renderedError(JSON);
 
@@ -109,7 +152,7 @@ class ErrorDispatchHttpTest {
 
   /** The page a browser is given, which is the one a policy exists to make inert. */
   @Test
-  void GivenABrowserAskingForHtml_WhenPostingToARouteThatOnlyReads_ThenThePageCarriesTheCsp()
+  void GivenABrowserAskingForHtml_WhenPostingAFormOverTheServersLimit_ThenThePageCarriesTheCsp()
       throws Exception {
     HttpResponse<String> response = renderedError(HTML);
 
@@ -119,7 +162,7 @@ class ErrorDispatchHttpTest {
   }
 
   @Test
-  void GivenABrowserAskingForHtml_WhenPostingToARouteThatOnlyReads_ThenThePageForbidsSniffing()
+  void GivenABrowserAskingForHtml_WhenPostingAFormOverTheServersLimit_ThenThePageForbidsSniffing()
       throws Exception {
     HttpResponse<String> response = renderedError(HTML);
 
@@ -155,17 +198,44 @@ class ErrorDispatchHttpTest {
         .isEqualTo(FORBIDDEN);
   }
 
-  /** The container's rendering of a 405, asked for in the given media type. */
+  /** The container's rendering of an oversized form's 413, asked for in the given media type. */
   private HttpResponse<String> renderedError(String accept) throws Exception {
     HttpResponse<String> response =
-        send(HttpRequest.newBuilder(uri(HEALTH)).header("Accept", accept).POST(noBody()));
+        send(
+            HttpRequest.newBuilder(uri(EMPLOYEES))
+                .header("Authorization", "Bearer " + anAdminsToken())
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .header("Accept", accept)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(aFormOverTheLimit())));
     assertThat(response.statusCode())
         .describedAs("arranged: rendered, which answered: %s", response.body())
-        .isEqualTo(METHOD_NOT_ALLOWED);
+        .isEqualTo(CONTENT_TOO_LARGE);
     assertThat(response.headers().firstValue("Content-Type"))
         .describedAs("arranged: rendered as %s", accept)
         .hasValueSatisfying(type -> assertThat(type).startsWith(accept));
     return response;
+  }
+
+  /** The token of an Admin of a freshly onboarded organisation, for a route that takes a body. */
+  private String anAdminsToken() throws Exception {
+    String onboarded =
+        mockMvc
+            .perform(
+                TestTenants.with(post("/api/organisations"), TestTenants.operatorToken(mockMvc))
+                    .content(
+                        TestTenants.onboarding("Organisation %s".formatted(UUID.randomUUID()))))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    OrganisationId organisation =
+        new OrganisationId(UUID.fromString(JsonPath.read(onboarded, "$.id")));
+    return TestTenants.tokenFor(mockMvc, organisation, Role.ADMIN);
+  }
+
+  /** One field whose value fills the body to {@link #FORM_BYTES} bytes. */
+  private static byte[] aFormOverTheLimit() {
+    return (INVENTED_FIELD + INVENTED_CHARACTER.repeat(FORM_BYTES - INVENTED_FIELD.length()))
+        .getBytes(StandardCharsets.US_ASCII);
   }
 
   private URI uri(String path) {

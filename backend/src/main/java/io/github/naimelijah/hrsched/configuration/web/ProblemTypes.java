@@ -17,6 +17,12 @@ public final class ProblemTypes {
 
   public static final URI INVALID_REQUEST = URI.create("urn:hrsched:problem:invalid-request");
 
+  public static final URI METHOD_NOT_ALLOWED = URI.create("urn:hrsched:problem:method-not-allowed");
+
+  public static final URI NOT_ACCEPTABLE = URI.create("urn:hrsched:problem:not-acceptable");
+
+  public static final URI NOT_FOUND = URI.create("urn:hrsched:problem:not-found");
+
   public static final URI NOT_PERMITTED = URI.create("urn:hrsched:problem:not-permitted");
 
   public static final URI UNAUTHENTICATED = URI.create("urn:hrsched:problem:unauthenticated");

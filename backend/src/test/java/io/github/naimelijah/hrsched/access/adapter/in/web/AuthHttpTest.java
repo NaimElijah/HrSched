@@ -2,6 +2,7 @@ package io.github.naimelijah.hrsched.access.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ch.qos.logback.classic.Logger;
@@ -339,7 +340,8 @@ class AuthHttpTest {
             post("/api/auth/sign-in")
                 .contentType(MediaType.TEXT_PLAIN)
                 .content("ada:" + RIGHT_PASSWORD))
-        .andExpect(status().isUnsupportedMediaType());
+        .andExpect(status().isUnsupportedMediaType())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:unsupported-media-type"));
 
     assertThat(everythingLogged()).doesNotContain(RIGHT_PASSWORD);
   }

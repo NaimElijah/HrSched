@@ -5,8 +5,9 @@ roster. The README shows the responses that matter most; this page is the rest.
 
 Every call except sign-in carries a bearer token HrSched signed itself. The organisation is never
 part of a request: it comes from the account the token names
-([ADR-031](ADRs/ADR-031-take-the-organisation-from-the-account.md)). Errors are RFC 9457 problem
-details, `application/problem+json`, and every response carries its trace id as `X-Trace-Id`. Every
+([ADR-031](ADRs/ADR-031-take-the-organisation-from-the-account.md)). A refusal is an RFC 9457
+problem detail, `application/problem+json`, bar the few [listed below](#what-is-not-a-problem-detail),
+and every response carries its trace id as `X-Trace-Id`. Every
 response the security chain writes also carries `Content-Security-Policy: default-src 'none';
 frame-ancestors 'none'` and `Referrer-Policy: no-referrer`. The request firewall's own `400`, for a
 malformed path, is written before the chain and carries neither.
@@ -205,6 +206,8 @@ to be read. `detail` is the sentence to show a person.
 | `urn:hrsched:problem:not-permitted` | `403` | `Not permitted` |
 | `urn:hrsched:problem:password-not-changed` | `403` | `Password not changed` |
 | `urn:hrsched:problem:not-found` | `404` | `Not found` |
+| `urn:hrsched:problem:method-not-allowed` | `405` | `Method not allowed` |
+| `urn:hrsched:problem:not-acceptable` | `406` | `Not acceptable` |
 | `urn:hrsched:problem:already-assigned` | `409` | `Already assigned` |
 | `urn:hrsched:problem:already-requested` | `409` | `Already requested` |
 | `urn:hrsched:problem:employee-already-linked` | `409` | `Employee already linked` |
@@ -227,6 +230,21 @@ to be read. `detail` is the sentence to show a person.
 | `urn:hrsched:problem:generation-is-busy` | `503` | `Generation is busy` |
 | `urn:hrsched:problem:generation-is-unavailable` | `503` | `Generation is unavailable` |
 
+### What is not a problem detail
+
+Everything above is. These are not, and carry no `type`:
+
+- **A session read that finds no account.** `GET /api/auth/session` answers a bare `404` with no
+  body when the token's account no longer exists; what it should answer is an open decision
+  ([#126](https://github.com/NaimElijah/HrSched/issues/126)).
+- **What the container renders.** A request the firewall refuses (a malformed path, `400`), a form
+  body over the server's form limit (`413`, refused while the body is read), and any failure the
+  application does not handle (`500`) are rendered by the container's error page, Boot's
+  `application/json` with `timestamp`, `status`, `error` and `path`, or HTML to a browser asking for
+  it.
+- **Actuator's own answers.** Health answers `503` with its own body when it is down; that is a
+  state, not a refusal.
+
 ## Other refusals
 
 - **No token, or one that is not accepted.** Answers `401` titled `Unauthenticated`, whose
@@ -245,8 +263,16 @@ to be read. `detail` is the sentence to show a person.
   ([ADR-056](ADRs/ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md)).
 - **A body that is not read.** JSON declared in any charset but UTF-8, UTF-16 and UTF-32 included,
   answers `415` titled `Unsupported media type` before it is read; `application/json` with no
-  charset, or with `charset=UTF-8`, is accepted. A multipart request answers `415` and is never
-  parsed; that refusal is Spring's own and carries no problem detail.
+  charset, or with `charset=UTF-8`, is accepted. A multipart request, any other type a route does
+  not take, and a `Content-Type` whose charset does not parse, answer `415` titled
+  `Unsupported media type` without being read.
+- **What Spring refuses before a route decides anything.** A method the path does not take answers
+  `405` titled `Method not allowed`, with `Allow` naming the methods it does. An `Accept` the route
+  cannot answer in answers `406` titled `Not acceptable`, written as `application/problem+json`
+  whatever was accepted. A path no route maps, inside a family the chain admits the caller to,
+  answers the same `404` as any absence. None of the details repeats the method, the type or the
+  path sent, and these hold on every path, `/actuator` included
+  ([#275](https://github.com/NaimElijah/HrSched/issues/275)).
 - **Any rule a draft breaks.** Publication answers `422` titled `Roster breaks the rules`, with a
   `violations` list naming every breach: `overlapping work`, `required qualifications`,
   `declared unavailability`, `not of this organisation`, or the working-time rule broken. Each

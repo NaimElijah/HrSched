@@ -13,6 +13,20 @@
   - **Amended 2026-10-31:** every problem detail now carries a `type` of its own, and the 400 this
     handler writes is `urn:hrsched:problem:invalid-request`; the type is no longer `about:blank`.
     See [ADR-057](ADR-057-name-every-kind-of-problem-with-a-urn.md).
+  - **Amended 2026-10-31:** the consequence that 405, 415 and an unmapped path answer with
+    Spring's default body, and the alternative of answering them, are overtaken (issue #275).
+    `RequestRoutingExceptionHandler`, in `configuration.web`, answers
+    `HttpRequestMethodNotSupportedException` (405), `HttpMediaTypeNotAcceptableException` (406),
+    `HttpMediaTypeNotSupportedException` (415, a multipart body included) and
+    `NoResourceFoundException` (404) with a problem detail whose detail repeats nothing sent. It is
+    unscoped, because a request refused while a handler is being chosen has no handler and a scoped
+    advice is never consulted for it, so it answers on every path, actuator's included. It handles
+    those four types and nothing else, and no other advice handles any of them, which keeps this
+    record's rule that no two advices claim one type. `spring.mvc.problemdetails.enabled` was
+    rejected again for the reason above, and a `ResponseEntityExceptionHandler` subclass of our own
+    for the same one: its single handler method claims `HttpMessageNotReadableException` and the
+    binding failures as well, and cannot be narrowed. What is still not a problem detail is listed
+    in `docs/api.md`.
 - **Date:** 2026-09-14
 
 ## Context
