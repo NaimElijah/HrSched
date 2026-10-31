@@ -52,7 +52,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-043](ADR-043-defer-typescript-7-until-typescript-eslint-supports-it.md) | Stay on TypeScript 6 until typescript-eslint supports TypeScript 7 | Accepted | 2026-10-20 |
 | [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md) | Generate rosters with CP-SAT from Google OR-Tools | Accepted | 2026-10-22 |
 | [ADR-045](ADR-045-generate-outside-the-use-cases-transaction.md) | Generate outside the use case's transaction, between a read and a write | Accepted | 2026-10-22 |
-| [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) | Generate in the background, and keep each generation in PostgreSQL | Accepted, amended | 2026-10-23 |
+| [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) | Generate in the background, and keep each generation in PostgreSQL | Accepted, amended by [ADR-059](ADR-059-keep-focus-and-announce-changes-in-the-spa.md) | 2026-10-23 |
 | [ADR-047](ADR-047-audit-dependencies-in-ci-with-osv-scanner.md) | Audit dependencies for known vulnerabilities in CI with OSV-Scanner | Accepted | 2026-10-27 |
 | [ADR-048](ADR-048-keep-a-browsers-tabs-on-one-session.md) | Keep one browser's tabs on one session, over a channel that carries two words | Accepted | 2026-10-27 |
 | [ADR-049](ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md) | Refuse the metrics endpoints to every caller until a scraper exists | Accepted | 2026-10-27 |

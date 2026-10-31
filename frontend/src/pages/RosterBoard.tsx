@@ -9,6 +9,7 @@ import { dayLabel, localDate, shiftLabel, timeLabel } from '../components/localD
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
 import { ObjectiveScores } from './ObjectiveScores';
+import { labelOf } from './rosterLabel';
 
 /** One local day of the board, and the shifts that start on it, earliest first. */
 interface Day {
@@ -70,6 +71,7 @@ export function RosterBoard({
   id: region,
   headingRef,
   roster: id,
+  period: known,
   people,
   onChanged,
   onClose,
@@ -80,6 +82,11 @@ export function RosterBoard({
   headingRef: RefObject<HTMLHeadingElement | null>;
   /** The identity of the roster to show. */
   roster: string;
+  /**
+   * The roster's period as the list names it, so the heading focus lands on names it before the
+   * roster itself has loaded; null when the list does not hold it yet, as after a generation.
+   */
+  period: string | null;
   /** Everybody who might be assigned, and how to name them. */
   people: readonly Employee[];
   /**
@@ -88,6 +95,7 @@ export function RosterBoard({
    * rosters should read them again.
    */
   onChanged: () => void;
+  /** Called by Close; the opener removes the board and decides where focus goes next. */
   onClose: () => void;
 }) {
   const sessionKey = useSessionKey();
@@ -96,11 +104,12 @@ export function RosterBoard({
   // A refused change, shown in the shift it was about.
   const [failure, setFailure] = useState<{ shift: string; error: unknown } | null>(null);
   // What the last change came to: stored, or refused by a conflict, which the board names because
-  // the backend's detail names nobody.
-  const [said, setSaid] = useState<string | null>(null);
+  // the backend's detail names nobody. Only a stored one clears once the next change is started.
+  const [said, setSaid] = useState<{ text: string; stored: boolean } | null>(null);
   // One change at a time: two racing each other could leave the board showing the older answer.
   const [changing, setChanging] = useState(false);
   const checkHeading = useId();
+  const waitingHint = useId();
 
   const loaded = useAsync(() => scheduling.findRoster(id), `${sessionKey}|${id}`);
   const roster = changed ?? loaded.value;
@@ -131,10 +140,7 @@ export function RosterBoard({
   );
   const qualifications = useAsync(() => workforce.findQualifications(), sessionKey);
 
-  const period =
-    roster === null
-      ? ''
-      : `${new Date(roster.start).toLocaleDateString()} to ${new Date(roster.end).toLocaleDateString()}`;
+  const period = roster === null ? known : labelOf(roster);
   const qualificationNames = new Map(
     (qualifications.value ?? []).map((qualification) => [qualification.id, qualification.name]),
   );
@@ -169,7 +175,7 @@ export function RosterBoard({
     setSaid(null);
     try {
       setChanged(await action());
-      setSaid(`${stored}.`);
+      setSaid({ text: `${stored}.`, stored: true });
       assessment.reload();
       onChanged();
       return true;
@@ -180,9 +186,10 @@ export function RosterBoard({
       // roster that is no longer one, and the list around it catches up too. What the check said
       // was said of the roster as it was, so it is asked again.
       if (error instanceof ApiError && error.isConflict) {
-        setSaid(
-          `Could not ${attempted}. The board was read again, and shows the roster as it now is.`,
-        );
+        setSaid({
+          text: `Could not ${attempted}. The board was read again, and shows the roster as it now is.`,
+          stored: false,
+        });
         setChanged(null);
         loaded.reload();
         assessment.reload();
@@ -197,11 +204,15 @@ export function RosterBoard({
   return (
     <section id={region} className="detail" aria-labelledby={heading}>
       <h3 id={heading} ref={headingRef} tabIndex={-1}>
-        {roster === null ? 'Roster' : `Roster ${roster.status.toLowerCase()}: ${period}`}
+        {roster !== null
+          ? `Roster ${roster.status.toLowerCase()}: ${labelOf(roster)}`
+          : period === null
+            ? 'Roster'
+            : `Roster ${period}`}
       </h3>
       <button
         type="button"
-        aria-label={roster === null ? 'Close roster' : `Close roster ${period}`}
+        aria-label={period === null ? 'Close roster' : `Close roster ${period}`}
         onClick={onClose}
       >
         Close
@@ -226,8 +237,13 @@ export function RosterBoard({
           ) : null}
           {/* Present while empty, as a live region must be for what appears in it to be read. */}
           <p className="hint" role="status">
-            {said}
+            {said?.text}
           </p>
+          {changing ? (
+            <p className="hint" id={waitingHint}>
+              A change is on its way. The board waits for its answer.
+            </p>
+          ) : null}
 
           {isDraft ? (
             <section className="check" aria-labelledby={checkHeading}>
@@ -278,7 +294,11 @@ export function RosterBoard({
                     people={people}
                     nameOf={nameOf}
                     busy={changing}
+                    waitingHint={changing ? waitingHint : undefined}
                     failure={failure?.shift === shift.id ? failure.error : null}
+                    onPick={() =>
+                      setSaid((previous) => (previous?.stored === true ? null : previous))
+                    }
                     onAssign={(employee) =>
                       change(
                         shift.id,
@@ -328,7 +348,9 @@ function ShiftOnBoard({
   people,
   nameOf,
   busy,
+  waitingHint,
   failure,
+  onPick,
   onAssign,
   onRemove,
 }: {
@@ -344,8 +366,12 @@ function ShiftOnBoard({
    * aria-disabled rather than disabled, so the one pressed keeps the keyboard focus.
    */
   busy: boolean;
+  /** The id of the hint saying why these controls wait, while they do (C5). */
+  waitingHint: string | undefined;
   /** Why the last change to this shift was refused, if it was. */
   failure: unknown;
+  /** Somebody else was picked, which starts the next change (C9). */
+  onPick: () => void;
   onAssign: (employee: string) => Promise<boolean>;
   onRemove: (employee: string) => Promise<boolean>;
 }) {
@@ -376,6 +402,7 @@ function ShiftOnBoard({
                   <button
                     type="button"
                     aria-disabled={busy}
+                    aria-describedby={waitingHint}
                     aria-label={`Remove ${nameOf(employee)} from ${when}`}
                     onClick={(event) => {
                       if (busy) {
@@ -419,10 +446,12 @@ function ShiftOnBoard({
             value={choice}
             required
             aria-disabled={busy}
+            aria-describedby={waitingHint}
             aria-label={`Who to assign to ${when}`}
             onChange={(event) => {
               if (!busy) {
                 setChoice(event.target.value);
+                onPick();
               }
             }}
           >
@@ -433,7 +462,12 @@ function ShiftOnBoard({
               </option>
             ))}
           </select>
-          <button type="submit" aria-disabled={busy} aria-label={`Assign to ${when}`}>
+          <button
+            type="submit"
+            aria-disabled={busy}
+            aria-describedby={waitingHint}
+            aria-label={`Assign to ${when}`}
+          >
             Assign
           </button>
         </form>

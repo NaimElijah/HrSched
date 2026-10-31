@@ -25,7 +25,9 @@ export function ApprovingRules({
   id: string;
   /** The heading, focusable, for the opener to move focus to. */
   headingRef: RefObject<HTMLHeadingElement | null>;
+  /** The constraint version the roster was approved under, read back as it stood then. */
   version: number;
+  /** Called by Close; the opener removes the rules and decides where focus goes next. */
   onClose: () => void;
 }) {
   const sessionKey = useSessionKey();
