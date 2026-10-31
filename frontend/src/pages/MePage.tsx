@@ -125,7 +125,7 @@ export function MePage({
   const schedule = useAsync(
     () =>
       employee === null ? Promise.resolve([]) : scheduling.findOwnSchedule(span.from, span.to),
-    `${sessionKey}|${span.from}|${span.to}`,
+    `${sessionKey}|${employee ?? ''}|${span.from}|${span.to}`,
   );
   const unavailability = useAsync(
     () => (employee === null ? Promise.resolve([]) : workforce.findUnavailability(employee)),

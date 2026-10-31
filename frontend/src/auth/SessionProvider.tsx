@@ -314,8 +314,10 @@ export function useSession(): SessionContextValue {
 /**
  * The reload key pages hand `useAsync`.
  *
- * Every answer on screen belongs to whoever asked for it, so a change of session invalidates all of
- * them.
+ * Every answer on screen belongs to whoever asked for it, so a change of who is signed in, their
+ * role or the password flag asks every one again. The key leaves out the employee link, which a
+ * renewal can move to somebody else while those stay as they were, so an answer that depends on
+ * the link adds it to its own key, as the Me screen's reads do.
  */
 export function useSessionKey(): string {
   return useSession().key;

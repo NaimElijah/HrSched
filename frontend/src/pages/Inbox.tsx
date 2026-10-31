@@ -55,7 +55,9 @@ export function Inbox({
   /** Names a colleague where the acting role may list people; otherwise gives back the identifier. */
   nameOf: (employee: string) => string;
 }) {
-  const sessionKey = useSessionKey();
+  // The session key leaves out the employee link, which a renewal can move to somebody else, so
+  // every read of this inbox is keyed on whose it is as well.
+  const inboxKey = `${useSessionKey()}|${employee}`;
   // A refused mark, shown in the notification it was about.
   const [refused, setRefused] = useState<{ notification: string; error: unknown } | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -76,7 +78,7 @@ export function Inbox({
   // A mark stored, until the inbox read again after it shows its button gone.
   const marked = useRef<{ index: number; control: HTMLElement; before: unknown } | null>(null);
 
-  const inbox = useAsync(() => notifications.findMine(), sessionKey);
+  const inbox = useAsync(() => notifications.findMine(), inboxKey);
 
   // Once the inbox has been read again after a mark: if its button went and nobody has taken the
   // focus since, focus moves to the unread notification that took its place, or the one before it,
@@ -96,7 +98,7 @@ export function Inbox({
     (button ?? heading.current)?.focus();
   }, [inbox.busy, inbox.value]);
 
-  const swaps = useAsync(() => scheduling.findSwapRequests(), sessionKey);
+  const swaps = useAsync(() => scheduling.findSwapRequests(), inboxKey);
 
   const swapById = new Map((swaps.value ?? []).map((swap) => [swap.id, swap]));
   // Only the shifts its notifications are about. A reader who may see every swap in the organisation
@@ -106,7 +108,7 @@ export function Inbox({
       const swap = swapById.get(notification.subject);
       return swap === undefined ? [] : [swap.shift];
     }),
-    sessionKey,
+    inboxKey,
   );
 
   /** @param control the Mark as read pressed, which goes once the inbox is read again */

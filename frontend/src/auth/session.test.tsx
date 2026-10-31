@@ -479,7 +479,56 @@ describe('a session renewed underneath somebody', () => {
       ).toBeGreaterThan(0),
     );
   });
+
+  /**
+   * An Admin can move an account's employee link and leave its role alone. The schedule and the
+   * inbox are asked for without naming the employee, so their answers are for whoever the link
+   * named when they were read: kept after the move, they show somebody else's work and messages.
+   *
+   * The renewal is set off by a read only the old link makes, once, on opening the Me screen. Once
+   * it has been acted on, opening Me must show answers read since; whether the renewal also took
+   * the screen back to the first tab is left open, so the test opens Me again either way.
+   */
+  it('GivenARenewalMovingOnlyTheEmployeeLink_WhenTheMeScreenIsShownAfterIt_ThenTheOwnScheduleAndInboxAreReadAgain', async () => {
+    const routed = await renewedAs(
+      { ...A_TENANT, employee: EMPLOYEE_BEFORE },
+      { ...A_TENANT, employee: EMPLOYEE_AFTER },
+      `/api/employees/${EMPLOYEE_BEFORE}/preferences`,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Me' }));
+    await waitFor(() =>
+      expect(
+        callsTo(routed, 'POST', '/api/auth/refresh'),
+        'the restore and the renewal',
+      ).toHaveLength(2),
+    );
+    await waitFor(() =>
+      expect(
+        callsTo(routed, 'GET', `/api/employees/${EMPLOYEE_AFTER}/unavailability`).length > 0 ||
+          screen.queryByRole('heading', { name: 'Me' }) === null,
+        'the renewal acted on: the new link read, or the Me screen left',
+      ).toBe(true),
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Me' }));
+
+    await waitFor(() => {
+      expect(readsOf(routed, '/api/me/schedule'), 'reads of the own schedule').toBe(2);
+      expect(readsOf(routed, '/api/notifications'), 'reads of the inbox').toBe(2);
+      expect(readsOf(routed, '/api/swaps'), "reads of the inbox's swap requests").toBe(2);
+    });
+  });
 });
+
+/**
+ * How many GETs a routed stub received at this path, whatever query string they carried: the own
+ * schedule is asked for over the shell's planning span, which these tests do not fix.
+ */
+function readsOf(stub: ReturnType<typeof routeTo>, path: string): number {
+  return stub.mock.calls.filter(
+    ([called, init]) => (init?.method ?? 'GET') === 'GET' && called.split('?')[0] === path,
+  ).length;
+}
 
 /**
  * Routes as {@link serving} does, but holds one request until the returned `release` is called,
