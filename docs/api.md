@@ -219,6 +219,12 @@ rules`, as publishing it would. With invented identifiers and weights:
   moment both take the next version; the later answers `409` titled `Revised concurrently`, and
   nothing of it is kept. Reload the rules and revise them again
   ([#238](https://github.com/NaimElijah/HrSched/issues/238)).
+- **An assignment the roster already holds.** Assigning somebody to a shift they are already on,
+  as a second press of the same button does, answers `409` titled `Already assigned`. Reload the
+  roster: the first press was stored. The detail names neither the shift nor the person.
+- **Unavailability overlapping a declared span.** Declaring unavailability that overlaps a span the
+  employee already declared answers `409` titled `Overlaps a declared span`, and the detail names
+  neither span.
 - **A roster whose status forbids the change.** Editing or publishing a roster that is no longer a
   draft, or asking for a swap against one that is not the published roster, answers `409` titled
   `Roster status forbids this`. Reload it: somebody most likely published it first.

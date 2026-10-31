@@ -24,6 +24,7 @@ import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeExcept
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
@@ -41,6 +42,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.method.annotation.ExceptionHandlerMethodResolver;
 
 /**
  * Specification of which workforce failure earns which status.
@@ -121,7 +123,6 @@ class WorkforceExceptionHandlerTest {
         new InvalidQualificationNameException(),
         new InvalidContractTermsException(),
         new InvalidTimeRangeException(),
-        new OverlappingUnavailabilityException(),
         new MalformedRequestException("name is required"));
   }
 
@@ -164,6 +165,25 @@ class WorkforceExceptionHandlerTest {
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Malformed request");
     assertThat(problem.getDetail()).doesNotContain("raw parser noise");
+  }
+
+  /**
+   * A span overlapping one already declared is a conflict with what is on record, not a bad
+   * request. Found as Spring finds it, so a refusal still routed to the 400 handler fails here.
+   */
+  @Test
+  void GivenUnavailabilityOverlappingADeclaredSpan_WhenSpringRoutesIt_ThenItIsAConflict()
+      throws Exception {
+    OverlappingUnavailabilityException overlap = new OverlappingUnavailabilityException();
+    Method routed =
+        new ExceptionHandlerMethodResolver(WorkforceExceptionHandler.class)
+            .resolveMethodByThrowable(overlap);
+    assertThat(routed).describedAs("the handler Spring routes the overlap to").isNotNull();
+
+    ProblemDetail problem = (ProblemDetail) routed.invoke(handler, overlap);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getTitle()).isEqualTo("Overlaps a declared span");
   }
 
   @Test

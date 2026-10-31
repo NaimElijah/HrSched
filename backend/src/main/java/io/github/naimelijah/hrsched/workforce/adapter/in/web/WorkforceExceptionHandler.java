@@ -69,13 +69,29 @@ public class WorkforceExceptionHandler {
     InvalidQualificationNameException.class,
     InvalidContractTermsException.class,
     InvalidTimeRangeException.class,
-    OverlappingUnavailabilityException.class,
     MalformedRequestException.class
   })
   public ProblemDetail handleInvalidInput(RuntimeException exception) {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     problem.setTitle("Invalid request");
+    return problem;
+  }
+
+  /**
+   * Unavailability overlapping a span the employee already declared. A conflict rather than a bad
+   * request (RFC 9110 section 15.5.10): the span sent is well formed, and what refuses it is a
+   * declaration already on record. The detail is a fixed sentence naming neither span, because one
+   * of them is an absence somebody declared.
+   */
+  @ExceptionHandler(OverlappingUnavailabilityException.class)
+  public ProblemDetail handleOverlappingUnavailability(
+      OverlappingUnavailabilityException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT,
+            "That span overlaps unavailability already declared for this employee.");
+    problem.setTitle("Overlaps a declared span");
     return problem;
   }
 

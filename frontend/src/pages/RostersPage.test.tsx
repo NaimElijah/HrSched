@@ -691,6 +691,37 @@ describe('the board of a draft', () => {
     );
   });
 
+  /**
+   * The same assignment pressed twice: the first was stored, and the backend refuses the second as
+   * a conflict. The board reloads and shows who is now on the shift, rather than leaving a refusal
+   * beside a roster that does not yet show the assignment it refers to.
+   */
+  it('GivenAnAssignmentAlreadyStored_WhenAssigningItAgain_ThenTheBoardShowsItStored', async () => {
+    aDraft();
+    renderPage();
+    const board = await openBoard();
+    aDraft({
+      '/api/rosters': { status: 200, body: [WITH_GRACE] },
+      '/api/rosters/roster-1': { status: 200, body: WITH_GRACE },
+      'POST /api/rosters/roster-1/assignments': {
+        status: 409,
+        body: {
+          title: 'Already assigned',
+          detail: 'That employee is already assigned to that shift on this roster.',
+        },
+      },
+    });
+
+    await assignGrace(board);
+
+    expect(
+      await within(board).findByRole('button', { name: /^Remove Grace from/ }),
+    ).toBeInTheDocument();
+    expect(within(board).getByRole('alert')).toHaveTextContent(
+      'That employee is already assigned to that shift on this roster.',
+    );
+  });
+
   // --- #205: a draft is checked against every rule as it is edited, without publishing it -------
 
   function theCheck(board: HTMLElement): Promise<HTMLElement> {

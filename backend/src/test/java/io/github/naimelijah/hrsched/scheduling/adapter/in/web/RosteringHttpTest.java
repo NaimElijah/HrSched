@@ -9,6 +9,7 @@ import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -495,6 +496,31 @@ class RosteringHttpTest {
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         .andExpect(jsonPath("$.title").value("Assignment refused"))
         .andExpect(jsonPath("$.detail").value(containsString("overlap")));
+  }
+
+  /**
+   * A second press of the same assignment, as a double click sends. Nothing about the request is
+   * wrong; the roster already holds it, so it is a conflict the board answers by reloading, and its
+   * detail names neither the shift nor the person sent.
+   */
+  @Test
+  void GivenSomebodyAlreadyOnTheShift_WhenAssignedToItAgain_ThenItIsAConflictRepeatingNothingSent()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String roster = generateRoster(organisation, "2026-11-18T00:00:00Z", "2026-11-19T00:00:00Z");
+    String day = defineShift(organisation, "2026-11-18T08:00:00Z", "2026-11-18T16:00:00Z", 1);
+    assign(organisation, roster, day, ada);
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(day, ada)))
+        .andExpect(status().isConflict())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.title").value("Already assigned"))
+        .andExpect(jsonPath("$.detail").value(not(containsString(day))))
+        .andExpect(jsonPath("$.detail").value(not(containsString(ada))));
   }
 
   // --- R35: R3 across every authoritative roster -----------------------------------------------

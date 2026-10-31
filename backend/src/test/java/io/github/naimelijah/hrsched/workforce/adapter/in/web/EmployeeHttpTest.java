@@ -532,8 +532,12 @@ class EmployeeHttpTest {
         .andExpect(jsonPath("$.length()").value(0));
   }
 
+  /**
+   * A conflict rather than a bad request: the span sent is well formed, and what refuses it is a
+   * declaration already on record (RFC 9110 section 15.5.10).
+   */
   @Test
-  void GivenAnOverlappingSpan_WhenDeclaringUnavailability_ThenItIsRejected() throws Exception {
+  void GivenAnOverlappingSpan_WhenDeclaringUnavailability_ThenItIsAConflict() throws Exception {
     String organisation = anOrganisation(mockMvc);
     String ada = addEmployee(organisation, "Ada");
     mockMvc
@@ -546,7 +550,8 @@ class EmployeeHttpTest {
         .perform(
             as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-11-07T00:00:00Z\",\"end\":\"2026-11-09T00:00:00Z\"}"))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.title").value("Overlaps a declared span"));
   }
 
   /**
@@ -565,7 +570,7 @@ class EmployeeHttpTest {
         .perform(
             as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-11-21T00:00:00Z\",\"end\":\"2026-11-23T00:00:00Z\"}"))
-        .andExpect(status().isBadRequest())
+        .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.detail").isNotEmpty())
         .andExpect(jsonPath("$.detail").value(not(containsString("2026-11-2"))));

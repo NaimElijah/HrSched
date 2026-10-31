@@ -114,7 +114,6 @@ public class SchedulingExceptionHandler {
     InvalidHeadcountException.class,
     InvalidConstraintException.class,
     InvalidObjectiveWeightException.class,
-    DuplicateAssignmentException.class,
     UnknownRequiredQualificationException.class,
     SwapWithThemselfException.class,
     MalformedRequestException.class
@@ -306,6 +305,21 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("Already requested");
+    return problem;
+  }
+
+  /**
+   * An assignment the roster already holds, as a second press of the same button sends. A conflict
+   * rather than a bad request (RFC 9110 section 15.5.10): the request names a real shift and a real
+   * person, and what refuses it is the roster's present state, which reloading shows. The detail is
+   * a fixed sentence, so it repeats neither the shift nor the person sent.
+   */
+  @ExceptionHandler(DuplicateAssignmentException.class)
+  public ProblemDetail handleAlreadyAssigned(DuplicateAssignmentException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT, "That employee is already assigned to that shift on this roster.");
+    problem.setTitle("Already assigned");
     return problem;
   }
 
