@@ -485,22 +485,38 @@ public final class Roster {
     }
   }
 
+  /**
+   * @return the identity every state of this roster keeps: a draft, its published form and its
+   *     superseded form are the same roster
+   */
   public RosterId id() {
     return id;
   }
 
+  /**
+   * @return the organisation this roster belongs to, which no operation changes
+   */
   public OrganisationId organisation() {
     return organisation;
   }
 
+  /**
+   * @return the span this roster covers, which decides what publishing it supersedes (R11)
+   */
   public TimeRange period() {
     return period;
   }
 
+  /**
+   * @return where this roster stands: draft, published or superseded
+   */
   public RosterStatus status() {
     return status;
   }
 
+  /**
+   * @return who works which shift on this roster; unmodifiable, and empty for a roster with none
+   */
   public List<Assignment> assignments() {
     return assignments;
   }

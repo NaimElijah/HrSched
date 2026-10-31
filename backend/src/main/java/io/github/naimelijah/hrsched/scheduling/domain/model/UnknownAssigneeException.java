@@ -12,6 +12,10 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
  */
 public class UnknownAssigneeException extends RuntimeException {
 
+  /**
+   * @param employee who was named; the message carries the identifier, and the 404 response
+   *     replaces it with a constant, so it reaches no caller
+   */
   public UnknownAssigneeException(EmployeeId employee) {
     super("No such employee %s in this organisation".formatted(employee.value()));
   }

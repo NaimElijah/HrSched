@@ -11,6 +11,13 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
  */
 public class SwapNotPendingException extends RuntimeException {
 
+  /**
+   * Builds the refusal. The message names the request and the status it has reached, and is the 409
+   * response's detail.
+   *
+   * @param request the request that was to be decided
+   * @param status where it already stands, which is not {@link SwapRequestStatus#REQUESTED}
+   */
   public SwapNotPendingException(SwapRequestId request, SwapRequestStatus status) {
     super("Swap request %s is already %s".formatted(request.value(), status));
   }

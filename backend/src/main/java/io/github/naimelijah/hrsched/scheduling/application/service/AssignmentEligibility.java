@@ -35,10 +35,9 @@ import java.util.Set;
  *
  * <p>Unavailability <em>is</em> here. Generation filters candidates through {@code
  * RosterCandidate.couldCover}, which tests availability as well as qualifications, and
- * unavailability is not a {@code WorkingTimeConstraint}, so an empty constraint set checks nothing
- * of it at publication. Left out of this class, assigning by hand would accept what generation
- * refuses and nothing afterwards would catch it. A rule enforced on one of two paths is not
- * enforced.
+ * unavailability is not a {@code WorkingTimeConstraint}, so no constraint set checks it. Left out
+ * of this class, assigning by hand would accept what generation refuses and nothing afterwards
+ * would catch it. A rule enforced on one of two paths is not enforced.
  */
 final class AssignmentEligibility {
 

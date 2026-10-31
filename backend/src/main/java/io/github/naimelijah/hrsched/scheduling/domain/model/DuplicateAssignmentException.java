@@ -8,6 +8,7 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
  */
 public class DuplicateAssignmentException extends RuntimeException {
 
+  /** Builds the refusal with a constant message, which is the 409 response's detail. */
   public DuplicateAssignmentException() {
     super("That employee is already assigned to that shift on this roster.");
   }

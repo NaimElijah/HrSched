@@ -81,8 +81,11 @@ public class CpSatRosterGenerator implements RosterGenerator {
   }
 
   /**
-   * Fills as many of the draft's places as the rules allow and, when the organisation weights an
-   * objective, ranks that fullest roster by the weights. See {@link RosterGenerator#generate}.
+   * Fills as many of the draft's places as the search finds the rules to allow and, when the
+   * organisation weights an objective, searches again for the best-scoring roster at least as full.
+   * Each search stops at {@code hrsched.generation.time-limit-per-phase}, so the result is the best
+   * found, not proven optimal, and the second search may return different assignments from the
+   * first. See {@link RosterGenerator#generate}.
    *
    * @throws IllegalStateException if asked inside a transaction, where a solve would hold a pooled
    *     connection for as long as it ran (ADR-045); or if the solver found no roster at all, which

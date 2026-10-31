@@ -58,6 +58,13 @@ public class SchedulingController {
   private final PlanRostersUseCase planRosters;
   private final ViewOwnScheduleUseCase viewOwnSchedule;
 
+  /**
+   * @param manageShifts defines, lists and reads shifts
+   * @param configureConstraints revises and reads the working-time rules
+   * @param configureObjectives revises and reads the objective weights
+   * @param planRosters generates, edits, publishes and reads rosters
+   * @param viewOwnSchedule reads the acting employee's own published assignments
+   */
   public SchedulingController(
       ManageShiftsUseCase manageShifts,
       ConfigureConstraintsUseCase configureConstraints,
@@ -146,8 +153,9 @@ public class SchedulingController {
    * Replaces the organisation's working-time rules with these, as a new version. Only an Admin may.
    * A rule left out is no longer enforced, so the request carries every rule that should apply.
    *
-   * @param request the rules; two of one kind, or a threshold the domain refuses, is answered as a
-   *     400 problem detail, and a revision that lost a race to another as a 409
+   * @param request the rules, one optional field per kind; a threshold the domain refuses, or one
+   *     too large to count, is answered as a 400 problem detail, and a revision that lost a race to
+   *     another as a 409
    * @return the new version
    */
   @PutMapping("/constraints")

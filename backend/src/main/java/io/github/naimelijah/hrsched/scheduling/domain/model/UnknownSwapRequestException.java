@@ -8,6 +8,10 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
  */
 public class UnknownSwapRequestException extends RuntimeException {
 
+  /**
+   * @param request the identity that was asked for; the message carries it, and the 404 response
+   *     replaces it with a constant, so it reaches no caller
+   */
   public UnknownSwapRequestException(SwapRequestId request) {
     super("No such swap request %s".formatted(request.value()));
   }

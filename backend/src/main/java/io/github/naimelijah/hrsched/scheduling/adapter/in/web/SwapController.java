@@ -35,6 +35,9 @@ public class SwapController {
 
   private final RequestSwapsUseCase requestSwaps;
 
+  /**
+   * @param requestSwaps the use case every route of this controller delegates to
+   */
   public SwapController(RequestSwapsUseCase requestSwaps) {
     this.requestSwaps = requestSwaps;
   }
@@ -101,7 +104,8 @@ public class SwapController {
   /**
    * Approves a request by publishing the replacement roster that carries it. Only a Scheduler may.
    * A replacement that would break a rule is answered as a 422 problem detail, and there is no
-   * override.
+   * override. A colleague who already covers the shift is answered as a 409 problem detail of type
+   * {@code already-assigned} instead, and nothing is published.
    *
    * @param id the request
    * @return the published replacement

@@ -76,6 +76,17 @@ public class SwapService implements RequestSwapsUseCase {
   private final AuditTrail audit;
   private final Clock clock;
 
+  /**
+   * @param swaps where swap requests are stored
+   * @param rosters where the roster a request names, and its replacement, are stored
+   * @param shifts where the shift a request names is read
+   * @param workforce who may be put on a shift
+   * @param planRosters publishes the replacement roster an approval builds, and so checks its rules
+   * @param notifier how the parties to a request are told of its being raised, approved or rejected
+   * @param audit where each swap request, approval and rejection is recorded
+   * @param clock what a request's time of raising is read from
+   * @throws NullPointerException if any argument is null
+   */
   public SwapService(
       SwapRequestRepository swaps,
       RosterRepository rosters,

@@ -26,7 +26,9 @@ import org.springframework.stereotype.Component;
  * the simple class name alone: two adapters called {@code LoggingAuditTrail} in different packages
  * collide, and they do so at startup rather than at compile time.
  *
- * <p>Nothing is persisted. Whether this should be a durable, queryable trail is Q20; see ADR-018.
+ * <p>Nothing is persisted or queryable: the record lives only wherever stdout is collected
+ * (ADR-018). The requirement is a durable trail an Admin reads for their own organisation (Q20,
+ * #31), which is not built yet.
  */
 @Component
 public class SchedulingAuditLog implements AuditTrail {

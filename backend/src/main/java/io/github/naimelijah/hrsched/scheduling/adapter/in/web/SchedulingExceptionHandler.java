@@ -71,9 +71,10 @@ public class SchedulingExceptionHandler {
   private static final Logger log = LoggerFactory.getLogger(SchedulingExceptionHandler.class);
 
   /**
-   * Shared with every other class that records a refusal: the other contexts' exception handlers,
-   * {@code AuthController} and the security chain's access-denied and entry-point handlers. So one
-   * query answers "who was refused" across all of them, told apart by the {@code kind} tag.
+   * One meter name for every refusal of access, wherever in the application it is recorded, tagged
+   * only by {@code kind}. So a single query or alert counts refusals by kind across all of them,
+   * where a name per context would need one per context, and a context added later would fall
+   * outside the query until somebody remembered it.
    */
   private static final String DENIED = "hrsched.access.denied";
 
@@ -93,9 +94,8 @@ public class SchedulingExceptionHandler {
   private final MeterRegistry meters;
 
   /**
-   * Creates the handler for the scheduling controllers.
-   *
-   * @param meters where refusals are counted
+   * @param meters the registry refusals are counted on; each counter is registered when its first
+   *     refusal is counted, not when the handler is built
    */
   public SchedulingExceptionHandler(MeterRegistry meters) {
     this.meters = meters;
@@ -279,8 +279,10 @@ public class SchedulingExceptionHandler {
   }
 
   /**
-   * An actor whose role does not permit the request: a 403, logged at WARN and counted. The
-   * response names no role and no resource.
+   * An actor whose role does not permit the request is answered as a 403 that names neither the
+   * role nor the resource, so the response tells the caller nothing about what exists or what
+   * another role could do. The operator's log line carries the role the actor held, and the
+   * counter, tagged {@code kind=role}, counts the refusal.
    */
   @ExceptionHandler(NotPermittedException.class)
   public ProblemDetail handleNotPermitted(NotPermittedException exception) {

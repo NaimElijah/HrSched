@@ -8,6 +8,10 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
  */
 public class UnknownShiftException extends RuntimeException {
 
+  /**
+   * @param shift the identity that was asked for; the message carries it, and the 404 response
+   *     replaces it with a constant, so it reaches no caller
+   */
   public UnknownShiftException(ShiftId shift) {
     super("No such shift %s".formatted(shift.value()));
   }

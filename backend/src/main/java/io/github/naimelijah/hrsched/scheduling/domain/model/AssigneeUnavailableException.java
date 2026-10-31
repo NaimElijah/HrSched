@@ -15,6 +15,13 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
  */
 public class AssigneeUnavailableException extends RuntimeException {
 
+  /**
+   * Builds the refusal. The message names the employee and the shift by identifier, never by name,
+   * and not what was declared or when; it is the 422 response's detail.
+   *
+   * @param employee who was to be assigned
+   * @param shift the shift that runs through time they declared they cannot work
+   */
   public AssigneeUnavailableException(EmployeeId employee, ShiftId shift) {
     super(
         "Employee %s has declared they cannot work when shift %s runs"

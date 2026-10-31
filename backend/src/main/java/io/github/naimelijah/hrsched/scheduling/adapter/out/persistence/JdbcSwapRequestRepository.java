@@ -42,6 +42,10 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
 
   private final JdbcClient jdbc;
 
+  /**
+   * @param jdbc the client every statement of this repository runs through; must not be null
+   * @throws NullPointerException if {@code jdbc} is null
+   */
   public JdbcSwapRequestRepository(JdbcClient jdbc) {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
   }
