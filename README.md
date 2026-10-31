@@ -179,10 +179,9 @@ Every other setting, from `application.properties`, with why it has the value it
 
 Every call carries a bearer token, and the organisation comes from the account it names, never from
 the request ([ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md)). These
-responses are real ones from a local run; [`docs/api.md`](docs/api.md) has every endpoint, sign-in,
-and the whole walkthrough from an empty database. In the first example, `$SCHEDULER` is a
-Scheduler's access token and `$ROSTER` the id of a generated draft; both are set by the
-[Walkthrough](docs/api.md#walkthrough), which you run first.
+responses are real ones from a local run. [`docs/api.md`](docs/api.md) has every endpoint and
+sign-in, and its [Walkthrough](docs/api.md#walkthrough), run first, sets `$SCHEDULER` (a
+Scheduler's access token) and `$ROSTER` (a generated draft's id).
 
 **Publish a roster.** Only a Scheduler may. The roster records the rule version that approved it, so
 a later change to the rules does not change what it was approved against.
@@ -246,9 +245,6 @@ From the root, `npm run verify` runs both gates in turn.
 On Windows without a POSIX shell, use `mvnw.cmd` for `./mvnw`. It needs PowerShell on `PATH`, and
 its exit code is unreliable: it has exited 0 and 1 when Maven never started. A run has passed only
 when its log shows `Tests run:` and `BUILD SUCCESS`.
-
-Spring Boot 4 renamed some things that tutorials still call by their 3.x names; check `pom.xml` and
-[`backend/CLAUDE.md`](backend/CLAUDE.md), not older answers.
 
 **Adding a use case** goes from the inside out: its context (one that fits none is a new context and
 a new ADR), the domain model, its ports, the service with no annotations, its registration in
@@ -371,14 +367,11 @@ or tag yet.
 Docker. The [requirements](docs/requirements/requirements.md) mark each row decided but `not yet`
 built.
 
-**Planned**, tracked by the [milestones](https://github.com/NaimElijah/HrSched/milestones):
-
-- M0, the full-system scans of the code and the docs.
-- M1, v1 feature-complete; M2, the engineering baseline.
-- M3 and M4, AWS staging and production: ECS Fargate, RDS and CloudFront, defined in CDK
-  ([#153](https://github.com/NaimElijah/HrSched/issues/153)); ADR-035 and ADR-036 are reserved to
-  record the topology.
-- M5, machine learning that proposes and never decides.
+**Planned**, tracked by the [milestones](https://github.com/NaimElijah/HrSched/milestones): M0, the
+full-system scans of the code and the docs; M1, v1 feature-complete; M2, the engineering baseline;
+M3 and M4, AWS staging and production on ECS Fargate, RDS and CloudFront, defined in CDK
+([#153](https://github.com/NaimElijah/HrSched/issues/153); ADR-035 and ADR-036 are reserved for the
+topology); and M5, machine learning that proposes and never decides.
 
 **Known limitations:**
 - **No jurisdiction preset exists yet.** HrSched ships no statute's numbers, so every limit is typed
