@@ -17,6 +17,9 @@ import java.util.Objects;
  */
 public record BootstrapOperatorCommand(String signInName, String temporaryPassword) {
 
+  /**
+   * @throws NullPointerException if {@code signInName} or {@code temporaryPassword} is null
+   */
   public BootstrapOperatorCommand {
     Objects.requireNonNull(signInName, "signInName must not be null");
     Objects.requireNonNull(temporaryPassword, "temporaryPassword must not be null");

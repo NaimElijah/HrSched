@@ -45,6 +45,9 @@ public class AccountController {
 
   private final ManageAccountsUseCase manageAccounts;
 
+  /**
+   * @param manageAccounts the use case that administers an organisation's accounts
+   */
   public AccountController(ManageAccountsUseCase manageAccounts) {
     this.manageAccounts = manageAccounts;
   }

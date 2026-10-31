@@ -16,6 +16,9 @@ import java.util.Objects;
  */
 public record SetAccountActiveCommand(OrganisationId organisation, UserId account, boolean active) {
 
+  /**
+   * @throws NullPointerException if {@code organisation} or {@code account} is null
+   */
   public SetAccountActiveCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(account, "account must not be null");

@@ -43,8 +43,9 @@ import tools.jackson.databind.exc.UnrecognizedPropertyException;
  *
  * <p>It is also where several of these refusals are logged and counted, because it is the one place
  * that sees every exception the access controllers raise ({@link AuthController} records its own
- * sign-in, renewal and password refusals itself). Recording changes nothing the caller is told; it
- * is for whoever runs the deployment. See ADR-018.
+ * sign-in, renewal and current-password refusals itself; its 422 for a refused new password is
+ * neither logged nor counted). Recording changes nothing the caller is told; it is for whoever runs
+ * the deployment. See ADR-018.
  *
  * <p>It covers {@link AuthController} and {@link AccountController} as well, and for the first the
  * reason is narrower than it looks: a body Jackson cannot read is answered here with a message of
@@ -58,10 +59,9 @@ public class AccessExceptionHandler {
   private static final Logger log = LoggerFactory.getLogger(AccessExceptionHandler.class);
 
   /**
-   * The meter every class that refuses a caller counts into, tagged with the {@code kind} of
-   * refusal: the four contexts' exception handlers (this one included), the security chain's two
-   * refusal handlers and {@link AuthController}. One query answers "who was refused" across all of
-   * them.
+   * The meter a refusal of access counts into, tagged with the {@code kind} of refusal. Every class
+   * that counts one uses this name, so that one query answers "who was refused" across all of them
+   * and the {@code kind} tag tells them apart.
    */
   private static final String DENIED = "hrsched.access.denied";
 
@@ -96,7 +96,7 @@ public class AccessExceptionHandler {
 
   /**
    * A request body the adapter or the domain refuses as invalid: a member it requires is missing,
-   * an employee link is not a UUID, or an organisation or sign-in name is one no store can hold. A
+   * an employee link is not a UUID, or an organisation or sign-in name is one the domain refuses. A
    * 400 whose detail is the exception's message.
    *
    * <p>The two invalid-name exceptions' messages name the rule and never the name, so they can be

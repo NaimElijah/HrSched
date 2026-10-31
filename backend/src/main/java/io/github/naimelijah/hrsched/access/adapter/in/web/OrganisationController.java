@@ -37,6 +37,9 @@ public class OrganisationController {
 
   private final ManageOrganisationsUseCase manageOrganisations;
 
+  /**
+   * @param manageOrganisations the use case that onboards, lists and reads organisations
+   */
   public OrganisationController(ManageOrganisationsUseCase manageOrganisations) {
     this.manageOrganisations = manageOrganisations;
   }

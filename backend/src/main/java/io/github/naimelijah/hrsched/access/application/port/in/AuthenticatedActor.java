@@ -16,6 +16,9 @@ import java.util.Objects;
  */
 public record AuthenticatedActor(Actor actor, boolean passwordChangeRequired) {
 
+  /**
+   * @throws NullPointerException if {@code actor} is null
+   */
   public AuthenticatedActor {
     Objects.requireNonNull(actor, "actor must not be null");
   }

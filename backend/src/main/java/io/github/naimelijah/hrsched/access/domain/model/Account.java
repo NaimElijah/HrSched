@@ -89,8 +89,8 @@ public final class Account {
    * @param membership what it is a member of, never {@code null}
    * @param active whether it may be used at all
    * @param passwordChangeRequired whether the password must be changed before anything else
-   * @param failedSignIns consecutive failures counted since the last success or unlock, never
-   *     negative
+   * @param failedSignIns consecutive failed password checks, at sign-in or as the wrong current
+   *     password of a password change, counted since the last success or unlock; never negative
    * @param lockedUntil when the current lock ends, empty if there is none
    * @param createdAt when it was provisioned, never {@code null}
    * @throws NullPointerException if any reference argument is null
@@ -353,9 +353,10 @@ public final class Account {
   }
 
   /**
-   * @return consecutive failed sign-ins counted since the last success or unlock; never negative.
-   *     It is not cleared when a lock runs out: the first failure after that starts a fresh run at
-   *     one
+   * @return consecutive failed password checks, at sign-in or as the wrong current password of a
+   *     password change, counted since the last success or unlock; never negative. A successful
+   *     sign-in, a completed password change and an unlock clear it. It is not cleared when a lock
+   *     runs out: the first failure after that starts a fresh run at one
    */
   public int failedSignIns() {
     return failedSignIns;

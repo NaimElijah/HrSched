@@ -24,6 +24,9 @@ public sealed interface SignInOutcome {
    */
   record SignedIn(IssuedSession session) implements SignInOutcome {
 
+    /**
+     * @throws NullPointerException if {@code session} is null
+     */
     public SignedIn {
       Objects.requireNonNull(session, "session must not be null");
     }
@@ -40,6 +43,9 @@ public sealed interface SignInOutcome {
    */
   record Refused(Optional<UserId> account, SignInRefusal reason) implements SignInOutcome {
 
+    /**
+     * @throws NullPointerException if {@code account} or {@code reason} is null
+     */
     public Refused {
       Objects.requireNonNull(account, "account must not be null");
       Objects.requireNonNull(reason, "reason must not be null");

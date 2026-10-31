@@ -106,6 +106,10 @@ public class JdbcAccountRepository implements AccountRepository {
 
   private final JdbcClient jdbc;
 
+  /**
+   * @param jdbc the client every statement runs through
+   * @throws NullPointerException if {@code jdbc} is null
+   */
   public JdbcAccountRepository(JdbcClient jdbc) {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
   }

@@ -36,6 +36,11 @@ public class OperatorBootstrap implements ApplicationRunner {
   private final BootstrapOperatorUseCase bootstrap;
   private final BootstrapOperatorProperties properties;
 
+  /**
+   * @param bootstrap the use case that creates the operator
+   * @param properties the configured sign-in name and password
+   * @throws NullPointerException if any argument is null
+   */
   public OperatorBootstrap(
       BootstrapOperatorUseCase bootstrap, BootstrapOperatorProperties properties) {
     this.bootstrap = Objects.requireNonNull(bootstrap, "bootstrap must not be null");
@@ -54,6 +59,8 @@ public class OperatorBootstrap implements ApplicationRunner {
    *     second operator
    * @throws io.github.naimelijah.hrsched.access.domain.model.InvalidSignInNameException if the
    *     configured name is not one an account could hold, which fails startup too
+   * @throws IllegalArgumentException if the configured password is longer than the hasher reads,
+   *     which fails startup too; the message never contains it
    */
   @Override
   public void run(ApplicationArguments arguments) {

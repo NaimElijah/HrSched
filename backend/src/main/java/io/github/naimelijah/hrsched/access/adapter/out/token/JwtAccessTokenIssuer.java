@@ -52,6 +52,13 @@ public class JwtAccessTokenIssuer implements AccessTokenIssuer {
   private final AccessTokenProperties properties;
   private final Clock clock;
 
+  /**
+   * @param encoder signs the claims
+   * @param key the key pair, whose identifier names it in the token's header
+   * @param properties the issuer, audience and lifetime a token carries
+   * @param clock where a token's issued-at instant comes from; its expiry is that plus the lifetime
+   * @throws NullPointerException if any argument is null
+   */
   public JwtAccessTokenIssuer(
       JwtEncoder encoder, AccessTokenKey key, AccessTokenProperties properties, Clock clock) {
     this.encoder = Objects.requireNonNull(encoder, "encoder must not be null");

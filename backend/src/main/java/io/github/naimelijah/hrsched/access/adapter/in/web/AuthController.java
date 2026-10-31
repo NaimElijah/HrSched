@@ -68,9 +68,9 @@ public class AuthController {
   private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
   /**
-   * The meter every class that refuses a caller counts into, tagged with the {@code kind} of
-   * refusal: the four contexts' exception handlers, the security chain's two refusal handlers and
-   * this controller. One query answers "who was refused" across all of them.
+   * The meter a refusal of access counts into, tagged with the {@code kind} of refusal. Every class
+   * that counts one uses this name, so that one query answers "who was refused" across all of them
+   * and the {@code kind} tag tells them apart.
    */
   private static final String DENIED = "hrsched.access.denied";
 
@@ -89,6 +89,16 @@ public class AuthController {
   private final MeterRegistry meters;
   private final Clock clock;
 
+  /**
+   * @param signIn the use case that starts a session
+   * @param sessions the use case that renews and ends one
+   * @param readSession the use case that reads the caller's own session
+   * @param changePassword the use case that changes the caller's own password
+   * @param policy the password policy, for the numbers a refused new password is told
+   * @param meters where refusals are counted
+   * @param clock what a refresh cookie's lifetime is measured from
+   * @throws NullPointerException if any argument is null
+   */
   public AuthController(
       SignInUseCase signIn,
       SessionsUseCase sessions,

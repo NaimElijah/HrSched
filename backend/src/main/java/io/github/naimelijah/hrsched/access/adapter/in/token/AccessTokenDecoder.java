@@ -28,8 +28,9 @@ import org.springframework.stereotype.Component;
  * Driving adapter verifying access tokens, and the only {@link JwtDecoder} this application has.
  *
  * <p>Accepts exactly one kind of token: one this service signed, for this service, that has not
- * expired, and that names both an account and a session. Everything else is refused. Each check
- * below closes a way of acting as somebody else, so none of them is ceremony:
+ * expired (allowing for the clock skew described below), and that names both an account and a
+ * session. Everything else is refused. Each check below closes a way of acting as somebody else, so
+ * none of them is ceremony:
  *
  * <ul>
  *   <li><strong>The algorithm is pinned</strong>, not read from the token. A verifier that trusts
@@ -67,7 +68,8 @@ public class AccessTokenDecoder implements JwtDecoder {
 
   /**
    * The session an access token belongs to. Not a registered claim; this service's own. It must
-   * equal the name {@code JwtAccessTokenIssuer} writes, or no token names a session.
+   * equal the name {@code JwtAccessTokenIssuer} writes, or every issued token is refused at
+   * decoding.
    */
   private static final String SESSION_CLAIM = "sid";
 

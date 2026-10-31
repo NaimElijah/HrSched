@@ -16,6 +16,9 @@ import java.util.Objects;
  */
 public record AuthenticatedSession(Account account, SignInSession session) {
 
+  /**
+   * @throws NullPointerException if {@code account} or {@code session} is null
+   */
   public AuthenticatedSession {
     Objects.requireNonNull(account, "account must not be null");
     Objects.requireNonNull(session, "session must not be null");

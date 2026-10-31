@@ -19,6 +19,10 @@ import java.util.Objects;
 public record ResetPasswordCommand(
     OrganisationId organisation, UserId account, String temporaryPassword) {
 
+  /**
+   * @throws NullPointerException if {@code organisation}, {@code account} or {@code
+   *     temporaryPassword} is null
+   */
   public ResetPasswordCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(account, "account must not be null");

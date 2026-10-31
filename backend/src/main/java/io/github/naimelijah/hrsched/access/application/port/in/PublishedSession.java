@@ -32,6 +32,10 @@ public record PublishedSession(
     String signInName,
     boolean passwordChangeRequired) {
 
+  /**
+   * @throws NullPointerException if {@code userId}, {@code kind}, {@code organisation}, {@code
+   *     role}, {@code employee} or {@code signInName} is null
+   */
   public PublishedSession {
     Objects.requireNonNull(userId, "userId must not be null");
     Objects.requireNonNull(kind, "kind must not be null");

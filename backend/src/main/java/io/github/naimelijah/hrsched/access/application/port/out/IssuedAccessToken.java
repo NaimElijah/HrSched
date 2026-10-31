@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.Objects;
 
 /**
- * An access token that has just been signed, and the instant it stops being valid.
+ * An access token that has just been signed, and the instant it expires.
  *
  * <p>The expiry travels beside the token rather than being read back out of it, so a caller that
  * has to tell a client when to renew does not have to parse what it just produced.
@@ -13,7 +13,8 @@ import java.util.Objects;
  * expires, so it is a credential and never belongs in a log.
  *
  * @param value the signed token, never {@code null}, never blank
- * @param expiresAt when it stops being accepted, never {@code null}
+ * @param expiresAt the instant it expires, never {@code null}; the decoder keeps accepting it for
+ *     its clock skew past that instant
  */
 public record IssuedAccessToken(String value, Instant expiresAt) {
 

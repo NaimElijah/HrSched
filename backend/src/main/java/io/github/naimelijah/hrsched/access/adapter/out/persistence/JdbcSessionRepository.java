@@ -50,6 +50,10 @@ public class JdbcSessionRepository implements SessionRepository {
 
   private final JdbcClient jdbc;
 
+  /**
+   * @param jdbc the client every statement runs through
+   * @throws NullPointerException if {@code jdbc} is null
+   */
   public JdbcSessionRepository(JdbcClient jdbc) {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
   }

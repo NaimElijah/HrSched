@@ -17,9 +17,9 @@ import org.springframework.stereotype.Component;
  * in.
  *
  * <p>This is where a signature stops being enough. The decoder has already proved the token is one
- * this service issued and has not expired; what it cannot know is whether the account has since
- * been disabled, whether its role changed, or whether the session was signed out a second ago. That
- * is asked here, against stored state, on every request.
+ * this service issued and has not expired, allowing for its clock skew; what it cannot know is
+ * whether the account has since been disabled, whether its role changed, or whether the session was
+ * signed out a second ago. That is asked here, against stored state, on every request.
  *
  * <p>Every way of failing answers the same way: a malformed claim, an account nobody has, a session
  * belonging to somebody else, a revoked session and a disabled account all raise the same refusal
@@ -43,6 +43,10 @@ public class ActorAuthenticationConverter implements Converter<Jwt, AbstractAuth
 
   private final AuthenticatedActorsUseCase actors;
 
+  /**
+   * @param actors resolves a verified token's account and session to the caller they stand for
+   * @throws NullPointerException if {@code actors} is null
+   */
   public ActorAuthenticationConverter(AuthenticatedActorsUseCase actors) {
     this.actors = Objects.requireNonNull(actors, "actors must not be null");
   }

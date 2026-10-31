@@ -40,6 +40,15 @@ public class OrganisationService implements ManageOrganisationsUseCase {
   private final AuditTrail audit;
   private final Clock clock;
 
+  /**
+   * @param organisations where organisations are stored and read
+   * @param accounts where the first Admin account is stored
+   * @param passwords hashes the first Admin's temporary password
+   * @param passwordPolicy what that password must satisfy
+   * @param audit where access changes are recorded
+   * @param clock where the instants it creates at come from
+   * @throws NullPointerException if any argument is null
+   */
   public OrganisationService(
       OrganisationRepository organisations,
       AccountRepository accounts,

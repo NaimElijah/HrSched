@@ -26,6 +26,9 @@ public class WorkforceEmployeeDirectory implements EmployeeDirectory {
 
   private final ManageEmployeesUseCase employees;
 
+  /**
+   * @param employees the workforce context's use case that looks an employee up
+   */
   public WorkforceEmployeeDirectory(ManageEmployeesUseCase employees) {
     this.employees = employees;
   }

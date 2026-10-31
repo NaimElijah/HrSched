@@ -112,7 +112,8 @@ public final class SignInSession {
   }
 
   /**
-   * @return why the session was ended early, empty if nothing has ended it
+   * @return why the session was revoked, empty if it never was; a session that has expired has no
+   *     revocation
    */
   public Optional<SessionRevocation> revocation() {
     return revocation;

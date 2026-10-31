@@ -144,8 +144,9 @@ public class SessionService
     Instant now = clock.instant();
     Optional<Account> found = accountNamed(command.signInName());
 
-    // Always exactly one comparison, whatever was found, so that how long a refusal takes says
-    // nothing about whether the name exists.
+    // One comparison, whatever was found, before anything is held, so that how long a refusal
+    // takes says nothing about whether the name exists. A second runs further down only when a
+    // reset replaced the hash while this one was running.
     PasswordHash against = found.map(Account::passwordHash).orElse(dummyHash);
     boolean matchedWhenRead = passwords.matches(command.password(), against);
 
