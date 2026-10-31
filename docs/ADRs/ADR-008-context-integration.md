@@ -6,6 +6,10 @@
     another context's `application.port.in` only from the origin context's `adapter.out`, so a use
     case or a controller naming another context's port fails it. Contexts also depend one way, held
     by `contexts_are_free_of_cycles`. Both live in `HexagonalArchitectureTest`. The rest stands.
+  - **Amended 2026-10-31:** `configuration` is no longer exempt as a package.
+    `only_the_wiring_sees_inside_a_context` lets only the `@Configuration` classes, and the classes
+    nested in one, name another context's services and driven ports; any other class in
+    `configuration` is held to the contexts' published driving ports. The rest stands.
 - **Date:** 2026-08-30
 
 ## Context
