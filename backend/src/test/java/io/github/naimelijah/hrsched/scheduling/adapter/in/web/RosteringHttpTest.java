@@ -1122,38 +1122,103 @@ class RosteringHttpTest {
   }
 
   /**
-   * #96: rules stored with two of a kind, which only a write past the domain could leave, are a
-   * fault in stored data. Reading them is answered by no handler, so the caller gets a 500 and the
-   * failure is logged, rather than a 400 blaming the request. Spring routes an exception by its
-   * cause when its own type has no handler, so the domain's refusal must not travel as one.
+   * #96: rules stored with two of a kind are a fault in stored data, not the caller's mistake.
+   * Reading them is answered by no handler, so the caller gets a 500 and the failure is logged,
+   * rather than a 400 blaming the request. Spring routes an exception by its cause when its own
+   * type has no handler, and the domain's refusal of such a set is answered 400, so it must not
+   * travel as one.
+   *
+   * <p>Since V14 the schema refuses two of a kind (R24), so the rows are stored here with that
+   * constraint dropped, inside a transaction that is rolled back, and the request is made inside
+   * it. The use case opens its transaction with {@code REQUIRED} propagation ({@code
+   * TransactionalUseCases}), and MockMvc runs it on this thread, so it joins this one: it reads
+   * rows no other connection can see, and no other test sees the schema without the constraint. Had
+   * it not joined, it would wait on the dropped constraint's lock until the timeout.
    */
   @Test
+  @Timeout(value = STUCK_AFTER_SECONDS * 2, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
   void GivenRulesStoredWithTwoOfAKind_WhenReadingThem_ThenNoHandlerAnswersItAsTheCallersMistake()
       throws Exception {
     String organisation = anOrganisation(mockMvc);
-    jdbc.sql("INSERT INTO constraint_set (organisation_id, version) VALUES (:id, 2)")
-        .param("id", UUID.fromString(organisation))
+    MockHttpServletRequestBuilder readingTheRules =
+        as(mockMvc, get("/api/constraints"), organisation, "ADMIN");
+
+    Throwable unanswered =
+        new TransactionTemplate(transactions)
+            .execute(
+                rolledBack -> {
+                  rolledBack.setRollbackOnly();
+                  jdbc.sql(
+                          "ALTER TABLE working_time_constraint"
+                              + " DROP CONSTRAINT working_time_constraint_one_of_each_kind")
+                      .update();
+                  jdbc.sql("INSERT INTO constraint_set (organisation_id, version) VALUES (:id, 2)")
+                      .param("id", UUID.fromString(organisation))
+                      .update();
+                  // Invented: two daily caps, of 437 minutes and of 511, figures from no statute.
+                  for (int ordinal = 0; ordinal < 2; ordinal++) {
+                    jdbc.sql(
+                            """
+                            INSERT INTO working_time_constraint
+                                (organisation_id, version, ordinal, kind, duration_seconds,
+                                 day_count)
+                            VALUES (:id, 2, :ordinal, 'MAXIMUM_DAILY_WORKING_TIME', :seconds, NULL)
+                            """)
+                        .param("id", UUID.fromString(organisation))
+                        .param("ordinal", ordinal)
+                        .param("seconds", TimeUnit.MINUTES.toSeconds(437 + 74L * ordinal))
+                        .update();
+                  }
+                  return catchThrowable(() -> mockMvc.perform(readingTheRules));
+                });
+
+    assertThat(unanswered)
+        .describedAs("left to the server's error handling, so a 500, not a 4xx")
+        .hasRootCauseInstanceOf(IllegalStateException.class)
+        .rootCause()
+        .describedAs("the rows this transaction holds were read, so the use case joined it")
+        .hasMessageContaining("maximum daily working time is given twice");
+  }
+
+  /**
+   * #96: a row the domain refuses to load is a fault in stored data, not the caller's mistake.
+   * Reading it is answered by no handler, so the caller gets a 500 and the failure is logged,
+   * rather than a 4xx blaming the request.
+   *
+   * <p>A generation stored REFUSED with no rule it broke is such a row: the schema does not hold
+   * that a refusal names what it broke (V14), and {@code RosterGeneration} refuses to be loaded
+   * without one.
+   */
+  @Test
+  void
+      GivenARefusalStoredWithNothingBroken_WhenPollingIt_ThenNoHandlerAnswersItAsTheCallersMistake()
+          throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    UUID generation = UUID.randomUUID();
+    jdbc.sql(
+            """
+            INSERT INTO roster_generation (id, organisation_id, starts_at, ends_at, requested_at,
+                                           lost_at, status, finished_at)
+            VALUES (:id, :organisation, '2026-11-09T00:00:00Z', '2026-11-16T00:00:00Z',
+                    '2026-11-01T09:00:00Z', '2026-11-01T09:15:00Z', 'REFUSED',
+                    '2026-11-01T09:01:00Z')
+            """)
+        .param("id", generation)
+        .param("organisation", UUID.fromString(organisation))
         .update();
-    // Invented: two daily caps, of 437 minutes and of 511, figures from no statute.
-    for (int ordinal = 0; ordinal < 2; ordinal++) {
-      jdbc.sql(
-              """
-              INSERT INTO working_time_constraint
-                  (organisation_id, version, ordinal, kind, duration_seconds, day_count)
-              VALUES (:id, 2, :ordinal, 'MAXIMUM_DAILY_WORKING_TIME', :seconds, NULL)
-              """)
-          .param("id", UUID.fromString(organisation))
-          .param("ordinal", ordinal)
-          .param("seconds", TimeUnit.MINUTES.toSeconds(437 + 74L * ordinal))
-          .update();
-    }
 
     Throwable unanswered =
         catchThrowable(
-            () -> mockMvc.perform(as(mockMvc, get("/api/constraints"), organisation, "ADMIN")));
+            () ->
+                mockMvc.perform(
+                    as(
+                        mockMvc,
+                        get("/api/rosters/generations/" + generation),
+                        organisation,
+                        "SCHEDULER")));
 
     assertThat(unanswered)
-        .describedAs("left to the server's error handling, so a 500, not a 400")
+        .describedAs("left to the server's error handling, so a 500, not a 4xx")
         .hasRootCauseInstanceOf(IllegalStateException.class);
   }
 

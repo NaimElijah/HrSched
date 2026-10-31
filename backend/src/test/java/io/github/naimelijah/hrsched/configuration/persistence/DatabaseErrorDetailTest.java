@@ -47,6 +47,9 @@ class DatabaseErrorDetailTest {
   /** Invented, and positive, so only the absent name refuses the row it is in. */
   private static final long INVENTED_POSITIVE_SECONDS = 434_343L;
 
+  /** The name V1 gave the contracted-hours CHECK. */
+  private static final String CONTRACTED_HOURS_CHECK = "employee_contracted_hours_positive";
+
   @Autowired private JdbcClient jdbc;
 
   @Test
@@ -63,6 +66,22 @@ class DatabaseErrorDetailTest {
     assertThat(messagesOf(refused))
         .noneMatch(message -> message.contains(INVENTED_NAME))
         .noneMatch(message -> message.contains(Long.toString(INVENTED_NEGATIVE_SECONDS)));
+  }
+
+  /**
+   * Keeping the detail out must not take the constraint's name with it: an adapter tells the
+   * violation it translates from any other by finding that name in the driver's message, and with
+   * the name gone every such violation would surface untranslated.
+   */
+  @Test
+  void GivenARowViolatingACheck_WhenInserted_ThenAMessageInTheCauseChainStillNamesTheConstraint() {
+    UUID organisation = anOrganisation();
+
+    Throwable refused =
+        catchThrowable(
+            () -> insertEmployee(organisation, INVENTED_NAME, INVENTED_NEGATIVE_SECONDS));
+
+    assertThat(messagesOf(refused)).anyMatch(message -> message.contains(CONTRACTED_HOURS_CHECK));
   }
 
   @Test

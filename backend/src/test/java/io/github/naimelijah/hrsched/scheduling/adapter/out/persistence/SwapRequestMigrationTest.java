@@ -200,6 +200,18 @@ class SwapRequestMigrationTest {
 
   private SwapRequestId requestOn(
       RosterId roster, UUID shift, UUID requester, String status, OffsetDateTime raisedAt) {
+    // The work it asks to hand over, as the roster held it. Several requests may name one
+    // assignment, so it is stored once.
+    jdbc.sql(
+            """
+            INSERT INTO roster_assignment (roster_id, shift_id, employee_id)
+            VALUES (:roster, :shift, :requester)
+            ON CONFLICT DO NOTHING
+            """)
+        .param("roster", roster.value())
+        .param("shift", shift)
+        .param("requester", requester)
+        .update();
     SwapRequestId id = SwapRequestId.newId();
     jdbc.sql(
             """

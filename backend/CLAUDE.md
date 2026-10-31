@@ -109,19 +109,22 @@ so JPA would need a parallel annotated model, buying only what an adapter must n
 - **Migrations** in `src/main/resources/db/migration/` are the only way the schema changes. Name
   one `V<n>__<rule_in_snake_case>.sql`, opening with a comment giving the rule, ADR and reasoning.
   **Never edit an applied migration**; correct it in the next, as V6 and V8 do. A backfill is
-  explicit and invents nothing. An index on a root leads with `organisation_id`; a foreign key
-  stays inside one context, bar the one every root table carrying an `organisation_id` has to
-  `organisation (id)`, the tenant register `access` owns; the session tables carry none (ADR-004,
-  ADR-055). A migration rewriting stored rows gets a test that migrates to
-  the version before, inserts rows as it stored them, then migrates on (see
+  explicit and invents nothing. An index on a root leads with `organisation_id`, bar one serving
+  only the check PostgreSQL runs when a row of a table carrying none is deleted, as
+  `swap_request_by_assignment` does for the key from `swap_request` to `roster_assignment` (V14).
+  A foreign key stays inside one context, bar the one every root table carrying an
+  `organisation_id` has to `organisation (id)`, the tenant register `access` owns; the session
+  tables carry none (ADR-004, ADR-055). A migration rewriting stored rows gets a test that migrates
+  to the version before, inserts rows as it stored them, then migrates on (see
   `AppendOnlyRosterHistoryMigrationTest`).
 - **Conflicts come from the database, not from version columns.** A use case changing an aggregate
   reads it with `findForUpdate`, so a concurrent change waits and both apply (ADR-041). A published
-  save's exclusion violation or deadlock (23P01, 40P01) is a 409; a revision losing a race is
-  refused by its unique violation (23505), translated into a domain conflict answered 409, never
-  absorbed by `ON CONFLICT DO NOTHING`. An adapter translates only the constraint it means,
-  matched by the name its migration gave it, and lets any other violation surface. Upserts keep `organisation_id` equal to
-  `EXCLUDED`'s, and a write touching no row is refused.
+  save's violation of `roster_one_published_per_moment` (23P01, matched by name) or a deadlock
+  (40P01, by SQLSTATE) is a 409; a revision losing a race is refused by its unique violation
+  (23505), translated into a domain conflict answered 409, never absorbed by
+  `ON CONFLICT DO NOTHING`. An adapter translates only the constraint it means, matched by the
+  name its migration gave it, and lets any other violation surface. Upserts keep
+  `organisation_id` equal to `EXCLUDED`'s, and a write touching no row is refused.
 
 ## Transactions, concurrency and time
 

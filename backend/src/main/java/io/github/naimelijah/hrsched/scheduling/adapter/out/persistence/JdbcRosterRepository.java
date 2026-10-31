@@ -22,9 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
-import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -60,8 +58,15 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @Repository
 public class JdbcRosterRepository implements RosterRepository {
 
-  /** PostgreSQL's {@code exclusion_violation}: the constraint found the overlap. */
+  /** PostgreSQL's {@code exclusion_violation}: an exclusion constraint found an overlap. */
   private static final String EXCLUSION_VIOLATION = "23P01";
+
+  /**
+   * The exclusion constraint holding R11 at every moment of record, as {@code V6} named it. Only
+   * its violation is a publication collision; another a later migration adds surfaces as the store
+   * reported it.
+   */
+  private static final String ONE_PUBLISHED_PER_MOMENT = "roster_one_published_per_moment";
 
   /**
    * PostgreSQL's {@code deadlock_detected}. Two writers each publishing an overlapping roster can
@@ -69,13 +74,6 @@ public class JdbcRosterRepository implements RosterRepository {
    * collision reported another way.
    */
   private static final String DEADLOCK_DETECTED = "40P01";
-
-  /**
-   * Read by SQLState rather than by exception type, because Spring maps an exclusion violation to
-   * nothing more specific than a data integrity violation, which says nothing about which rule.
-   */
-  private static final Set<String> PUBLICATION_COLLISIONS =
-      Set.of(EXCLUSION_VIOLATION, DEADLOCK_DETECTED);
 
   /**
    * Names what the publication lock guards, so its key has a namespace of its own rather than a
@@ -236,9 +234,13 @@ public class JdbcRosterRepository implements RosterRepository {
     return moment == null ? null : moment.atOffset(ZoneOffset.UTC);
   }
 
+  /**
+   * The exclusion violation is matched by the constraint's name; a deadlock names no constraint, so
+   * it is matched by its SQLState alone.
+   */
   private static boolean isPublicationCollision(DataAccessException refused) {
-    return NestedExceptionUtils.getMostSpecificCause(refused) instanceof SQLException cause
-        && PUBLICATION_COLLISIONS.contains(cause.getSQLState());
+    return StoreRefusals.isReportedAs(refused, DEADLOCK_DETECTED)
+        || StoreRefusals.isViolationOf(refused, EXCLUSION_VIOLATION, ONE_PUBLISHED_PER_MOMENT);
   }
 
   @Override
