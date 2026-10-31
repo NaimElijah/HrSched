@@ -2,6 +2,8 @@ import { Component, createRef } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { focusHeading } from './focus';
 
+const THE_VIEWS_HEADING = 'main h2';
+
 const A_HEADING = 'h1, h2, h3, h4, h5, h6';
 
 /**
@@ -12,8 +14,8 @@ const A_HEADING = 'h1, h2, h3, h4, h5, h6';
  * what happened and offers a reload, which is the least a failure owes the person looking at it.
  *
  * The fallback replaces everything, landmarks included, so it is a `main` of its own. "Try again"
- * removes the button that had focus, so once the children are back focus moves to their first
- * heading, never to the page (#257).
+ * removes the button that had focus, so once the children are back focus moves to the heading of
+ * their `main`, the view's own, or failing that to their first heading, never to the page (#257).
  */
 export class ErrorBoundary extends Component<{ children: ReactNode }, { failure: Error | null }> {
   private readonly contents = createRef<HTMLDivElement>();
@@ -37,7 +39,10 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failure:
     if (previous.failure === null || this.state.failure !== null) {
       return;
     }
-    focusHeading(this.contents.current, A_HEADING);
+    // The shell's first heading is its name, the same on every view; the view's is in `main`.
+    if (!focusHeading(this.contents.current, THE_VIEWS_HEADING)) {
+      focusHeading(this.contents.current, A_HEADING);
+    }
   }
 
   render(): ReactNode {

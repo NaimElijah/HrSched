@@ -11,13 +11,16 @@ export const PASSWORD_CHANGED = 'Your password has been changed.';
 
 const MISMATCH = 'The two new passwords do not match.';
 
+/** What the status region says while a change is on its way. */
+const CHANGING = 'Changing your password…';
+
 /**
  * Why the last submission did not change the password, and which field it is about: the
- * confirmation for a mismatch, the new password for a backend refusal of it, and none for anything
- * else, such as a current password the backend did not accept.
+ * confirmation for a mismatch, the new password for a backend refusal of it (422), the current
+ * password for one the backend did not accept (403), and none for anything else.
  */
 interface Refusal {
-  readonly at: 'replacement' | 'confirmation' | null;
+  readonly at: 'current' | 'replacement' | 'confirmation' | null;
   readonly message: string;
 }
 
@@ -32,9 +35,13 @@ interface Refusal {
  * The confirmation field is checked here rather than sent, because two boxes disagreeing is a typo
  * rather than a decision the backend has any view about.
  *
- * A refusal about one field is shown beside it, marks it invalid and describes it (#257, C6), and
- * any edit clears it, as it does a success, because either is about what was sent, not what is
- * being typed (C9).
+ * A refusal about one field is shown beside it, marks it invalid and describes it (#257, C6). It
+ * stays until the next send, because the backend's refusal is the only place its rule is stated,
+ * and somebody writing a password that meets it may need to read it again. A success goes at the
+ * first edit, because it is about what was sent, not what is being typed (C9).
+ *
+ * A mismatch moves focus to the confirmation, which it describes, so it is said by the field and
+ * raises no alert; every other refusal leaves focus where it was and is an alert.
  */
 export function ChangePasswordPage() {
   const { state, session, changePassword, signOut } = useSession();
@@ -46,6 +53,7 @@ export function ChangePasswordPage() {
   // From the Password tab an accepted change alters nothing else on screen, so it is said here.
   const [done, setDone] = useState<string | null>(null);
   const confirmationInput = useRef<HTMLInputElement>(null);
+  const currentRefusal = useId();
   const replacementRefusal = useId();
   const confirmationRefusal = useId();
 
@@ -61,7 +69,6 @@ export function ChangePasswordPage() {
   function editing(set: (value: string) => void) {
     return (event: ChangeEvent<HTMLInputElement>) => {
       set(event.target.value);
-      setRefusal(null);
       setDone(null);
     };
   }
@@ -87,7 +94,7 @@ export function ChangePasswordPage() {
     } catch (error) {
       setRefusal(
         error instanceof ApiError
-          ? { at: error.isRefused ? 'replacement' : null, message: error.message }
+          ? { at: refusedAt(error), message: error.message }
           : { at: null, message: String(error) },
       );
     } finally {
@@ -120,8 +127,11 @@ export function ChangePasswordPage() {
             onChange={editing(setCurrent)}
             autoComplete="current-password"
             required
+            aria-invalid={refusal?.at === 'current' ? true : undefined}
+            aria-describedby={refusal?.at === 'current' ? currentRefusal : undefined}
           />
         </label>
+        <FieldRefusal id={currentRefusal} refusal={refusal} at="current" />
         <label>
           New password
           <input
@@ -148,14 +158,20 @@ export function ChangePasswordPage() {
             aria-describedby={refusal?.at === 'confirmation' ? confirmationRefusal : undefined}
           />
         </label>
-        <FieldRefusal id={confirmationRefusal} refusal={refusal} at="confirmation" />
+        {/* Focus moves here, and the field it describes says it, so it is no alert as well. */}
+        <FieldRefusal
+          id={confirmationRefusal}
+          refusal={refusal}
+          at="confirmation"
+          announced={false}
+        />
         {/* aria-disabled rather than disabled, so focus stays on the button while it is in flight. */}
         <button type="submit" aria-disabled={submitting}>
           {submitting ? 'Changing…' : 'Change password'}
         </button>
       </form>
       <p className="done" role="status">
-        {done}
+        {submitting ? CHANGING : done}
       </p>
       <FieldRefusal refusal={refusal} at={null} />
       {required ? (
@@ -170,21 +186,34 @@ export function ChangePasswordPage() {
   );
 }
 
-/** The refusal, where it is about the field `at`, or about none when `at` is null. */
+/** Which field a backend refusal is about: see {@link Refusal}. */
+function refusedAt(error: ApiError): Refusal['at'] {
+  if (error.isRefused) {
+    return 'replacement';
+  }
+  return error.isForbidden ? 'current' : null;
+}
+
+/**
+ * The refusal, where it is about the field `at`, or about none when `at` is null; an alert unless
+ * `announced` is false, for a refusal that something else already says.
+ */
 function FieldRefusal({
   id,
   refusal,
   at,
+  announced = true,
 }: {
   id?: string;
   refusal: Refusal | null;
   at: Refusal['at'];
+  announced?: boolean;
 }) {
   if (refusal === null || refusal.at !== at) {
     return null;
   }
   return (
-    <div id={id} className="failure" role="alert">
+    <div id={id} className="failure" role={announced ? 'alert' : undefined}>
       {refusal.message}
     </div>
   );

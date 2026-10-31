@@ -14,10 +14,15 @@ const SIGNED_OUT = 'You have been signed out. Sign in to continue.';
  * The backend answers an unknown name, a wrong password, a disabled account and a locked one
  * identically, and this must not undo that by guessing at a friendlier message. "That name is not
  * registered" would tell somebody trying names which ones exist here; "your account is locked"
- * would tell them their guessing had been noticed. What it suggests is true of every reason alike.
+ * would tell them their guessing had been noticed. What it suggests holds for every reason and
+ * every account alike: a typo is put right by checking, and anything else, a disabled account, a
+ * locked one, a forgotten password, takes an administrator, whoever administers that account.
  */
 const REFUSED =
-  "Those credentials were not accepted. Check your sign-in name and password, or ask your organisation's Admin to reset your password.";
+  'Those credentials were not accepted. Check your sign-in name and password. If they are right, ask an administrator.';
+
+/** What the status region says while a sign-in is on its way. */
+const SIGNING_IN = 'Signing in…';
 
 /**
  * The way into the application: there is nothing else to do until this succeeds.
@@ -51,6 +56,8 @@ export function SignInPage() {
       return;
     }
     setFailure(null);
+    // Said once; from here the region reports this sign-in.
+    setReason(null);
     setSubmitting(true);
     try {
       await signIn(signInName, password);
@@ -65,7 +72,7 @@ export function SignInPage() {
     <section className="sign-in">
       <h2>Sign in</h2>
       <p className="done" role="status">
-        {reason}
+        {submitting ? SIGNING_IN : reason}
       </p>
       <form onSubmit={submit}>
         <label>
@@ -89,7 +96,7 @@ export function SignInPage() {
         </label>
         {/* aria-disabled rather than disabled, so focus stays on the button while it is in flight. */}
         <button type="submit" aria-disabled={submitting}>
-          {submitting ? 'Signing in…' : 'Sign in'}
+          {submitting ? SIGNING_IN : 'Sign in'}
         </button>
       </form>
       {failure === null ? null : (

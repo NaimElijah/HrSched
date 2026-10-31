@@ -16,9 +16,12 @@ export function SessionBar({ onChangePassword }: { onChangePassword: () => void 
     <div className="session-bar">
       <span>
         Signed in as <strong>{session.signInName}</strong>
-      </span>
-      {/* Text, not only a gap, so the two parts are read apart as well as shown apart. */}
-      <span>{' · '}</span>
+      </span>{' '}
+      {/*
+        Shows the two parts apart; hidden from a screen reader, which would read it out as "middle
+        dot". The spaces either side are what it reads them apart by.
+      */}
+      <span aria-hidden="true">·</span>{' '}
       <span>
         {session.kind === 'OPERATOR' ? (
           'Platform operator'

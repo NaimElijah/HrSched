@@ -42,6 +42,25 @@ const OPERATOR_TABS = ['Organisations', 'Password'] as const;
 
 type Tab = (typeof TENANT_TABS)[number] | (typeof OPERATOR_TABS)[number];
 
+/** The dates the scheduling pages show, as instants. */
+type Span = ReturnType<typeof defaultSpan>;
+
+/**
+ * Where a session has navigated: the tab it chose, null until it chooses one, and its planning
+ * span. Tied to the session that chose them, as the generation awaited is, because they are that
+ * person's choices, and the screen they last looked at hints at the role they held.
+ */
+interface Navigation {
+  readonly session: string;
+  readonly tab: Tab | null;
+  readonly span: Span;
+}
+
+/** Where a session starts: on its first tab, over the span beginning today. */
+function startOf(session: string): Navigation {
+  return { session, tab: null, span: defaultSpan(new Date()) };
+}
+
 /** What each screen outside the shell is called, in the document title as on the screen. */
 const SCREEN_NAMES: Readonly<Record<Exclude<SessionState, 'signed-in'>, string>> = {
   restoring: 'Restoring your session',
@@ -89,8 +108,14 @@ function titleOf(view: string): string {
  */
 export function App() {
   const { state, session, key, restoreFailure, retryRestore } = useSession();
-  const [tab, setTab] = useState<Tab>('People');
-  const [span, setSpan] = useState(() => defaultSpan(new Date()));
+  const [navigation, setNavigation] = useState(() => startOf(key));
+  if (navigation.session !== key) {
+    // Adjusted while rendering, so no frame ever draws one session over another's choices.
+    setNavigation(startOf(key));
+  }
+  const { tab, span } = navigation;
+  const setTab = (chosen: Tab) => setNavigation((held) => ({ ...held, tab: chosen }));
+  const setSpan = (chosen: Span) => setNavigation((held) => ({ ...held, span: chosen }));
   // The generation the Rosters page is waiting for, held here because that page is gone whenever
   // another tab is open, and a solve takes minutes (ADR-046). Tied to the session that started it,
   // so nobody signing in after is shown a wait, or an outcome, that was somebody else's.
@@ -105,7 +130,8 @@ export function App() {
 
   const operator = session?.kind === 'OPERATOR';
   const tabs = operator ? OPERATOR_TABS : TENANT_TABS;
-  const current: Tab = (tabs as readonly Tab[]).includes(tab) ? tab : (tabs[0] as Tab);
+  const current: Tab =
+    tab !== null && (tabs as readonly Tab[]).includes(tab) ? tab : (tabs[0] as Tab);
   const view = state === 'signed-in' ? current : SCREEN_NAMES[state];
 
   useEffect(() => {

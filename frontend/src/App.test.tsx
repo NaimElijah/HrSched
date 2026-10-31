@@ -86,6 +86,20 @@ function loadingThrough(
   return stub;
 }
 
+/**
+ * The text a screen reader reads from `element`: everything but what is hidden from it, with each
+ * run of white space read as one.
+ */
+function spokenText(element: Element): string {
+  const read = (node: Node): string =>
+    node instanceof Element
+      ? node.getAttribute('aria-hidden') === 'true'
+        ? ''
+        : Array.from(node.childNodes, read).join('')
+      : (node.textContent ?? '');
+  return read(element).replace(/\s+/g, ' ');
+}
+
 function show() {
   render(
     <SessionProvider>
@@ -340,6 +354,7 @@ describe('the one deliberate swallow', () => {
 
     await waitFor(() => expect(shellAlerts()).toHaveLength(1));
     expect(shellAlerts()[0]).toHaveTextContent('The database is on fire.');
+    expect(screen.getByRole('banner'), 'the banner').toContainElement(shellAlerts()[0] ?? null);
   });
 
   it('GivenANotFoundOnTheEmployeeList_WhenRendered_ThenItIsSurfacedRatherThanSwallowed', async () => {
@@ -482,9 +497,13 @@ describe('what a tab change says', () => {
   });
 
   it.each([
-    ['Shifts', 'Shifts'],
+    ['Accounts', 'Accounts'],
     ['Qualifications', 'Qualifications'],
     ['Rules', 'Working-time rules'],
+    ['Shifts', 'Shifts'],
+    ['Rosters', 'Rosters'],
+    ['Swaps', 'Swaps'],
+    ['Me', 'Me'],
     ['Password', 'Change your password'],
   ])('GivenTheShell_WhenThe %s TabIsPressed_ThenFocusIsOnItsHeading', async (tab, heading) => {
     loadingAs(A_TENANT);
@@ -496,7 +515,7 @@ describe('what a tab change says', () => {
     await waitFor(() => expect(appeared, `focus on the "${heading}" heading`).toHaveFocus());
   });
 
-  it.each(['Shifts', 'Qualifications', 'Rules', 'Password'])(
+  it.each(['Accounts', 'Qualifications', 'Rules', 'Shifts', 'Rosters', 'Swaps', 'Me', 'Password'])(
     'GivenTheShell_WhenThe %s TabIsPressed_ThenTheDocumentTitleNamesIt',
     async (tab) => {
       loadingAs(A_TENANT);
@@ -507,6 +526,144 @@ describe('what a tab change says', () => {
       await waitFor(() => expect(document.title).toBe(`${tab} · HrSched`));
     },
   );
+});
+
+/**
+ * The Operator's tabs are views as the tenant's are: each focuses its heading and names itself in
+ * the title, and so does the way back to the register (#257, C4).
+ */
+describe("what the Operator's tab change says", () => {
+  beforeEach(() => {
+    document.title = '';
+  });
+
+  it('GivenTheOperator_WhenThePasswordTabIsPressed_ThenFocusIsOnItsHeadingAndTheTitleNamesIt', async () => {
+    loadingAs(THE_OPERATOR);
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
+
+    const heading = await screen.findByRole('heading', { name: 'Change your password' });
+    await waitFor(() =>
+      expect(heading, 'focus on the "Change your password" heading').toHaveFocus(),
+    );
+    expect(document.title).toBe('Password · HrSched');
+  });
+
+  it('GivenTheOperatorOnPassword_WhenTheOrganisationsTabIsPressed_ThenFocusIsOnItsHeadingAndTheTitleNamesIt', async () => {
+    loadingAs(THE_OPERATOR);
+    show();
+    await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
+    await screen.findByRole('heading', { name: 'Change your password' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Organisations' }));
+
+    const heading = await screen.findByRole('heading', { name: 'Organisations' });
+    await waitFor(() => expect(heading, 'focus on the "Organisations" heading').toHaveFocus());
+    expect(document.title).toBe('Organisations · HrSched');
+  });
+});
+
+/** The channel tabs tell each other how a session ended on (ADR-048). */
+const SESSION_CHANNEL = 'hrsched.session';
+
+/**
+ * Every screen outside the shell names itself in the title as it does on the page, so a browser's
+ * tab list and a screen reader's window list say where somebody is (#257, C4).
+ */
+describe('what each screen outside the shell is titled', () => {
+  beforeEach(() => {
+    document.title = '';
+  });
+
+  it('GivenARestoreInFlight_WhenItHasNotAnsweredYet_ThenTheTitleSaysItIsRestoring', async () => {
+    let answerTheRefresh: (answered: unknown) => void = () => undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise((resolve) => {
+            answerTheRefresh = resolve;
+          }),
+      ),
+    );
+    show();
+
+    try {
+      await waitFor(() => expect(document.title).toBe('Restoring your session · HrSched'));
+    } finally {
+      // The client shares one refresh between every caller, so one left unanswered here would keep
+      // every later test waiting on it.
+      answerTheRefresh(await respond({ status: 401, body: {} }));
+      await screen.findByRole('heading', { name: 'Sign in' });
+    }
+  });
+
+  it('GivenARestoreThatCannotFinish_WhenItsScreenIsShown_ThenTheTitleNamesIt', async () => {
+    loadingThrough(A_TENANT, () => ({ '/api/auth/refresh': UNREACHABLE }));
+
+    show();
+
+    await screen.findByRole('button', { name: 'Try again' });
+    await waitFor(() =>
+      expect(document.title).toBe('Your session could not be restored · HrSched'),
+    );
+  });
+
+  it('GivenNoSession_WhenTheSignInPageIsShown_ThenTheTitleSaysSignIn', async () => {
+    loadingAs(null);
+
+    show();
+
+    await screen.findByRole('heading', { name: 'Sign in' });
+    await waitFor(() => expect(document.title).toBe('Sign in · HrSched'));
+  });
+
+  it('GivenAPasswordChangeRequired_WhenItsScreenIsShown_ThenTheTitleNamesIt', async () => {
+    loadingAs({ ...A_TENANT, passwordChangeRequired: true });
+
+    show();
+
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await waitFor(() => expect(document.title).toBe('Change your password · HrSched'));
+  });
+
+  it('GivenASignOutTheBackendDidNotConfirm_WhenItsScreenIsShown_ThenTheTitleNamesIt', async () => {
+    loadingThrough(A_TENANT, () => ({
+      '/api/auth/sign-out': { status: 500, body: { detail: 'An invented outage.' } },
+    }));
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => expect(document.title).toBe('Sign-out not confirmed · HrSched'));
+  });
+
+  it('GivenASignedInUser_WhenSigningOut_ThenTheTitleSaysSignIn', async () => {
+    loadingThrough(A_TENANT, () => ({ '/api/auth/sign-out': { status: 204, body: null } }));
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+
+    await screen.findByRole('heading', { name: 'Sign in' });
+    await waitFor(() => expect(document.title).toBe('Sign in · HrSched'));
+  });
+
+  it('GivenASignedInTab_WhenAnotherTabEndsTheSession_ThenTheTitleSaysSignIn', async () => {
+    loadingAs(A_TENANT);
+    show();
+    await screen.findByRole('button', { name: 'Sign out' });
+    const anotherTab = new BroadcastChannel(SESSION_CHANNEL);
+
+    try {
+      anotherTab.postMessage('ended');
+
+      await screen.findByRole('heading', { name: 'Sign in' });
+      await waitFor(() => expect(document.title).toBe('Sign in · HrSched'));
+    } finally {
+      anotherTab.close();
+    }
+  });
 });
 
 /**
@@ -556,6 +713,21 @@ describe('the landmarks', () => {
     expect(banner).toHaveTextContent(`Signed in as ${A_TENANT.signInName}`);
   });
 
+  /**
+   * Shown apart by a separator, but a screen reader reads a middle dot aloud, so it is hidden from
+   * one, and the two are read apart by the space around it.
+   */
+  it('GivenTheShell_WhenTheBannerIsRead_ThenTheSignInNameAndTheRoleAreReadApartWithNoSeparator', async () => {
+    loadingAs(A_TENANT);
+
+    show();
+
+    await screen.findByRole('button', { name: 'Sign out' });
+    const read = spokenText(screen.getByRole('banner'));
+    expect(read).toContain(`${A_TENANT.signInName} ${String(A_TENANT.role)} in`);
+    expect(read).not.toContain('·');
+  });
+
   it('GivenTheShell_WhenShown_ThenThePlanningSpanIsInTheMainLandmark', async () => {
     loadingAs(A_TENANT);
 
@@ -567,12 +739,12 @@ describe('the landmarks', () => {
 });
 
 /**
- * Pressing "Try again" removes the button that had focus. When the retry finds nobody signed in,
- * the sign-in page replaces the screen, and unless focus moves to it a screen-reader user is left
- * on nothing (#257, C4). A first load with no session still takes no focus; that rule is
- * `signInNotice.test.tsx`'s.
+ * Pressing "Try again" removes the button that had focus. Whatever the retry ends in, a sign-in
+ * page, the shell, or the same failure drawn again, it replaces the screen, and unless focus moves
+ * to it a screen-reader user is left on nothing (#257, C4). A first load with no session still
+ * takes no focus; that rule is `signInNotice.test.tsx`'s.
  */
-describe('a retried restore that finds nobody', () => {
+describe('a retried restore', () => {
   it('GivenARestoreThatFailed_WhenTheRetryFindsNoSession_ThenFocusIsOnTheSignInHeading', async () => {
     let down = true;
     loadingThrough(A_TENANT, () =>
@@ -588,5 +760,32 @@ describe('a retried restore that finds nobody', () => {
 
     const heading = await screen.findByRole('heading', { name: 'Sign in' });
     await waitFor(() => expect(heading, 'focus on the "Sign in" heading').toHaveFocus());
+  });
+
+  it('GivenARestoreThatFailed_WhenTheRetryFailsAgain_ThenFocusIsOnItsHeading', async () => {
+    loadingThrough(A_TENANT, () => ({ '/api/auth/refresh': UNREACHABLE }));
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+
+    const heading = await screen.findByRole('heading', {
+      name: 'Your session could not be restored',
+    });
+    await waitFor(() =>
+      expect(heading, 'focus on the "Your session could not be restored" heading').toHaveFocus(),
+    );
+  });
+
+  it('GivenARestoreThatFailed_WhenTheRetryFindsASession_ThenFocusIsOnTheLandingViewsHeading', async () => {
+    let down = true;
+    loadingThrough(A_TENANT, () => (down ? { '/api/auth/refresh': UNREACHABLE } : {}));
+    show();
+    await screen.findByRole('button', { name: 'Try again' });
+
+    down = false;
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    const heading = await screen.findByRole('heading', { name: 'People' });
+    await waitFor(() => expect(heading, 'focus on the "People" heading').toHaveFocus());
   });
 });

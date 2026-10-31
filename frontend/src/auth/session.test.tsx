@@ -1,13 +1,14 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { currentAccessToken, endSession, holdSession } from '../api/session';
 import type { Session } from '../api/session';
 import { SessionProvider } from './SessionProvider';
-import { callsTo, routeTo } from '../test-support/routeTo';
+import { defaultSpan, localDate } from '../components/localDates';
+import { callsTo, holdingWrites, routeTo } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
-import { A_TENANT } from '../test-support/session';
+import { A_TENANT, THE_OPERATOR } from '../test-support/session';
 import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
@@ -37,6 +38,12 @@ function serving(answers: Readonly<Record<string, Answer>>) {
 function signedInBody(session: Session = A_TENANT) {
   return { accessToken: 'token-1', tokenType: 'Bearer', expiresIn: 600, session };
 }
+
+/**
+ * The detail a refused sign-in carries in these tests: invented, and one the page must never repeat,
+ * because the backend's own words could say which of the reasons it was.
+ */
+const ACCOUNT_LOCKED = 'Account locked.';
 
 const NO_COOKIE: Answer = {
   status: 401,
@@ -110,7 +117,7 @@ describe('signing in', () => {
       'POST /api/auth/refresh': NO_COOKIE,
       'POST /api/auth/sign-in': {
         status: 401,
-        body: { title: 'Sign-in refused', detail: 'Those credentials were not accepted.' },
+        body: { title: 'Sign-in refused', detail: ACCOUNT_LOCKED },
       },
     });
     show();
@@ -125,6 +132,7 @@ describe('signing in', () => {
 
     const refusal = await screen.findByRole('alert');
     expect(refusal).toHaveTextContent('Those credentials were not accepted.');
+    expect(refusal).not.toHaveTextContent(ACCOUNT_LOCKED);
     expect(refusal.textContent).not.toMatch(/locked|disabled|unknown|does not exist|no such/i);
   });
 });
@@ -193,8 +201,8 @@ describe('changing a password', () => {
     });
     show();
     await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
-    const heading = await screen.findByRole('heading', { name: 'Change your password' });
-    const form = within(heading.closest('section') as HTMLElement);
+    await screen.findByRole('heading', { name: 'Change your password' });
+    const form = within(screen.getByRole('main'));
 
     await userEvent.type(form.getByLabelText('Current password'), PASSWORD, WITHOUT_PAUSES);
     await userEvent.type(
@@ -227,8 +235,8 @@ describe('changing a password', () => {
     });
     show();
     await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
-    const heading = await screen.findByRole('heading', { name: 'Change your password' });
-    const form = within(heading.closest('section') as HTMLElement);
+    await screen.findByRole('heading', { name: 'Change your password' });
+    const form = within(screen.getByRole('main'));
 
     await userEvent.type(form.getByLabelText('Current password'), PASSWORD, WITHOUT_PAUSES);
     await userEvent.type(
@@ -271,7 +279,11 @@ describe('changing a password', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('do not match');
+    await waitFor(() =>
+      expect(screen.getByLabelText('New password again')).toHaveAccessibleDescription(
+        expect.stringContaining('do not match'),
+      ),
+    );
     expect(stub.mock.calls.filter(([path]) => path === '/api/auth/password')).toHaveLength(0);
   });
 
@@ -611,6 +623,49 @@ describe('where focus goes when the session changes', () => {
     const heading = await screen.findByRole('heading', { name: 'People' });
     await waitFor(() => expect(heading, 'focus on the "People" heading').toHaveFocus());
   });
+
+  it('GivenTheOperatorsCredentials_WhenSignedIn_ThenFocusIsOnTheOrganisationsHeadingAndTheTitleNamesIt', async () => {
+    serving({
+      'POST /api/auth/refresh': NO_COOKIE,
+      'POST /api/auth/sign-in': { status: 200, body: signedInBody(THE_OPERATOR) },
+      '/api/organisations': { status: 200, body: [] },
+    });
+    show();
+
+    await signInAs(THE_OPERATOR.signInName);
+
+    const heading = await screen.findByRole('heading', { name: 'Organisations' });
+    await waitFor(() => expect(heading, 'focus on the "Organisations" heading').toHaveFocus());
+    expect(document.title).toBe('Organisations · HrSched');
+  });
+
+  /** The notice is about the screen that went; the next view change is about something else. */
+  it('GivenTheFirstPasswordChangeAccepted_WhenTheNextTabIsChosen_ThenTheNoticeIsCleared', async () => {
+    serving({
+      'POST /api/auth/refresh': { status: 200, body: signedInBody(MUST_CHANGE) },
+      '/api/auth/session': { status: 200, body: MUST_CHANGE },
+      'POST /api/auth/password': { status: 200, body: signedInBody() },
+    });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await fillChangePassword(screen);
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+    await waitFor(() =>
+      expect(screen.getAllByRole('status').map((status) => status.textContent)).toContainEqual(
+        expect.stringContaining('Your password has been changed'),
+      ),
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Qualifications' }));
+
+    await screen.findByRole('heading', { name: 'Qualifications' });
+    await waitFor(() =>
+      expect(
+        screen.queryAllByRole('status').map((status) => status.textContent),
+        'what the status regions in the shell say',
+      ).not.toContainEqual(expect.stringContaining('Your password has been changed')),
+    );
+  });
 });
 
 /**
@@ -797,8 +852,8 @@ describe('a success that does not outlive its edit', () => {
       });
       show();
       await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
-      const heading = await screen.findByRole('heading', { name: 'Change your password' });
-      const form = within(heading.closest('section') as HTMLElement);
+      await screen.findByRole('heading', { name: 'Change your password' });
+      const form = within(screen.getByRole('main'));
       await fillChangePassword(form);
       await userEvent.click(form.getByRole('button', { name: 'Change password' }));
       await form.findByText('Your password has been changed.');
@@ -820,15 +875,279 @@ describe('what a refused sign-in suggests', () => {
       'POST /api/auth/refresh': NO_COOKIE,
       'POST /api/auth/sign-in': {
         status: 401,
-        body: { title: 'Sign-in refused', detail: 'Those credentials were not accepted.' },
+        body: { title: 'Sign-in refused', detail: ACCOUNT_LOCKED },
       },
     });
     show();
 
     await signInAs('nobody@example.com');
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      "Check your sign-in name and password, or ask your organisation's Admin to reset your password.",
+    const refusal = await screen.findByRole('alert');
+    expect(refusal.textContent).toBe(
+      'Those credentials were not accepted. Check your sign-in name and password. If they are right, ask an administrator.',
     );
+    expect(refusal).not.toHaveTextContent(ACCOUNT_LOCKED);
+  });
+});
+
+/**
+ * The tab and the planning span were somebody's choices, and the last screen somebody saw hints at
+ * the role they held. Whoever signs in next starts where anybody would (#257).
+ */
+describe('what a sign-out leaves for the next person', () => {
+  it('GivenAnAccountThatChangedTheSpanOnAccounts_WhenAnotherAccountSignsInAfterItSignsOut_ThenItLandsOnPeopleWithTheDefaultSpan', async () => {
+    const another: Session = {
+      ...A_TENANT,
+      userId: '77777777-7777-4777-8777-777777777777',
+      signInName: 'grace@example.com',
+    };
+    serving({
+      'POST /api/auth/refresh': { status: 200, body: signedInBody() },
+      '/api/auth/session': { status: 200, body: A_TENANT },
+      'POST /api/auth/sign-out': { status: 204, body: null },
+      'POST /api/auth/sign-in': { status: 200, body: signedInBody(another) },
+    });
+    show();
+    await userEvent.click(await screen.findByRole('button', { name: 'Accounts' }));
+    // An invented date, far from today's span.
+    fireEvent.change(screen.getByLabelText('Span from'), { target: { value: '2031-01-06' } });
+    expect(screen.getByLabelText('Span from')).toHaveValue('2031-01-06');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await signInAs(another.signInName);
+
+    expect(await screen.findByRole('button', { name: 'People' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    const fresh = defaultSpan(new Date());
+    expect(screen.getByLabelText('Span from')).toHaveValue(localDate(fresh.from));
+    expect(screen.getByLabelText('Span to')).toHaveValue(localDate(fresh.to));
+  });
+});
+
+/** An invented refusal of a new password, in words only the backend would choose. */
+const COMMON_PASSWORD = 'An invented refusal: that password is on a list of common ones.';
+
+/** The forced change, restored, with the password change answered as `answer`. */
+function forcedChangeAnswering(answer: Answer) {
+  return serving({
+    'POST /api/auth/refresh': { status: 200, body: signedInBody(MUST_CHANGE) },
+    '/api/auth/session': { status: 200, body: MUST_CHANGE },
+    'POST /api/auth/password': answer,
+  });
+}
+
+/**
+ * The backend's refusal is the only place its password rule is stated, so it stays while the
+ * password is written again, and goes when the next one is sent (#257, C6).
+ */
+describe('a refusal that stays until the next send', () => {
+  it('GivenANewPasswordTheBackendRefused_WhenTypingInItAgain_ThenTheRefusalStaysAtTheField', async () => {
+    forcedChangeAnswering({ status: 422, body: { detail: COMMON_PASSWORD } });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await fillChangePassword(screen);
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+    const replacement = screen.getByLabelText('New password');
+    await waitFor(() => expect(replacement).toHaveAttribute('aria-invalid', 'true'));
+
+    await userEvent.type(replacement, 'x', WITHOUT_PAUSES);
+
+    expect(replacement).toHaveAttribute('aria-invalid', 'true');
+    expect(replacement).toHaveAccessibleDescription(expect.stringContaining(COMMON_PASSWORD));
+    expect(screen.getByRole('alert')).toHaveTextContent(COMMON_PASSWORD);
+  });
+
+  it('GivenARefusalOnScreen_WhenTheFormIsSentAgain_ThenTheRefusalIsCleared', async () => {
+    const routed = forcedChangeAnswering({ status: 422, body: { detail: COMMON_PASSWORD } });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await fillChangePassword(screen);
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+    const replacement = screen.getByLabelText('New password');
+    await waitFor(() => expect(replacement).toHaveAttribute('aria-invalid', 'true'));
+    const release = holdingWrites(routed);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    try {
+      expect(replacement).not.toHaveAttribute('aria-invalid');
+      expect(replacement).not.toHaveAccessibleDescription(expect.stringContaining(COMMON_PASSWORD));
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    } finally {
+      release();
+      await screen.findByRole('alert');
+    }
+  });
+
+  /**
+   * The same refusal twice is a new alert, not the old one left in place: a screen reader announces
+   * an alert as it appears, and says nothing of one whose text did not change.
+   */
+  it('GivenARefusalTheBackendRepeats_WhenSentAgain_ThenItIsRaisedAsANewAlert', async () => {
+    forcedChangeAnswering({ status: 422, body: { detail: COMMON_PASSWORD } });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await fillChangePassword(screen);
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+    const first = await screen.findByRole('alert');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    await waitFor(() => expect(screen.getByRole('alert'), 'a new alert').not.toBe(first));
+    expect(screen.getByRole('alert')).toHaveTextContent(COMMON_PASSWORD);
+  });
+});
+
+/** A 403 to a password change is the current password the backend did not accept (#257, C6). */
+describe('a wrong current password', () => {
+  it('GivenACurrentPasswordTheBackendRefuses_WhenShown_ThenTheCurrentPasswordIsInvalidAndDescribedByTheReason', async () => {
+    const refusal = 'The current password is not right.';
+    forcedChangeAnswering({ status: 403, body: { detail: refusal } });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+
+    await fillChangePassword(screen);
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    const current = screen.getByLabelText('Current password');
+    await waitFor(() => expect(current).toHaveAttribute('aria-invalid', 'true'));
+    expect(current).toHaveAccessibleDescription(expect.stringContaining(refusal));
+    expect(screen.getByLabelText('New password')).not.toHaveAttribute('aria-invalid');
+  });
+});
+
+/**
+ * Focus moves to the confirmation, whose description is the mismatch, so the field is what says
+ * it. An alert as well would say it twice (#257).
+ */
+describe('a mismatch said once', () => {
+  it('GivenTwoNewPasswordsThatDiffer_WhenSubmitted_ThenNoAlertIsRaisedAndTheConfirmationsDescriptionSaysIt', async () => {
+    forcedChangeAnswering({ status: 200, body: signedInBody() });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+
+    await fillChangePassword(screen, 'one invented password', 'a different one');
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    const confirmation = screen.getByLabelText('New password again');
+    await waitFor(() => expect(confirmation).toHaveFocus());
+    expect(confirmation).toHaveAccessibleDescription(
+      expect.stringContaining('The two new passwords do not match.'),
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The button's own name changes while it is in flight, but a changed name on the focused control
+ * is not reliably announced, so a status region already on the page says it (#257, C3).
+ */
+describe('what is said while a form sends', () => {
+  it('GivenASignIn_WhenItIsInFlight_ThenAStatusAlreadyOnThePageSaysSigningIn', async () => {
+    const { release } = holding(
+      {
+        'POST /api/auth/refresh': NO_COOKIE,
+        'POST /api/auth/sign-in': { status: 200, body: signedInBody() },
+        '/api/auth/session': { status: 200, body: A_TENANT },
+      },
+      'POST /api/auth/sign-in',
+    );
+    show();
+    await screen.findByRole('heading', { name: 'Sign in' });
+    const status = within(screen.getByRole('main')).getByRole('status');
+
+    await signInAs(A_TENANT.signInName);
+
+    try {
+      expect(status).toHaveTextContent('Signing in…');
+    } finally {
+      release();
+      await screen.findByRole('button', { name: 'People' });
+    }
+  });
+
+  it('GivenAPasswordChange_WhenItIsInFlight_ThenAStatusAlreadyOnThePageSaysChangingYourPassword', async () => {
+    const { release } = holding(
+      {
+        'POST /api/auth/refresh': { status: 200, body: signedInBody(MUST_CHANGE) },
+        '/api/auth/session': { status: 200, body: MUST_CHANGE },
+        'POST /api/auth/password': { status: 200, body: signedInBody() },
+      },
+      'POST /api/auth/password',
+    );
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    const status = within(screen.getByRole('main')).getByRole('status');
+    await fillChangePassword(screen);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    try {
+      expect(status).toHaveTextContent('Changing your password…');
+    } finally {
+      release();
+      await screen.findByRole('button', { name: 'People' });
+    }
+  });
+});
+
+/** A refusal ends the request it answered, so the form takes the next one (#257, C1). */
+describe('a resubmit after a refusal', () => {
+  it('GivenARefusedSignIn_WhenSubmittedAgain_ThenASecondSignInIsSent', async () => {
+    const stub = serving({
+      'POST /api/auth/refresh': NO_COOKIE,
+      'POST /api/auth/sign-in': { status: 401, body: { detail: ACCOUNT_LOCKED } },
+    });
+    show();
+    await signInAs('nobody@example.com');
+    await screen.findByRole('alert');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-in'), 'the sign-ins sent').toHaveLength(2),
+    );
+  });
+
+  it('GivenARefusedPasswordChange_WhenSubmittedAgain_ThenASecondChangeIsSent', async () => {
+    const stub = forcedChangeAnswering({ status: 422, body: { detail: COMMON_PASSWORD } });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await fillChangePassword(screen);
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+    await screen.findByRole('alert');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/password'), 'the changes sent').toHaveLength(2),
+    );
+  });
+});
+
+/**
+ * A renewal for the account on screen changes nothing anybody is looking at, so it moves nothing:
+ * somebody typing carries on where they were (#257, C4).
+ */
+describe('a renewal while somebody types', () => {
+  it('GivenSomebodyTypingInAField_WhenTheSameAccountsSessionIsRenewed_ThenFocusStaysInThatField', async () => {
+    serving({
+      'POST /api/auth/refresh': { status: 200, body: signedInBody() },
+      '/api/auth/session': { status: 200, body: A_TENANT },
+    });
+    show();
+    await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
+    await screen.findByRole('heading', { name: 'Change your password' });
+    const current = screen.getByLabelText('Current password');
+    await userEvent.type(current, PASSWORD, WITHOUT_PAUSES);
+
+    act(() => {
+      holdSession(signedInBody());
+    });
+
+    expect(current, 'focus on "Current password"').toHaveFocus();
+    expect(current).toHaveValue(PASSWORD);
   });
 });

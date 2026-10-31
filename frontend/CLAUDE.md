@@ -1,7 +1,7 @@
 <!--
 Maintainers: this file loads the first time a file under frontend/ is read or edited, on top of
 .claude/CLAUDE.md, which every session already has. It holds what only frontend work needs. Keep
-it under about 60 lines; the commands stay in .claude/CLAUDE.md because running one reads no
+it under about 70 lines; the commands stay in .claude/CLAUDE.md because running one reads no
 file. Prettier checks this file as part of npm run verify. This comment is stripped before Claude
 sees the file.
 -->
@@ -13,11 +13,11 @@ sees the file.
 `frontend/` is a React 19 SPA built by Vite (ADR-013):
 
 - `src/api/` — the typed client. `client.ts` is the **only** module that calls `fetch` (lint
-  refuses it anywhere else) or names a header. Every request carries the bearer token except
-  refresh and sign-out, whose credential is the refresh cookie plus `X-Requested-With` (ADR-028).
-  `session.ts` holds the access token in memory; `problem.ts` validates the error body rather than
-  casting it; `scheduling.ts`, `workforce.ts`, `access.ts` and `notifications.ts` mirror the
-  backend DTOs, one module per context.
+  refuses it anywhere else) or names a header. Every request carries the bearer
+  token except refresh and sign-out, whose credential is the refresh cookie plus
+  `X-Requested-With` (ADR-028). `session.ts` holds the access token in memory; `problem.ts`
+  validates the error body rather than casting it; `scheduling.ts`, `workforce.ts`, `access.ts`
+  and `notifications.ts` mirror the backend DTOs, one module per context.
 - `src/auth/` — `SessionProvider` and the sign-in, change-password and session-bar screens
   (ADR-011, ADR-028).
 - `src/pages/` — the screens, one `*Page` per capability, and the parts of a screen:
@@ -45,10 +45,11 @@ sees the file.
   `Enforced by` column in `requirements.md` names only backend classes and tests.
 - **Never put a suggested working-time number in a form field.** A default is a legal threshold
   chosen by a developer — the statute rule in `.claude/CLAUDE.md` covers the UI too.
-- **Frontend versions are ahead of most published guidance** (React 19, Vite 8, TypeScript 6,
-  ESLint 10, Vitest 5): check the installed package before trusting a recalled API. Found this
-  way: `defineConfig` comes from `vitest/config`, and `eslint-plugin-react-hooks` 7 keeps its flat
-  config under `configs.flat`.
+- **Frontend versions are ahead of most published guidance.** React 19, Vite 8, TypeScript 6,
+  ESLint 10, Vitest 5. Check the installed package before trusting a recalled API — the same
+  discipline the Spring Boot 4.x renames forced. Already found this way: Vitest 4 moves the `test`
+  key off Vite's config type (import `defineConfig` from `vitest/config`), and
+  `eslint-plugin-react-hooks` 7 exposes flat config under `configs.flat`.
 - **A frontend dependency's justification is its row in `architecture.md`'s dependency table**,
   because `package.json` cannot hold a comment. Adding, replacing or removing one updates its row
   in the same commit, and a choice between alternatives gets an ADR. ADR-051 records the reasons
@@ -56,21 +57,17 @@ sees the file.
 
 ## Focus and announcements
 
-WCAG 2.2 AA, as #257 applies it. Tests assert these through roles, names, descriptions and
-`toHaveFocus()`, never through markup.
+WCAG 2.2 AA as #257 applies it (ADR-059). Tests assert roles, names and focus, never markup.
 
-- **C1** A button in flight is `aria-disabled`, never `disabled`, which drops focus to the page;
-  its handler ignores a press meanwhile (`SignOutUnconfirmedPage`).
-- **C2** An action that removes the focused control moves focus to a named target: its row's
-  `<th scope="row" tabIndex={-1}>`, or its section's heading.
+- **C1** A button in flight is `aria-disabled` (`disabled` drops focus) and ignores a press.
+- **C2** Removing the focused control focuses its row's `<th scope="row" tabIndex={-1}>`, its
+  section's heading, or the control that takes its place (the shift's picker after Remove).
 - **C3** A successful write says so in a `role="status"` present before its text.
-- **C4** A view change focuses the heading of what appeared. `App` does it for a tab, a sign-in,
-  the end of the forced password change and a retried restore, and titles it `<view> · HrSched`.
-- **C5** A control that cannot act yet is `aria-disabled` and described by a visible hint; a load
-  that failed offers to try again.
-- **C6** A refusal shows at its cause, inside its row or item; a field it is about is
-  `aria-invalid` and described by the message.
+- **C4** A view change focuses its heading, and titles the page `<view> · HrSched`.
+- **C5** A control that cannot act yet is `aria-disabled` and described by a visible hint; a form
+  that waits for stored values says so, and offers to try again when their load failed.
+- **C6** A refusal shows at its cause, inside its row or item, pinned to the visible part of a
+  scrolled table; a field it is about is `aria-invalid` and described by it until the next send.
 - **C7** A repeated button's `aria-label` starts with its visible text, then names its item.
-- **C8** A table has a `<caption>` (`visually-hidden` when a heading shows it), every header cell a
-  name, an empty list says so, and a wide table sits in a focusable `.table-scroll` region.
-- **C9** A success status clears as soon as its form is edited again.
+- **C8** A table has a `<caption>`, named headers, an empty-list message; if wide, `.table-scroll`.
+- **C9** A success status clears as soon as the form or row it reported is edited again.

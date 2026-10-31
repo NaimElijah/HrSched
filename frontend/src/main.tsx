@@ -10,12 +10,14 @@ if (root === null) {
   throw new Error('index.html must contain #root');
 }
 
+// The boundary sits inside the provider, so "Try again" re-renders the shell over the session it
+// had. Outside it, a retry would remount the provider and restore the session from the start.
 createRoot(root).render(
   <StrictMode>
-    <ErrorBoundary>
-      <SessionProvider>
+    <SessionProvider>
+      <ErrorBoundary>
         <App />
-      </SessionProvider>
-    </ErrorBoundary>
+      </ErrorBoundary>
+    </SessionProvider>
   </StrictMode>,
 );
