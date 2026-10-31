@@ -387,7 +387,7 @@ applicant tracking, and being the HR system of record.
 | Q3 | Single organisation or multi-tenant | Multi-tenant: independent organisations, strict isolation | 2026-08-30 |
 | Q4 | Whose working-time rules apply | None hardcoded. A configurable constraint set; jurisdictions are presets | 2026-08-30 |
 | Q5 | Where it runs | Containerised, provider deferred to its own ADR | 2026-08-30 |
-| Q6 | How rosters are built | Automatic generation is the point — [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md) | 2026-08-30 |
+| Q6 | How rosters are built | Automatic generation is the point — [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md), superseded by [ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md) | 2026-08-30 |
 | Q7 | Who administers organisations | A platform Operator, the only identity crossing tenants | 2026-08-30 |
 | Q9 | A published roster when rules change | It keeps the version that approved it; changes are never retroactive | 2026-08-30 |
 | Q10 | Emergency cover without an override | Supersede with a new compliant roster | 2026-08-30 |
