@@ -48,7 +48,10 @@ label {
   gap: 0.2rem;
   font-size: 0.82rem;
   color: #5f5a52;
-  /* Lets the field inside it be capped: an auto-width label otherwise grows to the field. */
+  /*
+   * Never wider than its container. Its field is stretched to its width, so this is the rule that
+   * keeps a long select from pushing a 320 px page sideways (1.4.10).
+   */
   max-width: 100%;
 }
 
@@ -60,9 +63,9 @@ select {
   border-radius: 4px;
   background: #fff;
   /*
-   * Never wider than its container, so a field does not push a 320 px page sideways (1.4.10): the
-   * minimum gives way to a narrow container, and the maximum stops a select growing to its longest
-   * option, such as an employee's name with an identifier.
+   * The minimum gives way to a narrow container. The maximum is a backstop for a field no label
+   * stretches. Held to its container, a select shows only what fits of a long option: the closed
+   * select cuts it off, and a multiple select cuts off every option it lists (#175).
    */
   min-width: min(12rem, 100%);
   max-width: 100%;
@@ -210,9 +213,9 @@ table {
   overflow-x: auto;
   container-type: inline-size;
   /*
-   * A containing block, so what the table positions absolutely, such as a visually hidden
-   * "Actions" header, is clipped with it. Otherwise it sits where the scrolled column is and
-   * widens the page at 320 px.
+   * A containing block, so an absolutely positioned descendant, such as a visually hidden caption
+   * or "Actions" header, scrolls and is clipped with the table. Otherwise it stays at its column's
+   * unscrolled position and widens the page at 320 px.
    */
   position: relative;
 }
