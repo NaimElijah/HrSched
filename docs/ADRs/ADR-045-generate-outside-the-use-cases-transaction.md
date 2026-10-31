@@ -1,6 +1,11 @@
 # ADR-045: Generate outside the use case's transaction, between a read and a write
 
 - **Status:** Accepted
+  - **Amended 2026-10-31:**
+    [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) replaces
+    `PlanRostersUseCase.generateDraft` with `startGeneration` and moves the solve onto a background
+    thread. The proxy leaves `startGeneration` outside any transaction, and the flow that ends in
+    storing the draft now runs on that thread, not in the request.
 - **Date:** 2026-10-22
 
 ## Context

@@ -1,6 +1,9 @@
 # ADR-031: Take the organisation from the account, not from the request
 
 - **Status:** Accepted
+  - **Erratum 2026-10-31:** "Each web adapter has one `actingIn(actor)` helper", under Decision,
+    should read: each tenant web adapter has one such helper, named `organisationOf` in
+    `AccountController`. `AuthController` and `OrganisationController` have none.
 - **Date:** 2026-09-21
 - **Supersedes:** [ADR-020](ADR-020-refuse-a-request-naming-an-unknown-organisation.md)
 

@@ -7,7 +7,10 @@ merged. It does not model the public deployment: nothing is deployed yet (milest
 topology, which is out of scope here. What only the edge can provide appears below as a residual
 risk and nowhere else.
 
-Checked against `dev` at `5949451`, with the fixes of #250 merged.
+Written against `dev` at `5949451`, with the fixes of #250 merged. Later pull requests have
+updated it alongside the changes it describes. The docs-drift scan (#259) resolved
+every class, test and file it names against `dev` at `5d41501`; it checked that the references
+resolve, not the security analysis.
 
 This document states **threats and what stops them**. *What* the system must do is in
 [requirements.md](../requirements/requirements.md), *how* it is built in
