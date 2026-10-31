@@ -395,8 +395,8 @@ Every decision, and every one still waiting to be recorded, is in the
 
 **Pre-release.** It works end to end locally and has never been deployed. The
 [milestones](https://github.com/NaimElijah/HrSched/milestones) track the rest: M0 (the full-system
-scans now running), M1 (v1 complete), M2 (engineering baseline), M3 (AWS staging), M4 (production)
-and M5 (ML that proposes, never decides). The
+scans), M1 (v1 complete), M2 (engineering baseline), M3 (AWS staging), M4 (production) and M5 (ML
+that proposes, never decides). The
 [requirements](docs/requirements/requirements.md) mark each row decided but `not yet` built.
 
 **Known limitations:**
