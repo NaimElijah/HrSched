@@ -38,6 +38,10 @@ public record PublishedAccount(
     boolean locked,
     Instant createdAt) {
 
+  /**
+   * @throws NullPointerException if {@code id}, {@code signInName}, {@code role}, {@code employee}
+   *     or {@code createdAt} is null
+   */
   public PublishedAccount {
     Objects.requireNonNull(id, "id must not be null");
     Objects.requireNonNull(signInName, "signInName must not be null");

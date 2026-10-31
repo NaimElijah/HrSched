@@ -29,6 +29,10 @@ public record CreateAccountCommand(
     Role role,
     Optional<EmployeeId> employee) {
 
+  /**
+   * @throws NullPointerException if {@code organisation}, {@code signInName}, {@code
+   *     temporaryPassword}, {@code role} or {@code employee *} is null
+   */
   public CreateAccountCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(signInName, "signInName must not be null");

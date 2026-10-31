@@ -36,6 +36,10 @@ public class JdbcOrganisationRepository implements OrganisationRepository {
 
   private final JdbcClient jdbc;
 
+  /**
+   * @param jdbc the client every statement runs through
+   * @throws NullPointerException if {@code jdbc} is null
+   */
   public JdbcOrganisationRepository(JdbcClient jdbc) {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
   }

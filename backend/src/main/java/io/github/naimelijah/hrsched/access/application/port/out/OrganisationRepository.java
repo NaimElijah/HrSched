@@ -35,6 +35,10 @@ public interface OrganisationRepository {
    */
   void save(Organisation organisation);
 
+  /**
+   * @param id the organisation to read; the organisation asked about, not a scope to filter by
+   * @return the organisation, or empty if none is registered under that identity
+   */
   Optional<Organisation> findById(OrganisationId id);
 
   /**

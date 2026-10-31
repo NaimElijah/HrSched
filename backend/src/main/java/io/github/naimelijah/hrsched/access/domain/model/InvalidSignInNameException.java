@@ -10,6 +10,7 @@ package io.github.naimelijah.hrsched.access.domain.model;
  */
 public class InvalidSignInNameException extends RuntimeException {
 
+  /** Creates the exception with a fixed message that states the rule and never quotes the name. */
   public InvalidSignInNameException() {
     super(
         "A sign-in name must not be blank, must not be longer than the permitted maximum, and must"

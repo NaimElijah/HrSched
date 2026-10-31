@@ -22,6 +22,10 @@ import java.util.Optional;
 public record ChangeMembershipCommand(
     OrganisationId organisation, UserId account, Role role, Optional<EmployeeId> employee) {
 
+  /**
+   * @throws NullPointerException if {@code organisation}, {@code account}, {@code role} or {@code
+   *     employee} is null
+   */
   public ChangeMembershipCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(account, "account must not be null");

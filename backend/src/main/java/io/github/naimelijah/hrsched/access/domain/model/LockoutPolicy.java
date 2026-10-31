@@ -12,14 +12,19 @@ import java.util.Objects;
  * chosen by a developer is a policy nobody agreed to.
  *
  * <p>A lock is a deliberate trade. It stops an online guessing attack, and it hands anyone who
- * knows a sign-in name a way to keep its owner out. That is recorded as an open question rather
- * than solved here.
+ * knows a sign-in name a way to keep its owner out. ADR-011 records that cost, and issue #142 is
+ * the open decision about it; this class does not remove it.
  *
  * @param threshold consecutive failures that lock the account, at least one
  * @param duration how long the lock lasts, strictly positive
  */
 public record LockoutPolicy(int threshold, Duration duration) {
 
+  /**
+   * @throws NullPointerException if {@code duration} is null
+   * @throws IllegalArgumentException if {@code threshold} is below one or {@code duration} is zero
+   *     or negative
+   */
   public LockoutPolicy {
     Objects.requireNonNull(duration, "duration must not be null");
     if (threshold < 1) {

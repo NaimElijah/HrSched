@@ -39,6 +39,10 @@ import java.util.UUID;
 public record AuditedChange(
     Optional<OrganisationId> organisation, UserId actor, AccessChange change, UUID subject) {
 
+  /**
+   * @throws NullPointerException if {@code organisation}, {@code actor}, {@code change} or {@code
+   *     subject} is null
+   */
   public AuditedChange {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(actor, "actor must not be null");

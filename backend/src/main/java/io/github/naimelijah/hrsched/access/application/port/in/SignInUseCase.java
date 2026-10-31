@@ -3,8 +3,9 @@ package io.github.naimelijah.hrsched.access.application.port.in;
 /**
  * Driving port: exchanging a name and a password for a session.
  *
- * <p>The only way into this system. Every other endpoint requires a token, and this is where one
- * comes from.
+ * <p>The only way to turn a name and a password into a session. Everything else that acts as
+ * somebody needs a token, and this is where the first one comes from; renewing a session takes its
+ * refresh token instead ({@link SessionsUseCase}).
  */
 public interface SignInUseCase {
 

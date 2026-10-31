@@ -15,6 +15,9 @@ import java.util.Objects;
  */
 public record PublishedOrganisation(OrganisationId id, String name) {
 
+  /**
+   * @throws NullPointerException if {@code id} or {@code name} is null
+   */
   public PublishedOrganisation {
     Objects.requireNonNull(id, "id must not be null");
     Objects.requireNonNull(name, "name must not be null");

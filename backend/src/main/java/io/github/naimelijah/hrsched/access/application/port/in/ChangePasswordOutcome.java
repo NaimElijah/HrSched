@@ -28,6 +28,9 @@ public sealed interface ChangePasswordOutcome {
    */
   record Changed(IssuedSession session) implements ChangePasswordOutcome {
 
+    /**
+     * @throws NullPointerException if {@code session} is null
+     */
     public Changed {
       Objects.requireNonNull(session, "session must not be null");
     }
@@ -43,6 +46,9 @@ public sealed interface ChangePasswordOutcome {
    */
   record CurrentPasswordRejected(CurrentPasswordRefusal reason) implements ChangePasswordOutcome {
 
+    /**
+     * @throws NullPointerException if {@code reason} is null
+     */
     public CurrentPasswordRejected {
       Objects.requireNonNull(reason, "reason must not be null");
     }
@@ -55,6 +61,9 @@ public sealed interface ChangePasswordOutcome {
    */
   record NewPasswordRejected(PasswordRejection reason) implements ChangePasswordOutcome {
 
+    /**
+     * @throws NullPointerException if {@code reason} is null
+     */
     public NewPasswordRejected {
       Objects.requireNonNull(reason, "reason must not be null");
     }

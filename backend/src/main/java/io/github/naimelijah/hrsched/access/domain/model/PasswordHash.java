@@ -22,6 +22,10 @@ import java.util.Objects;
  */
 public record PasswordHash(String value) {
 
+  /**
+   * @throws NullPointerException if {@code value} is null
+   * @throws IllegalArgumentException if {@code value} is blank
+   */
   public PasswordHash {
     Objects.requireNonNull(value, "value must not be null");
     if (value.isBlank()) {

@@ -60,6 +60,19 @@ class AccessTokenDecoderTest {
   /** Invented: the fixed instant the clock reads. */
   private static final Instant NOW = Instant.parse("2026-09-20T09:00:00Z");
 
+  /**
+   * Not invented: the clock skew the decoder's documentation promises, which is Spring Security's
+   * default ({@code JwtTimestampValidator.DEFAULT_MAX_CLOCK_SKEW}) because the decoder keeps it. If
+   * an upgrade changes that default, the skew tests fail and the documentation must change too.
+   */
+  private static final Duration DOCUMENTED_CLOCK_SKEW = Duration.ofMinutes(1);
+
+  /**
+   * Invented: how far either side of the skew the boundary tests decode, wide enough that an
+   * off-by-one in how the edge itself is compared is not what they test.
+   */
+  private static final Duration SKEW_BOUNDARY_MARGIN = Duration.ofSeconds(1);
+
   private static final UserId ACCOUNT = UserId.newId();
   private static final SignInSessionId SESSION = SignInSessionId.newId();
   private static final String SESSION_CLAIM = "sid";
@@ -165,6 +178,32 @@ class AccessTokenDecoderTest {
     assertThatThrownBy(() -> decoder.decode(token)).isInstanceOf(JwtException.class);
   }
 
+  /**
+   * The decoder keeps Spring Security's default clock skew, and its documentation promises a token
+   * is accepted until a minute past its expiry. Decoded a little inside that minute, it still
+   * works.
+   */
+  @Test
+  void GivenATokenJustInsideTheClockSkewPastItsExpiry_WhenDecoding_ThenItIsAccepted() {
+    String token = issuer.issue(ACCOUNT, SESSION).value();
+    Instant expiry = NOW.plus(LIFETIME);
+
+    Jwt decoded =
+        decoderAt(expiry.plus(DOCUMENTED_CLOCK_SKEW).minus(SKEW_BOUNDARY_MARGIN)).decode(token);
+
+    assertThat(decoded.getExpiresAt()).isEqualTo(expiry);
+  }
+
+  /** The other side of the same promise: a little past that minute, the token is refused. */
+  @Test
+  void GivenATokenJustBeyondTheClockSkewPastItsExpiry_WhenDecoding_ThenItIsRefused() {
+    String token = issuer.issue(ACCOUNT, SESSION).value();
+    AccessTokenDecoder later =
+        decoderAt(NOW.plus(LIFETIME).plus(DOCUMENTED_CLOCK_SKEW).plus(SKEW_BOUNDARY_MARGIN));
+
+    assertThatThrownBy(() -> later.decode(token)).isInstanceOf(JwtException.class);
+  }
+
   /** Without an expiry a stolen token never stops working, so an absent one is not "no limit". */
   @Test
   void GivenATokenWithoutAnExpiry_WhenDecoding_ThenItIsRefused() throws Exception {
@@ -228,6 +267,11 @@ class AccessTokenDecoderTest {
     String token = signedWith(key.privateKey(), "JWT", validClaims().build());
 
     assertThatThrownBy(() -> decoder.decode(token)).isInstanceOf(JwtException.class);
+  }
+
+  /** The same decoder as the bean, measuring expiry against a clock fixed at {@code instant}. */
+  private AccessTokenDecoder decoderAt(Instant instant) {
+    return new AccessTokenDecoder(key, properties, Clock.fixed(instant, ZoneOffset.UTC));
   }
 
   private JWTClaimsSet.Builder validClaims() {

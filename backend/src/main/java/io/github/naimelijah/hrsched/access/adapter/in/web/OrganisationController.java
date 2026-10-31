@@ -21,11 +21,10 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Driving adapter exposing organisation administration over HTTP (requirement F13).
  *
- * <p><strong>The first controller to take its identity from the access token.</strong> Who is
- * acting is the account the token names, resolved against stored state on every request, rather
- * than four headers any caller could write. Which of these routes each kind of account may reach is
- * stated twice on purpose: in the security chain's URL rules, and in the use case's own guard. The
- * rules are the coarse outer line; the guard is the one that decides.
+ * <p><strong>Who is acting is the account the access token names</strong>, resolved against stored
+ * state on every request, never a header or a body. Which of these routes each kind of account may
+ * reach is stated twice on purpose: in the security chain's URL rules, and in the use case's own
+ * guard. The rules are the coarse outer line; the guard is the one that decides.
  *
  * <p>Reading one organisation is the place in the HTTP API where the tenant guard genuinely fires:
  * the identity comes from the token and the target from the path, so unlike an endpoint that takes
@@ -38,10 +37,22 @@ public class OrganisationController {
 
   private final ManageOrganisationsUseCase manageOrganisations;
 
+  /**
+   * @param manageOrganisations the use case that onboards, lists and reads organisations
+   */
   public OrganisationController(ManageOrganisationsUseCase manageOrganisations) {
     this.manageOrganisations = manageOrganisations;
   }
 
+  /**
+   * Onboards an organisation together with its first Admin; the platform operator's alone.
+   *
+   * @param actor whoever is onboarding it, taken from their verified token
+   * @param request the organisation's name and its first Admin
+   * @return 201 with a {@code Location} naming the new organisation, and its identity and name in
+   *     the body. A refused password, a name nobody can hold, or a sign-in name already in use is
+   *     answered by {@link AccessExceptionHandler}, and nothing is left behind
+   */
   @PostMapping
   public ResponseEntity<OrganisationResponse> onboard(
       @AuthenticationPrincipal Actor actor, @RequestBody OnboardOrganisationRequest request) {
@@ -56,6 +67,13 @@ public class OrganisationController {
         .body(new OrganisationResponse(id.value(), request.requiredName()));
   }
 
+  /**
+   * Lists every organisation on the platform, by name and then by identity; the platform operator's
+   * alone.
+   *
+   * @param actor whoever is asking, taken from their verified token
+   * @return 200 with the register
+   */
   @GetMapping
   public List<OrganisationResponse> list(@AuthenticationPrincipal Actor actor) {
     return manageOrganisations.findOrganisations(actor).stream()
@@ -66,6 +84,7 @@ public class OrganisationController {
   /**
    * Reads one organisation: any of them for the operator, only their own for anybody else.
    *
+   * @param actor whoever is asking, taken from their verified token
    * @param id the organisation to read
    * @return it
    * @throws UnknownOrganisationException answered as a 404 problem detail when there is no

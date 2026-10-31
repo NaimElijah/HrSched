@@ -20,6 +20,10 @@ import java.util.Optional;
  * <p>Neither number is a constant here. The floor is configuration; the ceiling comes from whatever
  * hasher is in use, through its own port.
  *
+ * <p>Differing from the password already in use is a rule too, but it needs that password's hash,
+ * so {@code SessionService} applies it beside this policy and {@link #assess} never reports {@link
+ * PasswordRejection#SAME_AS_CURRENT}.
+ *
  * <p>Nothing in this class ever holds, returns or reports the candidate.
  *
  * @param minimumLength the fewest code points a password may have
@@ -27,6 +31,10 @@ import java.util.Optional;
  */
 public record PasswordPolicy(int minimumLength, int maximumBytes) {
 
+  /**
+   * @throws IllegalArgumentException if {@code minimumLength} is below one, or {@code maximumBytes}
+   *     is below it
+   */
   public PasswordPolicy {
     if (minimumLength < 1) {
       throw new IllegalArgumentException("A password must be at least one character long");

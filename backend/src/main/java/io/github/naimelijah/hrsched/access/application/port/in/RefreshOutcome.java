@@ -23,6 +23,9 @@ public sealed interface RefreshOutcome {
    */
   record Renewed(IssuedSession session) implements RefreshOutcome {
 
+    /**
+     * @throws NullPointerException if {@code session} is null
+     */
     public Renewed {
       Objects.requireNonNull(session, "session must not be null");
     }
@@ -40,6 +43,9 @@ public sealed interface RefreshOutcome {
    */
   record Refused(Optional<UUID> session, RefreshRefusal reason) implements RefreshOutcome {
 
+    /**
+     * @throws NullPointerException if {@code session} or {@code reason} is null
+     */
     public Refused {
       Objects.requireNonNull(session, "session must not be null");
       Objects.requireNonNull(reason, "reason must not be null");

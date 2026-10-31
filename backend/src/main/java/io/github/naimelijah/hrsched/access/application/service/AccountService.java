@@ -68,6 +68,16 @@ public class AccountService implements BootstrapOperatorUseCase, ManageAccountsU
   private final AuditTrail audit;
   private final Clock clock;
 
+  /**
+   * @param accounts where accounts are read and stored
+   * @param sessions where the sessions an account holds are ended
+   * @param employees answers whether an employee belongs to an organisation
+   * @param passwords hashes the temporary passwords it is given
+   * @param passwordPolicy what a temporary password must satisfy
+   * @param audit where access changes are recorded
+   * @param clock where the instants of its writes come from
+   * @throws NullPointerException if any argument is null
+   */
   public AccountService(
       AccountRepository accounts,
       SessionRepository sessions,

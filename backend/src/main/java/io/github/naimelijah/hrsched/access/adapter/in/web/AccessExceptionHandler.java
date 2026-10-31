@@ -41,9 +41,11 @@ import tools.jackson.databind.exc.UnrecognizedPropertyException;
  * a different thing and is a 403: it discloses nothing, since the caller already knows whether they
  * claimed to be the operator.
  *
- * <p>It is also where these refusals are recorded, because it is the only place that sees every one
- * of them. The caller is told exactly what it was told before; only the operator gains anything.
- * See ADR-018.
+ * <p>It is also where several of these refusals are logged and counted, because it is the one place
+ * that sees every exception the access controllers raise ({@link AuthController} records its own
+ * sign-in, renewal and current-password refusals itself; its 422 for a refused new password is
+ * neither logged nor counted). Recording changes nothing the caller is told; it is for whoever runs
+ * the deployment. See ADR-018.
  *
  * <p>It covers {@link AuthController} and {@link AccountController} as well, and for the first the
  * reason is narrower than it looks: a body Jackson cannot read is answered here with a message of
@@ -56,7 +58,11 @@ public class AccessExceptionHandler {
 
   private static final Logger log = LoggerFactory.getLogger(AccessExceptionHandler.class);
 
-  /** Shared with the other handlers, so one query answers "who was refused" across all of them. */
+  /**
+   * The meter a refusal of access counts into, tagged with the {@code kind} of refusal. Every class
+   * that counts one uses this name, so that one query answers "who was refused" across all of them
+   * and the {@code kind} tag tells them apart.
+   */
   private static final String DENIED = "hrsched.access.denied";
 
   /**
@@ -88,9 +94,15 @@ public class AccessExceptionHandler {
         .increment();
   }
 
-  // The two invalid-name exceptions' messages name the rule and never the name, so they can be the
-  // detail. Without them here a refused name - blank, over-long, or carrying a NUL or an unpaired
-  // surrogate - would escape every handler and answer 500.
+  /**
+   * A request body the adapter or the domain refuses as invalid: a member it requires is missing,
+   * an employee link is not a UUID, or an organisation or sign-in name is one the domain refuses. A
+   * 400 whose detail is the exception's message.
+   *
+   * <p>The two invalid-name exceptions' messages name the rule and never the name, so they can be
+   * the detail. Without them here a refused name - blank, over-long, or carrying a NUL or an
+   * unpaired surrogate - would escape every handler and answer 500.
+   */
   @ExceptionHandler({
     InvalidOrganisationNameException.class,
     InvalidSignInNameException.class,

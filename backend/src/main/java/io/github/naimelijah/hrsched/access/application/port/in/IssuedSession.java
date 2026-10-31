@@ -7,14 +7,15 @@ import java.util.Objects;
  * Everything a client is handed when a session begins: two credentials and who it is signed in as.
  *
  * <p>The two tokens are deliberately different things. The access token is short-lived and is what
- * every request carries; the refresh token is longer-lived, is used only to renew, and never
- * travels anywhere but the renewal endpoint. Their expiries travel with them so that a client does
- * not have to read a token to know when to act.
+ * every request carries; the refresh token is longer-lived and is presented only to renew the
+ * session or to end it ({@link SessionsUseCase}), and no other use case reads it. Their expiries
+ * travel with them so that a client does not have to read a token to know when to act.
  *
  * <p>{@link #toString()} reveals neither token. Whoever holds either of them is the user.
  *
  * @param accessToken the token every request carries
- * @param accessTokenExpiresAt when it stops being accepted
+ * @param accessTokenExpiresAt the instant it expires; the decoder keeps accepting it for its clock
+ *     skew past that instant
  * @param refreshToken the token that renews the session
  * @param refreshTokenExpiresAt when that stops being accepted
  * @param session who is signed in
@@ -26,6 +27,10 @@ public record IssuedSession(
     Instant refreshTokenExpiresAt,
     PublishedSession session) {
 
+  /**
+   * @throws NullPointerException if {@code accessToken}, {@code accessTokenExpiresAt}, {@code
+   *     refreshToken}, {@code * refreshTokenExpiresAt} or {@code session} is null
+   */
   public IssuedSession {
     Objects.requireNonNull(accessToken, "accessToken must not be null");
     Objects.requireNonNull(accessTokenExpiresAt, "accessTokenExpiresAt must not be null");
