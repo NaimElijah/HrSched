@@ -8,6 +8,7 @@ import { SignOutUnconfirmedPage } from './auth/SignOutUnconfirmedPage';
 import { useSession } from './auth/SessionProvider';
 import type { SessionState } from './auth/SessionProvider';
 import { Failure } from './components/Feedback';
+import { focusHeading } from './components/focus';
 import { defaultSpan, localDate, startOfLocalDay } from './components/localDates';
 import { useAsync } from './components/useAsync';
 import { AccountsPage } from './pages/AccountsPage';
@@ -55,21 +56,6 @@ const APPLICATION = 'HrSched';
 /** The document title for a view: what a browser's tab list and a screen reader's window list say. */
 function titleOf(view: string): string {
   return `${view} · ${APPLICATION}`;
-}
-
-/**
- * Moves focus to the first `h2` in `main`, which every view opens with. The pages give it no
- * `tabIndex`, and a heading takes focus only with one, so it is given one here.
- */
-function focusHeadingIn(main: HTMLElement | null) {
-  const heading = main?.querySelector('h2');
-  if (heading === null || heading === undefined) {
-    return;
-  }
-  if (!heading.hasAttribute('tabindex')) {
-    heading.tabIndex = -1;
-  }
-  heading.focus();
 }
 
 /**
@@ -137,7 +123,7 @@ export function App() {
     if (previous === null || previous === view) {
       return;
     }
-    focusHeadingIn(main.current);
+    focusHeading(main.current);
     // The forced change screen goes the moment the change is accepted, its own status with it, so
     // the shell says it; any other view change ends what it said.
     setNotice(
@@ -179,7 +165,7 @@ export function App() {
           <h1>HrSched</h1>
         </header>
         <main ref={main}>
-          <h2>Your session could not be restored</h2>
+          <h2>{SCREEN_NAMES['restore-failed']}</h2>
           <Failure error={restoreFailure} />
           <button type="button" onClick={retryRestore}>
             Try again

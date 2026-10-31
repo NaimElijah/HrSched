@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError } from '../api/problem';
 import { useSession } from './SessionProvider';
 
@@ -22,9 +22,10 @@ const REFUSED =
 /**
  * The way into the application: there is nothing else to do until this succeeds.
  *
- * When it replaces a session that was on screen, it says why and takes focus on its heading:
- * somebody who was using the shell a moment ago would otherwise see the app apparently fail, and a
- * screen-reader user would hear nothing. On a first load it does neither.
+ * When it replaces a session that was on screen, it says why, and the shell moves focus to its
+ * heading: somebody who was using the shell a moment ago would otherwise see the app apparently
+ * fail, and a screen-reader user would hear nothing. On a first load it says nothing, and focus
+ * stays where the browser put it.
  */
 export function SignInPage() {
   const { signIn, sessionEnded } = useSession();
@@ -33,13 +34,11 @@ export function SignInPage() {
   const [failure, setFailure] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [reason, setReason] = useState<string | null>(null);
-  const heading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     if (!sessionEnded) {
       return;
     }
-    heading.current?.focus();
     // A live region announces a change to what it holds, not what it was inserted holding, so the
     // reason arrives in a second render, once the empty region is already in the page.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- that second render is the point
@@ -64,9 +63,7 @@ export function SignInPage() {
 
   return (
     <section className="sign-in">
-      <h2 ref={heading} tabIndex={-1}>
-        Sign in
-      </h2>
+      <h2>Sign in</h2>
       <p className="done" role="status">
         {reason}
       </p>

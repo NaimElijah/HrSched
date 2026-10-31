@@ -24,8 +24,8 @@ sees the file.
   `RosterBoard`, `ApprovingRules` and `ObjectiveScores` belong to `RostersPage`, `Inbox` to
   `MePage`. A helper only one screen uses stays beside it; once a second screen uses it, it moves
   to `src/components/`. Pages never call `fetch` directly.
-- `src/components/` — what several screens share: `ErrorBoundary`, `Feedback`, `useAsync`,
-  `localDates`, `useShiftsById`, `swapStatus`, and the wording tables `ruleFields` and
+- `src/components/` — what several screens share: `ErrorBoundary`, `Feedback`, `focus`,
+  `useAsync`, `localDates`, `useShiftsById`, `swapStatus`, and the wording tables `ruleFields` and
   `objectiveFields`. It imports `src/api` only. The folders depend one way,
   `api ← components ← auth ← pages`, so a shared hook that needs the session takes it from its
   caller; lint refuses an import against the direction, and production code importing

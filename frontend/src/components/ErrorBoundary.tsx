@@ -1,5 +1,6 @@
 import { Component, createRef } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
+import { focusHeading } from './focus';
 
 const A_HEADING = 'h1, h2, h3, h4, h5, h6';
 
@@ -36,15 +37,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failure:
     if (previous.failure === null || this.state.failure !== null) {
       return;
     }
-    const heading = this.contents.current?.querySelector<HTMLElement>(A_HEADING);
-    if (heading === null || heading === undefined) {
-      return;
-    }
-    // A heading is not focusable unless it says so, and the children's need not.
-    if (!heading.hasAttribute('tabindex')) {
-      heading.tabIndex = -1;
-    }
-    heading.focus();
+    focusHeading(this.contents.current, A_HEADING);
   }
 
   render(): ReactNode {
