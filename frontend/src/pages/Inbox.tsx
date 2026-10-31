@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { notifications } from '../api/notifications';
 import type { Notification, NotificationKind } from '../api/notifications';
 import { scheduling } from '../api/scheduling';
@@ -28,6 +28,15 @@ function isKnownKind(kind: string): kind is NotificationKind {
   return Object.prototype.hasOwnProperty.call(WORDING, kind);
 }
 
+/**
+ * Whether focus can be moved without taking it from anybody: it is still on the control that
+ * acted, or it was dropped to the body when that control went.
+ */
+function focusIsUnclaimed(control: Element | null): boolean {
+  const active = document.activeElement;
+  return active === null || active === document.body || active === control;
+}
+
 function wordingOf(kind: string): string {
   return isKnownKind(kind)
     ? WORDING[kind]
@@ -39,7 +48,8 @@ function wordingOf(kind: string): string {
  * when the reader may still see it.
  *
  * Reading is the reader's act. Opening the inbox marks nothing: an effect would mark everything read
- * on every visit, and twice under StrictMode, whether or not anybody looked.
+ * on every visit, and twice under StrictMode, whether or not anybody looked. Marking one read says
+ * so, and moves focus to the inbox's heading, since its button goes with it.
  */
 export function Inbox({
   employee,
@@ -52,6 +62,8 @@ export function Inbox({
 }) {
   const sessionKey = useSessionKey();
   const [failure, setFailure] = useState<unknown>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
 
   const inbox = useAsync(() => notifications.findMine(), sessionKey);
   const swaps = useAsync(() => scheduling.findSwapRequests(), sessionKey);
@@ -67,10 +79,16 @@ export function Inbox({
     sessionKey,
   );
 
-  async function markRead(notification: Notification) {
+  /** @param control the Mark as read pressed, which goes once the inbox is read again */
+  async function markRead(notification: Notification, control: HTMLElement) {
     setFailure(null);
+    setDone(null);
     try {
       await notifications.markRead(notification.id);
+      setDone('Marked as read.');
+      if (focusIsUnclaimed(control)) {
+        heading.current?.focus();
+      }
       inbox.reload();
     } catch (error) {
       setFailure(error);
@@ -79,11 +97,17 @@ export function Inbox({
 
   return (
     <>
-      <h3>Inbox</h3>
+      <h3 ref={heading} tabIndex={-1}>
+        Inbox
+      </h3>
       <p className="hint">
         You are told here, when you next open HrSched. Nothing is sent anywhere else (Q21).
       </p>
       <Failure error={failure} />
+      {/* Always in the page, so an outcome is announced when it arrives rather than skipped. */}
+      <p className="done" role="status">
+        {done}
+      </p>
       <Failure error={inbox.error} />
       <Failure error={swaps.error} />
       <Failure error={shifts.error} />
@@ -105,7 +129,7 @@ export function Inbox({
                 <button
                   type="button"
                   aria-label={`Mark as read: ${wording} ${at}`}
-                  onClick={() => void markRead(notification)}
+                  onClick={(event) => void markRead(notification, event.currentTarget)}
                 >
                   Mark as read
                 </button>

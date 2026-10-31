@@ -236,3 +236,43 @@ describe('reading', () => {
     expect(stub.mock.calls.some(([, init]) => (init?.method ?? 'GET') !== 'GET')).toBe(false);
   });
 });
+
+// --- #257 (WCAG 2.2 AA): reading, as a keyboard and screen-reader user meets it ---------------
+
+/** C3: the live region that says this. Several are on the page, so each is looked at. */
+function findStatus(saying: RegExp): Promise<HTMLElement> {
+  return waitFor(() => {
+    const statuses = screen.getAllByRole('status');
+    const found = statuses.find((status) => saying.test(status.textContent ?? ''));
+    if (found === undefined) {
+      throw new Error(
+        `no status says ${String(saying)}; the statuses say ${JSON.stringify(statuses.map((status) => status.textContent))}`,
+      );
+    }
+    return found;
+  });
+}
+
+describe('reading, for a keyboard and screen-reader user', () => {
+  /** C2: Mark as read goes once the notification is read, so focus moves to the inbox's heading. */
+  it('GivenAnUnreadNotification_WhenMarkedRead_ThenFocusIsOnTheInboxHeading', async () => {
+    serving([told('SWAP_REQUESTED')]);
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Mark as read/ }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^Mark as read/ })).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Inbox' })).toHaveFocus());
+  });
+
+  it('GivenAnUnreadNotification_WhenMarkedRead_ThenAStatusSaysItWasMarkedAsRead', async () => {
+    serving([told('SWAP_REQUESTED')]);
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Mark as read/ }));
+
+    expect(await findStatus(/marked as read/i)).toBeInTheDocument();
+  });
+});
