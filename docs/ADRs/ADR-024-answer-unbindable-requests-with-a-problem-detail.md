@@ -17,11 +17,12 @@
     Spring's default body, and the alternative of answering them, are overtaken (issue #275).
     `RequestRoutingExceptionHandler`, in `configuration.web`, answers
     `HttpRequestMethodNotSupportedException` (405), `HttpMediaTypeNotAcceptableException` (406),
-    `HttpMediaTypeNotSupportedException` (415, a multipart body included) and
-    `NoResourceFoundException` (404) with a problem detail whose detail repeats nothing sent. It is
+    `HttpMediaTypeNotSupportedException` (415, a multipart body included),
+    `NoResourceFoundException` (404) and `NoHandlerFoundException`, the same 404 once static
+    resources are switched off, with a problem detail whose detail repeats nothing sent. It is
     unscoped, because a request refused while a handler is being chosen has no handler and a scoped
     advice is never consulted for it, so it answers on every path, actuator's included. It handles
-    those four types and nothing else, and no other advice handles any of them, which keeps this
+    those five types and nothing else, and no other advice handles any of them, which keeps this
     record's rule that no two advices claim one type. `spring.mvc.problemdetails.enabled` was
     rejected again for the reason above, and a `ResponseEntityExceptionHandler` subclass of our own
     for the same one: its single handler method claims `HttpMessageNotReadableException` and the

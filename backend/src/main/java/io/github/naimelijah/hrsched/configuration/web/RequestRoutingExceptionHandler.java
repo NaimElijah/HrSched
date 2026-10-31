@@ -11,6 +11,7 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -24,7 +25,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
  * <p>Unscoped, unlike {@link RequestBindingExceptionHandler}, because it has to be: a request
  * refused while a handler is being chosen has no handler, and an advice scoped to some controllers
  * is never consulted for it. So it answers on every path, actuator's included. It handles exactly
- * these four types, which no other advice in the application handles, so which advice answers never
+ * these five types, which no other advice in the application handles, so which advice answers never
  * depends on the order they are registered in (ADR-024). Spring's own {@code
  * ResponseEntityExceptionHandler} is not used, as its single handler method also claims {@code
  * HttpMessageNotReadableException} and the binding failures the other advices answer.
@@ -88,11 +89,15 @@ public class RequestRoutingExceptionHandler {
   }
 
   /**
+   * A path no handler maps raises {@code NoResourceFoundException} while Spring serves static
+   * resources, as it does here, and {@code NoHandlerFoundException} once {@code
+   * spring.web.resources.add-mappings} turns them off; both are the same absence.
+   *
    * @param exception a path no handler maps
    * @return the 404 every absence in the API gets
    */
-  @ExceptionHandler(NoResourceFoundException.class)
-  public ResponseEntity<ProblemDetail> handleNoSuchPath(NoResourceFoundException exception) {
+  @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
+  public ResponseEntity<ProblemDetail> handleNoSuchPath(ErrorResponse exception) {
     return refusal(
         exception, HttpStatus.NOT_FOUND, ProblemTypes.NOT_FOUND, "Not found", NO_SUCH_RESOURCE);
   }
