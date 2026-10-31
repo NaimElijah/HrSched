@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { callsTo, routeTo, writes } from '../test-support/routeTo';
+import { callsTo, holdingWrites, routeTo, writes } from '../test-support/routeTo';
+import type { Answer } from '../test-support/routeTo';
 import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { RulesPage } from './RulesPage';
 import { WITHOUT_PAUSES } from '../test-support/typing';
@@ -139,7 +140,11 @@ describe('the rules page', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
 
     expect(writes(stub)).toHaveLength(0);
-    expect(screen.getByRole('button', { name: 'Revise rules' })).toBeDisabled();
+    // Unavailable, and still focusable and so able to say why (#257, C5).
+    expect(screen.getByRole('button', { name: 'Revise rules' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
   it('GivenAClearedField_WhenRevising_ThenThatRuleIsSwitchedOff', async () => {
@@ -157,5 +162,141 @@ describe('the rules page', () => {
 
     await waitFor(() => expect(sentBody(stub)).not.toHaveProperty('minimumRestMinutes'));
     expect(sentBody(stub).maximumDailyMinutes).toBe(DAILY);
+  });
+});
+
+/**
+ * What a keyboard or screen reader user is told about the form (#257). Every limit is the invented
+ * one above.
+ */
+describe('the rules form, told rather than shown', () => {
+  function show() {
+    render(
+      <SignedIn session={A_TENANT}>
+        <RulesPage />
+      </SignedIn>,
+    );
+  }
+
+  /** Answers every request only once the returned function is called. */
+  function holdingEverything(routed: ReturnType<typeof routeTo>): () => void {
+    let answer!: () => void;
+    const answering = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) => answering.then(() => routed(path, init))),
+    );
+    return answer;
+  }
+
+  /** A bare disabled button cannot be reached to learn why it does nothing (C5). */
+  it('GivenTheStoredRulesNotYetLoaded_WhenShown_ThenReviseIsUnavailableAndSaysItIsLoading', async () => {
+    const answer = holdingEverything(configured());
+    show();
+    const revise = screen.getByRole('button', { name: 'Revise rules' });
+
+    expect(revise).toHaveAttribute('aria-disabled', 'true');
+    expect(revise).not.toBeDisabled();
+    expect(revise).toHaveAccessibleDescription(/load/i);
+    answer();
+    await waitFor(() => expect(screen.getByLabelText(/Minimum rest/)).toHaveValue(REST));
+    expect(revise).not.toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('GivenTheStoredRulesNotYetLoaded_WhenReviseIsPressed_ThenNothingIsSent', async () => {
+    const routed = configured();
+    const answer = holdingEverything(routed);
+    show();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
+
+    answer();
+    await waitFor(() => expect(screen.getByLabelText(/Minimum rest/)).toHaveValue(REST));
+    expect(writes(routed)).toHaveLength(0);
+  });
+
+  /** A load that failed is otherwise a dead end: the form can never be sent (C5). */
+  it('GivenTheStoredRulesFailedToLoad_WhenTryAgainIsPressed_ThenTheyAreAskedForAgain', async () => {
+    const server: Record<string, Answer> = {
+      '/api/constraints': { status: 500, body: { detail: 'Something went wrong.' } },
+      'PUT /api/constraints': { status: 200, body: { ...CONFIGURED, version: 5 } },
+    };
+    const routed = routeTo(server);
+    show();
+    const tryAgain = await screen.findByRole('button', { name: /^Try again/ });
+    const askedBefore = callsTo(routed, 'GET', '/api/constraints').length;
+    server['/api/constraints'] = { status: 200, body: CONFIGURED };
+
+    await userEvent.click(tryAgain);
+
+    await waitFor(() => expect(screen.getByLabelText(/Minimum rest/)).toHaveValue(REST));
+    expect(callsTo(routed, 'GET', '/api/constraints').length).toBeGreaterThan(askedBefore);
+    expect(screen.getByRole('button', { name: 'Revise rules' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
+  /**
+   * A disabled button drops the keyboard focus to the page in a browser (C1), and a second
+   * revision sent meanwhile would be made from a copy the first has already replaced.
+   */
+  it('GivenARevisionInFlight_WhenPressedAgain_ThenTheButtonKeepsFocusAndOnlyOneIsSent', async () => {
+    const routed = configured();
+    show();
+    await waitFor(() => expect(screen.getByLabelText(/Minimum rest/)).toHaveValue(REST));
+    const release = holdingWrites(routed);
+    const revise = screen.getByRole('button', { name: 'Revise rules' });
+
+    await userEvent.click(revise);
+    await userEvent.click(revise);
+
+    expect(revise).toHaveAttribute('aria-disabled', 'true');
+    expect(revise).not.toBeDisabled();
+    expect(revise).toHaveFocus();
+    release();
+    await waitFor(() => expect(callsTo(routed, 'PUT', '/api/constraints')).toHaveLength(1));
+    await waitFor(() => expect(revise).not.toHaveAttribute('aria-disabled', 'true'));
+    expect(writes(routed)).toHaveLength(1);
+  });
+
+  /** The fields look the same before and after, so without a word nothing says it was stored (C3). */
+  it('GivenARevision_WhenItSucceeds_ThenAStatusSaysTheRulesWereRevised', async () => {
+    configured();
+    show();
+    await waitFor(() => expect(screen.getByLabelText(/Minimum rest/)).toHaveValue(REST));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
+
+    await waitFor(() =>
+      expect(screen.getAllByRole('status').map((status) => status.textContent)).toContainEqual(
+        expect.stringMatching(/rules revised/i),
+      ),
+    );
+  });
+
+  /** A success left on screen while the next revision is typed reads as that one's (C9). */
+  it('GivenARevisionSucceeded_WhenTheFormIsEditedAgain_ThenTheSuccessIsNoLongerSaid', async () => {
+    configured();
+    show();
+    await waitFor(() => expect(screen.getByLabelText(/Minimum rest/)).toHaveValue(REST));
+    await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
+    await screen.findByText(/rules revised/i);
+
+    await userEvent.type(screen.getByLabelText(/Minimum rest/), '1', WITHOUT_PAUSES);
+
+    expect(screen.queryByText(/rules revised/i)).not.toBeInTheDocument();
+  });
+
+  /** Try again goes once pressed, and focus left on a button that is gone falls to the page (C2). */
+  it('GivenTheStoredRulesFailedToLoad_WhenTryAgainIsPressed_ThenTheSectionHeadingHasFocus', async () => {
+    routeTo({ '/api/constraints': { status: 500, body: { detail: 'Something went wrong.' } } });
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Try again/ }));
+
+    expect(screen.getByRole('heading', { name: 'Working-time rules' })).toHaveFocus();
   });
 });
