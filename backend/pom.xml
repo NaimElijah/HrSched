@@ -39,7 +39,7 @@
 		-->
 		<google-java-format.version>1.27.0</google-java-format.version>
 		<archunit.version>1.5.1</archunit.version>
-		<jacoco.version>0.8.15</jacoco.version>
+		<jacoco.version>0.8.16</jacoco.version>
 		<!--
 		  Not the newest. From 9.13 on, OR-Tools' Windows libraries need the Visual C++ runtime 14.40
 		  or later, and the JDK 21 a developer runs here bundles 14.36, which Windows loads first:
