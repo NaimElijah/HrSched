@@ -17,7 +17,8 @@ malformed path, is written before the chain and carries neither.
 The security chain admits a role to a family of routes, and closes everything it does not name
 ([ADR-032](ADRs/ADR-032-close-the-security-chain-by-default.md)). Each use case then checks the
 exact role. A resource in another organisation answers `404`, the same as one that does not exist,
-and every `404` gives the same detail, `No such resource.`, naming nothing that was asked for.
+and every `404` problem detail gives the same detail, `No such resource.`, naming nothing that was
+asked for.
 
 | Area | Endpoints | Who |
 | :--- | :--- | :--- |
@@ -198,6 +199,14 @@ Every problem detail names its kind in `type`, a URN that is never fetched
 title wherever it is answered, so a client can tell refusals apart by `type` and leave the title
 to be read. `detail` is the sentence to show a person.
 
+A `409` and a `422` both refuse a request that is well formed, for different reasons. A `409` is
+refused by the present state of what it acts on, and reading that again shows why: a draft somebody
+published, a swap already decided, an assignment the roster already holds. A `422` breaks a rule
+whatever the state: a qualification the person lacks, a roster over a working-time limit, a password
+the policy refuses. Two `409`s predate the rule and bend it: `Sign-in name taken`, whose clashing
+account may belong to an organisation the caller cannot read, and `Not your own password`, which
+refuses the route rather than a state.
+
 | Type | Status | Title |
 | :--- | :--- | :--- |
 | `urn:hrsched:problem:invalid-request` | `400` | `Invalid request` |
@@ -240,7 +249,8 @@ Everything above is. These are not, and carry no `type`:
   body when the token's account no longer exists; what it should answer is an open decision
   ([#126](https://github.com/NaimElijah/HrSched/issues/126)).
 - **What the container renders.** A request the firewall refuses (a malformed path, `400`), a form
-  body over the server's form limit (`413`, refused while the body is read), and any failure the
+  body over the server's form limit (`413`, refused while the body is read;
+  [#340](https://github.com/NaimElijah/HrSched/issues/340)), and any failure the
   application does not handle (`500`) are rendered by the container's error page, Boot's
   `application/json` with `timestamp`, `status`, `error` and `path`, or HTML to a browser asking for
   it.
@@ -272,13 +282,18 @@ Everything above is. These are not, and carry no `type`:
   charset, or with `charset=UTF-8`, is accepted. A multipart request, any other type a route does
   not take, and a `Content-Type` whose charset does not parse, answer `415` titled
   `Unsupported media type` without being read.
-- **What Spring refuses before a route decides anything.** A method the path does not take answers
-  `405` titled `Method not allowed`, with `Allow` naming the methods it does. An `Accept` the route
-  cannot answer in answers `406` titled `Not acceptable`, written as `application/problem+json`
-  whatever was accepted, an `Accept` that does not parse included. A path no route maps, inside a
-  family the chain admits the caller to, answers the same `404` as any absence. None of the details
-  repeats the method, the type or the path sent, and these hold on every path, `/actuator` included
-  ([#275](https://github.com/NaimElijah/HrSched/issues/275)).
+- **What Spring refuses on its own.** These are answered only once the security chain has admitted
+  the request: without a token, or with a role the chain refuses the route, the answer is its `401`
+  or `403`, whatever the method or the path. A method the path does not take answers `405` titled
+  `Method not allowed`, with `Allow` naming the methods it does. An `Accept` the route cannot answer
+  in answers `406` titled `Not acceptable`, written as `application/problem+json` whatever was
+  accepted, an `Accept` that does not parse included. No route declares what it produces, so the
+  `406` is found only when the answer is written: on a route that changes something, the change has
+  already been made when the `406` arrives
+  ([#344](https://github.com/NaimElijah/HrSched/issues/344) tracks refusing it first). A path no
+  route maps, inside a family the chain admits the caller to, answers the same `404` as any
+  absence. None of the details repeats the method, the type or the path sent, and these hold on
+  every path, `/actuator` included ([#275](https://github.com/NaimElijah/HrSched/issues/275)).
 - **Any rule a draft breaks.** Publication answers `422` titled `Roster breaks the rules`, with a
   `violations` list naming every breach: `overlapping work`, `required qualifications`,
   `declared unavailability`, `not of this organisation`, or the working-time rule broken. Each
