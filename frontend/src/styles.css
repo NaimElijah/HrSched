@@ -222,11 +222,16 @@ table {
   outline-offset: 2px;
 }
 
-/* A refusal inside a row stays in view, at the region's left edge, however far it is scrolled. */
+/*
+ * A refusal inside a row stays in view, at the region's left edge, however far it is scrolled. A
+ * sticky box cannot leave its cell's content box, which is the cell's two 0.6rem paddings narrower
+ * than the region, so it is that much narrower too; at the region's width it was pushed 10 px out
+ * of view, with its alarm border, at either end of the scroll.
+ */
 .row-refusal {
   position: sticky;
   left: 0;
-  max-inline-size: 100cqi;
+  max-inline-size: calc(100cqi - 1.2rem);
 }
 
 th,
