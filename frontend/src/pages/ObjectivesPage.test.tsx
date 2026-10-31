@@ -80,8 +80,8 @@ describe('the objectives page', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
 
     await waitFor(() => expect(sentBody(stub).preferences).toBe(2));
-    expect(sentBody(stub).fairness).toBe(3);
-    expect(sentBody(stub).disruption).toBe(1);
+    // Exactly the three weights: the backend refuses a member the request does not take (ADR-058).
+    expect(sentBody(stub)).toEqual({ fairness: 3, preferences: 2, disruption: 1 });
   });
 
   /**
