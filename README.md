@@ -278,8 +278,8 @@ CI runs both gates, and a dependency audit, on every push and on every pull requ
 mistake is skipped silently and still reports green. The audit fails on any known advisory, and the
 only way past one is an entry in [`osv-scanner.toml`](osv-scanner.toml) with an expiry and a reason
 ([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Coverage is reported
-but never enforced ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)); the
-reports are `backend/target/site/jacoco/index.html` and, from `npm run test:coverage`,
+but never enforced ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)):
+`./mvnw verify` writes `backend/target/site/jacoco/index.html`, and `npm run test:coverage` writes
 `frontend/coverage/index.html`.
 
 ## Deployment and operations
