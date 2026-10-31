@@ -32,7 +32,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class ActorAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
 
-  /** The session an access token belongs to. Not a registered claim; this service's own. */
+  /**
+   * The session an access token belongs to. Not a registered claim; this service's own. It must
+   * equal the name {@code JwtAccessTokenIssuer} writes, or every token is refused here.
+   */
   private static final String SESSION_CLAIM = "sid";
 
   /** One sentence for every way this can fail, so that none of them can be told from another. */

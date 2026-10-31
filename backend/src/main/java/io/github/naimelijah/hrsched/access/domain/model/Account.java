@@ -89,7 +89,8 @@ public final class Account {
    * @param membership what it is a member of, never {@code null}
    * @param active whether it may be used at all
    * @param passwordChangeRequired whether the password must be changed before anything else
-   * @param failedSignIns consecutive failures since the last success or lock, never negative
+   * @param failedSignIns consecutive failures counted since the last success or unlock, never
+   *     negative
    * @param lockedUntil when the current lock ends, empty if there is none
    * @param createdAt when it was provisioned, never {@code null}
    * @throws NullPointerException if any reference argument is null
@@ -307,38 +308,71 @@ public final class Account {
         createdAt);
   }
 
+  /**
+   * @return the account's identity, which is also its equality
+   */
   public UserId id() {
     return id;
   }
 
+  /**
+   * @return the normalised name it signs in with; personal data, so never log it
+   */
   public SignInName signInName() {
     return signInName;
   }
 
+  /**
+   * @return the encoded password, for the hasher adapter to check a candidate against
+   */
   public PasswordHash passwordHash() {
     return passwordHash;
   }
 
+  /**
+   * @return what the account is a member of: one organisation, or the platform
+   */
   public Membership membership() {
     return membership;
   }
 
+  /**
+   * @return whether the account may be used at all; a disabled account is refused at sign-in and on
+   *     every request, lock or no lock
+   */
   public boolean active() {
     return active;
   }
 
+  /**
+   * @return whether the password is one somebody else chose and must be replaced before anything
+   *     else is done
+   */
   public boolean passwordChangeRequired() {
     return passwordChangeRequired;
   }
 
+  /**
+   * @return consecutive failed sign-ins counted since the last success or unlock; never negative.
+   *     It is not cleared when a lock runs out: the first failure after that starts a fresh run at
+   *     one
+   */
   public int failedSignIns() {
     return failedSignIns;
   }
 
+  /**
+   * @return when the current lock ends, empty if there is none. A past instant means a lock that
+   *     has run out and has not yet been cleared; use {@link #isLockedAt} to ask whether one is
+   *     running
+   */
   public Optional<Instant> lockedUntil() {
     return lockedUntil;
   }
 
+  /**
+   * @return when the account was provisioned
+   */
   public Instant createdAt() {
     return createdAt;
   }

@@ -68,7 +68,9 @@ public class AuthController {
   private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
   /**
-   * Shared with the exception handlers, so one query answers "who was refused" across all of it.
+   * The meter every class that refuses a caller counts into, tagged with the {@code kind} of
+   * refusal: the four contexts' exception handlers, the security chain's two refusal handlers and
+   * this controller. One query answers "who was refused" across all of them.
    */
   private static final String DENIED = "hrsched.access.denied";
 

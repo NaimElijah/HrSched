@@ -29,8 +29,8 @@ public record SignInName(String value) {
   /**
    * The longest name accepted. 254 characters is the longest an email address can be, and is used
    * here as the bound because an email address is the longest thing this name might have to hold.
-   * Whether it must <em>be</em> an email address is undecided — Q28 — and this constant does not
-   * decide it.
+   * That it must <em>be</em> an email address is decided (R38, Q29) but not yet built (#108), and
+   * this constant does not enforce it.
    */
   private static final int MAXIMUM_LENGTH = 254;
 

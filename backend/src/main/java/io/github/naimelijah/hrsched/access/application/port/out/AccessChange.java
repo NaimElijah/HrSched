@@ -1,7 +1,7 @@
 package io.github.naimelijah.hrsched.access.application.port.out;
 
 /**
- * The access changes worth a permanent record.
+ * The access changes that are recorded through {@link AuditTrail}.
  *
  * <p>An enum rather than a string for the same reason its siblings are: a change that is recorded
  * is a change somebody declared, and the vocabulary is closed.

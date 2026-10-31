@@ -17,6 +17,10 @@ import java.util.Objects;
  */
 public record IssuedAccessToken(String value, Instant expiresAt) {
 
+  /**
+   * @throws NullPointerException if either component is null
+   * @throws IllegalArgumentException if {@code value} is blank
+   */
   public IssuedAccessToken {
     Objects.requireNonNull(value, "value must not be null");
     Objects.requireNonNull(expiresAt, "expiresAt must not be null");

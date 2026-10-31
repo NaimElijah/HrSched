@@ -36,6 +36,11 @@ public record AccessTokenProperties(
   /** Printed in place of a configured private key. */
   private static final String REDACTED = "[redacted]";
 
+  /**
+   * @throws NullPointerException if {@code issuer}, {@code audience} or {@code lifetime} is null
+   * @throws IllegalArgumentException if {@code issuer} or {@code audience} is blank, or {@code
+   *     lifetime} is zero or negative
+   */
   public AccessTokenProperties {
     Objects.requireNonNull(issuer, "issuer must not be null");
     Objects.requireNonNull(audience, "audience must not be null");

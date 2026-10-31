@@ -52,6 +52,8 @@ public class OperatorBootstrap implements ApplicationRunner {
    *     hrsched.bootstrap.operator.sign-in-name} to the existing operator's name, or to unset
    *     {@code hrsched.bootstrap.operator.*} - not to choose a free name, which would create a
    *     second operator
+   * @throws io.github.naimelijah.hrsched.access.domain.model.InvalidSignInNameException if the
+   *     configured name is not one an account could hold, which fails startup too
    */
   @Override
   public void run(ApplicationArguments arguments) {

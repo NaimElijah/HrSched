@@ -20,6 +20,11 @@ import java.util.Objects;
  */
 public record SessionPolicy(Duration absoluteLifetime, Duration idleLifetime) {
 
+  /**
+   * @throws NullPointerException if either duration is null
+   * @throws IllegalArgumentException if either duration is zero or negative, or the idle lifetime
+   *     is longer than the absolute one
+   */
   public SessionPolicy {
     Objects.requireNonNull(absoluteLifetime, "absoluteLifetime must not be null");
     Objects.requireNonNull(idleLifetime, "idleLifetime must not be null");

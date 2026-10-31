@@ -83,26 +83,44 @@ public final class SignInSession {
     return revocation.isEmpty() && now.isBefore(expiresAt);
   }
 
+  /**
+   * @return the session's identity, which is also its equality
+   */
   public SignInSessionId id() {
     return id;
   }
 
+  /**
+   * @return the account the session belongs to
+   */
   public UserId account() {
     return account;
   }
 
+  /**
+   * @return when the session began
+   */
   public Instant startedAt() {
     return startedAt;
   }
 
+  /**
+   * @return when the session ends of its own accord, fixed at its start and never extended
+   */
   public Instant expiresAt() {
     return expiresAt;
   }
 
+  /**
+   * @return why the session was ended early, empty if nothing has ended it
+   */
   public Optional<SessionRevocation> revocation() {
     return revocation;
   }
 
+  /**
+   * @return when the session was ended early; present exactly when {@link #revocation()} is
+   */
   public Optional<Instant> revokedAt() {
     return revokedAt;
   }

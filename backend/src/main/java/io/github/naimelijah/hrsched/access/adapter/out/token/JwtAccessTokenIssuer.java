@@ -34,10 +34,17 @@ import org.springframework.stereotype.Component;
 @Component
 public class JwtAccessTokenIssuer implements AccessTokenIssuer {
 
-  /** RFC 9068's media type for an access token, put in the header and required by the decoder. */
+  /**
+   * RFC 9068's media type for an access token, put in the header and required by the decoder. The
+   * decoder holds its own copy of the value, which must stay equal to this one.
+   */
   private static final String ACCESS_TOKEN_TYPE = "at+jwt";
 
-  /** The session an access token belongs to. Not a registered claim; this service's own. */
+  /**
+   * The session an access token belongs to. Not a registered claim; this service's own. The decoder
+   * and the converter in {@code adapter.in.token} read it by their own copies of the name, which
+   * must stay equal to this one.
+   */
   private static final String SESSION_CLAIM = "sid";
 
   private final JwtEncoder encoder;

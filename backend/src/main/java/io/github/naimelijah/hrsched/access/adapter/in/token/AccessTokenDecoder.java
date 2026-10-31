@@ -57,10 +57,16 @@ import org.springframework.stereotype.Component;
 @Component
 public class AccessTokenDecoder implements JwtDecoder {
 
-  /** RFC 9068's media type for an access token; the header value this accepts and no other. */
+  /**
+   * RFC 9068's media type for an access token; the header value this accepts and no other. It must
+   * equal the one {@code JwtAccessTokenIssuer} signs, or every issued token is refused.
+   */
   private static final String ACCESS_TOKEN_TYPE = "at+jwt";
 
-  /** The session an access token belongs to. Not a registered claim; this service's own. */
+  /**
+   * The session an access token belongs to. Not a registered claim; this service's own. It must
+   * equal the name {@code JwtAccessTokenIssuer} writes, or no token names a session.
+   */
   private static final String SESSION_CLAIM = "sid";
 
   private final NimbusJwtDecoder delegate;

@@ -7,9 +7,9 @@ import java.util.Objects;
  * Everything a client is handed when a session begins: two credentials and who it is signed in as.
  *
  * <p>The two tokens are deliberately different things. The access token is short-lived and is what
- * every request carries; the refresh token is longer-lived, is used only to renew, and never
- * travels anywhere but the renewal endpoint. Their expiries travel with them so that a client does
- * not have to read a token to know when to act.
+ * every request carries; the refresh token is longer-lived and is presented only to renew the
+ * session or to end it ({@link SessionsUseCase}), and no other use case reads it. Their expiries
+ * travel with them so that a client does not have to read a token to know when to act.
  *
  * <p>{@link #toString()} reveals neither token. Whoever holds either of them is the user.
  *

@@ -52,10 +52,16 @@ public final class Organisation {
     return StandardCharsets.UTF_8.newEncoder().canEncode(name);
   }
 
+  /**
+   * @return the organisation's identity, which is also its equality and its tenant boundary
+   */
   public OrganisationId id() {
     return id;
   }
 
+  /**
+   * @return the name as given: neither trimmed nor unique, and not personal data
+   */
   public String name() {
     return name;
   }

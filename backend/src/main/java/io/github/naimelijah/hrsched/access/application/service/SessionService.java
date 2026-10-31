@@ -52,10 +52,11 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Orchestrates signing in.
+ * Orchestrates the life of a session: signing in, renewing and ending it, resolving who a token
+ * names on each request, reading one's own session and changing one's own password.
  *
- * <p>Three properties hold this together, and each of them is a way somebody could otherwise learn
- * something they should not.
+ * <p>Three properties hold the sign-in half together, and each of them is a way somebody could
+ * otherwise learn something they should not.
  *
  * <p><strong>Every refusal is the same refusal.</strong> An unknown name, a wrong password, a
  * disabled account and a locked one all return a {@code Refused}, and the web adapter answers all
@@ -63,10 +64,12 @@ import java.util.Optional;
  * whether a name is in use, whether an account has been switched off, and whether somebody has been
  * guessing at it.
  *
- * <p><strong>Exactly one password comparison always runs.</strong> Including for a name nobody
- * holds, which is compared against a dummy hash computed once at construction. Skipping the work
- * when there is no account would make an unknown name measurably faster to refuse than a known one,
- * and that timing difference is a way to enumerate who has an account here.
+ * <p><strong>A password comparison always runs.</strong> Including for a name nobody holds, which
+ * is compared against a dummy hash computed once at construction. Skipping the work when there is
+ * no account would make an unknown name measurably faster to refuse than a known one, and that
+ * timing difference is a way to enumerate who has an account here. The one case with a second
+ * comparison is a known account whose password hash was replaced while the first ran; the second
+ * then decides alone.
  *
  * <p><strong>Refusals are returned, not thrown.</strong> The use case runs in one transaction that
  * rolls back on any unchecked exception (ADR-023), so throwing would undo the failed attempt this
@@ -91,6 +94,24 @@ public class SessionService
   private final PasswordPolicy passwordPolicy;
   private final PasswordHash dummyHash;
 
+  /**
+   * Builds the service, and hashes one random value to compare unknown sign-in names against.
+   *
+   * <p>That hash costs one full password hash at the configured strength, paid once here rather
+   * than on a sign-in.
+   *
+   * @param accounts where accounts are read and stored
+   * @param sessions where sessions and refresh tokens are stored
+   * @param passwords hashes and checks passwords
+   * @param tokens signs access tokens
+   * @param secrets makes and digests refresh tokens, and supplies the random value hashed here
+   * @param audit where access changes are recorded
+   * @param clock what every expiry and lock is measured against
+   * @param lockout how many failures lock an account, and for how long
+   * @param sessionPolicy how long a session lasts and may sit idle
+   * @param passwordPolicy what a password somebody chooses must satisfy
+   * @throws NullPointerException if any argument is null
+   */
   public SessionService(
       AccountRepository accounts,
       SessionRepository sessions,
@@ -169,10 +190,10 @@ public class SessionService
   /**
    * Exchanges a refresh token for a new pair.
    *
-   * <p>Reading the order of the checks matters. Reuse is decided <em>before</em> anything about
-   * whether the session is otherwise usable, because a token presented twice is evidence about a
-   * stolen credential regardless of what else is wrong, and it is the one case that changes state
-   * on the way out.
+   * <p>The order of the checks matters. Reuse is decided <em>before</em> anything about whether the
+   * session is otherwise usable, because a token presented twice is evidence about a stolen
+   * credential regardless of what else is wrong, and it is the one case that changes state on the
+   * way out.
    */
   @Override
   public RefreshOutcome refresh(String refreshToken) {
