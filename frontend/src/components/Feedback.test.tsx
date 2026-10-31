@@ -7,10 +7,10 @@ import { Busy, Failure } from './Feedback';
  * `Failure` is a branch table rather than markup, and two of its branches were unreachable from any
  * page test: the 404 and the fallback for something that is not an `ApiError` at all.
  *
- * The 404 branch carries a design decision to the user. A cross-tenant attempt answers 404 rather
- * than 403 so a response never confirms that a resource exists in somebody else's organisation,
- * which means "not found" here genuinely cannot distinguish "no such thing" from "not yours". The
- * copy has to say so, or a scheduler reads it as a bug.
+ * The 404 branch sits on a design decision. A cross-tenant attempt answers 404 rather than 403 so a
+ * response never confirms that a resource exists in somebody else's organisation, which means "not
+ * found" here genuinely cannot distinguish "no such thing" from "not yours". The copy says what
+ * somebody can do about it, and does not lecture them on the design (#257).
  *
  * The durations in each violation's detail are invented, and match no statute.
  */
@@ -126,18 +126,54 @@ describe('a refusal that lists no rules', () => {
 });
 
 describe('the other refusals', () => {
-  it('GivenAForbidden_WhenRendering_ThenTheRoleRefusalIsShown', () => {
+  /**
+   * "Your role may not do this" told somebody what they could not do and nothing about what they
+   * could, and a 403 is not always about the role (#257).
+   */
+  it('GivenAForbidden_WhenRendering_ThenItSaysNotPermittedAndWhatToDoInstead', () => {
     render(<Failure error={new ApiError(403, 'Your role does not permit this.')} />);
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.');
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Not permitted.');
+    expect(alert).toHaveTextContent('If you need this done, ask a colleague whose role allows it.');
+    expect(alert).not.toHaveTextContent('Your role may not do this');
   });
 
-  it('GivenANotFound_WhenRendering_ThenItSaysItMayExistForSomebodyElse', () => {
+  /**
+   * An account with a temporary password is refused everything else with a 403 of its own type
+   * (ADR-057). Telling it to ask a colleague would send it the wrong way: the way on is its own.
+   */
+  it('GivenAForbiddenBecauseThePasswordMustChange_WhenRendering_ThenItSaysToChangeItFirst', () => {
+    render(
+      <Failure
+        error={
+          new ApiError(
+            403,
+            'Change the temporary password before doing anything else.',
+            [],
+            null,
+            'urn:hrsched:problem:password-change-required',
+          )
+        }
+      />,
+    );
+
+    expect(screen.getByRole('alert').textContent).toMatch(/^Change your password first\./);
+  });
+
+  /**
+   * The old copy explained the tenancy design ("a cross-tenant attempt answers 404") to somebody
+   * who only wanted to know what to do. The design still holds: nothing here says whether the thing
+   * exists for anybody else (#257).
+   */
+  it('GivenANotFound_WhenRendering_ThenItSaysWhatMayHaveHappenedAndWhatToDo', () => {
     render(<Failure error={new ApiError(404, 'No such resource.')} />);
 
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      /may also mean it exists for somebody else/,
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(
+      'It may have been removed, or never existed here. Go back to the list and try again.',
     );
+    expect(alert).not.toHaveTextContent(/cross-tenant/i);
   });
 
   it('GivenAConflict_WhenRendering_ThenTheBackendsOwnReasonIsShown', () => {

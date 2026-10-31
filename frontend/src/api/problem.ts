@@ -36,7 +36,8 @@ export class ApiError extends Error {
   /**
    * The problem's type URI, one per kind of refusal (ADR-057), or `about:blank` when the body
    * named none, as RFC 9457 section 3.1.1 reads an absent type, or was not a problem detail at all.
-   * Kept, not yet branched on.
+   * `Failure` branches on one, the 403 an account with a temporary password is answered; nothing
+   * else does yet.
    */
   readonly type: string;
   /**

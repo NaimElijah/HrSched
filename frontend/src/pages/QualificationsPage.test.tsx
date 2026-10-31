@@ -74,9 +74,7 @@ describe('listing what the organisation has defined', () => {
 
     show();
 
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
-    );
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not permitted.'));
   });
 });
 
@@ -108,9 +106,7 @@ describe('defining one', () => {
     await userEvent.type(screen.getByLabelText('Name'), 'Forklift', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define' }));
 
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
-    );
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not permitted.'));
     expect(screen.getByLabelText('Name')).toHaveValue('Forklift');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Define' })).toBeEnabled());
   });

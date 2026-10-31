@@ -2,6 +2,12 @@ import { ApiError } from '../api/problem';
 import type { Violation } from '../api/problem';
 
 /**
+ * The problem type of the 403 an account with a temporary password is answered for anything but
+ * reading its session and changing its password (ADR-057). Its way on is its own, not a colleague's.
+ */
+const PASSWORD_CHANGE_REQUIRED = 'urn:hrsched:problem:password-change-required';
+
+/**
  * Shows the trace id of the request that was refused, when the backend sent one.
  *
  * Every log line that request produced carries the same value, so this turns "it broke this
@@ -82,10 +88,19 @@ export function Failure({
       </div>
     );
   }
+  if (error instanceof ApiError && error.isForbidden && error.type === PASSWORD_CHANGE_REQUIRED) {
+    return (
+      <div className="failure" role="alert">
+        <strong>Change your password first.</strong> {error.message}
+        <Reference of={error} />
+      </div>
+    );
+  }
   if (error instanceof ApiError && error.isForbidden) {
     return (
       <div className="failure" role="alert">
-        <strong>Your role may not do this.</strong> {error.message}
+        <strong>Not permitted.</strong> {error.message} If you need this done, ask a colleague whose
+        role allows it.
         <Reference of={error} />
       </div>
     );
@@ -93,8 +108,13 @@ export function Failure({
   if (error instanceof ApiError && error.isNotFound) {
     return (
       <div className="failure" role="alert">
-        <strong>Nothing here for this organisation.</strong> A cross-tenant attempt answers 404
-        rather than 403, so this may also mean it exists for somebody else.
+        {/*
+          A cross-tenant attempt answers 404 rather than 403, so a response never confirms that
+          something exists in another organisation, and "not found" cannot tell "no such thing"
+          from "not yours". The copy says what somebody can do, and nothing about which it was.
+        */}
+        <strong>Nothing here for this organisation.</strong> It may have been removed, or never
+        existed here. Go back to the list and try again.
         <Reference of={error} />
       </div>
     );

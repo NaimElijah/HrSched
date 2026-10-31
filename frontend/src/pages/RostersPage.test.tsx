@@ -285,9 +285,7 @@ describe('the rosters page', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /Generate a draft/ }));
 
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this'),
-    );
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not permitted.'));
   });
 
   /**
