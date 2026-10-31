@@ -16,7 +16,9 @@ import java.util.Set;
  * @param id who is acting
  * @param organisation the single organisation they belong to
  * @param role what they may do within it
- * @param employee the personnel record they are, empty for a user who is not rostered
+ * @param employee the personnel record they are, empty for a user who is not rostered; use {@link
+ *     Optional#empty()}, never {@code null}
+ * @throws NullPointerException if any component is {@code null}
  */
 public record TenantActor(
     UserId id, OrganisationId organisation, Role role, Optional<EmployeeId> employee)
@@ -30,17 +32,26 @@ public record TenantActor(
   }
 
   /**
+   * Creates a member who is not rostered, so {@code employee} is empty.
+   *
    * @param id who is acting
    * @param organisation the single organisation they belong to
    * @param role what they may do within it
+   * @throws NullPointerException if any argument is {@code null}
    */
   public TenantActor(UserId id, OrganisationId organisation, Role role) {
     this(id, organisation, role, Optional.empty());
   }
 
   /**
+   * Tests whether this actor is the person a personnel record belongs to.
+   *
+   * <p>False for an actor with no linked employee. The identities are compared through the carried
+   * link, never by matching {@link UserId} against {@link EmployeeId} (ADR-012).
+   *
    * @param subject the personnel record being acted on
    * @return whether this actor is that person
+   * @throws NullPointerException if {@code subject} is {@code null}
    */
   public boolean isThemself(EmployeeId subject) {
     Objects.requireNonNull(subject, "subject must not be null");

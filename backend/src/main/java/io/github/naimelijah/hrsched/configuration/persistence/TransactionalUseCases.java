@@ -23,7 +23,7 @@ import org.springframework.transaction.interceptor.TransactionInterceptor;
  * <p>A use case is exactly one unit of work, so every method gets {@code REQUIRED} propagation and
  * the default rollback rule — an unchecked exception rolls back, and every refusal in this codebase
  * is unchecked. Nested use cases join their caller's transaction, which is what makes approving a
- * swap atomic rather than four writes that might not all happen.
+ * swap atomic rather than several writes that might not all happen.
  *
  * <p>A method that only reads is marked read-only. That is not decoration: {@code
  * ActorAuthenticationConverter} calls {@code findActor} on <em>every</em> request whose token
@@ -35,9 +35,12 @@ import org.springframework.transaction.interceptor.TransactionInterceptor;
  * TransactionalUseCasesTest}). A method named {@code find…} must only read.
  *
  * <p>The proxy is a subclass rather than an interface proxy, so a bean keeps its concrete type and
- * {@code UseCaseConfiguration} reads as it did before. Nothing here works on a self-invocation — a
- * service calling its own method does not pass through the proxy — which changes nothing today,
- * because a nested call is already inside its caller's transaction.
+ * can be injected by it as well as by a driving port. The service class must therefore stay
+ * non-final, and so must its public methods: a {@code final} method is not intercepted. It runs on
+ * the proxy instance itself, whose fields are never set, and Spring only logs a warning at startup.
+ * Nothing here works on a self-invocation — a service calling its own method does not pass through
+ * the proxy — which changes nothing today, because a nested call is already inside its caller's
+ * transaction.
  *
  * <p>A method named as outside any transaction is left alone entirely, for a use case that marks
  * out its own units of work because part of it must hold no connection: generation, whose solve
@@ -50,11 +53,19 @@ public final class TransactionalUseCases {
   private TransactionalUseCases() {}
 
   /**
+   * Wraps a use case service so that each of its methods runs in one transaction.
+   *
+   * <p>The methods named in {@code outsideAnyTransaction} are matched by name and parameter types,
+   * so an overload is still wrapped. A method whose name starts with {@code find} is read-only.
+   *
+   * @param <T> the type handed back; the proxy subclasses the runtime class of {@code useCase}, so
+   *     it is an instance of that class and of everything the class implements
    * @param useCase a service implementing one or more driving ports
    * @param transactions the manager the transaction is begun on
    * @param outsideAnyTransaction methods of {@code useCase}, usually named through the driving port
    *     declaring them, that mark out their own units of work and must be left alone (ADR-045)
-   * @return the same service, with every other public method wrapped in a transaction
+   * @return a proxy of the service that runs every call except those named in a transaction, which
+   *     joins the caller's if one is already open, and delegates to {@code useCase}
    */
   @SuppressWarnings("unchecked")
   public static <T> T transactional(

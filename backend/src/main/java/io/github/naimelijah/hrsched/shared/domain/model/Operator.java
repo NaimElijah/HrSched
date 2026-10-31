@@ -16,6 +16,7 @@ import java.util.Objects;
  * rather than a privilege that was always quietly there.
  *
  * @param id who is acting
+ * @throws NullPointerException if {@code id} is {@code null}
  */
 public record Operator(UserId id) implements Actor {
 

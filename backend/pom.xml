@@ -208,19 +208,14 @@
 		  The tests run against a real PostgreSQL in a container, so Docker is required to build.
 		  There is deliberately no in-memory fallback and no skip-when-Docker-is-absent: a check that
 		  quietly does not run still reports green, which is what ci.yml already refuses for path
-		  filters. This one hands the container to Spring through @ServiceConnection, in place of
-		  hand-wired datasource properties. Apache-2.0, maintained by the Spring team, and
-		  version-managed by the Boot BOM. See ADR-004.
-		-->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-testcontainers</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<!--
-		  Runs that PostgreSQL; nothing in the JDK or in Spring starts a container. MIT, maintained
-		  by the Testcontainers project. Version-managed by the Boot BOM, which imports
-		  testcontainers-bom, so it moves when Boot does.
+		  filters. This artifact starts that container; nothing already on the classpath does. The
+		  JDK starts none, and spring-boot-docker-compose runs only the compose file when the
+		  application is run locally, not a container per test run. PostgresDatabase starts the one
+		  container and PostgresBackedApplication hands Spring only its address, so Boot's
+		  Testcontainers support, which stops every container bean when a context closes, is
+		  deliberately not on the classpath (#252). MIT, maintained by the Testcontainers project.
+		  Version-managed by the Boot BOM, which imports testcontainers-bom, so it moves when Boot
+		  does. See ADR-004.
 		-->
 		<dependency>
 			<groupId>org.testcontainers</groupId>
