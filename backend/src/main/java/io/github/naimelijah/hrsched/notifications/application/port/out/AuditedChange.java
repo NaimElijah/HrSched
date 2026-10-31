@@ -23,6 +23,9 @@ import java.util.UUID;
 public record AuditedChange(
     OrganisationId organisation, UserId actor, NotificationChange change, UUID subject) {
 
+  /**
+   * @throws NullPointerException if any component is null
+   */
   public AuditedChange {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(actor, "actor must not be null");

@@ -18,6 +18,10 @@ public class NotAddressableException extends RuntimeException {
 
   private final UserId actor;
 
+  /**
+   * @param actor the member who asked, kept for the log and the audit; the message names it by
+   *     identity only
+   */
   public NotAddressableException(UserId actor) {
     super("Actor %s has no personnel record, so has no notifications".formatted(actor.value()));
     this.actor = actor;

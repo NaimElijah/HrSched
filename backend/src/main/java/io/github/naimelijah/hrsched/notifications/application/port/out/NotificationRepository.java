@@ -17,8 +17,29 @@ import java.util.Optional;
  */
 public interface NotificationRepository {
 
+  /**
+   * Stores a notification, or marks a stored one read.
+   *
+   * <p>Saving again what is already stored changes nothing, and saving an unread copy of a stored
+   * read notification leaves it read: being marked read is the one change a notification makes, so
+   * a stale unread copy is not a change.
+   *
+   * @param notification what to store; its organisation and recipient are the ones it is stored
+   *     under
+   * @throws IllegalStateException if its identity is already stored for another organisation or
+   *     recipient, or records another kind, subject or moment; nothing is changed
+   */
   void save(Notification notification);
 
+  /**
+   * Finds one notification in one person's inbox.
+   *
+   * @param organisation whose notifications
+   * @param recipient whose inbox
+   * @param id which notification
+   * @return the notification, or empty when there is none with that identity in that inbox, whether
+   *     it does not exist or belongs to another organisation or recipient
+   */
   Optional<Notification> findById(
       OrganisationId organisation, EmployeeId recipient, NotificationId id);
 
