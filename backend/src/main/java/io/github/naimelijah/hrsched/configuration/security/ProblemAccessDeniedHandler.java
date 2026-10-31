@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.configuration.security;
 
+import io.github.naimelijah.hrsched.configuration.web.ProblemTypes;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
@@ -75,6 +76,7 @@ public class ProblemAccessDeniedHandler implements AccessDeniedHandler {
 
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     problem.setDetail(
         pendingChange
             ? "Change your temporary password first."

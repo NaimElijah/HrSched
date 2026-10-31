@@ -64,6 +64,28 @@ describe('choosing the message', () => {
   });
 });
 
+/**
+ * RFC 9457 section 3.1.1: a problem detail without a type is of the type about:blank. The backend
+ * gives every kind its own; nothing in the app branches on one yet, so it is only kept.
+ */
+describe('the problem type', () => {
+  it('GivenAType_WhenTranslating_ThenItIsKept', () => {
+    const error = toApiError(409, {
+      type: 'urn:hrsched:problem:already-assigned',
+      title: 'Already assigned',
+    });
+
+    expect(error.type).toBe('urn:hrsched:problem:already-assigned');
+  });
+
+  it.each([[{ title: 'Not found' }], [{ type: 42 }], ['plain text'], [null]])(
+    'GivenNoTypeThatIsAString_WhenTranslating_ThenItIsAboutBlank (%j)',
+    (body) => {
+      expect(toApiError(404, body).type).toBe('about:blank');
+    },
+  );
+});
+
 describe('violations', () => {
   // Invented duration.
   const valid = { employee: 'ada', constraint: 'maximum daily working time', detail: 'PT12H7M' };

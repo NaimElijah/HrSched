@@ -189,6 +189,44 @@ rules`, as publishing it would. With invented identifiers and weights:
 }
 ```
 
+## Problem types
+
+Every problem detail names its kind in `type`, a URN that is never fetched
+([ADR-057](ADRs/ADR-057-name-every-kind-of-problem-with-a-urn.md)). A kind has one status and one
+title wherever it is answered, so a client can tell refusals apart by `type` and leave the title
+to be read. `detail` is the sentence to show a person.
+
+| Type | Status | Title |
+| :--- | :--- | :--- |
+| `urn:hrsched:problem:invalid-request` | `400` | `Invalid request` |
+| `urn:hrsched:problem:malformed-request` | `400` | `Malformed request` |
+| `urn:hrsched:problem:sign-in-refused` | `401` | `Sign-in refused` |
+| `urn:hrsched:problem:unauthenticated` | `401` | `Unauthenticated` |
+| `urn:hrsched:problem:not-permitted` | `403` | `Not permitted` |
+| `urn:hrsched:problem:password-not-changed` | `403` | `Password not changed` |
+| `urn:hrsched:problem:not-found` | `404` | `Not found` |
+| `urn:hrsched:problem:already-assigned` | `409` | `Already assigned` |
+| `urn:hrsched:problem:already-requested` | `409` | `Already requested` |
+| `urn:hrsched:problem:employee-already-linked` | `409` | `Employee already linked` |
+| `urn:hrsched:problem:last-active-admin` | `409` | `Last active Admin` |
+| `urn:hrsched:problem:no-longer-pending` | `409` | `No longer pending` |
+| `urn:hrsched:problem:not-your-own-password` | `409` | `Not your own password` |
+| `urn:hrsched:problem:overlaps-a-declared-span` | `409` | `Overlaps a declared span` |
+| `urn:hrsched:problem:published-concurrently` | `409` | `Published concurrently` |
+| `urn:hrsched:problem:revised-concurrently` | `409` | `Revised concurrently` |
+| `urn:hrsched:problem:roster-status-forbids-this` | `409` | `Roster status forbids this` |
+| `urn:hrsched:problem:sign-in-name-taken` | `409` | `Sign-in name taken` |
+| `urn:hrsched:problem:request-too-large` | `413` | `Request too large` |
+| `urn:hrsched:problem:unsupported-media-type` | `415` | `Unsupported media type` |
+| `urn:hrsched:problem:assignment-refused` | `422` | `Assignment refused` |
+| `urn:hrsched:problem:employee-account-not-linked` | `422` | `Employee account not linked` |
+| `urn:hrsched:problem:password-not-accepted` | `422` | `Password not accepted` |
+| `urn:hrsched:problem:roster-breaks-the-rules` | `422` | `Roster breaks the rules` |
+| `urn:hrsched:problem:roster-cannot-be-checked-against-the-rules` | `422` | `Roster cannot be checked against the rules` |
+| `urn:hrsched:problem:unknown-employee` | `422` | `Unknown employee` |
+| `urn:hrsched:problem:generation-is-busy` | `503` | `Generation is busy` |
+| `urn:hrsched:problem:generation-is-unavailable` | `503` | `Generation is unavailable` |
+
 ## Other refusals
 
 - **No token, or one that is not accepted.** Answers `401` titled `Unauthenticated`, whose

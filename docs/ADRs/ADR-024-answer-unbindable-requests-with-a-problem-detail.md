@@ -10,6 +10,9 @@
     a charset other than UTF-8 with a 415, and the problem detail is written by
     `JsonCharsetFilter`. That is the only 415 this repository sends. A multipart body also gets a
     415, but it is Spring's default, with Spring's default body.
+  - **Amended 2026-10-31:** every problem detail now carries a `type` of its own, and the 400 this
+    handler writes is `urn:hrsched:problem:invalid-request`; the type is no longer `about:blank`.
+    See [ADR-057](ADR-057-name-every-kind-of-problem-with-a-urn.md).
 - **Date:** 2026-09-14
 
 ## Context

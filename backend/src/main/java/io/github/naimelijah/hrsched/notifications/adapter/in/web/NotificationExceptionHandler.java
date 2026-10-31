@@ -57,6 +57,7 @@ public class NotificationExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "You have no personnel record, so you have no notifications.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 
@@ -71,6 +72,7 @@ public class NotificationExceptionHandler {
     }
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
+    problem.setType(ProblemTypes.NOT_FOUND);
     problem.setDetail("No such resource.");
     return problem;
   }
@@ -90,6 +92,7 @@ public class NotificationExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "The platform operator may not act inside an organisation.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 }

@@ -193,6 +193,8 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY.value());
     assertThat(problem.getTitle()).isEqualTo("Roster cannot be checked against the rules");
+    assertThat(problem.getType())
+        .hasToString("urn:hrsched:problem:roster-cannot-be-checked-against-the-rules");
   }
 
   @ParameterizedTest
@@ -368,6 +370,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getTitle()).isEqualTo("Published concurrently");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:published-concurrently");
     assertThat(problem.getDetail())
         .isEqualTo(conflict.getMessage())
         .doesNotContain("what the store said")
@@ -415,6 +418,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getTitle()).isEqualTo("Revised concurrently");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:revised-concurrently");
     assertThat(problem.getDetail())
         .isEqualTo(conflict.getMessage())
         .doesNotContain("what the store said");

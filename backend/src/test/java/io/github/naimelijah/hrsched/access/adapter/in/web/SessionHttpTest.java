@@ -154,6 +154,8 @@ class SessionHttpTest {
     assertThat(response.getContentType()).contains("application/problem+json");
     assertThat(JsonPath.<String>read(response.getContentAsString(), "$.title"))
         .isEqualTo("Unauthenticated");
+    assertThat(JsonPath.<String>read(response.getContentAsString(), "$.type"))
+        .isEqualTo("urn:hrsched:problem:unauthenticated");
   }
 
   @Test
@@ -338,6 +340,8 @@ class SessionHttpTest {
     assertThat(response.getStatus()).isEqualTo(422);
     String body = response.getContentAsString();
     assertThat(JsonPath.<String>read(body, "$.reason")).isEqualTo("TOO_SHORT");
+    assertThat(JsonPath.<String>read(body, "$.type"))
+        .isEqualTo("urn:hrsched:problem:password-not-accepted");
     assertThat(body).doesNotContain("short");
   }
 
@@ -352,6 +356,8 @@ class SessionHttpTest {
     assertThat(response.getStatus())
         .describedAs("403 rather than 401: a 401 would send the client off to renew and retry")
         .isEqualTo(403);
+    assertThat(JsonPath.<String>read(response.getContentAsString(), "$.type"))
+        .isEqualTo("urn:hrsched:problem:password-not-changed");
     assertThat(accounts.findForAuthentication(operator.id()).orElseThrow().failedSignIns())
         .isEqualTo(1);
   }

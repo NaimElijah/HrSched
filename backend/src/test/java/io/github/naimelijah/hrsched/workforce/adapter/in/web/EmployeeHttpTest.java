@@ -438,6 +438,7 @@ class EmployeeHttpTest {
                 .content("{}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.title").value("Malformed request"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:malformed-request"))
         .andExpect(jsonPath("$.detail").value(containsString("missing required fields")));
   }
 
@@ -551,7 +552,8 @@ class EmployeeHttpTest {
             as(mockMvc, post("/api/employees/" + ada + "/unavailability"), organisation, "ADMIN")
                 .content("{\"start\":\"2026-11-07T00:00:00Z\",\"end\":\"2026-11-09T00:00:00Z\"}"))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.title").value("Overlaps a declared span"));
+        .andExpect(jsonPath("$.title").value("Overlaps a declared span"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:overlaps-a-declared-span"));
   }
 
   /**
@@ -704,6 +706,7 @@ class EmployeeHttpTest {
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.detail").value("No such resource."))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-found"))
         .andExpect(jsonPath("$.detail").value(not(containsString(theirs))));
   }
 

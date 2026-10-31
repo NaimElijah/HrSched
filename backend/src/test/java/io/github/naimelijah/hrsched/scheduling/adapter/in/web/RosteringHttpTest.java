@@ -422,7 +422,8 @@ class RosteringHttpTest {
     mockMvc
         .perform(as(mockMvc, get(assessment(roster)), organisation, "SCHEDULER"))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.title").value("Roster status forbids this"));
+        .andExpect(jsonPath("$.title").value("Roster status forbids this"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:roster-status-forbids-this"));
   }
 
   @Test
@@ -436,7 +437,8 @@ class RosteringHttpTest {
         .perform(
             as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "ADMIN")
                 .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, ada)))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-permitted"));
   }
 
   /**
@@ -495,6 +497,7 @@ class RosteringHttpTest {
         .andExpect(status().isUnprocessableEntity())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         .andExpect(jsonPath("$.title").value("Assignment refused"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:assignment-refused"))
         .andExpect(jsonPath("$.detail").value(containsString("overlap")));
   }
 
@@ -515,6 +518,7 @@ class RosteringHttpTest {
                         .formatted(INVENTED_HEADCOUNT_BELOW_ONE)))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.title").value("Invalid request"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:invalid-request"))
         .andExpect(
             jsonPath("$.detail")
                 .value(not(containsString(String.valueOf(INVENTED_HEADCOUNT_BELOW_ONE)))));
@@ -560,6 +564,7 @@ class RosteringHttpTest {
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         .andExpect(jsonPath("$.title").value("Already assigned"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:already-assigned"))
         .andExpect(jsonPath("$.detail").value(not(containsString(day))))
         .andExpect(jsonPath("$.detail").value(not(containsString(ada))));
   }
@@ -650,6 +655,7 @@ class RosteringHttpTest {
                 "SCHEDULER"))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.title").value("Roster breaks the rules"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:roster-breaks-the-rules"))
         .andExpect(jsonPath("$.violations.length()").value(1))
         .andExpect(jsonPath("$.violations[0].employee").value(ada))
         .andExpect(jsonPath("$.violations[0].constraint").value("overlapping work"))
@@ -1118,7 +1124,8 @@ class RosteringHttpTest {
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         .andExpect(jsonPath("$.title").value("Not found"))
-        .andExpect(jsonPath("$.detail").value("No such resource."));
+        .andExpect(jsonPath("$.detail").value("No such resource."))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-found"));
   }
 
   /**

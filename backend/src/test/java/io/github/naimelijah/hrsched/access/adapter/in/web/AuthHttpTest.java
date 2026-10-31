@@ -225,8 +225,10 @@ class AuthHttpTest {
   void GivenAWrongPassword_WhenTheRequestIsRefused_ThenTheFailureIsStillCounted() throws Exception {
     Account account = anOperator(RIGHT_PASSWORD);
 
-    signIn(account.signInName().value(), WRONG_PASSWORD);
+    MockHttpServletResponse refused = signIn(account.signInName().value(), WRONG_PASSWORD);
 
+    assertThat(JsonPath.<String>read(refused.getContentAsString(), "$.type"))
+        .isEqualTo("urn:hrsched:problem:sign-in-refused");
     assertThat(accounts.findBySignInName(account.signInName()).orElseThrow().failedSignIns())
         .isEqualTo(1);
   }

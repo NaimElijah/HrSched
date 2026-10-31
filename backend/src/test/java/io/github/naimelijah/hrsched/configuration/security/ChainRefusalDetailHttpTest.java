@@ -58,6 +58,7 @@ class ChainRefusalDetailHttpTest {
         .perform(TestTenants.with(get("/api/qualifications"), token))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.title").value(NOT_PERMITTED))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-permitted"))
         .andExpect(jsonPath("$.detail").value(CHANGE_YOUR_PASSWORD_FIRST));
   }
 
@@ -69,6 +70,7 @@ class ChainRefusalDetailHttpTest {
         .perform(TestTenants.with(get("/api/accounts"), TestTenants.operatorToken(mockMvc)))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.title").value(NOT_PERMITTED))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-permitted"))
         .andExpect(jsonPath("$.detail").value(YOUR_ROLE_DOES_NOT_PERMIT_THIS));
   }
 

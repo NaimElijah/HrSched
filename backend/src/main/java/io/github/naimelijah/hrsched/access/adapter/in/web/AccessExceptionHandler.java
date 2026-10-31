@@ -90,6 +90,7 @@ public class AccessExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     problem.setTitle("Invalid request");
+    problem.setType(ProblemTypes.INVALID_REQUEST);
     return problem;
   }
 
@@ -105,6 +106,7 @@ public class AccessExceptionHandler {
             HttpStatus.UNPROCESSABLE_ENTITY,
             PasswordRejectionDetail.of(exception.reason(), policy));
     problem.setTitle("Password not accepted");
+    problem.setType(ProblemTypes.PASSWORD_NOT_ACCEPTED);
     problem.setProperty("reason", exception.reason().name());
     return problem;
   }
@@ -138,6 +140,7 @@ public class AccessExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.CONFLICT, "That sign-in name is already in use.");
     problem.setTitle("Sign-in name taken");
+    problem.setType(ProblemTypes.SIGN_IN_NAME_TAKEN);
     return problem;
   }
 
@@ -159,6 +162,7 @@ public class AccessExceptionHandler {
     denied("unknown_account");
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
+    problem.setType(ProblemTypes.NOT_FOUND);
     problem.setDetail("No such resource.");
     return problem;
   }
@@ -183,6 +187,7 @@ public class AccessExceptionHandler {
             "An organisation must keep at least one active Admin. Give somebody else that role"
                 + " first.");
     problem.setTitle("Last active Admin");
+    problem.setType(ProblemTypes.LAST_ACTIVE_ADMIN);
     return problem;
   }
 
@@ -197,6 +202,7 @@ public class AccessExceptionHandler {
             HttpStatus.CONFLICT,
             "Change your own password at /api/auth/password, which asks for the current one.");
     problem.setTitle("Not your own password");
+    problem.setType(ProblemTypes.NOT_YOUR_OWN_PASSWORD);
     return problem;
   }
 
@@ -207,6 +213,7 @@ public class AccessExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.UNPROCESSABLE_ENTITY, "No such employee in this organisation.");
     problem.setTitle("Unknown employee");
+    problem.setType(ProblemTypes.UNKNOWN_EMPLOYEE);
     return problem;
   }
 
@@ -224,6 +231,7 @@ public class AccessExceptionHandler {
             "An Employee account must be linked to one of this organisation's employees; one that"
                 + " is not cannot be restored until it is.");
     problem.setTitle("Employee account not linked");
+    problem.setType(ProblemTypes.EMPLOYEE_ACCOUNT_NOT_LINKED);
     return problem;
   }
 
@@ -234,6 +242,7 @@ public class AccessExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.CONFLICT, "That employee already has an account.");
     problem.setTitle("Employee already linked");
+    problem.setType(ProblemTypes.EMPLOYEE_ALREADY_LINKED);
     return problem;
   }
 
@@ -255,12 +264,14 @@ public class AccessExceptionHandler {
               "The request body exceeds a limit on its size, its nesting or the length of a value"
                   + " in it.");
       problem.setTitle("Request too large");
+      problem.setType(ProblemTypes.REQUEST_TOO_LARGE);
       return problem;
     }
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.BAD_REQUEST, "The request body is malformed or is missing required fields.");
     problem.setTitle("Malformed request");
+    problem.setType(ProblemTypes.MALFORMED_REQUEST);
     return problem;
   }
 
@@ -275,6 +286,7 @@ public class AccessExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "Only the platform operator may do this.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 
@@ -293,6 +305,7 @@ public class AccessExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your role does not permit this.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 
@@ -312,6 +325,7 @@ public class AccessExceptionHandler {
     }
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
+    problem.setType(ProblemTypes.NOT_FOUND);
     problem.setDetail("No such resource.");
     return problem;
   }
@@ -331,6 +345,7 @@ public class AccessExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "The platform operator may not act inside an organisation.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 }

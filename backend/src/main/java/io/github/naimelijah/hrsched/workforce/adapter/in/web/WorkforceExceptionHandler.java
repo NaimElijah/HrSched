@@ -75,6 +75,7 @@ public class WorkforceExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     problem.setTitle("Invalid request");
+    problem.setType(ProblemTypes.INVALID_REQUEST);
     return problem;
   }
 
@@ -92,6 +93,7 @@ public class WorkforceExceptionHandler {
             HttpStatus.CONFLICT,
             "That span overlaps unavailability already declared for this employee.");
     problem.setTitle("Overlaps a declared span");
+    problem.setType(ProblemTypes.OVERLAPS_A_DECLARED_SPAN);
     return problem;
   }
 
@@ -111,12 +113,14 @@ public class WorkforceExceptionHandler {
               "The request body exceeds a limit on its size, its nesting or the length of a value"
                   + " in it.");
       problem.setTitle("Request too large");
+      problem.setType(ProblemTypes.REQUEST_TOO_LARGE);
       return problem;
     }
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.BAD_REQUEST, "The request body is malformed or is missing required fields.");
     problem.setTitle("Malformed request");
+    problem.setType(ProblemTypes.MALFORMED_REQUEST);
     return problem;
   }
 
@@ -130,6 +134,7 @@ public class WorkforceExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your role does not permit this.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 
@@ -146,6 +151,7 @@ public class WorkforceExceptionHandler {
   public ProblemDetail handleUnknown(RuntimeException exception) {
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
+    problem.setType(ProblemTypes.NOT_FOUND);
     problem.setDetail("No such resource.");
     return problem;
   }
@@ -164,6 +170,7 @@ public class WorkforceExceptionHandler {
     denied("cross_tenant");
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
+    problem.setType(ProblemTypes.NOT_FOUND);
     problem.setDetail("No such resource.");
     return problem;
   }
@@ -183,6 +190,7 @@ public class WorkforceExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "The platform operator may not act inside an organisation.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 }

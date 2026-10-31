@@ -482,7 +482,8 @@ class SwapHttpTest {
     mockMvc
         .perform(as(mockMvc, post("/api/swaps/" + swap + "/approval"), organisation, "SCHEDULER"))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.title").value("No longer pending"));
+        .andExpect(jsonPath("$.title").value("No longer pending"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:no-longer-pending"));
   }
 
   /** R32 over HTTP: a second ask for the same shift is a conflict, not a second request. */
@@ -500,7 +501,8 @@ class SwapHttpTest {
     mockMvc
         .perform(asThemself(mockMvc, post("/api/swaps"), organisation, ada).content(body))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.title").value("Already requested"));
+        .andExpect(jsonPath("$.title").value("Already requested"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:already-requested"));
   }
 
   /**

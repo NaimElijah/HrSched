@@ -254,7 +254,8 @@ class AccountHttpTest {
 
     mockMvc
         .perform(with(post("/api/accounts"), admin).content(creating(taken, Role.SCHEDULER)))
-        .andExpect(status().isConflict());
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:sign-in-name-taken"));
   }
 
   /**
@@ -295,6 +296,7 @@ class AccountHttpTest {
                         .formatted(anInventedSignInName(), TOO_SHORT)))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.reason").value("TOO_SHORT"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:password-not-accepted"))
         .andExpect(
             jsonPath("$.detail")
                 .value(
@@ -326,7 +328,8 @@ class AccountHttpTest {
         .perform(
             with(post("/api/accounts"), admin(anOrganisation()))
                 .content(linkedTo(anInventedSignInName(), theirs)))
-        .andExpect(status().isUnprocessableEntity());
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:unknown-employee"));
   }
 
   @Test
@@ -341,7 +344,8 @@ class AccountHttpTest {
 
     mockMvc
         .perform(with(post("/api/accounts"), admin).content(linkedTo(anInventedSignInName(), ada)))
-        .andExpect(status().isConflict());
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:employee-already-linked"));
   }
 
   // ADR-031: the organisation comes from the acting account, never from what the request says
@@ -451,7 +455,10 @@ class AccountHttpTest {
 
   @Test
   void GivenNoToken_WhenListingAccounts_ThenItIsUnauthorised() throws Exception {
-    mockMvc.perform(get("/api/accounts")).andExpect(status().isUnauthorized());
+    mockMvc
+        .perform(get("/api/accounts"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:unauthenticated"));
   }
 
   @Test
@@ -509,6 +516,7 @@ class AccountHttpTest {
             with(post("/api/accounts"), admin(acme)).content(creating(signInName, Role.EMPLOYEE)))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.title").value("Employee account not linked"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:employee-account-not-linked"))
         .andExpect(jsonPath("$.detail").value(UNLINKED_EMPLOYEE_REFUSED));
 
     mockMvc.perform(signInAs(signInName, A_PASSWORD)).andExpect(status().isUnauthorized());
@@ -639,7 +647,8 @@ class AccountHttpTest {
         .perform(
             with(put("/api/accounts/%s/membership".formatted(onlyAdmin)), admin)
                 .content("{\"role\":\"SCHEDULER\"}"))
-        .andExpect(status().isConflict());
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:last-active-admin"));
   }
 
   @Test
@@ -900,7 +909,8 @@ class AccountHttpTest {
             with(post("/api/accounts/%s/password".formatted(theirs)), admin(anOrganisation()))
                 .content("{\"temporaryPassword\":\"%s\"}".formatted(replacement)))
         .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.detail").value("No such resource."));
+        .andExpect(jsonPath("$.detail").value("No such resource."))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-found"));
 
     mockMvc.perform(signInAs(theirName, A_PASSWORD)).andExpect(status().isOk());
     mockMvc.perform(signInAs(theirName, replacement)).andExpect(status().isUnauthorized());
@@ -1011,7 +1021,8 @@ class AccountHttpTest {
         .perform(
             with(post("/api/accounts/%s/password".formatted(whoAmI(admin))), admin)
                 .content("{\"temporaryPassword\":\"%s\"}".formatted(A_PASSWORD)))
-        .andExpect(status().isConflict());
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-your-own-password"));
   }
 
   /**

@@ -211,6 +211,9 @@ class RequestBodyCharsetHttpTest {
     assertThat(response.getContentType())
         .describedAs("the refusal carries a problem detail")
         .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+    assertThat(JsonPath.<String>read(response.getContentAsString(), "$.type"))
+        .describedAs("the refusal's type")
+        .isEqualTo("urn:hrsched:problem:unsupported-media-type");
   }
 
   private static byte[] signInBody(SignInName name, String password, Charset charset) {
