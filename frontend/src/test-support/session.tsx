@@ -50,10 +50,16 @@ export function renderSignedIn(ui: ReactElement, session: Session = A_TENANT) {
 /**
  * The provider {@link renderSignedIn} wraps with, for a test that needs to render it itself.
  *
+ * The state is `password-change-required` when the session says a change is pending, and
+ * `signed-in` otherwise. Every action does nothing: `signIn`, `signOut` and `changePassword`
+ * resolve at once, and `retryRestore` returns.
+ *
  * @param session who is signed in
  * @param children the screen
  */
 export function SignedIn({ session, children }: { session: Session; children: ReactNode }) {
+  // Held during the render rather than in an effect, so the token is there before any child's
+  // effect makes its first request: a child's effects run before its parent's.
   holdSession({
     accessToken: 'a-test-access-token',
     tokenType: 'Bearer',

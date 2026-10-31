@@ -16,7 +16,8 @@ function configured(set: ConstraintSet | null, key: RuleField): string {
  *
  * Every field is blank unless the organisation has configured that rule, and no value is ever
  * suggested. HrSched hardcodes no jurisdiction, and a number offered by this form would be a legal
- * threshold chosen by a developer. A jurisdiction is a preset somebody loads, with its source cited.
+ * threshold chosen by a developer. A jurisdiction is meant to be a preset the organisation applies,
+ * with its source cited (F32); that is not built yet (#105).
  *
  * Each field shows the configured value until it is edited, and that is load-bearing rather than a
  * convenience: revising replaces the whole set, so submitting a form that had only one field filled

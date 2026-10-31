@@ -43,8 +43,9 @@ export interface FirstAdmin {
 /**
  * The organisation register (F13).
  *
- * Every call is made as whoever holds the session, which for all three of these is the platform
- * operator: a tenant role is refused onboarding and listing, and may read only its own.
+ * Every call is made as whoever holds the session, which for both of these is the platform
+ * operator: a tenant role is refused onboarding and listing. The backend also lets a tenant read
+ * its own organisation, which this client does not call.
  */
 export const access = {
   /**
@@ -99,6 +100,8 @@ export const accounts = {
     }),
 
   /**
+   * Enables or disables an account. Disabling the last active Admin is refused with a 409.
+   *
    * @param id the account to change
    * @param active whether it may sign in and act; disabling ends every session it holds
    */

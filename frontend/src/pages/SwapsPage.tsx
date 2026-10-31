@@ -13,7 +13,7 @@ import { useShiftsById } from '../components/useShiftsById';
 const SWAP_COLUMNS = 5;
 
 /**
- * Scheduler: answer the swap requests (F7).
+ * Scheduler: answer the swap requests (F17).
  *
  * Approving publishes a replacement roster rather than editing the one people are working to
  * (ADR-022), so it is refused exactly as publishing is — every broken rule named, and no override.

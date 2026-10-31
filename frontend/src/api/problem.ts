@@ -1,8 +1,8 @@
 /**
  * The failure shapes the backend returns, and the one error type the rest of the app sees.
  *
- * Every response body here was read off a live backend before this file was written; none of it is
- * inferred from the Java. The backend answers with RFC 9457 problem details.
+ * The backend answers a refusal with an RFC 9457 problem detail, and `toApiError` validates the
+ * body it is given rather than trusting its shape.
  */
 
 /**
@@ -96,6 +96,13 @@ export class ApiError extends Error {
     return this.status === 401;
   }
 
+  /**
+   * True for any 403: the caller is signed in, and the backend will not do this for them. That is
+   * most often a role that may not, but a wrong current password, an account linked to no employee
+   * asking for its own schedule, and the platform Operator reaching inside an organisation answer
+   * 403 as well. Only a temporary password still pending can be told apart, by
+   * {@link isPasswordChangeRequired}; nothing tells the others apart.
+   */
   get isForbidden(): boolean {
     return this.status === 403;
   }
@@ -109,6 +116,7 @@ export class ApiError extends Error {
     return this.status === 403 && this.type === PASSWORD_CHANGE_REQUIRED;
   }
 
+  /** True when there is no such resource for this organisation, which may be somebody else's. */
   get isNotFound(): boolean {
     return this.status === 404;
   }
@@ -146,6 +154,14 @@ function isViolation(value: unknown): value is Violation {
  * parsed out. So does the media type, lower-cased and without parameters: a `type` names a kind of
  * refusal only in an `application/problem+json` body, and in any other JSON, such as a gateway's, it
  * is somebody else's field and is not kept.
+ *
+ * @param status the HTTP status of the response
+ * @param body the parsed body, or null when there was none or it was not JSON; for a non-empty
+ *     `text/plain` body, which is a sentence rather than JSON, the caller passes `{ detail: text }`
+ * @param reference the trace id from the response header, or null when it sent none
+ * @param mediaType the response's media type, lower-cased and without parameters, or null
+ * @returns the error; its message is the body's `detail`, else its `title`, else a sentence naming
+ *     the status, and its violations are those of the body's `violations` that have the right shape
  */
 export function toApiError(
   status: number,

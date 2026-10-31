@@ -29,5 +29,10 @@ export const notifications = {
   /** The caller's own inbox. Whose it is comes from the employee link, never from a parameter. */
   findMine: (): Promise<Notification[]> => api.get<Notification[]>('/api/notifications'),
 
+  /**
+   * Marks one of the caller's own notifications read, and answers no content. A 404 when it is not
+   * in their inbox, including when it is somebody else's, and a 403 for an account linked to no
+   * employee.
+   */
   markRead: (id: string): Promise<void> => api.post<void>(path`/api/notifications/${id}/read`),
 };

@@ -24,6 +24,7 @@ export function startOfLocalDay(date: string): string | null {
  *
  * @param instant an ISO instant
  * @returns the date, as `YYYY-MM-DD`, that the instant falls on where the reader is
+ * @throws RangeError when `instant` is not a valid instant
  */
 export function localDate(instant: string): string {
   const date = new Date(instant);
