@@ -55,7 +55,8 @@ public class JdbcSwapRequestRepository implements SwapRequestRepository {
       // still break is the one keeping an assignment to one pending request (R32, V8). Raising a
       // request checks first, under the publication lock; this answers a writer that skipped it.
       if (request.status() == SwapRequestStatus.REQUESTED
-          && UniqueViolations.isViolationOf(refused, ONE_PENDING_PER_ASSIGNMENT)) {
+          && StoreRefusals.isViolationOf(
+              refused, StoreRefusals.UNIQUE_VIOLATION, ONE_PENDING_PER_ASSIGNMENT)) {
         throw new SwapAlreadyRequestedException(request.roster(), request.shift());
       }
       throw refused;

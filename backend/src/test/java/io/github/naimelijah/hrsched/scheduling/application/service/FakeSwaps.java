@@ -34,10 +34,25 @@ final class FakeSwaps implements SwapRequestRepository {
 
   /**
    * Refuses a decision over a decision, as {@code JdbcSwapRequestRepository} does. A fake that
-   * accepted it would let a use case pass here and fail in production. Two refusals are not
-   * mirrored, and {@code JdbcSwapRequestRepositoryTest} proves both: an identity another
-   * organisation holds, and a second pending request for one assignment, which raising a request
-   * refuses before it saves (R32).
+   * accepted it would let a use case pass here and fail in production.
+   *
+   * <p>The schema's other refusals are not mirrored, because this store sees no roster. {@code
+   * SwapService} raises a request only for an assignment it read on its organisation's published
+   * roster (R20), and checks for a pending one first (R32), so none is reachable through it. Each
+   * is proven in {@code JdbcSwapRequestRepositoryTest}:
+   *
+   * <ul>
+   *   <li>an identity another organisation holds: {@code
+   *       GivenAPendingRequestOfAnotherOrganisation_WhenSavingOverIt_ThenItIsRefused};
+   *   <li>a second pending request for one assignment: {@code
+   *       GivenAPendingRequest_WhenASecondIsStoredForTheSameAssignment_ThenTheSchemaRefusesIt};
+   *   <li>a request naming a roster of another organisation (V14): {@code
+   *       GivenARosterOfAnotherOrganisation_WhenARequestNamingItIsStored_ThenTheSchemaRefusesIt};
+   *   <li>a request naming a roster never stored (V14): {@code
+   *       GivenARosterNeverStored_WhenARequestNamingItIsStored_ThenTheSchemaRefusesIt};
+   *   <li>a request naming an assignment its roster does not hold (V14): {@code
+   *       GivenAnAssignmentTheRosterDoesNotHold_WhenARequestNamingItIsStored_ThenTheSchemaRefusesIt}.
+   * </ul>
    */
   @Override
   public void save(SwapRequest request) {

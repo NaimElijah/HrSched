@@ -410,6 +410,16 @@ are not audited. Nothing at runtime depends on any of it.
   so a save never moves one to another inbox or rewrites what somebody was told; the upsert only
   ever sets `read`, never clears it. The register of organisations is the exception, having no
   owner to compare.
+- **In scheduling, a reference to a roster carries its organisation.** `roster` is unique on
+  `(organisation_id, id)` as well as on `id`, and `roster_generation` and `swap_request` name a
+  roster through both columns, so neither can store a reference to another organisation's roster,
+  nor to one that does not exist (`V14`). A swap request also names the requester's assignment on
+  that roster, `swap_request_names_an_assignment_on_its_roster`, which holds because a published
+  roster's assignments are never deleted. That key's index, `swap_request_by_assignment`, is
+  deliberately not led by `organisation_id`: it answers no repository lookup, but the check
+  PostgreSQL makes on each assignment a draft save deletes, which carries no organisation because
+  `roster_assignment` has none. No adapter translates these
+  violations; each surfaces as the store reports it.
 - **A cross-tenant attempt returns 404, never 403.** A 403 would confirm the resource exists in
   another organisation.
 - **Over HTTP that 404 is produced by the repositories, not by the tenant guard.** A request acts
@@ -527,7 +537,8 @@ are not audited. Nothing at runtime depends on any of it.
   day a working day, and a day is 23 or 25 hours long when the clocks change. Work in two zones
   lands on each zone's own date. Only ids the JVM's time zone database knows are accepted, so a raw
   offset such as `+01:00` is refused; there is no default, and shifts stored before V5 keep the UTC
-  they were judged in. The Shifts page sends the browser's zone, so a site in another zone cannot
+  they were judged in. The schema checks only that a zone is named (`V14`), as it holds no zone
+  database. The Shifts page sends the browser's zone, so a site in another zone cannot
   yet be planned for
   ([#136](https://github.com/NaimElijah/HrSched/issues/136),
   [ADR-034](../ADRs/ADR-034-count-working-days-in-each-shifts-own-time-zone.md)).
@@ -598,10 +609,14 @@ are not audited. Nothing at runtime depends on any of it.
 - **Every constraint version is stored, and any of them can be read back.** The table is keyed
   `(organisation_id, version)`, so revising never discards what came before, and
   `GET /api/constraints/{version}` answers the rules a roster naming that version was judged
-  against (Q9). **Version one is never stored:** reading the rules stores nothing, and the first
+  against (Q9). A limit is stored in whole seconds, so `JdbcConstraintSetRepository` refuses one
+  with a part of a second before it writes anything, rather than store a limit other than the one
+  configured; over HTTP a limit arrives in whole minutes, so no request reaches that refusal.
+  **Version one is never stored:** reading the rules stores nothing, and the first
   revision writes version two. Every organisation starts bound by the empty set, so
   `SchedulingService.findConstraints` answers version one from `ConstraintSet.initial` when no row
-  holds it, and `roster.validated_against_constraint_version` carries no foreign key
+  holds it, and `roster.validated_against_constraint_version` carries no foreign key, only a check
+  that it is at least one (`V14`)
   ([ADR-038](../ADRs/ADR-038-read-a-constraint-version-back-by-its-number.md)).
 - **Approving a swap publishes a replacement; it never edits.** `SwapService` builds the roster that
   would have been published had the swap been in it, and then calls
@@ -656,7 +671,9 @@ are not audited. Nothing at runtime depends on any of it.
   by PostgreSQL rather than leaving two rosters authoritative, and so is one that would record the
   past as having had two. PostgreSQL reports that as an exclusion violation, or, when two such
   writers wait on each other, by aborting one as a deadlock victim. `JdbcRosterRepository` turns
-  either into `RosterPublicationConflictException`, which is answered 409
+  either into `RosterPublicationConflictException`, which is answered 409: the exclusion violation
+  only when it names this constraint, so another a later migration adds surfaces as the store
+  reported it, and the deadlock, which names no constraint, by its SQLSTATE
   ([ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md), which widened the
   constraint and kept that translation; the constraint began under
   [ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md), which it
@@ -834,7 +851,13 @@ are not audited. Nothing at runtime depends on any of it.
   because `RosterGeneration` refuses to end. The use case checks before writing anything, and
   again once the draft is saved, inside the unit that saved it, so a save outlasting the instant
   takes the draft back with it
-  ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)).
+  ([ADR-046](../ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). The
+  schema refuses an ending before its request or after its `lost_at`
+  (`roster_generation_finished_while_it_could`, `V14`); one at `lost_at` itself is stored, because
+  the column rounds to the microsecond an ending the domain made just before. That a REFUSED
+  generation, and only one, has rows in `roster_generation_violation` is not held by the schema,
+  which would take a deferred constraint trigger: `RosterGeneration` refuses to be loaded from a
+  row that breaks it.
 - **At the largest stated size, a solve takes minutes and gigabytes.** Measured on an 8-core, 16 GB
   development machine with `GenerationAtScaleRun` (`./mvnw spotless:apply test
   -Dtest=GenerationAtScaleRun`, kept out of the build): the coverage search alone spent 75 s in

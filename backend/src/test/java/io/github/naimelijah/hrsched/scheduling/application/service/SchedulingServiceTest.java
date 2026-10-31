@@ -366,6 +366,30 @@ class SchedulingServiceTest {
   }
 
   /**
+   * The store holds a limit in whole seconds and refuses one with a part of a second, before it
+   * writes anything. The refusal reaches the caller and nothing is recorded, because nothing was
+   * stored.
+   */
+  @Test
+  void GivenALimitWithAPartOfASecond_WhenAnAdminRevisesTheRules_ThenNothingIsStoredOrRecorded() {
+    audit.forget();
+
+    // Invented: a daily cap of 437 minutes and half a second.
+    assertThatThrownBy(
+            () ->
+                service.reviseConstraints(
+                    admin(ACME),
+                    new ReviseConstraintsCommand(
+                        ACME,
+                        List.of(
+                            new MaximumDailyWorkingTime(Duration.ofMinutes(437).plusMillis(500))))))
+        .isInstanceOf(IllegalArgumentException.class);
+
+    assertThat(constraintSets.findCurrent(ACME)).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
    * #238: another Admin's revision of the same version is stored between this one's read and its
    * save. The store's conflict reaches the caller, to be answered 409, and nothing is recorded,
    * because nothing of this revision was stored.

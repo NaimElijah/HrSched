@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * The tenant predicate, the overlap semantics, and the ordering this adapter promises.
@@ -288,6 +289,32 @@ class JdbcShiftRepositoryTest {
         .get()
         .extracting(Shift::period)
         .isEqualTo(theirs.period());
+  }
+
+  /**
+   * A shift carries a {@code ZoneId}, whose id is never empty, and the schema refuses an empty one
+   * for a writer that skips the domain (V14). It checks no more than that, for V5's reason: the
+   * database does not hold the JVM's zone database.
+   */
+  @Test
+  void GivenAShiftWithAnEmptyZone_WhenStoredDirectly_ThenTheSchemaRefusesIt() {
+    assertThatThrownBy(
+            () ->
+                PostgresDatabase.jdbcClient()
+                    .sql(
+                        """
+                        INSERT INTO shift (id, organisation_id, starts_at, ends_at, zone,
+                                           required_headcount, unpopular)
+                        VALUES (:id, :organisation, :startsAt, :endsAt, '', 1, false)
+                        """)
+                    .param("id", ShiftId.newId().value())
+                    .param("organisation", ACME.value())
+                    .param(
+                        "startsAt", Instant.parse("2026-09-07T08:00:00Z").atOffset(ZoneOffset.UTC))
+                    .param("endsAt", Instant.parse("2026-09-07T16:00:00Z").atOffset(ZoneOffset.UTC))
+                    .update())
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("shift_counted_in_a_named_zone");
   }
 
   // --- #250: reading past the driver's bind-parameter limit ------------------------------------

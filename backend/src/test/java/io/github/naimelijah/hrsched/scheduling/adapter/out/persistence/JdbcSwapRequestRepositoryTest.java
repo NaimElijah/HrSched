@@ -6,6 +6,8 @@ import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
+import io.github.naimelijah.hrsched.scheduling.domain.model.Roster;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapAlreadyRequestedException;
@@ -15,6 +17,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.SwapRequestStatus;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
+import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
 import java.time.Instant;
 import java.util.Comparator;
@@ -40,6 +43,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * a Scheduler works through the queue — used to rest on a store that happened to keep insertion
  * order, and nothing asserted it. It now rests on {@code requestedAt}, and these tests are what
  * says so.
+ *
+ * <p>A request names an assignment on a roster of its own organisation, and the schema refuses one
+ * that does not (V14), so every request here names one stored for it. The roster is a draft: which
+ * rosters a request may name is the use case's to decide, not the store's.
  */
 class JdbcSwapRequestRepositoryTest {
 
@@ -48,9 +55,13 @@ class JdbcSwapRequestRepositoryTest {
   private static final Instant NINE = Instant.parse("2026-10-01T09:00:00Z");
   private static final Instant TEN = Instant.parse("2026-10-01T10:00:00Z");
   private static final Instant ELEVEN = Instant.parse("2026-10-01T11:00:00Z");
+  private static final TimeRange THE_WEEK =
+      new TimeRange(Instant.parse("2026-10-05T00:00:00Z"), Instant.parse("2026-10-12T00:00:00Z"));
 
   private final JdbcSwapRequestRepository repository =
       new JdbcSwapRequestRepository(PostgresDatabase.jdbcClient());
+  private final JdbcRosterRepository rosters =
+      new JdbcRosterRepository(PostgresDatabase.jdbcClient());
 
   @BeforeEach
   void emptyTheDatabase() {
@@ -58,15 +69,34 @@ class JdbcSwapRequestRepositoryTest {
     PostgresDatabase.given(ACME, RIVAL);
   }
 
-  private static SwapRequest request(OrganisationId organisation, Instant raisedAt) {
-    return new SwapRequest(
-        SwapRequestId.newId(),
-        organisation,
-        RosterId.newId(),
-        ShiftId.newId(),
-        EmployeeId.newId(),
-        EmployeeId.newId(),
-        raisedAt);
+  /** A request for an assignment of its own, on a roster of its own. */
+  private SwapRequest request(OrganisationId organisation, Instant raisedAt) {
+    return naming(organisation, aRoster(organisation), raisedAt);
+  }
+
+  private RosterId aRoster(OrganisationId organisation) {
+    Roster draft = new Roster(RosterId.newId(), organisation, THE_WEEK);
+    rosters.save(draft);
+    return draft.id();
+  }
+
+  /**
+   * Stores a new assignment on the roster. Inserted beside the rows already there rather than by
+   * saving the roster again, which would delete and reinsert assignments a request already names.
+   */
+  private static Assignment assignedOn(RosterId roster) {
+    Assignment assignment = new Assignment(ShiftId.newId(), EmployeeId.newId());
+    PostgresDatabase.jdbcClient()
+        .sql(
+            """
+            INSERT INTO roster_assignment (roster_id, shift_id, employee_id)
+            VALUES (:roster, :shift, :employee)
+            """)
+        .param("roster", roster.value())
+        .param("shift", assignment.shift().value())
+        .param("employee", assignment.employee().value())
+        .update();
+    return assignment;
   }
 
   @Test
@@ -182,28 +212,90 @@ class JdbcSwapRequestRepositoryTest {
    */
   @Test
   void GivenRequestsOnSeveralRosters_WhenFindingThosePendingOnOne_ThenOnlyItsWaitingOnesComeBack() {
-    RosterId superseded = RosterId.newId();
+    RosterId superseded = aRoster(ACME);
     SwapRequest later = naming(ACME, superseded, ELEVEN);
     SwapRequest earlier = naming(ACME, superseded, NINE);
     repository.save(later);
     repository.save(earlier);
     repository.save(naming(ACME, superseded, TEN).rejected());
-    repository.save(naming(ACME, RosterId.newId(), TEN));
+    repository.save(naming(ACME, aRoster(ACME), TEN));
 
     assertThat(repository.findPendingNaming(ACME, superseded)).containsExactly(earlier, later);
   }
 
   /**
-   * One test per tenancy decision, not a table (CLAUDE.md). A roster's identity is never shared
-   * between organisations, so another organisation's request naming it is a forged one; it must
-   * still never come back, nor be lapsed by our publication.
+   * One test per tenancy decision, not a table (CLAUDE.md). Asked for the pending requests of
+   * another organisation's roster, an identity we could hold only by mistake or by forgery, none of
+   * its requests come back, nor are lapsed by our publication.
    */
   @Test
-  void GivenAnotherOrganisationsRequestNamingTheRoster_WhenFindingOursPending_ThenItIsNotThere() {
-    RosterId roster = RosterId.newId();
+  void GivenAPendingRequestOnAnotherOrganisationsRoster_WhenWeAskForItsPending_ThenNoneComeBack() {
+    RosterId roster = aRoster(RIVAL);
     repository.save(naming(RIVAL, roster, TEN));
 
     assertThat(repository.findPendingNaming(ACME, roster)).isEmpty();
+  }
+
+  /**
+   * A request naming another organisation's roster is a forged one, and the schema refuses it
+   * (V14), even naming an assignment that roster holds: an assignment carries no organisation of
+   * its own, so only the roster's says whose it is.
+   */
+  @Test
+  void GivenARosterOfAnotherOrganisation_WhenARequestNamingItIsStored_ThenTheSchemaRefusesIt() {
+    SwapRequest theirs = request(RIVAL, TEN);
+    SwapRequest forged =
+        new SwapRequest(
+            SwapRequestId.newId(),
+            ACME,
+            theirs.roster(),
+            theirs.shift(),
+            theirs.requester(),
+            theirs.counterparty(),
+            TEN);
+
+    assertThatThrownBy(() -> repository.save(forged))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("swap_request_names_a_roster_of_its_organisation");
+  }
+
+  /** A request names somebody's work on a roster, and the schema refuses one naming none (V14). */
+  @Test
+  void GivenAnAssignmentTheRosterDoesNotHold_WhenARequestNamingItIsStored_ThenTheSchemaRefusesIt() {
+    SwapRequest dangling =
+        new SwapRequest(
+            SwapRequestId.newId(),
+            ACME,
+            aRoster(ACME),
+            ShiftId.newId(),
+            EmployeeId.newId(),
+            EmployeeId.newId(),
+            TEN);
+
+    assertThatThrownBy(() -> repository.save(dangling))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("swap_request_names_an_assignment_on_its_roster");
+  }
+
+  /**
+   * A roster that was never stored holds no assignment either, so both of the request's references
+   * dangle; which of the two refusals PostgreSQL reports first is not asserted.
+   */
+  @Test
+  void GivenARosterNeverStored_WhenARequestNamingItIsStored_ThenTheSchemaRefusesIt() {
+    SwapRequest dangling =
+        new SwapRequest(
+            SwapRequestId.newId(),
+            ACME,
+            RosterId.newId(),
+            ShiftId.newId(),
+            EmployeeId.newId(),
+            EmployeeId.newId(),
+            TEN);
+
+    assertThatThrownBy(() -> repository.save(dangling))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThat(repository.findByOrganisation(ACME)).isEmpty();
   }
 
   /**
@@ -228,7 +320,16 @@ class JdbcSwapRequestRepositoryTest {
    */
   @Test
   void GivenARequestOfNoRegisteredOrganisation_WhenStored_ThenItIsNotTakenForASecondAsk() {
-    SwapRequest orphan = request(OrganisationId.newId(), TEN);
+    SwapRequest ours = request(ACME, TEN);
+    SwapRequest orphan =
+        new SwapRequest(
+            SwapRequestId.newId(),
+            OrganisationId.newId(),
+            ours.roster(),
+            ours.shift(),
+            ours.requester(),
+            ours.counterparty(),
+            TEN);
 
     assertThatThrownBy(() -> repository.save(orphan))
         .isInstanceOf(DataIntegrityViolationException.class);
@@ -259,14 +360,16 @@ class JdbcSwapRequestRepositoryTest {
         raisedAt);
   }
 
+  /** A request for a new assignment stored on that roster. */
   private static SwapRequest naming(
       OrganisationId organisation, RosterId roster, Instant raisedAt) {
+    Assignment given = assignedOn(roster);
     return new SwapRequest(
         SwapRequestId.newId(),
         organisation,
         roster,
-        ShiftId.newId(),
-        EmployeeId.newId(),
+        given.shift(),
+        given.employee(),
         EmployeeId.newId(),
         raisedAt);
   }
@@ -402,14 +505,15 @@ class JdbcSwapRequestRepositoryTest {
   void GivenAPendingRequestOfAnotherOrganisation_WhenSavingOverIt_ThenItIsRefused() {
     SwapRequest theirs = request(RIVAL, TEN);
     repository.save(theirs);
+    SwapRequest elsewhere = request(ACME, ELEVEN);
     SwapRequest ours =
         new SwapRequest(
             theirs.id(),
             ACME,
-            RosterId.newId(),
-            ShiftId.newId(),
-            EmployeeId.newId(),
-            EmployeeId.newId(),
+            elsewhere.roster(),
+            elsewhere.shift(),
+            elsewhere.requester(),
+            elsewhere.counterparty(),
             ELEVEN);
 
     assertThatThrownBy(() -> repository.save(ours))
@@ -421,14 +525,15 @@ class JdbcSwapRequestRepositoryTest {
   void GivenAPendingRequestOfAnotherOrganisation_WhenSavingOverIt_ThenTheirRowIsUntouched() {
     SwapRequest theirs = request(RIVAL, TEN);
     repository.save(theirs);
+    SwapRequest elsewhere = request(ACME, ELEVEN);
     SwapRequest ours =
         new SwapRequest(
             theirs.id(),
             ACME,
-            RosterId.newId(),
-            ShiftId.newId(),
-            EmployeeId.newId(),
-            EmployeeId.newId(),
+            elsewhere.roster(),
+            elsewhere.shift(),
+            elsewhere.requester(),
+            elsewhere.counterparty(),
             ELEVEN);
 
     assertThatThrownBy(() -> repository.save(ours)).isInstanceOf(IllegalStateException.class);
