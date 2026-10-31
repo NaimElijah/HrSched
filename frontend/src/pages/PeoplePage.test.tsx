@@ -6,6 +6,7 @@ import type { Answer } from '../test-support/routeTo';
 import type { Session } from '../api/session';
 import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { PeoplePage } from './PeoplePage';
+import { rowAfter, rowHeadedBy } from '../test-support/rows';
 import { WITHOUT_PAUSES } from '../test-support/typing';
 
 /**
@@ -43,12 +44,9 @@ const PEOPLE = [
   },
 ];
 
+/** The row a person's name heads; the header holds their identifier after it. */
 function rowOf(name: string): HTMLElement {
-  const row = screen.getByText(name).closest('tr');
-  if (row === null) {
-    throw new Error(`${name} is not in a table row`);
-  }
-  return row;
+  return rowHeadedBy((header) => header.startsWith(name));
 }
 
 const QUALIFICATIONS = [{ id: 'q-1', name: 'Forklift' }];
@@ -203,6 +201,28 @@ describe('adding an employee', () => {
     });
   });
 
+  /** The refused name is still typed in the form, so its reason stays beside it (#257, C6). */
+  it('GivenAnAdditionRefused_WhenARowsContractIsThenSet_ThenTheAdditionsRefusalStays', async () => {
+    theOrganisation({
+      'POST /api/employees': { status: 403, body: { detail: 'Your role does not permit this.' } },
+    });
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    await userEvent.type(screen.getByLabelText('Name'), 'Marie', WITHOUT_PAUSES);
+    await userEvent.click(screen.getByRole('button', { name: 'Add employee' }));
+    await screen.findByRole('alert');
+
+    await userEvent.type(
+      screen.getByLabelText('Contracted minutes per week for Ada'),
+      String(TYPED_CONTRACT),
+      WITHOUT_PAUSES,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Set contracted minutes for Ada' }));
+
+    await screen.findByText(/^Set contracted minutes for Ada/);
+    expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.');
+  });
+
   /** Each addition is a person of their own, and none can be deleted afterwards. */
   it('GivenAnAdditionInFlight_WhenAddedAgain_ThenOnlyOneEmployeeIsPosted', async () => {
     const routed = theOrganisation();
@@ -237,6 +257,7 @@ describe('adding an employee', () => {
     await userEvent.click(add);
 
     expect(add).toHaveAttribute('aria-disabled', 'true');
+    // jsdom keeps focus on a disabled button, so this, not toHaveFocus(), is what C1 rests on.
     expect(add).not.toBeDisabled();
     expect(add).toHaveFocus();
     release();
@@ -377,7 +398,7 @@ describe('granting a qualification', () => {
   });
 
   /** A refusal at the top of the page says nothing about whose row it belongs to (#257, C6). */
-  it('GivenTheBackendRefusesAGrant_WhenShown_ThenTheRefusalIsInThePeopleTable', async () => {
+  it('GivenTheBackendRefusesAGrant_WhenShown_ThenTheRefusalIsInTheRowAfterTheirs', async () => {
     theOrganisation({
       'PUT /api/employees/e-1/qualifications/q-1': {
         status: 404,
@@ -390,11 +411,33 @@ describe('granting a qualification', () => {
     await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), 'q-1');
     await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada · e-1' }));
 
-    expect(await within(screen.getByRole('table')).findByRole('alert')).toHaveTextContent(
+    expect(await within(rowAfter(rowOf('Ada'))).findByRole('alert')).toHaveTextContent(
       'Nothing here for this organisation.',
     );
     expect(screen.getAllByRole('alert'), 'every alert on the page').toHaveLength(1);
-    expect(within(rowOf('Grace')).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  /** The control the refusal is about says so, and says why, where the cursor already is (C6). */
+  it('GivenTheBackendRefusesAGrant_WhenShown_ThenThatRowsPickerIsMarkedInvalidWithTheReason', async () => {
+    theOrganisation({
+      'PUT /api/employees/e-1/qualifications/q-1': {
+        status: 404,
+        body: { detail: 'No such resource.' },
+      },
+    });
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    const picker = screen.getByLabelText('Grant a qualification to Ada');
+
+    await userEvent.selectOptions(picker, 'q-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada · e-1' }));
+
+    await waitFor(() => expect(picker).toHaveAttribute('aria-invalid', 'true'));
+    expect(picker).toHaveAccessibleDescription(/Nothing here for this organisation/);
+    expect(screen.getByLabelText('Grant a qualification to Grace')).not.toHaveAttribute(
+      'aria-invalid',
+      'true',
+    );
   });
 });
 
@@ -450,6 +493,10 @@ describe('setting contracted hours', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Your role does not permit this.'),
     );
+    // A refusal reads nothing back, so a guard still held here would leave the row dead.
+    expect(
+      screen.getByRole('button', { name: 'Set contracted minutes for Ada' }),
+    ).not.toHaveAttribute('aria-disabled', 'true');
   });
 
   /** One name repeated on every row gave a screen reader no way to tell whose button it was (C7). */
@@ -501,7 +548,8 @@ describe('setting contracted hours', () => {
     theOrganisation();
     show();
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
-    const statuses = () => screen.getAllByRole('status').map((status) => status.textContent);
+    // Captured before the write: a live region that appears along with its text is not read.
+    const statuses = screen.getAllByRole('status');
 
     await userEvent.type(
       screen.getByLabelText('Contracted minutes per week for Ada'),
@@ -511,13 +559,29 @@ describe('setting contracted hours', () => {
     await userEvent.click(within(rowOf('Ada')).getByRole('button', { name: /^Set/ }));
 
     await waitFor(() =>
-      expect(statuses()).toContainEqual(expect.stringMatching(/contracted minutes/i)),
+      expect(statuses.map((status) => status.textContent)).toContain(
+        `Set contracted minutes for Ada to ${String(TYPED_CONTRACT)} a week.`,
+      ),
     );
-    expect(statuses().find((said) => /contracted minutes/i.test(said ?? ''))).toMatch(/Ada/);
+  });
+
+  /** A success left on screen while the next contract is typed reads as that one's (C9). */
+  it('GivenAContractSet_WhenTheRowsFieldIsEditedAgain_ThenTheSuccessIsNoLongerSaid', async () => {
+    theOrganisation();
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    const field = screen.getByLabelText('Contracted minutes per week for Ada');
+    await userEvent.type(field, String(TYPED_CONTRACT), WITHOUT_PAUSES);
+    await userEvent.click(within(rowOf('Ada')).getByRole('button', { name: /^Set/ }));
+    await screen.findByText(/^Set contracted minutes for Ada/);
+
+    await userEvent.type(field, '1', WITHOUT_PAUSES);
+
+    expect(screen.queryByText(/^Set contracted minutes for Ada/)).not.toBeInTheDocument();
   });
 
   /** A refusal at the top of the page says nothing about whose row it belongs to (#257, C6). */
-  it('GivenTheBackendRefusesTheTerms_WhenShown_ThenTheRefusalIsInThePeopleTable', async () => {
+  it('GivenTheBackendRefusesTheTerms_WhenShown_ThenTheRefusalIsInTheRowAfterTheirs', async () => {
     theOrganisation({
       'PUT /api/employees/e-1/contract': {
         status: 403,
@@ -534,11 +598,33 @@ describe('setting contracted hours', () => {
     );
     await userEvent.click(within(rowOf('Ada')).getByRole('button', { name: /^Set/ }));
 
-    expect(await within(screen.getByRole('table')).findByRole('alert')).toHaveTextContent(
+    expect(await within(rowAfter(rowOf('Ada'))).findByRole('alert')).toHaveTextContent(
       'Your role does not permit this.',
     );
     expect(screen.getAllByRole('alert'), 'every alert on the page').toHaveLength(1);
-    expect(within(rowOf('Grace')).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  /** The field the refusal is about says so, and says why, where the cursor already is (C6). */
+  it('GivenTheBackendRefusesTheTerms_WhenShown_ThenThatRowsMinutesAreMarkedInvalidWithTheReason', async () => {
+    theOrganisation({
+      'PUT /api/employees/e-1/contract': {
+        status: 403,
+        body: { detail: 'Your role does not permit this.' },
+      },
+    });
+    show(A_SCHEDULER);
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    const field = screen.getByLabelText('Contracted minutes per week for Ada');
+
+    await userEvent.type(field, '5', WITHOUT_PAUSES);
+    await userEvent.click(within(rowOf('Ada')).getByRole('button', { name: /^Set/ }));
+
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'));
+    expect(field).toHaveAccessibleDescription(/Your role does not permit this/);
+    expect(screen.getByLabelText('Contracted minutes per week for Grace')).not.toHaveAttribute(
+      'aria-invalid',
+      'true',
+    );
   });
 });
 
@@ -549,7 +635,45 @@ describe('the people as a table', () => {
     show();
 
     await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
-    expect(screen.getByRole('table')).toHaveAccessibleName();
+    expect(screen.getByRole('table')).toHaveAccessibleName('People in this organisation');
+  });
+
+  /** A screen reader's table mode names each cell by its row, so the row needs a header (C8). */
+  it('GivenPeople_WhenListed_ThenEachRowIsHeadedByTheirName', async () => {
+    theOrganisation();
+
+    show();
+
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    expect(screen.getAllByRole('rowheader').map((header) => header.textContent)).toEqual([
+      'Adae-1',
+      'Gracee-2',
+    ]);
+  });
+
+  /** A table wider than the screen is scrolled from the keyboard, so its region takes focus (C8). */
+  it('GivenPeople_WhenListed_ThenTheScrollRegionCanTakeFocus', async () => {
+    theOrganisation();
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    const region = screen.getByRole('region', { name: 'People in this organisation' });
+
+    region.focus();
+
+    expect(region).toHaveFocus();
+  });
+
+  /** A table read while loading, or after a refusal, is a named table of nobody (C8). */
+  it('GivenTheListingIsRefused_WhenShown_ThenNoTableIsShown', async () => {
+    theOrganisation({
+      '/api/employees': { status: 403, body: { detail: 'Your role does not permit this.' } },
+    });
+
+    show();
+
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
   });
 
   /** An empty table says nothing at all to somebody who cannot see that it is empty (C8). */
