@@ -142,14 +142,16 @@ describe('the other refusals', () => {
   /**
    * An account with a temporary password is refused everything else with a 403 of its own type
    * (ADR-057). Telling it to ask a colleague would send it the wrong way: the way on is its own.
+   * The detail is the backend's own (`ProblemAccessDeniedHandler`), so a heading that said the same
+   * would be read twice.
    */
-  it('GivenAForbiddenBecauseThePasswordMustChange_WhenRendering_ThenItSaysToChangeItFirst', () => {
+  it('GivenAForbiddenBecauseThePasswordMustChange_WhenRendering_ThenItSaysAChangeIsPendingAndTheBackendsDetail', () => {
     render(
       <Failure
         error={
           new ApiError(
             403,
-            'Change the temporary password before doing anything else.',
+            'Change your temporary password first.',
             [],
             null,
             'urn:hrsched:problem:password-change-required',
@@ -158,7 +160,11 @@ describe('the other refusals', () => {
       />,
     );
 
-    expect(screen.getByRole('alert').textContent).toMatch(/^Change your password first\./);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toBe(
+      'Password change pending. Change your temporary password first.',
+    );
+    expect(alert).not.toHaveTextContent(/ask a colleague/i);
   });
 
   /**

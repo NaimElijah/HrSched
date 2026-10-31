@@ -2,12 +2,6 @@ import { ApiError } from '../api/problem';
 import type { Violation } from '../api/problem';
 
 /**
- * The problem type of the 403 an account with a temporary password is answered for anything but
- * reading its session and changing its password (ADR-057). Its way on is its own, not a colleague's.
- */
-const PASSWORD_CHANGE_REQUIRED = 'urn:hrsched:problem:password-change-required';
-
-/**
  * Shows the trace id of the request that was refused, when the backend sent one.
  *
  * Every log line that request produced carries the same value, so this turns "it broke this
@@ -88,10 +82,14 @@ export function Failure({
       </div>
     );
   }
-  if (error instanceof ApiError && error.isForbidden && error.type === PASSWORD_CHANGE_REQUIRED) {
+  if (error instanceof ApiError && error.isPasswordChangeRequired) {
     return (
       <div className="failure" role="alert">
-        <strong>Change your password first.</strong> {error.message}
+        {/*
+          Its way on is its own, not a colleague's. The heading names the state and leaves the
+          instruction to the backend's detail, which gives it; saying it here too read it twice.
+        */}
+        <strong>Password change pending.</strong> {error.message}
         <Reference of={error} />
       </div>
     );
