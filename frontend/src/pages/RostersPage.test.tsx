@@ -691,6 +691,118 @@ describe('the board of a draft', () => {
     );
   });
 
+  /**
+   * The same assignment pressed twice: the first was stored, and the backend refuses the second as
+   * a conflict. The board reloads and shows who is now on the shift, rather than leaving a refusal
+   * beside a roster that does not yet show the assignment it refers to.
+   */
+  it('GivenAnAssignmentAlreadyStored_WhenAssigningItAgain_ThenTheBoardShowsItStored', async () => {
+    aDraft();
+    renderPage();
+    const board = await openBoard();
+    aDraft({
+      '/api/rosters': { status: 200, body: [WITH_GRACE] },
+      '/api/rosters/roster-1': { status: 200, body: WITH_GRACE },
+      'POST /api/rosters/roster-1/assignments': {
+        status: 409,
+        body: {
+          title: 'Already assigned',
+          detail: 'That employee is already assigned to that shift on this roster.',
+        },
+      },
+    });
+
+    await assignGrace(board);
+
+    expect(
+      await within(board).findByRole('button', { name: /^Remove Grace from/ }),
+    ).toBeInTheDocument();
+    expect(within(board).getByRole('alert')).toHaveTextContent(
+      'That employee is already assigned to that shift on this roster.',
+    );
+  });
+
+  /** How the board names the fixture's one shift, as its controls do. */
+  const SHIFT_LABEL = `${timeLabel(SHIFT.start)} to ${timeLabel(SHIFT.end)} on ${dayLabel(SHIFT.start)}`;
+
+  /**
+   * A conflict's detail is the backend's, and names neither the person nor the shift, so the board
+   * says which change was refused, and that what it now shows was read again after the refusal.
+   */
+  it('GivenAConflict_WhenAssigning_ThenTheBoardSaysWhoAndWhichShiftAndThatItWasReadAgain', async () => {
+    aDraft();
+    renderPage();
+    const board = await openBoard();
+    aDraft({
+      '/api/rosters': { status: 200, body: [WITH_GRACE] },
+      '/api/rosters/roster-1': { status: 200, body: WITH_GRACE },
+      'POST /api/rosters/roster-1/assignments': {
+        status: 409,
+        body: {
+          title: 'Already assigned',
+          detail: 'That employee is already assigned to that shift on this roster.',
+        },
+      },
+    });
+
+    await assignGrace(board);
+
+    expect(
+      await within(board).findByText(`Could not assign Grace to ${SHIFT_LABEL}.`, { exact: false }),
+    ).toHaveTextContent(
+      `Could not assign Grace to ${SHIFT_LABEL}. The board was read again, and shows the roster as it now is.`,
+    );
+  });
+
+  it('GivenAConflict_WhenRemoving_ThenTheBoardSaysWhoAndWhichShift', async () => {
+    aDraft();
+    renderPage();
+    const board = await openBoard();
+    const published = { ...ROSTER, status: 'PUBLISHED', validatedAgainstConstraintVersion: 1 };
+    aDraft({
+      '/api/rosters': { status: 200, body: [published] },
+      '/api/rosters/roster-1': { status: 200, body: published },
+      'DELETE /api/rosters/roster-1/assignments/shift-1/emp-1': {
+        status: 409,
+        body: {
+          title: 'Roster status forbids this',
+          detail: 'Roster roster-1 is PUBLISHED: a roster can only be changed while a draft',
+        },
+      },
+    });
+
+    await userEvent.click(await within(board).findByRole('button', { name: /^Remove Ada from/ }));
+
+    expect(
+      await within(board).findByText(`Could not remove Ada from ${SHIFT_LABEL}.`, { exact: false }),
+    ).toBeInTheDocument();
+  });
+
+  /** The roster read again may be a different draft, so what the check said of the old one is stale. */
+  it('GivenAConflict_WhenAssigning_ThenTheDraftIsCheckedAgain', async () => {
+    const stub = aDraft({
+      'POST /api/rosters/roster-1/assignments': {
+        status: 409,
+        body: {
+          title: 'Already assigned',
+          detail: 'That employee is already assigned to that shift on this roster.',
+        },
+      },
+    });
+    renderPage();
+    const board = await openBoard();
+    await within(await theCheck(board)).findByText('No rule is broken.');
+    const checkedBefore = callsTo(stub, 'GET', '/api/rosters/roster-1/assessment').length;
+
+    await assignGrace(board);
+
+    await waitFor(() =>
+      expect(callsTo(stub, 'GET', '/api/rosters/roster-1/assessment').length).toBeGreaterThan(
+        checkedBefore,
+      ),
+    );
+  });
+
   // --- #205: a draft is checked against every rule as it is edited, without publishing it -------
 
   function theCheck(board: HTMLElement): Promise<HTMLElement> {

@@ -28,6 +28,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQuali
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownSwapRequestException;
+import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
@@ -40,9 +41,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import tools.jackson.core.exc.StreamConstraintsException;
+import tools.jackson.databind.exc.UnrecognizedPropertyException;
 
 /**
  * Translates scheduling failures into HTTP problem responses.
@@ -74,6 +77,15 @@ public class SchedulingExceptionHandler {
 
   private static final String GENERATIONS_BUSY = "hrsched.generations.busy";
 
+  /**
+   * What every body Jackson cannot bind is told, whatever was wrong with it: not JSON, a member
+   * missing or unknown, or a value of the wrong form. One constant sentence true of each, so
+   * nothing in it comes from what was sent, as Jackson's own message, which quotes it, would.
+   */
+  private static final String MALFORMED_BODY =
+      "The request body is not valid JSON, or it lacks a member this request requires, has one it"
+          + " does not take, or has one whose value is of the wrong form.";
+
   private final MeterRegistry meters;
 
   /**
@@ -101,6 +113,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Roster breaks the rules");
+    problem.setType(ProblemTypes.ROSTER_BREAKS_THE_RULES);
     problem.setProperty("violations", describe(exception.violations()));
     return problem;
   }
@@ -114,7 +127,6 @@ public class SchedulingExceptionHandler {
     InvalidHeadcountException.class,
     InvalidConstraintException.class,
     InvalidObjectiveWeightException.class,
-    DuplicateAssignmentException.class,
     UnknownRequiredQualificationException.class,
     SwapWithThemselfException.class,
     MalformedRequestException.class
@@ -123,6 +135,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     problem.setTitle("Invalid request");
+    problem.setType(ProblemTypes.INVALID_REQUEST);
     return problem;
   }
 
@@ -132,9 +145,27 @@ public class SchedulingExceptionHandler {
    * is a 413 rather than a 400 (RFC 9110 section 15.5.14). Its JSON may be perfectly well formed,
    * and calling it malformed sends a client looking for a fault that is not there. Both answers are
    * fixed sentences, because Jackson's message quotes the input it failed on.
+   *
+   * <p>A body naming a member its request type does not have is also recorded, logged at WARN and
+   * counted (ADR-058). It is bound before any use case runs, so a caller the use case would have
+   * refused for their role is answered here instead, and would otherwise leave nothing behind. The
+   * line names who asked and the request type, never the member or anything sent: a member is
+   * whatever the caller wrote, and its value may be a person's.
+   *
+   * @param actor the acting account, taken from the access token as the controllers take it. Null
+   *     if the principal is not an {@code Actor}: the refusal is then still answered and recorded,
+   *     without one, rather than lost to a 500
    */
   @ExceptionHandler(HttpMessageNotReadableException.class)
-  public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException exception) {
+  public ProblemDetail handleUnreadableBody(
+      HttpMessageNotReadableException exception, @AuthenticationPrincipal Actor actor) {
+    if (exception.getMostSpecificCause() instanceof UnrecognizedPropertyException unknown) {
+      log.atWarn()
+          .addKeyValue("actor", actor == null ? null : actor.id().value())
+          .addKeyValue("requestType", unknown.getReferringClass().getSimpleName())
+          .log("Refused: a request body carried a member its request type does not have");
+      count(DENIED, "kind", "unknown_member", "Refused attempts, by what refused them");
+    }
     if (exception.getMostSpecificCause() instanceof StreamConstraintsException) {
       ProblemDetail problem =
           ProblemDetail.forStatusAndDetail(
@@ -142,12 +173,13 @@ public class SchedulingExceptionHandler {
               "The request body exceeds a limit on its size, its nesting or the length of a value"
                   + " in it.");
       problem.setTitle("Request too large");
+      problem.setType(ProblemTypes.REQUEST_TOO_LARGE);
       return problem;
     }
     ProblemDetail problem =
-        ProblemDetail.forStatusAndDetail(
-            HttpStatus.BAD_REQUEST, "The request body is malformed or is missing required fields.");
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, MALFORMED_BODY);
     problem.setTitle("Malformed request");
+    problem.setType(ProblemTypes.MALFORMED_REQUEST);
     return problem;
   }
 
@@ -170,6 +202,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Roster cannot be checked against the rules");
+    problem.setType(ProblemTypes.ROSTER_CANNOT_BE_CHECKED_AGAINST_THE_RULES);
     return problem;
   }
 
@@ -192,6 +225,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("Published concurrently");
+    problem.setType(ProblemTypes.PUBLISHED_CONCURRENTLY);
     return problem;
   }
 
@@ -208,6 +242,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("Revised concurrently");
+    problem.setType(ProblemTypes.REVISED_CONCURRENTLY);
     return problem;
   }
 
@@ -226,6 +261,7 @@ public class SchedulingExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "You have no personnel record, so you have no schedule.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 
@@ -239,6 +275,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your role does not permit this.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 
@@ -263,6 +300,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Assignment refused");
+    problem.setType(ProblemTypes.ASSIGNMENT_REFUSED);
     return problem;
   }
 
@@ -278,6 +316,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("No longer pending");
+    problem.setType(ProblemTypes.NO_LONGER_PENDING);
     return problem;
   }
 
@@ -293,6 +332,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("Roster status forbids this");
+    problem.setType(ProblemTypes.ROSTER_STATUS_FORBIDS_THIS);
     return problem;
   }
 
@@ -306,6 +346,22 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("Already requested");
+    problem.setType(ProblemTypes.ALREADY_REQUESTED);
+    return problem;
+  }
+
+  /**
+   * An assignment the roster already holds, as a second press of the same button sends. A conflict
+   * rather than a bad request (RFC 9110 section 15.5.10): the request names a real shift and a real
+   * person, and what refuses it is the roster's present state, which reloading shows. The detail is
+   * the exception's fixed sentence, so it repeats neither the shift nor the person sent.
+   */
+  @ExceptionHandler(DuplicateAssignmentException.class)
+  public ProblemDetail handleAlreadyAssigned(DuplicateAssignmentException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    problem.setTitle("Already assigned");
+    problem.setType(ProblemTypes.ALREADY_ASSIGNED);
     return problem;
   }
 
@@ -323,6 +379,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
     problem.setTitle("Generation is busy");
+    problem.setType(ProblemTypes.GENERATION_IS_BUSY);
     return problem;
   }
 
@@ -338,6 +395,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
     problem.setTitle("Generation is unavailable");
+    problem.setType(ProblemTypes.GENERATION_IS_UNAVAILABLE);
     return problem;
   }
 
@@ -365,6 +423,7 @@ public class SchedulingExceptionHandler {
     }
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
+    problem.setType(ProblemTypes.NOT_FOUND);
     problem.setDetail("No such resource.");
     return problem;
   }
@@ -384,6 +443,7 @@ public class SchedulingExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "The platform operator may not act inside an organisation.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 }

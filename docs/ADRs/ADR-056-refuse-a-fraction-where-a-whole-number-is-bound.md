@@ -1,6 +1,17 @@
 # ADR-056: Refuse a fraction where a whole number is bound
 
 - **Status:** Accepted
+  - **Amended 2026-10-31:** The same reasoning now covers an enum field. Jackson 3 bound a number,
+    or a string holding one, to the enum constant at that index, so `{"role":2}` created an Admin
+    though no request named ADMIN, and reordering an enum would have silently changed what each
+    index meant ([#326](https://github.com/NaimElijah/HrSched/issues/326)).
+    `spring.jackson.datatype.enum.fail-on-numbers-for-enums=true` turns Jackson's
+    `EnumFeature.FAIL_ON_NUMBERS_FOR_ENUMS` on for the application's mapper, so an account's role
+    and a preference's strength accept only a constant's name, and anything else is the same 400
+    `Malformed request`, with nothing stored: `EnumFieldHttpTest`. It is global for the reason the
+    decision below is: an enum field added later is covered without anybody remembering it. A
+    query parameter, such as the strength of a withdrawn preference, goes through Spring's
+    conversion, which already takes only a name. The decision stands.
 - **Date:** 2026-10-30
 
 ## Context

@@ -103,6 +103,7 @@ class RequestBindingHttpTest {
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         .andExpect(jsonPath("$.title").value("Invalid request"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:invalid-request"))
         .andExpect(jsonPath("$.detail").value("id could not be read as UUID"));
   }
 }

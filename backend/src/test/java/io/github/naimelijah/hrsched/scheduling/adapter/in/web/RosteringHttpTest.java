@@ -9,6 +9,7 @@ import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -421,7 +422,8 @@ class RosteringHttpTest {
     mockMvc
         .perform(as(mockMvc, get(assessment(roster)), organisation, "SCHEDULER"))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.title").value("Roster status forbids this"));
+        .andExpect(jsonPath("$.title").value("Roster status forbids this"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:roster-status-forbids-this"));
   }
 
   @Test
@@ -435,7 +437,8 @@ class RosteringHttpTest {
         .perform(
             as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "ADMIN")
                 .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(shift, ada)))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-permitted"));
   }
 
   /**
@@ -494,7 +497,77 @@ class RosteringHttpTest {
         .andExpect(status().isUnprocessableEntity())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         .andExpect(jsonPath("$.title").value("Assignment refused"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:assignment-refused"))
         .andExpect(jsonPath("$.detail").value(containsString("overlap")));
+  }
+
+  /** Invented: a headcount below one, unlike any number the detail says otherwise. */
+  private static final int INVENTED_HEADCOUNT_BELOW_ONE = -7;
+
+  /** The detail states the rule; it does not repeat the number sent back to the caller. */
+  @Test
+  void GivenAHeadcountBelowOne_WhenDefiningAShift_ThenItIsRefusedRepeatingNothingSent()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
+                .content(
+                    "{\"start\":\"2026-11-19T08:00:00Z\",\"end\":\"2026-11-19T16:00:00Z\",\"zone\":\"UTC\",\"requiredHeadcount\":%d}"
+                        .formatted(INVENTED_HEADCOUNT_BELOW_ONE)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.title").value("Invalid request"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:invalid-request"))
+        .andExpect(
+            jsonPath("$.detail")
+                .value(not(containsString(String.valueOf(INVENTED_HEADCOUNT_BELOW_ONE)))));
+  }
+
+  /** The detail says a required qualification is unknown, without listing the ids sent. */
+  @Test
+  void GivenAQualificationNeverDefined_WhenAShiftRequiresIt_ThenItIsRefusedRepeatingNothingSent()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String undefined = UUID.randomUUID().toString();
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/shifts"), organisation, "SCHEDULER")
+                .content(
+                    ("{\"start\":\"2026-11-19T08:00:00Z\",\"end\":\"2026-11-19T16:00:00Z\","
+                            + "\"zone\":\"UTC\",\"requiredHeadcount\":1,\"requiredQualifications\":[\"%s\"]}")
+                        .formatted(undefined)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.title").value("Invalid request"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:invalid-request"))
+        .andExpect(jsonPath("$.detail").value(not(containsString(undefined))));
+  }
+
+  /**
+   * A second press of the same assignment, as a double click sends. Nothing about the request is
+   * wrong; the roster already holds it, so it is a conflict the board answers by reloading, and its
+   * detail names neither the shift nor the person sent.
+   */
+  @Test
+  void GivenSomebodyAlreadyOnTheShift_WhenAssignedToItAgain_ThenItIsAConflictRepeatingNothingSent()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    String roster = generateRoster(organisation, "2026-11-18T00:00:00Z", "2026-11-19T00:00:00Z");
+    String day = defineShift(organisation, "2026-11-18T08:00:00Z", "2026-11-18T16:00:00Z", 1);
+    assign(organisation, roster, day, ada);
+
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/assignments"), organisation, "SCHEDULER")
+                .content("{\"shift\":\"%s\",\"employee\":\"%s\"}".formatted(day, ada)))
+        .andExpect(status().isConflict())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.title").value("Already assigned"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:already-assigned"))
+        .andExpect(jsonPath("$.detail").value(not(containsString(day))))
+        .andExpect(jsonPath("$.detail").value(not(containsString(ada))));
   }
 
   // --- R35: R3 across every authoritative roster -----------------------------------------------
@@ -583,6 +656,7 @@ class RosteringHttpTest {
                 "SCHEDULER"))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.title").value("Roster breaks the rules"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:roster-breaks-the-rules"))
         .andExpect(jsonPath("$.violations.length()").value(1))
         .andExpect(jsonPath("$.violations[0].employee").value(ada))
         .andExpect(jsonPath("$.violations[0].constraint").value("overlapping work"))
@@ -1051,7 +1125,8 @@ class RosteringHttpTest {
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         .andExpect(jsonPath("$.title").value("Not found"))
-        .andExpect(jsonPath("$.detail").value("No such resource."));
+        .andExpect(jsonPath("$.detail").value("No such resource."))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-found"));
   }
 
   /**
@@ -1685,6 +1760,29 @@ class RosteringHttpTest {
         .perform(as(mockMvc, get("/api/shifts/" + shift), organisation, "SCHEDULER"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.zone").value("Asia/Tokyo"));
+  }
+
+  /** The zone a shift's days are counted in travels with it to the person working it. */
+  @Test
+  void GivenPublishedWorkInItsOwnZone_WhenAnEmployeeReadsTheirOwnSchedule_ThenItCarriesThatZone()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada");
+    defineShiftIn(organisation, "Asia/Tokyo", "2026-12-02T00:00:00Z", "2026-12-02T08:00:00Z");
+    String roster = generateRoster(organisation, "2026-12-02T00:00:00Z", "2026-12-03T00:00:00Z");
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            asThemself(mockMvc, get("/api/me/schedule"), organisation, ada)
+                .param("from", "2026-12-02T00:00:00Z")
+                .param("to", "2026-12-03T00:00:00Z"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].zone").value("Asia/Tokyo"));
   }
 
   /** ADR-010: the Scheduler says which shifts are unpopular, and the mark is kept as said. */

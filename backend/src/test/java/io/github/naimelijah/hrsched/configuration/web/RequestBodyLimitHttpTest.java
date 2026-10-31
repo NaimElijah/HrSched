@@ -74,6 +74,8 @@ class RequestBodyLimitHttpTest {
   /** RFC 9110's status for a body larger than the server is willing to process. */
   private static final int CONTENT_TOO_LARGE = 413;
 
+  private static final String TOO_LARGE_TYPE = "urn:hrsched:problem:request-too-large";
+
   private static final String TOO_LARGE_TITLE = "Request too large";
 
   /** Invented: a cap in minutes, chosen only so the constraint set is valid. */
@@ -244,10 +246,12 @@ class RequestBodyLimitHttpTest {
     assertThat(response.getContentType())
         .describedAs("the refusal carries a problem detail")
         .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+    String type = JsonPath.read(body, "$.type");
     String title = JsonPath.read(body, "$.title");
     String detail = JsonPath.read(body, "$.detail");
     assertSoftly(
         softly -> {
+          softly.assertThat(type).describedAs("type").isEqualTo(TOO_LARGE_TYPE);
           softly.assertThat(title).describedAs("title").isEqualTo(TOO_LARGE_TITLE);
           softly.assertThat(detail).describedAs("detail").isNotBlank();
           for (String piece : sent) {

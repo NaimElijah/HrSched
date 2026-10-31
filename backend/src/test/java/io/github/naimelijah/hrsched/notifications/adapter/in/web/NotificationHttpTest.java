@@ -77,6 +77,7 @@ class NotificationHttpTest {
     mockMvc
         .perform(TestTenants.as(mockMvc, get("/api/notifications"), anOrganisation(), "ADMIN"))
         .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-permitted"))
         .andExpect(
             jsonPath("$.detail")
                 .value("You have no personnel record, so you have no notifications."));
@@ -97,7 +98,8 @@ class NotificationHttpTest {
                 post("/api/notifications/" + UUID.randomUUID() + "/read"),
                 anOrganisation(),
                 UUID.randomUUID().toString()))
-        .andExpect(status().isNotFound());
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-found"));
   }
 
   @Test

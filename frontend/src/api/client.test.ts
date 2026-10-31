@@ -758,6 +758,36 @@ describe('what a failure carries', () => {
     expect(error.isUnauthenticated).toBe(false);
   });
 
+  /** The backend sends every refusal as a problem detail, and only there is `type` its kind. */
+  it('GivenAProblemDetail_WhenItFails_ThenItsTypeIsKept', async () => {
+    respondWith(
+      409,
+      { type: 'urn:hrsched:problem:already-assigned', detail: 'Already on it.' },
+      { 'Content-Type': 'application/problem+json' },
+    );
+
+    const error = (await api
+      .post('/api/rosters/1/assignments', {})
+      .catch((e: unknown) => e)) as ApiError;
+
+    expect(error.type).toBe('urn:hrsched:problem:already-assigned');
+  });
+
+  it('GivenPlainJsonCarryingAType_WhenItFails_ThenTheTypeIsNotTakenForAKind', async () => {
+    respondWith(
+      409,
+      { type: 'urn:hrsched:problem:already-assigned', detail: 'Already on it.' },
+      { 'Content-Type': 'application/json' },
+    );
+
+    const error = (await api
+      .post('/api/rosters/1/assignments', {})
+      .catch((e: unknown) => e)) as ApiError;
+
+    expect(error.type).toBe('about:blank');
+    expect(error.message).toBe('Already on it.');
+  });
+
   it('GivenAPlainTextBody_WhenItFails_ThenTheTextIsSurfacedRatherThanAParseError', async () => {
     failingWith(502, 'text/plain; charset=UTF-8', 'Bad gateway: the upstream did not answer.');
 

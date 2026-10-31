@@ -153,6 +153,15 @@ public class AccountService implements BootstrapOperatorUseCase, ManageAccountsU
   }
 
   @Override
+  public PublishedAccount findAccount(Actor actor, OrganisationId organisation, UserId account) {
+    authorise(actor, organisation);
+    return accounts
+        .find(organisation, account)
+        .map(found -> publish(found, clock.instant()))
+        .orElseThrow(() -> new UnknownAccountException(account));
+  }
+
+  @Override
   public void changeMembership(Actor actor, ChangeMembershipCommand command) {
     Objects.requireNonNull(command, "command must not be null");
     authorise(actor, command.organisation());

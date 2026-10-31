@@ -13,15 +13,18 @@ import java.util.UUID;
  * @param shift which shift
  * @param start when it begins
  * @param end when it ends
+ * @param zone the IANA zone the shift's working-time days are counted in (R36)
  * @param roster the published roster that says so
  */
-public record RosteredShiftResponse(UUID shift, Instant start, Instant end, UUID roster) {
+public record RosteredShiftResponse(
+    UUID shift, Instant start, Instant end, String zone, UUID roster) {
 
   static RosteredShiftResponse from(RosteredShift rostered) {
     return new RosteredShiftResponse(
         rostered.shift().value(),
         rostered.period().start(),
         rostered.period().end(),
+        rostered.zone().getId(),
         rostered.roster().value());
   }
 }

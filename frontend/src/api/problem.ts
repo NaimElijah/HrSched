@@ -15,6 +15,12 @@ export interface Violation {
   readonly detail: string;
 }
 
+/** The type of a problem detail that names none (RFC 9457 section 3.1.1). */
+const ABOUT_BLANK = 'about:blank';
+
+/** The media type of a problem detail (RFC 9457 section 3), the only body whose `type` is one. */
+const PROBLEM_JSON = 'application/problem+json';
+
 /**
  * A request the backend refused.
  *
@@ -28,6 +34,12 @@ export class ApiError extends Error {
   readonly status: number;
   readonly violations: readonly Violation[];
   /**
+   * The problem's type URI, one per kind of refusal (ADR-057), or `about:blank` when the body
+   * named none, as RFC 9457 section 3.1.1 reads an absent type, or was not a problem detail at all.
+   * Kept, not yet branched on.
+   */
+  readonly type: string;
+  /**
    * The trace id the backend put on the response, or null when it sent none.
    *
    * Every log line the request produced carries the same value, so this is the one thing a person
@@ -40,12 +52,14 @@ export class ApiError extends Error {
     message: string,
     violations: readonly Violation[] = [],
     reference: string | null = null,
+    type: string = ABOUT_BLANK,
   ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.violations = violations;
     this.reference = reference;
+    this.type = type;
   }
 
   /**
@@ -86,8 +100,9 @@ export class ApiError extends Error {
 
   /**
    * True when the request clashes with something already settled: a swap somebody else decided, one
-   * that lapsed with its roster, a shift that already has a swap waiting, or a roster whose status
-   * forbids the change — most often a draft somebody published first.
+   * that lapsed with its roster, a shift that already has a swap waiting, a roster whose status
+   * forbids the change — most often a draft somebody published first — an assignment the roster
+   * already holds, or unavailability overlapping a span already declared.
    */
   get isConflict(): boolean {
     return this.status === 409;
@@ -113,12 +128,15 @@ function isViolation(value: unknown): value is Violation {
  * not the shape we expect must not be waved through as though it were.
  *
  * The reference comes from a response header rather than the body, so it is passed in rather than
- * parsed out.
+ * parsed out. So does the media type, lower-cased and without parameters: a `type` names a kind of
+ * refusal only in an `application/problem+json` body, and in any other JSON, such as a gateway's, it
+ * is somebody else's field and is not kept.
  */
 export function toApiError(
   status: number,
   body: unknown,
   reference: string | null = null,
+  mediaType: string | null = null,
 ): ApiError {
   if (typeof body !== 'object' || body === null) {
     return new ApiError(status, `The server returned ${status}.`, [], reference);
@@ -126,6 +144,8 @@ export function toApiError(
   const problem = body as Record<string, unknown>;
   const detail = typeof problem.detail === 'string' ? problem.detail : undefined;
   const title = typeof problem.title === 'string' ? problem.title : undefined;
+  const type =
+    mediaType === PROBLEM_JSON && typeof problem.type === 'string' ? problem.type : ABOUT_BLANK;
   const violations = Array.isArray(problem.violations)
     ? problem.violations.filter(isViolation)
     : [];
@@ -134,5 +154,6 @@ export function toApiError(
     detail ?? title ?? `The server returned ${status}.`,
     violations,
     reference,
+    type,
   );
 }

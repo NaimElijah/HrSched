@@ -146,7 +146,7 @@ public final class Roster {
     Set<Assignment> seen = new HashSet<>();
     for (Assignment assignment : candidates) {
       if (!seen.add(assignment)) {
-        throw new DuplicateAssignmentException(assignment);
+        throw new DuplicateAssignmentException();
       }
     }
     return candidates;

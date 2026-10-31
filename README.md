@@ -199,6 +199,8 @@ supplies a throwaway signing key and the local operator. A deployment sets the v
 | `hrsched.web.max-json-document-bytes` | `1048576` | The longest JSON request body, counted in bytes (in characters for a body Jackson detects as UTF-16 or UTF-32, #278). A longer one is refused with a `413` before any use case runs, so one unauthenticated request cannot make the server hold whatever it is sent. `0` or less fails startup, and so does more than `2147483647`, which the form limit below cannot hold. A body declared in any charset but UTF-8 is refused with a `415` before it is read |
 | `spring.jackson.factory.constraints.read.max-document-length` | `${hrsched.web.max-json-document-bytes}` | Only hands the value above to Jackson; change the `hrsched` one |
 | `spring.jackson.deserialization.accept-float-as-int` | `false` | A number written with a fraction part or an exponent, `2.0` included, sent where a whole number is bound is refused with a `400`, not truncated and stored ([ADR-056](docs/ADRs/ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md)) |
+| `spring.jackson.datatype.enum.fail-on-numbers-for-enums` | `true` | An enum field, such as a role or a preference's strength, takes only a constant's name: a number, or a string holding one, is refused with a `400`, not bound to the constant at that index ([ADR-056](docs/ADRs/ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md)) |
+| `spring.jackson.deserialization.fail-on-unknown-properties` | `true` | A member the request does not take, a misspelt rule or weight included, is refused with a `400`, not dropped and the rest stored as if it were left out ([ADR-058](docs/ADRs/ADR-058-refuse-a-request-member-the-request-type-does-not-have.md)) |
 | `spring.servlet.multipart.enabled` | `false` | No route takes a file, so a multipart request is refused with a `415` and never parsed |
 | `spring.mvc.formcontent.filter.enabled` | `false` | No route takes form content, so no filter reads a form body ahead of the security chain |
 | `server.tomcat.max-http-form-post-size` | `${hrsched.web.max-json-document-bytes}` | A form posted to a route that takes JSON is parsed before it is refused as the wrong type; held to the JSON limit, a larger one is refused with a `413` |
@@ -256,6 +258,7 @@ cannot act on it. There is no override.
   "instance": "/api/rosters/d269eec8-97ae-4761-bdc3-07aa4fdcd62a/publication",
   "status": 422,
   "title": "Roster breaks the rules",
+  "type": "urn:hrsched:problem:roster-breaks-the-rules",
   "violations": [
     {
       "employee": "7c1fddc0-8a18-4e20-aa24-7a994a95815b",
@@ -385,7 +388,7 @@ HrSched/
 | Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
 | Generation with CP-SAT behind a port ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md), [ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)) | Timefold, whose search must drive a broken rule's penalty to zero and proves no bound; a MIP solver | About 95 MB of native libraries; no determinism under a time limit; OR-Tools held at 9.12 for the Visual C++ runtime JDK 21 bundles on Windows |
 
-All 48 decisions, and the two still waiting to be recorded, are in the
+Every decision, and the two still waiting to be recorded, is in the
 [ADR index](docs/ADRs/README.md).
 
 ## Status and limitations

@@ -5,7 +5,9 @@ import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingH
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.asThemself;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.generateDraft;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -299,6 +301,47 @@ class SwapHttpTest {
         .andExpect(status().isConflict());
   }
 
+  /**
+   * A swap handing a shift to a colleague who is already on it. The request is taken, and approving
+   * it would put the colleague on the shift twice, which the replacement roster refuses as a second
+   * press of the same assignment is refused: a 409, and nothing is published. Whether such a
+   * request should be refused when it is asked for instead is issue #343, and this pins only what
+   * approval answers today.
+   */
+  @Test
+  void GivenAColleagueAlreadyOnTheShift_WhenTheSwapIsApproved_ThenItIsAlreadyAssigned()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada Lovelace");
+    String grace = addEmployee(organisation, "Grace Hopper");
+    String roster =
+        generateDraft(mockMvc, organisation, "2026-12-07T00:00:00Z", "2026-12-08T00:00:00Z");
+    String shift = defineShift(organisation, "2026-12-07T08:00:00Z", "2026-12-07T16:00:00Z");
+    assign(organisation, roster, shift, ada);
+    assign(organisation, roster, shift, grace);
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk());
+    String swap =
+        JsonPath.read(
+            created(
+                asThemself(mockMvc, post("/api/swaps"), organisation, ada)
+                    .content(
+                        "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
+                            .formatted(roster, shift, ada, grace))),
+            "$.id");
+
+    mockMvc
+        .perform(as(mockMvc, post("/api/swaps/" + swap + "/approval"), organisation, "SCHEDULER"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.title").value("Already assigned"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:already-assigned"));
+    mockMvc
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .andExpect(jsonPath("$.status").value("PUBLISHED"));
+  }
+
   @Test
   void GivenAnEmployeeRole_WhenApprovingASwap_ThenItIsForbidden() throws Exception {
     String organisation = anOrganisation(mockMvc);
@@ -358,7 +401,8 @@ class SwapHttpTest {
 
   /**
    * Refused by the request itself, deep in the domain, and answered as the bad request it is: the
-   * handler's routing of {@code SwapWithThemselfException} is what makes it a 400, not a 500.
+   * handler's routing of {@code SwapWithThemselfException} is what makes it a 400, not a 500. Its
+   * detail is a constant, so it repeats neither of the identifiers sent.
    */
   @Test
   void GivenThemselfAsTheColleague_WhenAskingForASwap_ThenItIsABadRequest() throws Exception {
@@ -373,7 +417,10 @@ class SwapHttpTest {
                     "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
                         .formatted(rostered.roster(), rostered.shift(), ada, ada)))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.title").value("Invalid request"));
+        .andExpect(jsonPath("$.title").value("Invalid request"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:invalid-request"))
+        .andExpect(jsonPath("$.detail").value(not(containsString(ada))))
+        .andExpect(jsonPath("$.detail").value("Nobody can swap a shift with themself."));
   }
 
   /** Raises Ada's request to hand her shift to Grace, and returns where its 201 said it lives. */
@@ -482,7 +529,8 @@ class SwapHttpTest {
     mockMvc
         .perform(as(mockMvc, post("/api/swaps/" + swap + "/approval"), organisation, "SCHEDULER"))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.title").value("No longer pending"));
+        .andExpect(jsonPath("$.title").value("No longer pending"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:no-longer-pending"));
   }
 
   /** R32 over HTTP: a second ask for the same shift is a conflict, not a second request. */
@@ -500,7 +548,8 @@ class SwapHttpTest {
     mockMvc
         .perform(asThemself(mockMvc, post("/api/swaps"), organisation, ada).content(body))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.title").value("Already requested"));
+        .andExpect(jsonPath("$.title").value("Already requested"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:already-requested"));
   }
 
   /**

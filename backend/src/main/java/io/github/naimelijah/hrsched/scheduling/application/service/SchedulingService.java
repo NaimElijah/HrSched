@@ -849,7 +849,7 @@ public class SchedulingService
                       .findById(organisation, assignment.shift())
                       .orElseThrow(
                           () -> new RosterNotVerifiableException(roster.id(), assignment.shift()));
-              return new RosteredShift(shift.id(), shift.period(), roster.id());
+              return new RosteredShift(shift.id(), shift.period(), shift.zone(), roster.id());
             });
   }
 
@@ -1097,11 +1097,8 @@ public class SchedulingService
     if (required.isEmpty()) {
       return;
     }
-    Set<QualificationId> defined = workforce.definedQualifications(actor, organisation);
-    Set<QualificationId> unknown = new LinkedHashSet<>(required);
-    unknown.removeAll(defined);
-    if (!unknown.isEmpty()) {
-      throw new UnknownRequiredQualificationException(unknown);
+    if (!workforce.definedQualifications(actor, organisation).containsAll(required)) {
+      throw new UnknownRequiredQualificationException();
     }
   }
 

@@ -36,8 +36,8 @@ import org.springframework.web.bind.annotation.RestController;
  * rule refuses it first, and {@link Actor#requireTenantMembership} would refuse it before any use
  * case ran (ADR-030).
  *
- * <p>A password given to somebody never comes back out. Neither the creation response nor the
- * listing carries one, and the requests that contain one are the only place it exists.
+ * <p>A password given to somebody never comes back out. Neither the creation response nor any read
+ * carries one, and the requests that contain one are the only place it exists.
  */
 @RestController
 @RequestMapping("/api/accounts")
@@ -71,6 +71,15 @@ public class AccountController {
     return manageAccounts.findAccounts(actor, organisationOf(actor)).stream()
         .map(AccountController::respond)
         .toList();
+  }
+
+  /**
+   * The account a creation's {@code Location} names. One the acting Admin's organisation does not
+   * hold, another's included, is the same 404 as one that does not exist.
+   */
+  @GetMapping("/{id}")
+  public AccountResponse find(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
+    return respond(manageAccounts.findAccount(actor, organisationOf(actor), new UserId(id)));
   }
 
   @PutMapping("/{id}/membership")

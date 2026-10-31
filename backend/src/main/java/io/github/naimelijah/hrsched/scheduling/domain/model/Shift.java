@@ -56,7 +56,7 @@ public final class Shift {
     this.period = Objects.requireNonNull(period, "period must not be null");
     this.zone = Objects.requireNonNull(zone, "zone must not be null");
     if (requiredHeadcount < 1) {
-      throw new InvalidHeadcountException(requiredHeadcount);
+      throw new InvalidHeadcountException();
     }
     this.requiredHeadcount = requiredHeadcount;
     this.requiredQualifications = Set.copyOf(requiredQualifications);

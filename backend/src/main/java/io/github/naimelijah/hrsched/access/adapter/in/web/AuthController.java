@@ -217,6 +217,7 @@ public class AuthController {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Current password not accepted.");
     problem.setTitle("Password not changed");
+    problem.setType(ProblemTypes.PASSWORD_NOT_CHANGED);
     return ResponseEntity.status(HttpStatus.FORBIDDEN)
         .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
         .body(problem);
@@ -229,21 +230,14 @@ public class AuthController {
    */
   private ResponseEntity<ProblemDetail> newPasswordRejected(PasswordRejection reason) {
     ProblemDetail problem =
-        ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, detailFor(reason));
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.UNPROCESSABLE_ENTITY, PasswordRejectionDetail.of(reason, policy));
     problem.setTitle("Password not accepted");
+    problem.setType(ProblemTypes.PASSWORD_NOT_ACCEPTED);
     problem.setProperty("reason", reason.name());
     return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
         .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
         .body(problem);
-  }
-
-  private String detailFor(PasswordRejection reason) {
-    return switch (reason) {
-      case TOO_SHORT ->
-          "A password must be at least %d characters long.".formatted(policy.minimumLength());
-      case TOO_LONG -> "A password must be at most %d bytes long.".formatted(policy.maximumBytes());
-      case SAME_AS_CURRENT -> "The new password must be different from the current one.";
-    };
   }
 
   private ResponseEntity<SignInResponse> accepted(IssuedSession session) {
@@ -292,6 +286,7 @@ public class AuthController {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, REFUSED_DETAIL);
     problem.setTitle(REFUSED_TITLE);
+    problem.setType(ProblemTypes.SIGN_IN_REFUSED);
     return problem;
   }
 

@@ -44,6 +44,7 @@ class GenerationRefusalsTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE.value());
     assertThat(problem.getTitle()).isEqualTo("Generation is busy");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:generation-is-busy");
     assertThat(meters.get("hrsched.generations.busy").counter().count()).isEqualTo(1.0);
   }
 
@@ -67,7 +68,8 @@ class GenerationRefusalsTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"start\":\"2026-10-05T00:00:00Z\",\"end\":\"2026-10-12T00:00:00Z\"}"))
         .andExpect(status().isServiceUnavailable())
-        .andExpect(jsonPath("$.title").value("Generation is unavailable"));
+        .andExpect(jsonPath("$.title").value("Generation is unavailable"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:generation-is-unavailable"));
     assertThat(meters.find("hrsched.generations.busy").counter()).isNull();
   }
 

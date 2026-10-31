@@ -3,6 +3,7 @@ package io.github.naimelijah.hrsched.scheduling.application.port.in;
 import io.github.naimelijah.hrsched.scheduling.domain.model.RosterId;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ShiftId;
 import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
+import java.time.ZoneId;
 import java.util.Objects;
 
 /**
@@ -17,13 +18,15 @@ import java.util.Objects;
  *
  * @param shift which shift
  * @param period when it runs
+ * @param zone the zone the shift's working-time days are counted in (R36)
  * @param roster the published roster that says so
  */
-public record RosteredShift(ShiftId shift, TimeRange period, RosterId roster) {
+public record RosteredShift(ShiftId shift, TimeRange period, ZoneId zone, RosterId roster) {
 
   public RosteredShift {
     Objects.requireNonNull(shift, "shift must not be null");
     Objects.requireNonNull(period, "period must not be null");
+    Objects.requireNonNull(zone, "zone must not be null");
     Objects.requireNonNull(roster, "roster must not be null");
   }
 }
