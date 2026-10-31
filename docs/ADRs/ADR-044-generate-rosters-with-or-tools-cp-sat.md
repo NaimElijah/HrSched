@@ -1,6 +1,9 @@
 # ADR-044: Generate rosters with CP-SAT from Google OR-Tools
 
 - **Status:** Accepted
+  - **Amended 2026-10-31:**
+    [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) runs the solve
+    as a background job, so "A request waits for the solve", under Consequences, no longer holds.
 - **Date:** 2026-10-22
 
 ## Context

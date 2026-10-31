@@ -50,7 +50,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-041](ADR-041-make-concurrent-changes-take-turns-on-the-row.md) | Make concurrent changes to one aggregate take turns on its row, rather than reject the later | Accepted | 2026-10-19 |
 | [ADR-042](ADR-042-judge-a-roster-by-one-check-publication-and-a-read-share.md) | Judge a roster by one check that publication and an advisory read share | Accepted | 2026-10-19 |
 | [ADR-043](ADR-043-defer-typescript-7-until-typescript-eslint-supports-it.md) | Stay on TypeScript 6 until typescript-eslint supports TypeScript 7 | Accepted | 2026-10-20 |
-| [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md) | Generate rosters with CP-SAT from Google OR-Tools | Accepted | 2026-10-22 |
+| [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md) | Generate rosters with CP-SAT from Google OR-Tools | Accepted, amended by [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) | 2026-10-22 |
 | [ADR-045](ADR-045-generate-outside-the-use-cases-transaction.md) | Generate outside the use case's transaction, between a read and a write | Accepted, amended by [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) | 2026-10-22 |
 | [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) | Generate in the background, and keep each generation in PostgreSQL | Accepted, amended by [ADR-059](ADR-059-keep-focus-and-announce-changes-in-the-spa.md) | 2026-10-23 |
 | [ADR-047](ADR-047-audit-dependencies-in-ci-with-osv-scanner.md) | Audit dependencies for known vulnerabilities in CI with OSV-Scanner | Accepted | 2026-10-27 |
