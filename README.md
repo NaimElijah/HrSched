@@ -363,8 +363,8 @@ built.
 **Planned**, tracked by the [milestones](https://github.com/NaimElijah/HrSched/milestones): M0, the
 full-system scans of the code and the docs; M1, v1 feature-complete; M2, the engineering baseline;
 M3 and M4, AWS staging and production on ECS Fargate, RDS and CloudFront, defined in CDK
-([#153](https://github.com/NaimElijah/HrSched/issues/153); ADR-035 and ADR-036 are reserved for the
-topology); and M5, machine learning that proposes and never decides.
+([#153](https://github.com/NaimElijah/HrSched/issues/153); ADR-035, the topology, and ADR-036, the
+CDK app, are reserved); and M5, machine learning that proposes and never decides.
 
 **Known limitations:**
 - **No jurisdiction preset exists yet.** HrSched ships no statute's numbers, so every limit is typed
