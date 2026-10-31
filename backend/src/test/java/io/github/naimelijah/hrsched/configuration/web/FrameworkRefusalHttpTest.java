@@ -35,8 +35,10 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  *
  * <p>Every request but the sign-in carries a tenant's token, because the security chain refuses an
  * anonymous caller before Spring MVC sees the request, and every path is inside a route family the
- * chain admits a tenant to. Annotated identically to the other HTTP tests so they all share one
- * Spring context. The bodies sent are invented.
+ * chain admits a tenant to. Two tests pin that order without a token: neither a wrong method nor an
+ * unmapped path tells an anonymous caller anything about the routes behind the chain. Annotated
+ * identically to the other HTTP tests so they all share one Spring context. The bodies sent are
+ * invented.
  */
 @Import(PostgresBackedApplication.class)
 @SpringBootTest
@@ -47,6 +49,13 @@ class FrameworkRefusalHttpTest {
 
   /** Invented: a body in a type no route of this API takes. */
   private static final String PLAIN_TEXT_BODY = "invented plain text";
+
+  /**
+   * The routing handler's sentence for a body type a route does not read. The charset filter's 415
+   * says a JSON body must be UTF-8, so this one shows which of the two answered.
+   */
+  private static final String UNSUPPORTED_BODY_TYPE =
+      "This route does not take a body of that media type.";
 
   /** A charset name that is not one, so the declared type does not parse at all. */
   private static final String UNPARSABLE_CHARSET = "application/json;charset=no-such-charset";
@@ -153,7 +162,33 @@ class FrameworkRefusalHttpTest {
         .andExpect(status().isUnsupportedMediaType())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         .andExpect(jsonPath("$.type").value(PROBLEM + "unsupported-media-type"))
-        .andExpect(jsonPath("$.detail").value(not(containsString("no-such-charset"))));
+        .andExpect(jsonPath("$.detail").value(UNSUPPORTED_BODY_TYPE));
+  }
+
+  /**
+   * The chain decides before Spring MVC does, so without a token a method the route does not take
+   * is refused as every anonymous request is: a 401, with no {@code Allow} naming what the route
+   * does take.
+   */
+  @Test
+  void GivenNoToken_WhenAskingATenantRouteWithAMethodItDoesNotTake_ThenItIsUnauthenticated()
+      throws Exception {
+    mockMvc
+        .perform(delete("/api/employees"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.type").value(PROBLEM + "unauthenticated"))
+        .andExpect(header().doesNotExist(HttpHeaders.ALLOW));
+  }
+
+  /** As above: a path no controller maps is not told apart from one that exists. */
+  @Test
+  void GivenNoToken_WhenReadingAnUnmappedPathInATenantRouteFamily_ThenItIsUnauthenticated()
+      throws Exception {
+    mockMvc
+        .perform(get("/api/employees/%s/no-such-thing".formatted(UUID.randomUUID())))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.type").value(PROBLEM + "unauthenticated"))
+        .andExpect(header().doesNotExist(HttpHeaders.ALLOW));
   }
 
   /**
