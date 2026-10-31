@@ -176,7 +176,8 @@ controllers (`NotificationController`, `SchedulingController`, `SwapController`,
 `EmployeeController` and `QualificationController`) each have an `actingIn(actor)` helper over
 `Actor.requireTenantMembership()`, and `AccountController` has the same helper as `organisationOf`.
 That helper is the only way an organisation enters a request — there is no identifier in a path,
-body or header for a caller to change ([ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)). That also makes the
+body or header for a caller to change
+([ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)). That also makes the
 platform operator's refusal structural rather than a check: it belongs to no organisation, so there
 is nothing inside one for it to act in ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)).
 `AuthController` and `OrganisationController` have neither helper. The one exception is
