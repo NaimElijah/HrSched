@@ -47,7 +47,9 @@ public class ProblemAccessDeniedHandler implements AccessDeniedHandler {
   private static final Logger log = LoggerFactory.getLogger(ProblemAccessDeniedHandler.class);
 
   /**
-   * Shared with the exception handlers, so one query answers "who was refused" across all of it.
+   * The meter every refusing class records, so one query answers "who was refused" across all of
+   * it: each context's exception handler, the access {@code AuthController} and the other handler
+   * in this package each declare the same name.
    */
   private static final String DENIED = "hrsched.access.denied";
 
@@ -57,6 +59,13 @@ public class ProblemAccessDeniedHandler implements AccessDeniedHandler {
   private final ObjectMapper json;
   private final MeterRegistry meters;
 
+  /**
+   * Creates the handler.
+   *
+   * @param json writes the problem detail
+   * @param meters the registry the refusal is counted in
+   * @throws NullPointerException if either is {@code null}
+   */
   public ProblemAccessDeniedHandler(ObjectMapper json, MeterRegistry meters) {
     this.json = Objects.requireNonNull(json, "json must not be null");
     this.meters = Objects.requireNonNull(meters, "meters must not be null");

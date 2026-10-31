@@ -7,9 +7,10 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 /**
  * Entry point for the HrSched staff shift scheduling service.
  *
- * <p>This class carries no logic on purpose: it is the composition root, and the domain must stay
- * reachable without booting Spring. See {@code docs/architecture/architecture.md} for the
- * dependency direction this preserves.
+ * <p>This class carries no logic on purpose: it only starts Spring and scans from the root package.
+ * The application layer is wired in {@code configuration.UseCaseConfiguration}, which keeps the
+ * domain and the application services free of Spring and constructible without booting it. See
+ * {@code docs/architecture/architecture.md} for the dependency direction this preserves.
  *
  * <p>{@code @ConfigurationPropertiesScan} is here rather than on a configuration class because the
  * property records it binds live in more than one package: beside the adapter that reads one, or in
@@ -21,6 +22,11 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 @ConfigurationPropertiesScan
 public class HrSchedApplication {
 
+  /**
+   * Starts the service.
+   *
+   * @param args command-line arguments, handed to Spring Boot as property sources
+   */
   public static void main(String[] args) {
     SpringApplication.run(HrSchedApplication.class, args);
   }

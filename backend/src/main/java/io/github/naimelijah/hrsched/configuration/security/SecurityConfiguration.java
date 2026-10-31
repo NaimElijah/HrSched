@@ -26,8 +26,8 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
 /**
  * Puts Spring Security's filter chain in front of every request.
  *
- * <p>A request carrying {@code Authorization: Bearer …} is now authenticated: the token is verified
- * by the application's {@link JwtDecoder}, and then turned into a caller by asking the database who
+ * <p>A request carrying {@code Authorization: Bearer …} is authenticated: the token is verified by
+ * the application's {@link JwtDecoder}, and then turned into a caller by asking the database who
  * that account and session belong to <em>now</em>. A token that fails either step is refused with a
  * 401, on every route, whether or not the route itself requires authentication — that is the bearer
  * filter's own behaviour, and it means a client must send no token rather than a stale one.

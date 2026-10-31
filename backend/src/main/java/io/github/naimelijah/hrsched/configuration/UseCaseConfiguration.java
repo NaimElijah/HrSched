@@ -55,13 +55,16 @@ import org.springframework.transaction.PlatformTransactionManager;
  * registered here by hand; the benefit is that the framework stays outside the hexagon. See
  * ADR-003.
  *
- * <p>It is also the one place permitted to see more than one context at a time, which is why the
- * architecture rules exempt classes annotated {@code @Configuration} and nothing else.
+ * <p>It is also wiring, so it names what no class in a context may: another context's services and
+ * driven ports. The architecture test exempts exactly the classes annotated {@code @Configuration}
+ * and the classes nested in one from the rule that holds {@code configuration} to other contexts'
+ * published driving ports. Any other class in {@code configuration} stays under that rule, and a
+ * context's driven adapters reach another context through those ports alone (ADR-008).
  *
- * <p>That privilege has a cost visible below: each context owns an {@code AuditTrail} port of its
- * own, so all four share a simple name that only collides here. Three of them are written out in
- * full rather than renamed, because inside its own context {@code AuditTrail} is the right name and
- * seeing all four at once is this class's job, not theirs.
+ * <p>Seeing every context has a cost visible below: each context owns an {@code AuditTrail} port of
+ * its own, so all four share a simple name that only collides here. Three of them are written out
+ * in full rather than renamed, because inside its own context {@code AuditTrail} is the right name
+ * and seeing all four at once is this class's job, not theirs.
  *
  * <p><strong>Every use case below is transactional, and nothing about the services says
  * so.</strong> {@code transactional(...)} wraps each one, because the architecture test forbids

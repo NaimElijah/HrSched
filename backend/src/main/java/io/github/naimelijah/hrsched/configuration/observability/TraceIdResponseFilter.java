@@ -18,9 +18,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *
  * <p>Every log line a request produces carries {@code traceId}, because Micrometer Tracing writes
  * it into the MDC and the ECS format publishes the MDC. Lines emitted outside a request - startup,
- * shutdown - carry none, because there is no span for them to belong to. Either way it is worth
- * nothing to the person actually looking at the error, who has a browser and no log access. This
- * closes that gap: the identifier shown on screen is the identifier to search for.
+ * shutdown - carry none, because there is no span for them to belong to. The id in the log is of no
+ * use to the person actually looking at the error, who has a browser and no log access. This closes
+ * that gap: the identifier shown on screen is the identifier to search for.
  *
  * <p>The header is set before the chain runs, because a response that has begun streaming can no
  * longer take one.
@@ -56,6 +56,8 @@ public class TraceIdResponseFilter extends OncePerRequestFilter {
   private final Tracer tracer;
 
   /**
+   * Creates the filter.
+   *
    * @param tracer the tracer whose current span identifies this request
    */
   public TraceIdResponseFilter(Tracer tracer) {

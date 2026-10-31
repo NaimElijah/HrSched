@@ -30,6 +30,8 @@ public record TenantActor(
   }
 
   /**
+   * Creates a member who is not rostered, so {@code employee} is empty.
+   *
    * @param id who is acting
    * @param organisation the single organisation they belong to
    * @param role what they may do within it
@@ -39,8 +41,14 @@ public record TenantActor(
   }
 
   /**
+   * Tests whether this actor is the person a personnel record belongs to.
+   *
+   * <p>False for an actor with no linked employee. The identities are compared through the carried
+   * link, never by matching {@link UserId} against {@link EmployeeId} (ADR-012).
+   *
    * @param subject the personnel record being acted on
    * @return whether this actor is that person
+   * @throws NullPointerException if {@code subject} is {@code null}
    */
   public boolean isThemself(EmployeeId subject) {
     Objects.requireNonNull(subject, "subject must not be null");

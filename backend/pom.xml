@@ -208,9 +208,10 @@
 		  The tests run against a real PostgreSQL in a container, so Docker is required to build.
 		  There is deliberately no in-memory fallback and no skip-when-Docker-is-absent: a check that
 		  quietly does not run still reports green, which is what ci.yml already refuses for path
-		  filters. This one hands the container to Spring through @ServiceConnection, in place of
-		  hand-wired datasource properties. Apache-2.0, maintained by the Spring team, and
-		  version-managed by the Boot BOM. See ADR-004.
+		  filters. This is Boot's Testcontainers support. No test source imports from it, and the
+		  suite does not use @ServiceConnection: PostgresDatabase starts the one container and
+		  PostgresBackedApplication hands Spring only its address (#252). Apache-2.0, maintained
+		  by the Spring team, and version-managed by the Boot BOM. See ADR-004.
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

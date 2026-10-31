@@ -13,6 +13,15 @@ public class NotPermittedException extends RuntimeException {
   private final UserId actor;
   private final Role held;
 
+  /**
+   * Creates the refusal for an actor whose role is not one the operation allows.
+   *
+   * @param actor who attempted the operation
+   * @param held the role they hold
+   * @param permitted the roles that would have been enough; named in the message and not kept
+   * @throws NullPointerException if {@code actor} is {@code null}, because the message is built
+   *     from it
+   */
   public NotPermittedException(UserId actor, Role held, Set<Role> permitted) {
     super(
         "Actor %s holds %s, but this requires one of %s".formatted(actor.value(), held, permitted));

@@ -11,6 +11,7 @@ package io.github.naimelijah.hrsched.shared.domain.model;
  */
 public class InvalidTimeRangeException extends RuntimeException {
 
+  /** Creates the refusal with its fixed message, which names no instant. */
   public InvalidTimeRangeException() {
     super("A time range must end after it starts");
   }

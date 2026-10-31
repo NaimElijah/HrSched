@@ -19,6 +19,8 @@ public record OrganisationId(UUID value) {
   }
 
   /**
+   * Creates a new, previously unused identity.
+   *
    * @return a fresh identity backed by a random UUID
    */
   public static OrganisationId newId() {
