@@ -6,6 +6,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import java.util.UUID;
 
 /**
+ * The body of a request to hand one assignment of a published roster to a colleague.
+ *
  * @param roster the published roster the shift is on
  * @param shift the shift being handed over
  * @param requester whoever currently covers it

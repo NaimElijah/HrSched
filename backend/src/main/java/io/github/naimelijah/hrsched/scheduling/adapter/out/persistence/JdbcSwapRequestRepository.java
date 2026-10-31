@@ -27,8 +27,8 @@ import org.springframework.stereotype.Repository;
  *
  * <p>Requests come back oldest first, which is the order a Scheduler works through them. That is
  * ordered on {@code requested_at} with the identity as a tie-break, so two requests raised in the
- * same instant still come back in a stable order. The aggregate gained that field for this reason:
- * the promise used to rest on a store that happened to keep insertion order (ADR-004).
+ * same instant still come back in a stable order. The promise rests on that stored field, not on a
+ * store that happens to keep insertion order (ADR-004).
  *
  * <p>Flat, with no owned rows. It names a roster and a shift by identity rather than holding them,
  * so a decided request keeps meaning something even after the roster it referred to is superseded.

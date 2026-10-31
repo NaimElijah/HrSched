@@ -55,8 +55,8 @@ public class CpSatRosterGenerator implements RosterGenerator {
    * @param meters where coverage is recorded, one observation per generation
    * @param properties how long each of the solver's searches may run
    * @param policy how long a generation may stay pending before it reads as lost
-   * @throws IllegalArgumentException if both searches could run for that long, so that a solve
-   *     still searching would be reported lost (ADR-046)
+   * @throws IllegalArgumentException if the policy's lost-after does not exceed the time both
+   *     searches may take, so that a solve still searching would be reported lost (ADR-046)
    */
   public CpSatRosterGenerator(
       MeterRegistry meters, GenerationProperties properties, GenerationPolicy policy) {
@@ -81,6 +81,9 @@ public class CpSatRosterGenerator implements RosterGenerator {
   }
 
   /**
+   * Fills as many of the draft's places as the rules allow and, when the organisation weights an
+   * objective, ranks that fullest roster by the weights. See {@link RosterGenerator#generate}.
+   *
    * @throws IllegalStateException if asked inside a transaction, where a solve would hold a pooled
    *     connection for as long as it ran (ADR-045); or if the solver found no roster at all, which
    *     within the time limit means the problem is too large for it, and otherwise is a defect in

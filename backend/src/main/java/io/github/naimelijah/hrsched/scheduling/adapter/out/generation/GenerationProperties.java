@@ -9,8 +9,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * <p>Configuration rather than constants, because how long a Scheduler may wait for a draft, and
  * how many solves the hardware can bear at once, depend on where this runs, which code cannot know.
- * Neither has a default here, so a deployment that forgot them fails to start rather than running
- * on whatever somebody once guessed.
+ * Neither has a default in this record, so configuration that leaves one out fails to start rather
+ * than running on whatever somebody once guessed; {@code application.properties} sets both.
  *
  * @param timeLimitPerPhase the longest each of the solver's searches may run before it answers with
  *     the best roster it has found

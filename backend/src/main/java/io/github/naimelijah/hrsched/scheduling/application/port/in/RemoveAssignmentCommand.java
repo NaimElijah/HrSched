@@ -7,6 +7,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.Objects;
 
 /**
+ * A request to take one person off one shift of a draft.
+ *
  * @param organisation whose roster is being edited
  * @param roster which draft
  * @param shift which shift the person is coming off

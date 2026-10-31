@@ -33,7 +33,10 @@ public class SchedulingAuditLog implements AuditTrail {
 
   private static final Logger log = LoggerFactory.getLogger(SchedulingAuditLog.class);
 
-  /** Shared with the workforce adapter so one query answers "what changed" across both contexts. */
+  /**
+   * Shared with every other context's audit adapter, told apart by the {@code context} tag, so one
+   * query answers "what changed" across all of them.
+   */
   private static final String CHANGES = "hrsched.changes";
 
   private final MeterRegistry meters;

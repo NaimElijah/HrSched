@@ -59,18 +59,22 @@ import tools.jackson.databind.exc.UnrecognizedPropertyException;
  * <p>There is no override anywhere here. A roster that breaks the rules is not published, and the
  * remedy is a different roster.
  *
- * <p>It is also where refusals are recorded, because it is the only place that sees every one of
- * them. A cross-tenant attempt in particular used to become a 404 and vanish: the requirements call
- * that a security incident rather than a bug, and an incident nothing records is an incident nobody
- * can detect. What the caller is told does not change - still a 404, still "No such resource." -
- * only what the operator can see. See ADR-018.
+ * <p>It is also where refusals are recorded, because it is the one place that sees every refusal
+ * its controllers raise. A cross-tenant attempt in particular would become a 404 and vanish if it
+ * were not recorded here: the requirements call that a security incident rather than a bug, and an
+ * incident nothing records is an incident nobody can detect. What the caller is told is the same -
+ * a 404, "No such resource." - only what the operator can see differs. See ADR-018.
  */
 @RestControllerAdvice(assignableTypes = {SchedulingController.class, SwapController.class})
 public class SchedulingExceptionHandler {
 
   private static final Logger log = LoggerFactory.getLogger(SchedulingExceptionHandler.class);
 
-  /** Shared with the workforce handler, so one query answers "who was refused" across both. */
+  /**
+   * Shared with every other class that records a refusal: the other contexts' exception handlers,
+   * {@code AuthController} and the security chain's access-denied and entry-point handlers. So one
+   * query answers "who was refused" across all of them, told apart by the {@code kind} tag.
+   */
   private static final String DENIED = "hrsched.access.denied";
 
   private static final String REFUSED = "hrsched.rosters.refused";
@@ -89,6 +93,8 @@ public class SchedulingExceptionHandler {
   private final MeterRegistry meters;
 
   /**
+   * Creates the handler for the scheduling controllers.
+   *
    * @param meters where refusals are counted
    */
   public SchedulingExceptionHandler(MeterRegistry meters) {
@@ -100,7 +106,10 @@ public class SchedulingExceptionHandler {
   }
 
   /**
-   * Logged at INFO, not WARN. The rules working is not a fault: a roster that breaks them is
+   * Answers a publication refused for breaking the rules with a 422 listing every violation, and
+   * counts it.
+   *
+   * <p>Logged at INFO, not WARN. The rules working is not a fault: a roster that breaks them is
    * supposed to be refused, and levelling it as a problem would train whoever reads the logs to
    * ignore the level.
    */
@@ -122,6 +131,10 @@ public class SchedulingExceptionHandler {
     return violations.stream().map(ViolationResponse::from).toList();
   }
 
+  /**
+   * A request that is malformed or holds a value the domain refuses is a 400. The detail is the
+   * exception's own message, which each of these types keeps free of what was sent (ADR-024).
+   */
   @ExceptionHandler({
     InvalidTimeRangeException.class,
     InvalidHeadcountException.class,
@@ -208,9 +221,9 @@ public class SchedulingExceptionHandler {
 
   /**
    * Two publications overlapped in time as well as in period, and the schema refused the one that
-   * would have left two rosters authoritative (ADR-026). A 409 rather than a 400: nothing about the
-   * request was wrong, it arrived while another publication was in flight, and reloading and
-   * publishing again is the remedy.
+   * would have left two rosters authoritative (ADR-026, ADR-037). A 409 rather than a 400: nothing
+   * about the request was wrong, it arrived while another publication was in flight, and reloading
+   * and publishing again is the remedy.
    *
    * <p>Logged at WARN, not INFO like a rule breach. Publication is meant to take turns, so reaching
    * this means something published without doing so, and that is worth somebody's attention.
@@ -265,6 +278,10 @@ public class SchedulingExceptionHandler {
     return problem;
   }
 
+  /**
+   * An actor whose role does not permit the request: a 403, logged at WARN and counted. The
+   * response names no role and no resource.
+   */
   @ExceptionHandler(NotPermittedException.class)
   public ProblemDetail handleNotPermitted(NotPermittedException exception) {
     log.atWarn()

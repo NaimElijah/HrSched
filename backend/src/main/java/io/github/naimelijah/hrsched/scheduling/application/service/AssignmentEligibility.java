@@ -33,12 +33,12 @@ import java.util.Set;
  * <p>Working-time rules are deliberately not here. They judge a whole schedule rather than a single
  * assignment, so the roster judges them, beside its overlaps.
  *
- * <p>Unavailability <em>is</em> here, and the first version of this left it out. That was a real
- * hole: generation filters candidates through {@code RosterCandidate.couldCover}, which tests
- * availability as well as qualifications, so generation refused to roster somebody through their
- * declared absence while assigning by hand accepted it — and publication could not catch it
- * afterwards, because unavailability is not a {@code WorkingTimeConstraint} and an empty constraint
- * set checks nothing at all. A rule enforced on one of two paths is not enforced.
+ * <p>Unavailability <em>is</em> here. Generation filters candidates through {@code
+ * RosterCandidate.couldCover}, which tests availability as well as qualifications, and
+ * unavailability is not a {@code WorkingTimeConstraint}, so an empty constraint set checks nothing
+ * of it at publication. Left out of this class, assigning by hand would accept what generation
+ * refuses and nothing afterwards would catch it. A rule enforced on one of two paths is not
+ * enforced.
  */
 final class AssignmentEligibility {
 
@@ -48,7 +48,7 @@ final class AssignmentEligibility {
    * Every breach of R5, R4 and R18 on a roster, listed rather than refused at the first: what
    * publication refuses, and what checking a draft reports, for each assignment the roster carries.
    *
-   * <p>The same two questions {@link #require} asks of one person, asked of all of them against one
+   * <p>The same questions {@link #require} asks of one person, asked of all of them against one
    * read of the directory, so a roster is judged against one consistent view of who may work.
    *
    * @param roster whose assignments to judge

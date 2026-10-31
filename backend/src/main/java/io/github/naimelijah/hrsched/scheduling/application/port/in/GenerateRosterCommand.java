@@ -5,6 +5,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.util.Objects;
 
 /**
+ * A request to generate a draft roster.
+ *
  * @param organisation whose roster
  * @param period the span to cover
  */

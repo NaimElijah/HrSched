@@ -48,6 +48,11 @@ public interface RosterRepository {
    */
   void lockPublicationsOf(OrganisationId organisation);
 
+  /**
+   * @param organisation whose roster; another organisation's is never found
+   * @param id which roster
+   * @return the roster, empty if this organisation holds none with that identity
+   */
   Optional<Roster> findById(OrganisationId organisation, RosterId id);
 
   /**
@@ -67,5 +72,10 @@ public interface RosterRepository {
    */
   Optional<Roster> findForUpdate(OrganisationId organisation, RosterId id);
 
+  /**
+   * @param organisation whose rosters
+   * @return every roster that organisation holds, drafts, published and superseded, in no
+   *     particular order
+   */
   List<Roster> findByOrganisation(OrganisationId organisation);
 }

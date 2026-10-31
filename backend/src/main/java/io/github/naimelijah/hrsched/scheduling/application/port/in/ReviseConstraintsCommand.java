@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Objects;
 
 /**
+ * A request to replace an organisation's working-time rules with a new version.
+ *
  * @param organisation whose rules
  * @param constraints the rules that should apply, replacing the previous version entirely
  */

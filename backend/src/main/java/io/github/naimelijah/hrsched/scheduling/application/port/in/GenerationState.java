@@ -33,6 +33,7 @@ public record GenerationState(
   }
 
   /**
+   * @param generation the generation as stored
    * @param now what the clock reads
    * @return how {@code generation} stands then
    */

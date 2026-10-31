@@ -10,6 +10,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
+ * The body of a request to define a shift.
+ *
  * @param start when the shift begins
  * @param end when the shift ends
  * @param zone an IANA time zone name, such as {@code Europe/London}: where its days are counted
