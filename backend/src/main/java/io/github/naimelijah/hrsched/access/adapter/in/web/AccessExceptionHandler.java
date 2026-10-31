@@ -7,6 +7,7 @@ import io.github.naimelijah.hrsched.access.domain.model.InvalidSignInNameExcepti
 import io.github.naimelijah.hrsched.access.domain.model.LastActiveAdminException;
 import io.github.naimelijah.hrsched.access.domain.model.NotAnEmployeeHereException;
 import io.github.naimelijah.hrsched.access.domain.model.NotThePlatformOperatorException;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.SignInNameTakenException;
 import io.github.naimelijah.hrsched.access.domain.model.UnacceptablePasswordException;
 import io.github.naimelijah.hrsched.access.domain.model.UnknownAccountException;
@@ -18,6 +19,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberExceptio
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -67,12 +69,15 @@ public class AccessExceptionHandler {
           + " does not take, or has one whose value is of the wrong form.";
 
   private final MeterRegistry meters;
+  private final PasswordPolicy policy;
 
   /**
    * @param meters where refusals are counted
+   * @param policy the password policy, for the numbers a refused temporary password is told
    */
-  public AccessExceptionHandler(MeterRegistry meters) {
-    this.meters = meters;
+  public AccessExceptionHandler(MeterRegistry meters, PasswordPolicy policy) {
+    this.meters = Objects.requireNonNull(meters, "meters must not be null");
+    this.policy = Objects.requireNonNull(policy, "policy must not be null");
   }
 
   private void denied(String kind) {
@@ -95,20 +100,23 @@ public class AccessExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     problem.setTitle("Invalid request");
+    problem.setType(ProblemTypes.INVALID_REQUEST);
     return problem;
   }
 
   /**
-   * A temporary password the policy refuses. A 422 naming the rule, because whoever typed it has to
-   * know what would satisfy it; the password itself is never echoed.
+   * A temporary password the policy refuses. A 422 whose detail says what would satisfy it, in the
+   * sentence a refused change of one's own password gets, because whoever typed it has to know and
+   * the {@code reason} member is not something a screen shows; the password itself is never echoed.
    */
   @ExceptionHandler(UnacceptablePasswordException.class)
   public ProblemDetail handleUnacceptablePassword(UnacceptablePasswordException exception) {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.UNPROCESSABLE_ENTITY,
-            "That temporary password does not satisfy the policy.");
+            PasswordRejectionDetail.of(exception.reason(), policy));
     problem.setTitle("Password not accepted");
+    problem.setType(ProblemTypes.PASSWORD_NOT_ACCEPTED);
     problem.setProperty("reason", exception.reason().name());
     return problem;
   }
@@ -142,13 +150,15 @@ public class AccessExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.CONFLICT, "That sign-in name is already in use.");
     problem.setTitle("Sign-in name taken");
+    problem.setType(ProblemTypes.SIGN_IN_NAME_TAKEN);
     return problem;
   }
 
   /**
    * An account named by an Admin that their organisation does not hold. A 404, and the same 404
    * whether it never existed or belongs to another customer: telling those apart would let an Admin
-   * discover, one identifier at a time, that a colleague holds an account somewhere else.
+   * discover, one identifier at a time, that a colleague holds an account somewhere else. Its
+   * detail is the one every context's 404 gives.
    *
    * @param actor the acting account, taken from the access token as the controllers take it; the
    *     exception carries only the account named. Null if the principal is not an {@code Actor}:
@@ -169,7 +179,8 @@ public class AccessExceptionHandler {
     denied("unknown_account");
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
-    problem.setDetail("No such account.");
+    problem.setType(ProblemTypes.NOT_FOUND);
+    problem.setDetail("No such resource.");
     return problem;
   }
 
@@ -193,6 +204,7 @@ public class AccessExceptionHandler {
             "An organisation must keep at least one active Admin. Give somebody else that role"
                 + " first.");
     problem.setTitle("Last active Admin");
+    problem.setType(ProblemTypes.LAST_ACTIVE_ADMIN);
     return problem;
   }
 
@@ -207,6 +219,7 @@ public class AccessExceptionHandler {
             HttpStatus.CONFLICT,
             "Change your own password at /api/auth/password, which asks for the current one.");
     problem.setTitle("Not your own password");
+    problem.setType(ProblemTypes.NOT_YOUR_OWN_PASSWORD);
     return problem;
   }
 
@@ -217,6 +230,7 @@ public class AccessExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.UNPROCESSABLE_ENTITY, "No such employee in this organisation.");
     problem.setTitle("Unknown employee");
+    problem.setType(ProblemTypes.UNKNOWN_EMPLOYEE);
     return problem;
   }
 
@@ -234,6 +248,7 @@ public class AccessExceptionHandler {
             "An Employee account must be linked to one of this organisation's employees; one that"
                 + " is not cannot be restored until it is.");
     problem.setTitle("Employee account not linked");
+    problem.setType(ProblemTypes.EMPLOYEE_ACCOUNT_NOT_LINKED);
     return problem;
   }
 
@@ -244,6 +259,7 @@ public class AccessExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.CONFLICT, "That employee already has an account.");
     problem.setTitle("Employee already linked");
+    problem.setType(ProblemTypes.EMPLOYEE_ALREADY_LINKED);
     return problem;
   }
 
@@ -283,11 +299,13 @@ public class AccessExceptionHandler {
               "The request body exceeds a limit on its size, its nesting or the length of a value"
                   + " in it.");
       problem.setTitle("Request too large");
+      problem.setType(ProblemTypes.REQUEST_TOO_LARGE);
       return problem;
     }
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, MALFORMED_BODY);
     problem.setTitle("Malformed request");
+    problem.setType(ProblemTypes.MALFORMED_REQUEST);
     return problem;
   }
 
@@ -302,6 +320,7 @@ public class AccessExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "Only the platform operator may do this.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 
@@ -320,6 +339,7 @@ public class AccessExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your role does not permit this.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 
@@ -339,6 +359,7 @@ public class AccessExceptionHandler {
     }
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
+    problem.setType(ProblemTypes.NOT_FOUND);
     problem.setDetail("No such resource.");
     return problem;
   }
@@ -358,6 +379,7 @@ public class AccessExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "The platform operator may not act inside an organisation.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 }

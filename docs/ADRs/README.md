@@ -32,7 +32,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-021](ADR-021-notifications-as-a-bounded-context.md) | Make notifications a bounded context, and let it hold no words | Accepted, amended by [ADR-004](ADR-004-postgresql-behind-the-driven-ports.md), [ADR-011](ADR-011-issue-our-own-access-tokens.md) | 2026-09-01 |
 | [ADR-022](ADR-022-approving-a-swap-publishes-a-replacement-roster.md) | Approve a swap by publishing a replacement roster, never by editing one | Accepted, amended by [ADR-023](ADR-023-the-transaction-boundary-is-the-use-case.md) | 2026-09-01 |
 | [ADR-023](ADR-023-the-transaction-boundary-is-the-use-case.md) | Make the use case the transaction boundary, wrapped at the composition root | Accepted, amended by [ADR-045](ADR-045-generate-outside-the-use-cases-transaction.md), [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) | 2026-09-06 |
-| [ADR-024](ADR-024-answer-unbindable-requests-with-a-problem-detail.md) | Answer a request Spring cannot bind with a problem detail, from one fallback handler | Accepted, amended by [ADR-011](ADR-011-issue-our-own-access-tokens.md), [ADR-053](ADR-053-bound-a-request-body-and-accept-only-utf-8-json.md) | 2026-09-14 |
+| [ADR-024](ADR-024-answer-unbindable-requests-with-a-problem-detail.md) | Answer a request Spring cannot bind with a problem detail, from one fallback handler | Accepted, amended by [ADR-011](ADR-011-issue-our-own-access-tokens.md), [ADR-053](ADR-053-bound-a-request-body-and-accept-only-utf-8-json.md), [ADR-057](ADR-057-name-every-kind-of-problem-with-a-urn.md) | 2026-09-14 |
 | [ADR-025](ADR-025-edit-a-draft-roster-with-controls-not-drag-and-drop.md) | Edit a draft roster through controls on a board, not by drag and drop | Accepted | 2026-09-14 |
 | [ADR-026](ADR-026-make-overlapping-published-rosters-unrepresentable.md) | Make two overlapping published rosters of one organisation unrepresentable in the schema | Superseded by [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md) | 2026-09-14 |
 | [ADR-027](ADR-027-take-turns-publishing-within-an-organisation.md) | Make publications within one organisation take turns, with a transaction-scoped advisory lock | Accepted, amended by [ADR-037](ADR-037-keep-roster-history-as-a-record-in-time.md), [ADR-039](ADR-039-lapse-pending-swaps-in-the-publication-that-supersedes-their-roster.md) | 2026-09-14 |
@@ -63,6 +63,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) | Run a use case read-only when its name starts with `find` | Accepted, amended | 2026-10-30 |
 | [ADR-055](ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md) | Read an account or a session without an organisation where none is known | Accepted | 2026-10-30 |
 | [ADR-056](ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md) | Refuse a fraction where a whole number is bound | Accepted, amended | 2026-10-30 |
+| [ADR-057](ADR-057-name-every-kind-of-problem-with-a-urn.md) | Name every kind of problem with its own URN | Accepted | 2026-10-31 |
 | [ADR-058](ADR-058-refuse-a-request-member-the-request-type-does-not-have.md) | Refuse a request member the request type does not have | Accepted | 2026-10-31 |
 
 ## Decisions waiting to be recorded

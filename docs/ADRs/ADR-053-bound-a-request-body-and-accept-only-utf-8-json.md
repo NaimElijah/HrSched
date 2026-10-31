@@ -8,6 +8,10 @@
     skips ([#254](https://github.com/NaimElijah/HrSched/issues/254)). Neither Tomcat's key nor
     Jackson's is checked when set directly, for instance by an environment override such as
     `SERVER_TOMCAT_MAXHTTPFORMPOSTSIZE=-1`.
+  - **Amended 2026-10-31:** the multipart and unsupported-type 415s no longer carry Spring's
+    default body: both are problem details now, answered by `RequestRoutingExceptionHandler`
+    (issue #275; see ADR-024's note of the same date). A form over the server's form limit is still
+    refused `413` by the container's error page, not with a problem detail.
 - **Date:** 2026-10-30
 
 ## Context

@@ -73,6 +73,9 @@ tests. Two steps fail late rather than at compile time: a forgotten bean registr
 startup, and a controller left out of its context's `@RestControllerAdvice(assignableTypes = …)`
 fails the architecture test.
 
+A new kind of refusal gets a constant in its adapter's `ProblemTypes`, a row in `docs/api.md`'s
+types table, and a `$.type` assertion in the test that provokes it (ADR-057).
+
 ## Acting identity, tenancy and the security chain
 
 - **Who is acting is an argument, never an ambient read.** `SecurityContextHolder` is forbidden

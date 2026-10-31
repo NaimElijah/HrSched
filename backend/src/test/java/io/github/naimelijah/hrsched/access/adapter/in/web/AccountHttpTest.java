@@ -13,6 +13,7 @@ import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
 import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -62,6 +63,9 @@ class AccountHttpTest {
   /** Invented, and deliberately below it. */
   private static final String TOO_SHORT = "brief";
 
+  /** Invented: one byte of UTF-8, repeated to make a password over the policy's maximum. */
+  private static final String ONE_BYTE_CHARACTER = "x";
+
   /** Invented, and what an account replaces the password somebody else chose for it with. */
   private static final String THEIR_OWN_PASSWORD = "a password that admin chose themselves";
 
@@ -75,9 +79,9 @@ class AccountHttpTest {
 
   /**
    * What an Admin is told of an account their organisation does not hold, whether it is another
-   * organisation's or nobody's.
+   * organisation's or nobody's: the detail every 404 gives.
    */
-  private static final String NO_SUCH_ACCOUNT = "No such account.";
+  private static final String NOT_FOUND_DETAIL = "No such resource.";
 
   /** Invented: when an account {@link #migrated} stands for was created. */
   private static final Instant STORED_BEFORE_R34 = Instant.parse("2026-09-01T09:00:00Z");
@@ -85,6 +89,7 @@ class AccountHttpTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private AccountRepository accounts;
   @Autowired private PasswordHasher passwords;
+  @Autowired private PasswordPolicy policy;
 
   private OrganisationId anOrganisation() throws Exception {
     String body =
@@ -260,7 +265,8 @@ class AccountHttpTest {
 
     mockMvc
         .perform(with(post("/api/accounts"), admin).content(creating(taken, Role.SCHEDULER)))
-        .andExpect(status().isConflict());
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:sign-in-name-taken"));
   }
 
   /**
@@ -286,6 +292,10 @@ class AccountHttpTest {
     assertThat(body).doesNotContain(taken);
   }
 
+  /**
+   * The detail says what would satisfy the policy, in the sentence a refused change of one's own
+   * password gets, because the reason member alone is not something the screen shows.
+   */
   @Test
   void GivenATemporaryPasswordBelowThePolicy_WhenCreatingAnAccount_ThenTheRuleIsNamed()
       throws Exception {
@@ -296,7 +306,34 @@ class AccountHttpTest {
                     "{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\",\"role\":\"SCHEDULER\"}"
                         .formatted(anInventedSignInName(), TOO_SHORT)))
         .andExpect(status().isUnprocessableEntity())
-        .andExpect(jsonPath("$.reason").value("TOO_SHORT"));
+        .andExpect(jsonPath("$.reason").value("TOO_SHORT"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:password-not-accepted"))
+        .andExpect(
+            jsonPath("$.detail")
+                .value(
+                    "A password must be at least %d characters long."
+                        .formatted(policy.minimumLength())));
+  }
+
+  /** As above, for a password over the most bytes the hasher reads, which is counted in bytes. */
+  @Test
+  void GivenATemporaryPasswordOverThePolicy_WhenCreatingAnAccount_ThenTheLimitIsNamed()
+      throws Exception {
+    String tooLong = ONE_BYTE_CHARACTER.repeat(policy.maximumBytes() + 1);
+
+    mockMvc
+        .perform(
+            with(post("/api/accounts"), admin(anOrganisation()))
+                .content(
+                    "{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\",\"role\":\"SCHEDULER\"}"
+                        .formatted(anInventedSignInName(), tooLong)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.reason").value("TOO_LONG"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:password-not-accepted"))
+        .andExpect(
+            jsonPath("$.detail")
+                .value(
+                    "A password must be at most %d bytes long.".formatted(policy.maximumBytes())));
   }
 
   @Test
@@ -323,7 +360,8 @@ class AccountHttpTest {
         .perform(
             with(post("/api/accounts"), admin(anOrganisation()))
                 .content(linkedTo(anInventedSignInName(), theirs)))
-        .andExpect(status().isUnprocessableEntity());
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:unknown-employee"));
   }
 
   @Test
@@ -338,7 +376,8 @@ class AccountHttpTest {
 
     mockMvc
         .perform(with(post("/api/accounts"), admin).content(linkedTo(anInventedSignInName(), ada)))
-        .andExpect(status().isConflict());
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:employee-already-linked"));
   }
 
   // ADR-031: the organisation comes from the acting account, never from what the request says
@@ -514,7 +553,9 @@ class AccountHttpTest {
     mockMvc
         .perform(with(get("/api/accounts/" + theirs), admin(anOrganisation())))
         .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.detail").value(NO_SUCH_ACCOUNT));
+        .andExpect(jsonPath("$.title").value("Not found"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-found"))
+        .andExpect(jsonPath("$.detail").value(NOT_FOUND_DETAIL));
   }
 
   @Test
@@ -522,7 +563,9 @@ class AccountHttpTest {
     mockMvc
         .perform(with(get("/api/accounts/" + UUID.randomUUID()), admin(anOrganisation())))
         .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.detail").value(NO_SUCH_ACCOUNT));
+        .andExpect(jsonPath("$.title").value("Not found"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-found"))
+        .andExpect(jsonPath("$.detail").value(NOT_FOUND_DETAIL));
   }
 
   @Test
@@ -596,7 +639,10 @@ class AccountHttpTest {
 
   @Test
   void GivenNoToken_WhenListingAccounts_ThenItIsUnauthorised() throws Exception {
-    mockMvc.perform(get("/api/accounts")).andExpect(status().isUnauthorized());
+    mockMvc
+        .perform(get("/api/accounts"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:unauthenticated"));
   }
 
   @Test
@@ -654,6 +700,7 @@ class AccountHttpTest {
             with(post("/api/accounts"), admin(acme)).content(creating(signInName, Role.EMPLOYEE)))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.title").value("Employee account not linked"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:employee-account-not-linked"))
         .andExpect(jsonPath("$.detail").value(UNLINKED_EMPLOYEE_REFUSED));
 
     mockMvc.perform(signInAs(signInName, A_PASSWORD)).andExpect(status().isUnauthorized());
@@ -784,7 +831,8 @@ class AccountHttpTest {
         .perform(
             with(put("/api/accounts/%s/membership".formatted(onlyAdmin)), admin)
                 .content("{\"role\":\"SCHEDULER\"}"))
-        .andExpect(status().isConflict());
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:last-active-admin"));
   }
 
   @Test
@@ -1044,7 +1092,9 @@ class AccountHttpTest {
         .perform(
             with(post("/api/accounts/%s/password".formatted(theirs)), admin(anOrganisation()))
                 .content("{\"temporaryPassword\":\"%s\"}".formatted(replacement)))
-        .andExpect(status().isNotFound());
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail").value("No such resource."))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-found"));
 
     mockMvc.perform(signInAs(theirName, A_PASSWORD)).andExpect(status().isOk());
     mockMvc.perform(signInAs(theirName, replacement)).andExpect(status().isUnauthorized());
@@ -1155,7 +1205,8 @@ class AccountHttpTest {
         .perform(
             with(post("/api/accounts/%s/password".formatted(whoAmI(admin))), admin)
                 .content("{\"temporaryPassword\":\"%s\"}".formatted(A_PASSWORD)))
-        .andExpect(status().isConflict());
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-your-own-password"));
   }
 
   /**

@@ -9,7 +9,6 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import io.github.naimelijah.hrsched.scheduling.domain.model.Assignment;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintViolation;
 import io.github.naimelijah.hrsched.scheduling.domain.model.ConstraintsRevisedConcurrentlyException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException;
@@ -37,7 +36,6 @@ import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeExceptio
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
-import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
@@ -174,12 +172,11 @@ class SchedulingExceptionHandlerTest {
   private static Stream<RuntimeException> invalidInput() {
     return Stream.of(
         new InvalidTimeRangeException(),
-        new InvalidHeadcountException(0),
+        new InvalidHeadcountException(),
         new InvalidConstraintException("Minimum rest must be positive"),
         new InvalidObjectiveWeightException(Objective.FAIRNESS),
-        new DuplicateAssignmentException(new Assignment(ShiftId.newId(), EmployeeId.newId())),
-        new UnknownRequiredQualificationException(Set.of(QualificationId.newId())),
-        new SwapWithThemselfException(EmployeeId.newId()),
+        new UnknownRequiredQualificationException(),
+        new SwapWithThemselfException(),
         new MalformedRequestException("shift is required"));
   }
 
@@ -197,6 +194,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY.value());
     assertThat(problem.getTitle()).isEqualTo("Roster breaks the rules");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:roster-breaks-the-rules");
   }
 
   @Test
@@ -226,6 +224,8 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY.value());
     assertThat(problem.getTitle()).isEqualTo("Roster cannot be checked against the rules");
+    assertThat(problem.getType())
+        .hasToString("urn:hrsched:problem:roster-cannot-be-checked-against-the-rules");
   }
 
   @ParameterizedTest
@@ -236,6 +236,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Invalid request");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:invalid-request");
     assertThat(problem.getDetail()).isEqualTo(failure.getMessage());
   }
 
@@ -268,6 +269,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getTitle()).isEqualTo("Roster status forbids this");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:roster-status-forbids-this");
     assertThat(problem.getDetail()).isEqualTo(moved.getMessage());
   }
 
@@ -280,7 +282,9 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Malformed request");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:malformed-request");
     assertThat(problem.getDetail()).isEqualTo(MALFORMED_DETAIL);
+    assertThat(problem.getDetail()).doesNotContain("raw parser noise");
   }
 
   @Test
@@ -291,6 +295,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
     assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
     assertThat(problem.getDetail()).isEqualTo("Your role does not permit this.");
   }
 
@@ -304,6 +309,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
     assertThat(problem.getTitle()).isEqualTo("Not found");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-found");
     assertThat(problem.getDetail()).isEqualTo("No such resource.");
   }
 
@@ -315,6 +321,7 @@ class SchedulingExceptionHandlerTest {
         handler.handleUnknown(new CrossTenantAccessException(UserId.newId(), theirs));
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-found");
     assertThat(problem.getDetail()).isEqualTo("No such resource.");
     assertThat(problem.getDetail()).doesNotContain(theirs.value().toString());
   }
@@ -402,10 +409,33 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getTitle()).isEqualTo("Published concurrently");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:published-concurrently");
     assertThat(problem.getDetail())
         .isEqualTo(conflict.getMessage())
         .doesNotContain("what the store said")
         .doesNotContain(replacement.value().toString());
+  }
+
+  /**
+   * A second press of the same assignment is a conflict with what the roster holds, not a bad
+   * request, so the board reloads. Found as Spring finds it, so a refusal still routed to the 400
+   * handler fails here. The detail is the exception's own constant sentence, as its javadoc says.
+   */
+  @Test
+  void GivenAnAssignmentTheRosterAlreadyHolds_WhenSpringRoutesIt_ThenItIsAConflict()
+      throws Exception {
+    DuplicateAssignmentException duplicate = new DuplicateAssignmentException();
+    Method routed =
+        new ExceptionHandlerMethodResolver(SchedulingExceptionHandler.class)
+            .resolveMethodByThrowable(duplicate);
+    assertThat(routed).describedAs("the handler Spring routes the duplicate to").isNotNull();
+
+    ProblemDetail problem = (ProblemDetail) routed.invoke(handler, duplicate);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getTitle()).isEqualTo("Already assigned");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:already-assigned");
+    assertThat(problem.getDetail()).isEqualTo(duplicate.getMessage());
   }
 
   /**
@@ -429,6 +459,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getTitle()).isEqualTo("Revised concurrently");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:revised-concurrently");
     assertThat(problem.getDetail())
         .isEqualTo(conflict.getMessage())
         .doesNotContain("what the store said");
@@ -541,6 +572,18 @@ class SchedulingExceptionHandlerTest {
   }
 
   @Test
+  void GivenAnActorWithoutAPersonnelRecord_WhenTranslated_ThenItIsForbiddenSayingWhy() {
+    ProblemDetail problem =
+        handler.handleNoEmployeeRecord(new NoEmployeeRecordException(UserId.newId()));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+    assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
+    assertThat(problem.getDetail())
+        .isEqualTo("You have no personnel record, so you have no schedule.");
+  }
+
+  @Test
   void GivenAnActorWithoutAPersonnelRecord_WhenTranslated_ThenItIsLoggedAtWarnNamingOnlyThem() {
     UserId actor = UserId.newId();
 
@@ -646,6 +689,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
     assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
     assertThat(problem.getDetail())
         .isEqualTo("The platform operator may not act inside an organisation.");
     assertThat(denied("operator_confined")).isEqualTo(1.0);

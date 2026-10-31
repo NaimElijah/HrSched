@@ -258,6 +258,7 @@ cannot act on it. There is no override.
   "instance": "/api/rosters/d269eec8-97ae-4761-bdc3-07aa4fdcd62a/publication",
   "status": 422,
   "title": "Roster breaks the rules",
+  "type": "urn:hrsched:problem:roster-breaks-the-rules",
   "violations": [
     {
       "employee": "7c1fddc0-8a18-4e20-aa24-7a994a95815b",
@@ -387,7 +388,7 @@ HrSched/
 | Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
 | Generation with CP-SAT behind a port ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md), [ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)) | Timefold, whose search must drive a broken rule's penalty to zero and proves no bound; a MIP solver | About 95 MB of native libraries; no determinism under a time limit; OR-Tools held at 9.12 for the Visual C++ runtime JDK 21 bundles on Windows |
 
-All 48 decisions, and the two still waiting to be recorded, are in the
+Every decision, and the two still waiting to be recorded, is in the
 [ADR index](docs/ADRs/README.md).
 
 ## Status and limitations

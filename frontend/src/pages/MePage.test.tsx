@@ -742,7 +742,14 @@ describe('declaring unavailability', () => {
   it('GivenTheBackendRefuses_WhenDeclaring_ThenTheRefusalIsShownRatherThanASuccess', async () => {
     actingAsEmployee(EMPLOYEE);
     stubbed({
-      write: { status: 400, body: { detail: 'That overlaps a span you already declared.' } },
+      write: {
+        status: 409,
+        body: {
+          title: 'Overlaps a declared span',
+          detail:
+            'That time overlaps a span already declared. Withdraw that one first, or choose another time.',
+        },
+      },
     });
     show();
 
@@ -751,7 +758,7 @@ describe('declaring unavailability', () => {
 
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
-        'That overlaps a span you already declared.',
+        'That time overlaps a span already declared. Withdraw that one first, or choose another time.',
       ),
     );
     expect(screen.queryByText('Recorded: you cannot work then.')).not.toBeInTheDocument();

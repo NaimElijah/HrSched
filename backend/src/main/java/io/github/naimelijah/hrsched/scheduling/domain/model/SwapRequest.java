@@ -88,7 +88,7 @@ public final class SwapRequest {
     this.requester = Objects.requireNonNull(requester, "requester must not be null");
     this.counterparty = Objects.requireNonNull(counterparty, "counterparty must not be null");
     if (requester.equals(counterparty)) {
-      throw new SwapWithThemselfException(requester);
+      throw new SwapWithThemselfException();
     }
     this.status = Objects.requireNonNull(status, "status must not be null");
     this.requestedAt = Objects.requireNonNull(requestedAt, "requestedAt must not be null");
