@@ -74,7 +74,7 @@ owner has chosen to leave open for now ([Q15](docs/requirements/requirements.md#
 - **See your own work.** Assignments on published rosters, and the absences and preferences you
   declared.
 
-The rules behind each capability, and what is decided but not yet built, are in
+The rules behind each, and what is decided but not yet built, are in
 [`requirements.md`](docs/requirements/requirements.md).
 
 ## Architecture
@@ -158,7 +158,8 @@ choose a password of at least 15 characters before the account can do anything. 
 
 The operator only onboards organisations. In the Organisations tab, onboard one together with its
 first Admin, then sign out and sign in as that Admin. There is no seed data; the
-[Walkthrough in `docs/api.md`](docs/api.md#walkthrough) scripts the whole path to a published roster.
+[Walkthrough in `docs/api.md`](docs/api.md#walkthrough) scripts the whole path to a published
+roster.
 
 > [!CAUTION]
 > The database keeps its rows between runs, so after the first sign-in only your new password
@@ -294,14 +295,12 @@ checks formatting before any test, so `spotless:apply` comes first.
 | Frontend | The one module that calls `fetch`, error-body validation, session renewal, and one test file per screen | `npm test` (from `frontend/`) |
 
 CI runs both gates, and a dependency audit, on every push and on every pull request into `main` or
-`dev` ([`ci.yml`](.github/workflows/ci.yml)). It has no path filters, because a check filtered out
-by mistake is skipped silently and still reports green. The audit fails on any known advisory in
-`backend/pom.xml`'s resolved tree or `frontend/package-lock.json`, whatever its severity, and fails
-too when it cannot resolve either file. The only way past an advisory is an entry in
-[`osv-scanner.toml`](osv-scanner.toml) with an expiry and a reason, which CI requires
+`dev` ([`ci.yml`](.github/workflows/ci.yml)), with no path filters, because a check filtered out by
+mistake is skipped silently and still reports green. The audit fails on any known advisory, and the
+only way past one is an entry in [`osv-scanner.toml`](osv-scanner.toml) with an expiry and a reason
 ([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Coverage is reported
-but never enforced ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)).
-`./mvnw verify` writes `backend/target/site/jacoco/index.html`, and `npm run test:coverage` writes
+but never enforced ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)); the
+reports are `backend/target/site/jacoco/index.html` and, from `npm run test:coverage`,
 `frontend/coverage/index.html`.
 
 ## Deployment and operations
@@ -319,10 +318,8 @@ application reports ready.
 
 The metrics endpoints, `/actuator/prometheus` and `/actuator/metrics`, are refused to every caller
 until [#78](https://github.com/NaimElijah/HrSched/issues/78) is decided
-([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md),
-[ADR-049](docs/ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)). The
-meters the application records, and what each one answers, are in
-[`docs/operations.md`](docs/operations.md#meters).
+([ADR-049](docs/ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)). The
+meters the application records are in [`docs/operations.md`](docs/operations.md#meters).
 
 ## Project structure
 
@@ -343,38 +340,37 @@ HrSched/
 
 **One hexagon per bounded context, enforced by the build**
 ([ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md),
-[ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md)). A rostering rule should be
-readable and testable without Spring or a database, and a convention nobody enforces rots.
-Multi-module Maven was disproportionate for one developer. Cost: more classes per use case, and the
-enforcement is a test rather than the compiler.
+[ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md)). Rostering rules should be
+testable without Spring or a database, and a convention nobody enforces rots; multi-module Maven
+was too much for one developer. Cost: more classes per use case, and the enforcement is a test, not
+the compiler.
 
 **PostgreSQL, hand-written SQL, and a real database in every test**
-([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). Real transactions, and check
-constraints that mirror the domain's invariants, with every tenant predicate written where a
-reviewer can see it. JPA, Spring Data JDBC, jOOQ and an embedded database lost. Cost: Docker to
-build, and every adapter maps its rows by hand.
+([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). Real transactions and check
+constraints, with every tenant predicate visible in its query; JPA, Spring Data JDBC, jOOQ and an
+embedded database lost. Cost: Docker to build, and every adapter maps its rows by hand.
 
 **Its own tokens, with the organisation taken from the account**
 ([ADR-011](docs/ADRs/ADR-011-issue-our-own-access-tokens.md),
 [ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md)). One API and one SPA do not
-justify running an external identity provider, and loading the account on every request makes a
-revoked session stop working at once, which roles in token claims could not do. Cost: a database
-read per request, and HrSched stores password hashes.
+justify an external identity provider, and loading the account on every request ends a revoked
+session at once, which roles in token claims could not. Cost: a database read per request, and
+HrSched stores password hashes.
 
 **Publications take turns, and history is written once**
 ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md),
 [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)). A lock per organisation
-makes concurrent publications queue, where `SERIALIZABLE` still needs a retry on abort and
+queues concurrent publications, where `SERIALIZABLE` still needs a retry on abort and
 `SELECT … FOR UPDATE` would lock another context's row. Cost: publications in one organisation
 queue.
 
 **Generation with CP-SAT behind a port**
 ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md),
 [ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)). The rules are hard and
-the objectives soft, which an exact solver models directly. Timefold lost because its search must
-drive a broken rule's penalty to zero and proves no bound; a MIP solver lost too. Cost: about 95 MB
-of native libraries, no determinism under a time limit, and OR-Tools held at 9.12 for the Visual C++
-runtime that JDK 21 bundles on Windows.
+the objectives soft, which an exact solver models directly; Timefold's search must drive a broken
+rule's penalty to zero and proves no bound, and a MIP solver lost too. Cost: about 95 MB of native
+libraries, no determinism under a time limit, and OR-Tools held at 9.12 for the Visual C++ runtime
+that JDK 21 bundles on Windows.
 
 Every decision, and every one still waiting to be recorded, is in the
 [ADR index](docs/ADRs/README.md).
@@ -384,46 +380,43 @@ Every decision, and every one still waiting to be recorded, is in the
 **Alpha.** It works end to end on a developer's machine, has never been deployed, and has no release
 or tag yet.
 
-**Shipped:** everything under [Features](#features), running locally against a PostgreSQL in Docker.
-The [requirements](docs/requirements/requirements.md) mark each row that is decided but `not yet`
+**Shipped:** everything under [Features](#features), running locally against a PostgreSQL in
+Docker. The [requirements](docs/requirements/requirements.md) mark each row decided but `not yet`
 built.
 
 **Planned**, tracked by the [milestones](https://github.com/NaimElijah/HrSched/milestones):
 
 - M0, the full-system scans of the code and the docs.
-- M1, v1 feature-complete, and M2, the engineering baseline.
+- M1, v1 feature-complete; M2, the engineering baseline.
 - M3 and M4, AWS staging and production: ECS Fargate, RDS and CloudFront, defined in CDK
-  ([#153](https://github.com/NaimElijah/HrSched/issues/153)). ADR-035 and ADR-036 are reserved to
+  ([#153](https://github.com/NaimElijah/HrSched/issues/153)); ADR-035 and ADR-036 are reserved to
   record the topology.
 - M5, machine learning that proposes and never decides.
 
 **Known limitations:**
 - **No jurisdiction preset exists yet.** HrSched ships no statute's numbers, so every limit is typed
   in by the organisation ([#105](https://github.com/NaimElijah/HrSched/issues/105)).
-- **Generation takes minutes at the largest size.** It runs in the background and the Rosters page
-  waits for it
-  ([ADR-046](docs/ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). Each
-  of the solver's two searches stops at `hrsched.generation.time-limit-per-phase` with the best
+- **Generation takes minutes at the largest size.** It runs in the background
+  ([ADR-046](docs/ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)), and
+  each of the solver's two searches stops at `hrsched.generation.time-limit-per-phase` with the best
   roster it has found, which at the largest stated size may not be the best there is. Two
   generations of one week can differ, each keeping every configured rule.
 - **A shift's zone is the Scheduler's browser zone.** The Shifts page sends the zone its times were
-  typed in, and no page shows a shift's zone yet
-  ([#136](https://github.com/NaimElijah/HrSched/issues/136)).
+  typed in, and no page shows it ([#136](https://github.com/NaimElijah/HrSched/issues/136)).
 - **Some reads load a tenant's whole history.** Publishing, assigning and reading your own schedule
   each load every roster the organisation has ever had, and child rows are inserted one at a time.
-  The targets are set (p95 under 300 ms), but nothing measures them yet.
-- **The audit trail is a log stream.** An Admin cannot read it. A record written in a transaction
-  that fails to commit outlives the change it describes. A durable trail is decided
+  The target is p95 under 300 ms, but nothing measures it yet.
+- **The audit trail is a log stream.** An Admin cannot read it, and a record written in a
+  transaction that fails to commit outlives the change. A durable trail is decided
   ([#31](https://github.com/NaimElijah/HrSched/issues/31)).
 - **Notifications are pull-only.** A colleague learns of a change when they next open the app; any
   other channel is an [open question](docs/requirements/requirements.md#open-questions).
 - **Nothing proves the UI and the API agree.** The client is written by hand, and there is no
   contract or browser test ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)).
-- **Nothing blocks a merge on a red build or a vulnerable dependency.** CI runs both gates and a
-  dependency audit on every push and on every pull request into `main` or `dev`, but none of its
-  jobs is a required check yet ([#217](https://github.com/NaimElijah/HrSched/issues/217)), so a red
-  one blocks nothing. The audit has no severity threshold, and does not audit Maven build plugins
-  such as Spotless and JaCoCo.
+- **Nothing blocks a merge on a red build or a vulnerable dependency.** CI runs on every push and
+  every pull request into `main` or `dev`, but none of its jobs is a required check yet
+  ([#217](https://github.com/NaimElijah/HrSched/issues/217)), so a red one blocks nothing. The audit
+  has no severity threshold, and does not audit Maven build plugins such as Spotless and JaCoCo.
 
 ## Contributing and licence
 
