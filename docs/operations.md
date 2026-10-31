@@ -48,4 +48,5 @@ Every setting below is set in `backend/src/main/resources/application.properties
 | `hrsched_rosters_refused_total{reason}` | Publications refused as `not_compliant`, `not_verifiable` or `concurrent_publication` |
 | `hrsched_access_denied_total{kind}` | Refusals by kind; a rise in `cross_tenant`, or in `sign_in_name_taken` from one account, is a security signal, not a usage one |
 | `hrsched_changes_total{context,change}` | Every recorded change, by context and kind |
+| `hrsched_generations_busy_total` | Generations refused with a 503 because every run was busy: saturation of the solver ([ADR-046](ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)) |
 | `jvm_*`, `process_*`, `hikaricp_*` | Saturation: heap, threads, the connection pool |
