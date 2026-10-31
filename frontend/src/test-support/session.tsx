@@ -51,7 +51,8 @@ export function renderSignedIn(ui: ReactElement, session: Session = A_TENANT) {
  * The provider {@link renderSignedIn} wraps with, for a test that needs to render it itself.
  *
  * The state is `password-change-required` when the session says a change is pending, and
- * `signed-in` otherwise. Every action is a no-op that resolves.
+ * `signed-in` otherwise. Every action does nothing: `signIn`, `signOut` and `changePassword`
+ * resolve at once, and `retryRestore` returns.
  *
  * @param session who is signed in
  * @param children the screen

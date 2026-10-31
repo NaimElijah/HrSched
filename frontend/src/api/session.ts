@@ -20,6 +20,7 @@ export interface Session {
   readonly role: 'EMPLOYEE' | 'SCHEDULER' | 'ADMIN' | null;
   /** The personnel record it is; null when it is nobody's. */
   readonly employee: string | null;
+  /** The name the account signs in with. */
   readonly signInName: string;
   /** Whether the password must be changed before anything else is allowed. */
   readonly passwordChangeRequired: boolean;
@@ -27,11 +28,13 @@ export interface Session {
 
 /** What the backend answers a sign-in, a refresh and a password change with. */
 export interface SignedIn {
+  /** The bearer token to present on requests, which this app keeps in memory and nowhere else. */
   readonly accessToken: string;
   /** Always `Bearer`, as RFC 6750 names it. */
   readonly tokenType: string;
   /** Seconds until the access token expires, counted from the answer. */
   readonly expiresIn: number;
+  /** Who the token is for, as the backend holds them now. */
   readonly session: Session;
 }
 
@@ -77,19 +80,14 @@ otherTabs?.addEventListener('message', (event: MessageEvent<unknown>) => {
   }
 });
 
-/**
- * Reads the access token held in memory.
- *
- * @returns the token to present, or null when nobody is signed in
- */
+/** The access token to present on a request, or null when nobody is signed in. */
 export function currentAccessToken(): string | null {
   return accessToken;
 }
 
 /**
- * Reads who this tab is signed in as.
- *
- * @returns who is signed in, or null
+ * Who this tab is signed in as, or null when nobody is. It is this tab's own: the refresh cookie is
+ * shared by every tab, so it may by now belong to a different account.
  */
 export function currentSession(): Session | null {
   return session;
@@ -157,8 +155,9 @@ function forget(how: SessionEnding): void {
 }
 
 /**
- * Listens for the session ending here: through this tab's own sign-out or refused renewal, or
- * because another tab said it ended.
+ * Listens for the session ending here: through this tab's own sign-out, a refused renewal, or a
+ * renewal that answered for another account (which ends it in this tab alone, see
+ * {@link forgetSessionHere}), or because another tab said it ended.
  *
  * @param listener called whenever a session ends, with how it ended
  * @returns a function that stops listening

@@ -97,9 +97,11 @@ export class ApiError extends Error {
   }
 
   /**
-   * True when the caller is signed in and this role may not do the request. A 403 also answers a
-   * wrong current password, and a temporary password still pending, which
-   * {@link isPasswordChangeRequired} tells apart.
+   * True for any 403: the caller is signed in, and the backend will not do this for them. That is
+   * most often a role that may not, but a wrong current password, an account linked to no employee
+   * asking for its own schedule, and the platform Operator reaching inside an organisation answer
+   * 403 as well. Only a temporary password still pending can be told apart, by
+   * {@link isPasswordChangeRequired}; nothing tells the others apart.
    */
   get isForbidden(): boolean {
     return this.status === 403;
@@ -154,7 +156,8 @@ function isViolation(value: unknown): value is Violation {
  * is somebody else's field and is not kept.
  *
  * @param status the HTTP status of the response
- * @param body the parsed body, or null when there was none or it was not JSON
+ * @param body the parsed body, or null when there was none or it was not JSON; for a non-empty
+ *     `text/plain` body, which is a sentence rather than JSON, the caller passes `{ detail: text }`
  * @param reference the trace id from the response header, or null when it sent none
  * @param mediaType the response's media type, lower-cased and without parameters, or null
  * @returns the error; its message is the body's `detail`, else its `title`, else a sentence naming

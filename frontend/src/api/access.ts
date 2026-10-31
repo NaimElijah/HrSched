@@ -100,6 +100,8 @@ export const accounts = {
     }),
 
   /**
+   * Enables or disables an account. Disabling the last active Admin is refused with a 409.
+   *
    * @param id the account to change
    * @param active whether it may sign in and act; disabling ends every session it holds
    */

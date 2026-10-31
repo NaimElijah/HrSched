@@ -5,7 +5,13 @@ import { focusHeading } from './focus';
 /** The selector for the heading of the view in `main`, which the shell's own `h1` is not. */
 const THE_VIEWS_HEADING = 'main h2';
 
-/** The fallback selector, for a view whose heading is not an `h2` or has no `main` of its own. */
+/**
+ * The fallback selector, for a view whose heading is not an `h2` or has no `main` of its own.
+ *
+ * Inside the shell it is not a view's heading it finds: the shell's own `h1`, which names the app,
+ * comes first in the document and is the one that matches. It still gives focus somewhere other
+ * than the body.
+ */
 const A_HEADING = 'h1, h2, h3, h4, h5, h6';
 
 /**

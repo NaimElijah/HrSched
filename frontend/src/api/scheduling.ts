@@ -206,14 +206,24 @@ export const scheduling = {
   findShifts: (from: string, to: string): Promise<Shift[]> =>
     api.get<Shift[]>(`/api/shifts?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
 
+  /**
+   * Defines a shift, and answers it as stored. A Scheduler's to do. A headcount below one, a
+   * qualification the organisation has not defined, an unknown zone or a span the store cannot hold
+   * is refused with a 400, not a 422.
+   */
   defineShift: (shift: DefineShiftRequest): Promise<Shift> => api.post<Shift>('/api/shifts', shift),
 
+  /** Every roster the organisation holds, in any status. An Admin's or a Scheduler's to read. */
   findRosters: (): Promise<Roster[]> => api.get<Roster[]>('/api/rosters'),
 
   /** Answered at once, while the draft is still being built (ADR-046). */
   startGeneration: (from: string, to: string): Promise<Generation> =>
     api.post<Generation>('/api/rosters/generations', { start: from, end: to }),
 
+  /**
+   * How a generation stands. Asked again until it is no longer `PENDING`. An Admin's or a
+   * Scheduler's to read; a 404 when the organisation asked for none by that id.
+   */
   findGeneration: (id: string): Promise<Generation> =>
     api.get<Generation>(path`/api/rosters/generations/${id}`),
 
@@ -221,6 +231,7 @@ export const scheduling = {
   publishRoster: (id: string): Promise<Roster> =>
     api.post<Roster>(path`/api/rosters/${id}/publication`),
 
+  /** Reads one roster. An Admin's or a Scheduler's to read; a 404 when there is none. */
   findRoster: (id: string): Promise<Roster> => api.get<Roster>(path`/api/rosters/${id}`),
 
   /**
@@ -264,6 +275,7 @@ export const scheduling = {
   /** Every swap an Admin or Scheduler holds; for anybody else, only the ones they are party to. */
   findSwapRequests: (): Promise<SwapRequest[]> => api.get<SwapRequest[]>('/api/swaps'),
 
+  /** Reads one shift, as `findShifts` does: any member may. A 404 when there is none. */
   findShift: (id: string): Promise<Shift> => api.get<Shift>(path`/api/shifts/${id}`),
 
   /**
@@ -277,6 +289,10 @@ export const scheduling = {
   /** Declines a swap; no roster changes. Throws with `isConflict` when it is no longer pending. */
   rejectSwap: (id: string): Promise<void> => api.post<void>(path`/api/swaps/${id}/rejection`),
 
+  /**
+   * The rules now in force, with their thresholds. Any member may read them. An organisation that
+   * has never revised them is answered the empty first version, which sets no limit.
+   */
   currentConstraints: (): Promise<ConstraintSet> => api.get<ConstraintSet>('/api/constraints'),
 
   /**
@@ -286,9 +302,17 @@ export const scheduling = {
   constraintsAt: (version: number): Promise<ConstraintSet> =>
     api.get<ConstraintSet>(path`/api/constraints/${String(version)}`),
 
+  /**
+   * Replaces the whole set of rules rather than merging into it: a limit left out is no longer set.
+   * An Admin's to do. The request carries no version, so one built from rules somebody has since
+   * changed replaces them (#336 asks whether that should be refused). A 409 answers only two
+   * revisions racing for the same next version: reload and revise again. A value the store cannot
+   * hold is refused with a 400.
+   */
   reviseConstraints: (constraints: ConstraintSetRequest): Promise<ConstraintSet> =>
     api.put<ConstraintSet>('/api/constraints', constraints),
 
+  /** How the organisation weighs the objectives; one not weighed is null. Any member may read. */
   findObjectives: (): Promise<ObjectiveWeights> => api.get<ObjectiveWeights>('/api/objectives'),
 
   /** Replaces the weights whole; an objective left out stops being weighed. Admin only. */

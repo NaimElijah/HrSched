@@ -73,22 +73,26 @@ const REFRESH_LOCK = 'hrsched.refresh';
 let refreshing: Promise<SignedIn | null> | null = null;
 
 /**
- * Sends one request and returns its decoded body, renewing the access token once if it is refused.
+ * Sends one request and returns its decoded body, renewing the access token if it is refused.
  *
  * This module is the only one in the app that calls `fetch` or names a header (ADR-013, and lint
  * refuses `fetch` anywhere else). Keeping that in one place stops a page inventing its own idea of
  * who is acting: the bearer token is the whole of what says who that is.
  *
- * A 401 on a request credentialed by the access token is answered with one renewal and one retry.
- * The paths in {@link NOT_RENEWED} are answered as they are, and so is a request sent while nobody
- * was signed in.
+ * A 401 on a request credentialed by the access token is answered with a renewal and one retry. The
+ * request is never sent a third time, but a retry refused as well asks the cookie once more, and
+ * that second renewal can end the session, in every tab, as any refused renewal does. The paths in
+ * {@link NOT_RENEWED} are answered as they are, and so is a request sent while nobody was signed
+ * in.
  *
  * @param path the API path, built with the exported `path` tag when it carries an identifier
  * @param init the `fetch` options; a `body` is sent as JSON
  * @returns the parsed body, or `undefined` for a 204 or an empty body
- * @throws ApiError when the backend refused the request, or answered 200 with a body that is not
- *     JSON
- * @throws TypeError, as `fetch` rejects, when the backend could not be reached at all
+ * @throws ApiError when the backend refused the request, or answered with a 2xx other than 204 and
+ *     a body that is not JSON; or when a renewal it asked for failed without being refused, in
+ *     which case the error is the refresh endpoint's own and not the request's
+ * @throws TypeError, as `fetch` rejects, when the backend could not be reached at all, for the
+ *     request or for a renewal
  */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   // Noted before sending, because by the time a 401 comes back the session may have ended — through
@@ -304,11 +308,12 @@ export function path(segments: TemplateStringsArray, ...identifiers: readonly st
 /**
  * The verbs the other `src/api` modules build their calls from.
  *
- * Every call carries the access token, sends a body as JSON, and renews an expired token once
- * before giving up (ADR-028). Each resolves to the parsed body, or to `undefined` when the backend
- * answered with no content, so a caller that expects no body types it `void`. Each rejects with an
- * `ApiError` for a refusal, and with the `fetch` rejection itself when the backend could not be
- * reached.
+ * Every call carries the access token when one is held, sends a body as JSON, and answers a refused
+ * token with a renewal and a retry (ADR-028; see `request` for the limits). Each resolves to the
+ * parsed body, or to `undefined` when the backend answered with no content, so a caller that
+ * expects no body types it `void`. Each rejects with an `ApiError` for a refusal, which is the
+ * refresh endpoint's own when a renewal failed without being refused, and with the `fetch`
+ * rejection itself when the backend could not be reached.
  *
  * `T` is the caller's claim about the body's shape and is not checked here.
  */
@@ -393,7 +398,8 @@ export const auth = {
    * replaced only by a sign-in, a renewal or a password change.
    *
    * @returns the caller's own session, read fresh from the backend
-   * @throws ApiError when the backend refused the read, as a 401 once a renewal has not helped
+   * @throws ApiError when the backend refused the read, as a 401 once a renewal has not helped, or
+   *     as a 404 with no body when the account has gone since the request was authenticated
    */
   readSession: (): Promise<SignedIn['session']> => api.get('/api/auth/session'),
 
@@ -404,7 +410,8 @@ export const auth = {
    * @param newPassword the password wanted instead
    * @returns the new session the change begins
    * @throws ApiError as a 403 when the current password was not accepted, and as a 422 when the
-   *     new one does not satisfy the backend's policy
+   *     new one does not satisfy the backend's policy; the fetch rejection itself when the backend
+   *     was not reached
    */
   changePassword: async (currentPassword: string, newPassword: string): Promise<SignedIn> => {
     const signedIn = await request<SignedIn>('/api/auth/password', {

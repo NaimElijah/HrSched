@@ -58,6 +58,12 @@ export interface SignOutProgress {
 
 const NO_SIGN_OUT: SignOutProgress = { pending: false, failures: 0, failure: null };
 
+/**
+ * What {@link useSession} returns: where the session stands, who is signed in, and the actions that
+ * change it.
+ *
+ * Exported as a type so a test can build one and supply it through {@link SessionContext}.
+ */
 interface SessionContextValue {
   readonly state: SessionState;
   /** Who is signed in, also while a password change is pending; null otherwise. */
@@ -71,7 +77,10 @@ interface SessionContextValue {
    * changes, so loaded answers are asked again. Empty when nobody is signed in.
    */
   readonly key: string;
-  /** Signs in and holds the session; rejects with the backend's refusal, an `ApiError`. */
+  /**
+   * Signs in and holds the session. Rejects with an `ApiError` when the backend refuses the
+   * credentials, and with `fetch`'s own error when the backend is not reached.
+   */
   readonly signIn: (signInName: string, password: string) => Promise<void>;
   /**
    * Signs out, and is also the retry while the state is `sign-out-unconfirmed`. The state is that
@@ -79,13 +88,20 @@ interface SessionContextValue {
    * did not confirm stays in that state instead.
    */
   readonly signOut: () => Promise<void>;
+  /**
+   * Where a sign-out stands, for the screen shown while the state is `sign-out-unconfirmed`.
+   * Cleared when a session ends confirmed and when somebody signs in.
+   */
   readonly signOutProgress: SignOutProgress;
   /**
    * Whether a session that was on screen — signed in, or waiting on an unconfirmed sign-out — has
    * ended since anybody last signed in. False on a first load, where there is nothing to explain.
    */
   readonly sessionEnded: boolean;
-  /** Changes the caller's own password and holds the new session; rejects with an `ApiError`. */
+  /**
+   * Changes the caller's own password and holds the new session. Rejects with an `ApiError` when
+   * the backend refuses the change, and with `fetch`'s own error when the backend is not reached.
+   */
   readonly changePassword: (current: string, replacement: string) => Promise<void>;
 }
 
@@ -284,7 +300,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
  * Reads the session the nearest {@link SessionProvider} holds.
  *
  * @returns the session state and the actions on it
- * @throws Error when called outside a `SessionProvider`
+ * @throws Error when no `SessionContext` value is present: outside a `SessionProvider`, unless
+ *     something else supplies one, as the test provider does
  */
 export function useSession(): SessionContextValue {
   const value = useContext(SessionContext);

@@ -60,8 +60,6 @@ export function isAboutTheValue(error: unknown): boolean {
  * may place it unconditionally.
  *
  * @param error whatever went wrong: an `ApiError`, any other `Error`, or a thrown value
- * @param nameOf resolves an employee id to a name for the violations listed; without it they are
- *     shown by identifier
  */
 export function Failure({
   error,
