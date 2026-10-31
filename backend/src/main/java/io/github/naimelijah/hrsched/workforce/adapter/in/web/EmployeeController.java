@@ -46,12 +46,23 @@ public class EmployeeController {
   private final ManageEmployeesUseCase manageEmployees;
   private final FindRosterableEmployeesUseCase findEmployees;
 
+  /**
+   * @param manageEmployees the use case behind every write and every read of one person
+   * @param findEmployees the use case behind the listing of everybody the organisation could roster
+   */
   public EmployeeController(
       ManageEmployeesUseCase manageEmployees, FindRosterableEmployeesUseCase findEmployees) {
     this.manageEmployees = manageEmployees;
     this.findEmployees = findEmployees;
   }
 
+  /**
+   * Adds an employee to the acting organisation.
+   *
+   * @param request the new employee's name
+   * @return 201 with the employee and its location. A missing, blank or unstorable name is 400, and
+   *     an actor who is not an Admin is 403
+   */
   @PostMapping
   public ResponseEntity<EmployeeResponse> add(
       @AuthenticationPrincipal Actor actor, @RequestBody AddEmployeeRequest request) {
@@ -62,6 +73,12 @@ public class EmployeeController {
         .body(EmployeeResponse.justAdded(id.value(), name));
   }
 
+  /**
+   * Lists everybody the acting organisation could roster, absences and contracted hours included.
+   *
+   * @return every employee, ordered by name. An actor who is neither an Admin nor a Scheduler is
+   *     answered 403, as the absences are personal data
+   */
   @GetMapping
   public List<EmployeeResponse> list(@AuthenticationPrincipal Actor actor) {
     return findEmployees.findRosterable(actor, actingIn(actor)).stream()
@@ -86,6 +103,15 @@ public class EmployeeController {
         .orElseThrow(() -> new UnknownEmployeeException(employee));
   }
 
+  /**
+   * Records that an employee holds a qualification, which a repeat of the same request leaves as it
+   * was.
+   *
+   * @param id the employee
+   * @param qualification the qualification, one this organisation defines
+   * @return 204. An actor who is not an Admin is answered 403, and an employee or qualification
+   *     this organisation does not hold, 404
+   */
   @PutMapping("/{id}/qualifications/{qualification}")
   public ResponseEntity<Void> grantQualification(
       @AuthenticationPrincipal Actor actor,
@@ -98,6 +124,14 @@ public class EmployeeController {
     return ResponseEntity.noContent().build();
   }
 
+  /**
+   * Sets what an employee is contracted to work, replacing any terms they had.
+   *
+   * @param id the employee
+   * @param request the contracted minutes per week
+   * @return 204. Minutes that are not positive, or beyond what a duration holds, are answered 400;
+   *     an actor who is not an Admin, 403; an employee this organisation does not hold, 404
+   */
   @PutMapping("/{id}/contract")
   public ResponseEntity<Void> setContract(
       @AuthenticationPrincipal Actor actor,
@@ -110,6 +144,17 @@ public class EmployeeController {
     return ResponseEntity.noContent().build();
   }
 
+  /**
+   * Declares a span an employee cannot work, by the employee themselves or an Admin or Scheduler on
+   * their behalf (F6).
+   *
+   * @param id who is unavailable
+   * @param request the span
+   * @return 204. A span missing a start or an end, ending at or before its start, or beyond what
+   *     the store holds is answered 400; one overlapping a span already declared, 409; somebody
+   *     else without an Admin or Scheduler role, 403; an employee this organisation does not hold,
+   *     404
+   */
   @PostMapping("/{id}/unavailability")
   public ResponseEntity<Void> declareUnavailability(
       @AuthenticationPrincipal Actor actor,
@@ -142,7 +187,8 @@ public class EmployeeController {
    * Withdraws a span somebody declared they cannot work (F26), authorised as declaring is.
    *
    * <p>The span is named in the query, exactly as it was declared, because a declaration has no
-   * identifier of its own and a DELETE carries no body (ADR-040).
+   * identifier of its own and a DELETE carries no body (ADR-040). A span that does not end after it
+   * starts is answered 400.
    *
    * @param id who declared it
    * @param start when the declared span begins, an ISO-8601 instant
@@ -181,6 +227,16 @@ public class EmployeeController {
         .toList();
   }
 
+  /**
+   * States a soft preference about when an employee would rather work, by the employee themselves
+   * or an Admin or Scheduler on their behalf (F6).
+   *
+   * @param id whose preference it is
+   * @param request the span and how they feel about it
+   * @return 204. A missing strength, start or end, an invalid span, or one beyond what the store
+   *     holds is answered 400; somebody else without an Admin or Scheduler role, 403; an employee
+   *     this organisation does not hold, 404
+   */
   @PostMapping("/{id}/preferences")
   public ResponseEntity<Void> statePreference(
       @AuthenticationPrincipal Actor actor,
@@ -195,7 +251,8 @@ public class EmployeeController {
 
   /**
    * Withdraws a soft preference somebody stated (F26), named in the query by its span and strength
-   * (ADR-040). Every identical statement goes with it.
+   * (ADR-040). Every identical statement goes with it. A span that does not end after it starts is
+   * answered 400.
    *
    * @param id who stated it
    * @param start when the stated span begins, an ISO-8601 instant

@@ -6,6 +6,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.util.Objects;
 
 /**
+ * A request to withdraw a declared span, named by exactly what was declared (ADR-040).
+ *
  * @param organisation whose employee
  * @param employee who declared it
  * @param period the span exactly as it was declared, which is what names it (ADR-040)
@@ -13,6 +15,9 @@ import java.util.Objects;
 public record WithdrawUnavailabilityCommand(
     OrganisationId organisation, EmployeeId employee, TimeRange period) {
 
+  /**
+   * @throws NullPointerException if any component is {@code null}
+   */
   public WithdrawUnavailabilityCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(employee, "employee must not be null");

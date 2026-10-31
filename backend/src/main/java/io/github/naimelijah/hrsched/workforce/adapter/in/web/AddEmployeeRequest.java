@@ -1,6 +1,9 @@
 package io.github.naimelijah.hrsched.workforce.adapter.in.web;
 
 /**
+ * The body of {@code POST /api/employees}. Jackson binds an absent field to {@code null}, so {@code
+ * requiredName} is where a missing name is refused.
+ *
  * @param name the employee name
  */
 public record AddEmployeeRequest(String name) {

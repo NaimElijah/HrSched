@@ -7,6 +7,8 @@ import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import java.util.Objects;
 
 /**
+ * A request to withdraw a stated preference, named by its span and strength (ADR-040).
+ *
  * @param organisation whose employee
  * @param employee who stated it
  * @param period the span exactly as it was stated
@@ -18,6 +20,9 @@ public record WithdrawPreferenceCommand(
     TimeRange period,
     PreferenceStrength strength) {
 
+  /**
+   * @throws NullPointerException if any component is {@code null}
+   */
   public WithdrawPreferenceCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(employee, "employee must not be null");

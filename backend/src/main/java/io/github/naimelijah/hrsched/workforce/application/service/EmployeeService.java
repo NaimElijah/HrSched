@@ -51,6 +51,12 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
   private final QualificationRepository qualifications;
   private final AuditTrail audit;
 
+  /**
+   * @param employees where employees are stored
+   * @param qualifications where a granted qualification is looked up in the employee's organisation
+   * @param audit where each change is recorded
+   * @throws NullPointerException if any argument is {@code null}
+   */
   public EmployeeService(
       EmployeeRepository employees, QualificationRepository qualifications, AuditTrail audit) {
     this.employees = Objects.requireNonNull(employees, "employees must not be null");

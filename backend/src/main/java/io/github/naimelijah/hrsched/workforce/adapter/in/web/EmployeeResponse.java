@@ -11,15 +11,15 @@ import java.util.UUID;
  * What a caller is told about somebody who can be rostered.
  *
  * <p>Carries unavailability and contracted hours because requirement F4 asks a Scheduler to see the
- * availability of every employee, and until this did, only the use case satisfied that row while
- * the HTTP listing quietly did not.
+ * availability of every employee, and the HTTP listing is what a Scheduler reads.
  *
  * <p>This is personal data - when somebody cannot work says things about their health and their
- * household - which is why the listing behind it is restricted to Admins and Schedulers. It is not
- * the only response carrying it: {@code GET /api/employees/{id}/unavailability} answers with the
- * same spans, to the person themself as well. For somebody else's, both are refused to anyone but
- * an Admin or a Scheduler, and that restriction is the only thing standing between a colleague and
- * somebody's medical appointments.
+ * household - which is why the listing and the read of one person ({@code GET /api/employees} and
+ * {@code GET /api/employees/{id}}) are restricted to Admins and Schedulers. It is not the only
+ * response carrying it: {@code GET /api/employees/{id}/unavailability} answers with the same spans,
+ * to the person themself as well. For somebody else's, each is refused to anyone but an Admin or a
+ * Scheduler, and that restriction is the only thing standing between a colleague and somebody's
+ * medical appointments.
  *
  * @param id the employee identity
  * @param name their name

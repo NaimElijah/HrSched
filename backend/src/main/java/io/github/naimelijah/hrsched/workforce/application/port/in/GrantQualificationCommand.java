@@ -6,6 +6,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import java.util.Objects;
 
 /**
+ * A request to record that an employee holds a qualification.
+ *
  * @param organisation whose employee and whose qualification
  * @param employee who holds it
  * @param qualification what they hold
@@ -13,6 +15,9 @@ import java.util.Objects;
 public record GrantQualificationCommand(
     OrganisationId organisation, EmployeeId employee, QualificationId qualification) {
 
+  /**
+   * @throws NullPointerException if any component is {@code null}
+   */
   public GrantQualificationCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(employee, "employee must not be null");
