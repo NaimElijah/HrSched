@@ -113,6 +113,10 @@ public class JdbcRosterRepository implements RosterRepository {
 
   private final JdbcClient jdbc;
 
+  /**
+   * @param jdbc the client every statement of this repository runs through; must not be null
+   * @throws NullPointerException if {@code jdbc} is null
+   */
   public JdbcRosterRepository(JdbcClient jdbc) {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
   }

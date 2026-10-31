@@ -8,6 +8,8 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
+ * A request to define a shift.
+ *
  * @param organisation whose shift
  * @param period when it runs
  * @param zone where its working-time days are counted (R36)

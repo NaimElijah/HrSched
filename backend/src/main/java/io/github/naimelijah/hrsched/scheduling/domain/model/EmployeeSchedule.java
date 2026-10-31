@@ -63,9 +63,12 @@ public record EmployeeSchedule(EmployeeId employee, List<WorkingPeriod> workingP
   }
 
   /**
-   * @return the distinct calendar days on which any time is actually worked, in order
-   *     <p>A period's end is exclusive, so a shift finishing exactly at midnight does not make the
-   *     following day a working day.
+   * The distinct calendar days on which any time is actually worked.
+   *
+   * <p>A period's end is exclusive, so a shift finishing exactly at midnight does not make the
+   * following day a working day.
+   *
+   * @return those days, in order
    */
   public Set<LocalDate> workingDays() {
     return Collections.unmodifiableSet(workingTimePerDay().keySet());

@@ -25,6 +25,13 @@ import java.util.Optional;
 public interface RequestSwapsUseCase {
 
   /**
+   * Asks for one assignment of a published roster to be handed to a colleague.
+   *
+   * <p>Whether the colleague may actually cover the shift is <strong>not</strong> decided here.
+   * Answering that means reading the workforce directory, which an Employee may not do because
+   * listing colleagues discloses their unavailability. Asking is not deciding: {@link #approveSwap}
+   * checks eligibility, and a Scheduler has the access to do it.
+   *
    * @param actor whoever is asking; the requester themself, or an Admin or Scheduler on their
    *     behalf
    * @param command which roster, which shift, and who is being asked to take it
@@ -39,10 +46,6 @@ public interface RequestSwapsUseCase {
    *     that assignment already has a request waiting on a Scheduler, whoever it asks (R32)
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapWithThemselfException if the
    *     two parties are the same person
-   *     <p>Whether the colleague may actually cover the shift is <strong>not</strong> decided here.
-   *     Answering that means reading the workforce directory, which an Employee may not do because
-   *     listing colleagues discloses their unavailability. Asking is not deciding: {@link
-   *     #approveSwap} checks eligibility, and a Scheduler has the access to do it.
    */
   SwapRequestId requestSwap(Actor actor, RequestSwapCommand command);
 
@@ -71,20 +74,33 @@ public interface RequestSwapsUseCase {
    * @param organisation whose swap
    * @param request which one
    * @return the newly published roster, which supersedes the one the request was raised against
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.UnknownSwapRequestException if
+   *     that organisation has no such request
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if it is
    *     no longer pending: already decided, or lapsed because its roster was superseded (R33)
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotEditableException if the
+   *     roster it names is no longer the one published
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssignmentException if the
+   *     requester no longer covers the shift on that roster
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.UnknownAssigneeException if the
+   *     colleague is not one of the organisation's rosterable employees
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeNotQualifiedException if
    *     the colleague does not hold what the shift demands
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.AssigneeUnavailableException if
+   *     the colleague has declared they cannot work when the shift runs
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.DuplicateAssignmentException if
+   *     the colleague already covers the very shift handed over, so the replacement would hold them
+   *     on it twice. That is not a breach of a rule, so it is not listed by the next exception
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterNotCompliantException if the
    *     replacement would break any rule, listing every breach: the colleague already working a
-   *     shift overlapping the one handed over, on that roster or beside it (R3, R35), or anybody on
-   *     the replacement - not only the two people in the swap - who has since become unqualified
-   *     (R4), declared they cannot work (R18) or left the organisation's rosterable people (R5),
-   *     and every working-time rule broken. There is no override (ADR-042)
+   *     different shift that overlaps the one handed over, on that roster or beside it (R3, R35),
+   *     or anybody on the replacement - not only the two people in the swap - who has since become
+   *     unqualified (R4), declared they cannot work (R18) or left the organisation's rosterable
+   *     people (R5), and every working-time rule broken. There is no override (ADR-042)
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException
    *     if a roster overlapping the replacement was published at the same time by a writer that did
    *     not take turns. Approving always does (ADR-027), so this means some other writer skipped
-   *     the publication lock (ADR-026)
+   *     the publication lock (ADR-026, ADR-037)
    */
   Roster approveSwap(Actor actor, OrganisationId organisation, SwapRequestId request);
 
@@ -94,6 +110,8 @@ public interface RequestSwapsUseCase {
    * @param actor whoever is rejecting; must be a Scheduler
    * @param organisation whose swap
    * @param request which one
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.UnknownSwapRequestException if
+   *     that organisation has no such request
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if it is
    *     no longer pending: already decided, or lapsed because its roster was superseded (R33)
    */

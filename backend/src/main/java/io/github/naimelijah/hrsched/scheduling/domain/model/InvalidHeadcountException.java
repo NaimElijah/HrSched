@@ -8,6 +8,7 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
  */
 public class InvalidHeadcountException extends RuntimeException {
 
+  /** Builds the refusal with a constant message, which is the 400 response's detail. */
   public InvalidHeadcountException() {
     super("A shift must require at least one person");
   }

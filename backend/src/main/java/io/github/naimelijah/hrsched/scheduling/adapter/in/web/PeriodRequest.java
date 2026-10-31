@@ -4,6 +4,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.time.Instant;
 
 /**
+ * The body of a request to generate a draft: the span it is to cover.
+ *
  * @param start when the span begins
  * @param end when the span ends
  */

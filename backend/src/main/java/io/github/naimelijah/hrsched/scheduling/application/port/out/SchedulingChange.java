@@ -1,7 +1,7 @@
 package io.github.naimelijah.hrsched.scheduling.application.port.out;
 
 /**
- * The scheduling changes worth a permanent record.
+ * The scheduling changes worth an audit entry.
  *
  * <p>An enum rather than a string, so a change that is recorded is a change somebody declared. It
  * lists state transitions only: reads are not audited, because auditing every read of a roster

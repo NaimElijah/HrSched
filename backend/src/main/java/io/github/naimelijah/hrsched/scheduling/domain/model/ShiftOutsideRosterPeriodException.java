@@ -11,6 +11,13 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
  */
 public class ShiftOutsideRosterPeriodException extends RuntimeException {
 
+  /**
+   * Builds the refusal. The message names the shift and the roster by identifier, and is the 422
+   * response's detail.
+   *
+   * @param roster the roster whose period does not cover the shift
+   * @param shift the shift that was to be put on it
+   */
   public ShiftOutsideRosterPeriodException(RosterId roster, ShiftId shift) {
     super(
         "Shift %s falls outside the period roster %s covers"

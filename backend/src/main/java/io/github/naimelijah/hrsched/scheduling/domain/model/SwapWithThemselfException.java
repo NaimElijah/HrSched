@@ -12,6 +12,7 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
  */
 public class SwapWithThemselfException extends RuntimeException {
 
+  /** Builds the refusal with a constant message, which is the 400 response's detail. */
   public SwapWithThemselfException() {
     super("Nobody can swap a shift with themself.");
   }

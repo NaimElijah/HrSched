@@ -22,6 +22,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 public interface Notifier {
 
   /**
+   * Tells the colleague a request names that they are being asked to take a shift.
+   *
    * @param actor on whose behalf the notification is raised
    * @param organisation whose swap
    * @param counterparty the colleague being asked to take the shift
@@ -31,6 +33,8 @@ public interface Notifier {
       Actor actor, OrganisationId organisation, EmployeeId counterparty, SwapRequestId request);
 
   /**
+   * Tells a party to a request that a Scheduler approved it.
+   *
    * @param actor on whose behalf the notification is raised
    * @param organisation whose swap
    * @param party somebody the decision affects
@@ -40,6 +44,8 @@ public interface Notifier {
       Actor actor, OrganisationId organisation, EmployeeId party, SwapRequestId request);
 
   /**
+   * Tells a party to a request that a Scheduler declined it.
+   *
    * @param actor on whose behalf the notification is raised
    * @param organisation whose swap
    * @param party somebody the decision affects
@@ -49,6 +55,8 @@ public interface Notifier {
       Actor actor, OrganisationId organisation, EmployeeId party, SwapRequestId request);
 
   /**
+   * Tells a party to a request that it ended undecided, because its roster was superseded.
+   *
    * @param actor on whose behalf the notification is raised: whoever published the roster that
    *     superseded the one the request named
    * @param organisation whose swap

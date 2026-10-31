@@ -39,6 +39,8 @@ public interface PlanRostersUseCase {
    * instance that was solving it (ADR-046).
    *
    * @param actor whoever is asking; an Admin or a Scheduler of that organisation
+   * @param organisation whose generation
+   * @param generation which one
    * @return the generation, if that organisation asked for one with that identity
    */
   Optional<GenerationState> findGeneration(
@@ -98,7 +100,7 @@ public interface PlanRostersUseCase {
   Roster unassign(Actor actor, RemoveAssignmentCommand command);
 
   /**
-   * Publishes a draft, after checking it against the organisation current rules.
+   * Publishes a draft, after checking it against the organisation's current rules.
    *
    * <p>Every roster it supersedes takes its pending swap requests with it: each lapses, and both
    * its parties are told, in the same transaction (R33).
@@ -126,7 +128,7 @@ public interface PlanRostersUseCase {
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.RosterPublicationConflictException
    *     if a roster overlapping it was published at the same time by a writer that did not take
    *     turns. Publishing through this port always does (ADR-027), so this means some other writer
-   *     skipped the publication lock (ADR-026). Refused before anything is recorded
+   *     skipped the publication lock (ADR-026, ADR-037). Refused before anything is recorded
    * @throws io.github.naimelijah.hrsched.scheduling.domain.model.SwapNotPendingException if a
    *     request it lapses was decided meanwhile, which again needs a writer that skipped the lock.
    *     Refused before anything is recorded

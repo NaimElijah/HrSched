@@ -1067,7 +1067,7 @@ public class SchedulingService
    * authoritative for any given moment. Which rosters those are is {@link Roster#isSupersededBy}'s
    * decision.
    *
-   * <p>This is the mechanism that removes the need for an override — see ADR-005 and requirement
+   * <p>This is the mechanism that removes the need for an override — see ADR-022 and requirement
    * R6.
    *
    * <p>Stores, and records nothing: the publication's own save can still be refused after these, so

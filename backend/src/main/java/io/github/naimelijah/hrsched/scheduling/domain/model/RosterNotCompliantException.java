@@ -16,11 +16,20 @@ public class RosterNotCompliantException extends RuntimeException {
 
   private final transient List<ConstraintViolation> violations;
 
+  /**
+   * @param violations every breach found, not only the first; copied, so a later change to the list
+   *     does not reach the exception
+   * @throws NullPointerException if {@code violations} is null
+   */
   public RosterNotCompliantException(List<ConstraintViolation> violations) {
     super("The roster breaks %d rule(s)".formatted(violations.size()));
     this.violations = List.copyOf(violations);
   }
 
+  /**
+   * @return every breach the roster carried; unmodifiable. The message states only how many there
+   *     are, so a response reads the breaches from here
+   */
   public List<ConstraintViolation> violations() {
     return violations;
   }

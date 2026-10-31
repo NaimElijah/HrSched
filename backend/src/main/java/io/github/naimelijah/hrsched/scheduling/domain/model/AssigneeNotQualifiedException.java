@@ -16,6 +16,14 @@ import java.util.Set;
  */
 public class AssigneeNotQualifiedException extends RuntimeException {
 
+  /**
+   * Builds the refusal. The message names the employee, the shift and the missing qualifications by
+   * identifier, never by name, and is the 422 response's detail.
+   *
+   * @param employee who was to be assigned
+   * @param shift the shift they were to cover
+   * @param missing what the shift demands and the employee does not hold
+   */
   public AssigneeNotQualifiedException(
       EmployeeId employee, ShiftId shift, Set<QualificationId> missing) {
     super(

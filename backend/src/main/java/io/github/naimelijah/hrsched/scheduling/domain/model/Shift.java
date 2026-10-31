@@ -63,18 +63,30 @@ public final class Shift {
     this.unpopular = unpopular;
   }
 
+  /**
+   * @return this shift's identity, the only thing its equality compares
+   */
   public ShiftId id() {
     return id;
   }
 
+  /**
+   * @return the organisation this shift belongs to
+   */
   public OrganisationId organisation() {
     return organisation;
   }
 
+  /**
+   * @return when this shift runs, as instants; {@link #zone} says which days it falls on
+   */
   public TimeRange period() {
     return period;
   }
 
+  /**
+   * @return the zone in which this shift's working-time days are counted (R36)
+   */
   public ZoneId zone() {
     return zone;
   }
@@ -86,10 +98,16 @@ public final class Shift {
     return new WorkingPeriod(period, zone);
   }
 
+  /**
+   * @return how many people this shift needs, at least one
+   */
   public int requiredHeadcount() {
     return requiredHeadcount;
   }
 
+  /**
+   * @return what every person assigned must hold; unmodifiable, and empty if none is demanded
+   */
   public Set<QualificationId> requiredQualifications() {
     return requiredQualifications;
   }

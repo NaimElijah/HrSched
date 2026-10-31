@@ -5,10 +5,10 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
  * was being published at the same time (R11).
  *
  * <p>Exactly one roster is authoritative for any moment, and the schema holds that even against a
- * writer that could not see the other publication because it had not yet committed (ADR-026).
- * Nothing about the request was wrong - it arrived while somebody else's publication was still in
- * flight - so it is a 409 rather than a 400: reload what is now published, and try again if it is
- * still wanted.
+ * writer that could not see the other publication because it had not yet committed (ADR-026,
+ * ADR-037). Nothing about the request was wrong - it arrived while somebody else's publication was
+ * still in flight - so it is a 409 rather than a 400: reload what is now published, and try again
+ * if it is still wanted.
  */
 public class RosterPublicationConflictException extends RuntimeException {
 

@@ -20,8 +20,8 @@ import java.util.Optional;
  * so revising them replaces them.
  *
  * @param organisation whose weights these are
- * @param weights each weighted objective and its weight, at least one (R40); an objective absent is
- *     not weighed
+ * @param weights each weighted objective and its weight, which is at least one (R40); an objective
+ *     absent is not weighed, and none at all is allowed
  */
 public record ObjectiveWeights(OrganisationId organisation, Map<Objective, Integer> weights) {
 

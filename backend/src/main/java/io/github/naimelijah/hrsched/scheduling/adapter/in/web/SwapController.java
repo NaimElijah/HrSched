@@ -35,10 +35,21 @@ public class SwapController {
 
   private final RequestSwapsUseCase requestSwaps;
 
+  /**
+   * @param requestSwaps the use case every route of this controller delegates to
+   */
   public SwapController(RequestSwapsUseCase requestSwaps) {
     this.requestSwaps = requestSwaps;
   }
 
+  /**
+   * Asks for one of a published roster's assignments to be handed to a colleague. The requester
+   * themself may, and an Admin or a Scheduler on their behalf. Answers 201 with the new request and
+   * its location. Whether the colleague may cover the shift is decided at approval, not here.
+   *
+   * @param request the roster, the shift and the two people; a member left out is answered as a 400
+   *     problem detail
+   */
   @PostMapping
   public ResponseEntity<SwapRequestResponse> request(
       @AuthenticationPrincipal Actor actor, @RequestBody RequestSwapRequest request) {
@@ -62,6 +73,10 @@ public class SwapController {
                 SwapRequestStatus.REQUESTED.name()));
   }
 
+  /**
+   * Lists the swap requests the caller may see: every one for an Admin or a Scheduler, otherwise
+   * only those the caller is party to, oldest first.
+   */
   @GetMapping
   public List<SwapRequestResponse> list(@AuthenticationPrincipal Actor actor) {
     return requestSwaps.findSwapRequests(actor, actingIn(actor)).stream()
@@ -86,12 +101,26 @@ public class SwapController {
         .orElseThrow(() -> new UnknownSwapRequestException(request));
   }
 
+  /**
+   * Approves a request by publishing the replacement roster that carries it. Only a Scheduler may.
+   * A replacement that would break a rule is answered as a 422 problem detail, and there is no
+   * override. A colleague who already covers the shift is answered as a 409 problem detail of type
+   * {@code already-assigned} instead, and nothing is published.
+   *
+   * @param id the request
+   * @return the published replacement
+   */
   @PostMapping("/{id}/approval")
   public RosterResponse approve(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
     return RosterResponse.from(
         requestSwaps.approveSwap(actor, actingIn(actor), new SwapRequestId(id)));
   }
 
+  /**
+   * Declines a request; no roster changes. Only a Scheduler may. Answers 204.
+   *
+   * @param id the request
+   */
   @PostMapping("/{id}/rejection")
   public ResponseEntity<Void> reject(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
     requestSwaps.rejectSwap(actor, actingIn(actor), new SwapRequestId(id));
