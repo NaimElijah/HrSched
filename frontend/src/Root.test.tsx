@@ -1,17 +1,19 @@
-import { screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { endSession } from './api/session';
+import { Root } from './Root';
 import { routeTo } from './test-support/routeTo';
 import { A_TENANT } from './test-support/session';
 
 /**
- * The application as `main.tsx` mounts it, which is the only place the boundary and the session
- * provider are nested: a test that nests them itself would pass whatever the entry point does.
+ * The application as `main.tsx` mounts it: `Root` is the one place the boundary and the session
+ * provider are nested, so a test that nested them itself would pass whatever the app does. It is
+ * rendered rather than `main.tsx` imported, so the tree is unmounted after the test instead of
+ * outliving its environment.
  *
- * Importing the module mounts it, once per file, into the `#root` it looks for. The landing page
- * is replaced by one that throws while `broken` is set, so a render breaks inside the shell exactly
- * as an unexpected shape from the API would break it.
+ * The landing page is replaced by one that throws while `broken` is set, so a render breaks inside
+ * the shell exactly as an unexpected shape from the API would break it.
  */
 
 const theLandingPage = vi.hoisted(() => ({ broken: true }));
@@ -30,6 +32,10 @@ vi.mock('./pages/PeoplePage', () => ({
 }));
 
 afterEach(() => {
+  // Unmounted before the session ends: hooks run last-registered first, so Testing Library's own
+  // cleanup would come after endSession, whose update to a still-mounted provider can leave React
+  // work queued past this one-test file's environment ("window is not defined" in CI).
+  cleanup();
   vi.unstubAllGlobals();
   endSession();
 });
@@ -51,10 +57,7 @@ describe('recovering from a broken render in the real app', () => {
         '/api/auth/session': { status: 200, body: A_TENANT },
         '/api/employees': { status: 200, body: [] },
       });
-      const root = document.createElement('div');
-      root.id = 'root';
-      document.body.append(root);
-      await import('./main');
+      render(<Root />);
       const tryAgain = await screen.findByRole('button', { name: 'Try again' });
 
       theLandingPage.broken = false;
