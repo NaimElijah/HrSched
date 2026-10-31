@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dayLabel, timeLabel } from '../components/localDates';
-import { callsTo, routeTo } from '../test-support/routeTo';
+import { callsTo, holdingWrites, routeTo, writes } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
 import { A_TENANT, SignedIn } from '../test-support/session';
 import { Inbox } from './Inbox';
@@ -253,6 +253,74 @@ function findStatus(saying: RegExp): Promise<HTMLElement> {
   });
 }
 
+/**
+ * C1: a control waiting for a request is marked so, and is not `disabled`, which would drop the
+ * keyboard focus to the body. jsdom does not drop it either way, so the attribute is the proof.
+ */
+function expectWaiting(control: HTMLElement) {
+  expect(control, 'aria-disabled while the request is in flight').toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  expect(control, 'not disabled, which would drop the keyboard focus').toBeEnabled();
+}
+
+/** A control that may act again: neither disabled nor marked as unable to act. */
+function expectActionable(control: HTMLElement) {
+  expect(control).toBeEnabled();
+  expect(control, 'no longer aria-disabled').not.toHaveAttribute('aria-disabled', 'true');
+}
+
+/** The notification's list item a control sits in. */
+function itemOf(control: HTMLElement): HTMLElement {
+  const item = screen.getAllByRole('listitem').find((candidate) => candidate.contains(control));
+  if (item === undefined) {
+    throw new Error('the control is not in a list item');
+  }
+  return item;
+}
+
+/** Three unread notifications an hour apart, each marked read on the server once it is posted. */
+const THREE = ['n-1', 'n-2', 'n-3'].map((id, hour) => ({
+  id,
+  kind: 'SWAP_REQUESTED',
+  subject: SWAP.id,
+  occurredAt: `2026-10-01T0${String(hour + 1)}:30:00Z`,
+  read: false,
+}));
+
+/** The Mark as read of the one of {@link THREE} at this place, by the time its name ends with. */
+function markReadOf(index: number): HTMLElement {
+  const notification = THREE[index];
+  if (notification === undefined) {
+    throw new Error(`no notification at ${String(index)}`);
+  }
+  return screen.getByRole('button', {
+    name: `Mark as read: A colleague has asked you to take one of their shifts. ${new Date(notification.occurredAt).toLocaleString()}`,
+  });
+}
+
+function servingThree() {
+  const marks = Object.fromEntries(
+    THREE.map(({ id }) => [`POST /api/notifications/${id}/read`, { status: 204, body: null }]),
+  );
+  const stub = routeTo({
+    ...marks,
+    get '/api/notifications'(): Answer {
+      return {
+        status: 200,
+        body: THREE.map((notification) => ({
+          ...notification,
+          read: callsTo(stub, 'POST', `/api/notifications/${notification.id}/read`).length > 0,
+        })),
+      };
+    },
+    '/api/swaps': { status: 200, body: [SWAP] },
+    '/api/shifts/shift-1': { status: 200, body: SHIFT },
+  });
+  return stub;
+}
+
 describe('reading, for a keyboard and screen-reader user', () => {
   /** C2: Mark as read goes once the notification is read, so focus moves to the inbox's heading. */
   it('GivenAnUnreadNotification_WhenMarkedRead_ThenFocusIsOnTheInboxHeading', async () => {
@@ -271,8 +339,117 @@ describe('reading, for a keyboard and screen-reader user', () => {
     serving([told('SWAP_REQUESTED')]);
     show();
 
-    await userEvent.click(await screen.findByRole('button', { name: /^Mark as read/ }));
+    await screen.findByRole('button', { name: /^Mark as read/ });
+    const statusesBefore = screen.getAllByRole('status');
 
-    expect(await findStatus(/marked as read/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^Mark as read/ }));
+
+    const status = await findStatus(/^Marked as read\.$/);
+    // C3: a live region that appeared with its text would not be announced.
+    expect(statusesBefore, 'the status was in the page before it said anything').toContain(status);
+  });
+
+  /** Each mark is audited, so a second press while the first is out must not send a second. */
+  it('GivenAMarkInFlight_WhenMarkAsReadIsPressedAgain_ThenItWaitsKeepsFocusAndSendsOnce', async () => {
+    const routed = servingThree();
+    const release = holdingWrites(routed);
+    show();
+    await screen.findAllByRole('button', { name: /^Mark as read/ });
+    const first = markReadOf(0);
+    const second = markReadOf(1);
+
+    await userEvent.click(first);
+    await userEvent.click(first);
+
+    expectWaiting(first);
+    expect(first, 'the pressed button keeps the keyboard focus').toHaveFocus();
+    expectWaiting(second);
+    await userEvent.click(second);
+    release();
+    await findStatus(/^Marked as read\.$/);
+    await waitFor(() => expectActionable(second));
+    expect(writes(routed), 'one mark was sent').toHaveLength(1);
+  });
+
+  /** C5: a button waiting for another's answer says why it cannot act yet. */
+  it('GivenAMarkInFlight_WhenTheOtherButtonsAreRead_ThenAVisibleHintSaysWhyTheyWait', async () => {
+    const release = holdingWrites(servingThree());
+    show();
+    await screen.findAllByRole('button', { name: /^Mark as read/ });
+    const first = markReadOf(0);
+    const second = markReadOf(1);
+
+    await userEvent.click(first);
+
+    const hint = screen.getByText(/^Marking one as read/);
+    expect(hint).toBeVisible();
+    expect(second).toHaveAccessibleDescription(hint.textContent ?? '');
+    release();
+    await findStatus(/^Marked as read\.$/);
+    expect(screen.queryByText(/^Marking one as read/)).not.toBeInTheDocument();
+  });
+
+  /** C6, C2: a refusal is of one notification, so it shows in its item, and its button stays. */
+  it('GivenMarkingReadIsRefused_WhenShown_ThenTheRefusalIsInThatItemAndFocusStaysOnTheButton', async () => {
+    routeTo({
+      '/api/notifications': { status: 200, body: THREE },
+      '/api/swaps': { status: 200, body: [SWAP] },
+      '/api/shifts/shift-1': { status: 200, body: SHIFT },
+      'POST /api/notifications/n-2/read': { status: 404, body: { detail: 'No such resource.' } },
+    });
+    show();
+    await screen.findAllByRole('button', { name: /^Mark as read/ });
+    const pressed = markReadOf(1);
+
+    await userEvent.click(pressed);
+
+    const item = itemOf(pressed);
+    expect(await within(item).findByRole('alert')).toHaveTextContent(
+      'Nothing here for this organisation.',
+    );
+    for (const alert of screen.getAllByRole('alert')) {
+      expect(item, 'no copy of the refusal above the list').toContainElement(alert);
+    }
+    expectActionable(pressed);
+    expect(pressed, 'a refusal leaves focus where it was').toHaveFocus();
+    for (const status of screen.getAllByRole('status')) {
+      expect(status).not.toHaveTextContent('Marked as read.');
+    }
+  });
+
+  /** C2: the next notification is where a keyboard user was going, so focus moves there. */
+  it.each([
+    ['the first', 0, 1],
+    ['a middle one', 1, 2],
+    ['the last', 2, 1],
+  ])(
+    'GivenThreeUnread_WhenOneIsMarkedRead_ThenFocusIsOnTheNeighboursButton (%s)',
+    async (_which, marked, neighbour) => {
+      servingThree();
+      show();
+      await screen.findAllByRole('button', { name: /^Mark as read/ });
+      const pressed = markReadOf(marked);
+      const next = markReadOf(neighbour);
+
+      await userEvent.click(pressed);
+
+      await waitFor(() => expect(pressed).not.toBeInTheDocument());
+      await waitFor(() => expect(next).toHaveFocus());
+    },
+  );
+
+  it('GivenFocusMovedWhileAMarkIsOut_WhenItIsStored_ThenFocusIsNotTaken', async () => {
+    const release = holdingWrites(servingThree());
+    show();
+    await screen.findAllByRole('button', { name: /^Mark as read/ });
+    const pressed = markReadOf(0);
+    await userEvent.click(pressed);
+    const elsewhere = screen.getByRole('heading', { name: 'Inbox' });
+    elsewhere.focus();
+
+    release();
+
+    await waitFor(() => expect(pressed).not.toBeInTheDocument());
+    expect(elsewhere, 'focus stays where the user moved it').toHaveFocus();
   });
 });
