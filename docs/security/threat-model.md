@@ -7,8 +7,8 @@ merged. It does not model the public deployment: nothing is deployed yet (milest
 topology, which is out of scope here. What only the edge can provide appears below as a residual
 risk and nowhere else.
 
-Written against `dev` at `5949451`, with the fixes of #250 merged. A later pull request updates
-this document in the commit that changes what it describes. The docs-drift scan (#259) resolved
+Written against `dev` at `5949451`, with the fixes of #250 merged. Later pull requests have
+updated it alongside the changes it describes. The docs-drift scan (#259) resolved
 every class, test and file it names against `dev` at `5d41501`; it checked that the references
 resolve, not the security analysis.
 
