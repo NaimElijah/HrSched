@@ -61,6 +61,9 @@ class AccountHttpTest {
   /** Invented, and deliberately below it. */
   private static final String TOO_SHORT = "brief";
 
+  /** Invented: one byte of UTF-8, repeated to make a password over the policy's maximum. */
+  private static final String ONE_BYTE_CHARACTER = "x";
+
   /** Invented, and what an account replaces the password somebody else chose for it with. */
   private static final String THEIR_OWN_PASSWORD = "a password that admin chose themselves";
 
@@ -302,6 +305,27 @@ class AccountHttpTest {
                 .value(
                     "A password must be at least %d characters long."
                         .formatted(policy.minimumLength())));
+  }
+
+  /** As above, for a password over the most bytes the hasher reads, which is counted in bytes. */
+  @Test
+  void GivenATemporaryPasswordOverThePolicy_WhenCreatingAnAccount_ThenTheLimitIsNamed()
+      throws Exception {
+    String tooLong = ONE_BYTE_CHARACTER.repeat(policy.maximumBytes() + 1);
+
+    mockMvc
+        .perform(
+            with(post("/api/accounts"), admin(anOrganisation()))
+                .content(
+                    "{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\",\"role\":\"SCHEDULER\"}"
+                        .formatted(anInventedSignInName(), tooLong)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.reason").value("TOO_LONG"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:password-not-accepted"))
+        .andExpect(
+            jsonPath("$.detail")
+                .value(
+                    "A password must be at most %d bytes long.".formatted(policy.maximumBytes())));
   }
 
   @Test
