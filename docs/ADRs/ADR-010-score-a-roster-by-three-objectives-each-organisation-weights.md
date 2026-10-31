@@ -1,6 +1,9 @@
 # ADR-010: Score a roster by three objectives, weighted by each organisation
 
 - **Status:** Accepted
+  - **Amended 2026-10-31:** [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md) adds the
+    solver that minimises this weighted score, so "Generation is unchanged" under Consequences no
+    longer holds.
 - **Date:** 2026-10-20
 
 ## Context
