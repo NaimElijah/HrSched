@@ -6,6 +6,8 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
+ * A request to tell one employee that something happened, with identifiers only and no message.
+ *
  * @param organisation whose notification this is
  * @param recipient the personnel record being told
  * @param kind what happened
@@ -14,6 +16,9 @@ import java.util.UUID;
 public record NotifyCommand(
     OrganisationId organisation, EmployeeId recipient, NotifiableEvent kind, UUID subject) {
 
+  /**
+   * @throws NullPointerException if any component is null
+   */
   public NotifyCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(recipient, "recipient must not be null");

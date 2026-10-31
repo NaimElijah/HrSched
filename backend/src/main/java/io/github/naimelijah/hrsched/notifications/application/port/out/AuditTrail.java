@@ -1,7 +1,7 @@
 package io.github.naimelijah.hrsched.notifications.application.port.out;
 
 /**
- * Where notifications records what was changed and by whom.
+ * Where the notifications context records what was changed and by whom.
  *
  * <p>A driven port rather than a logger, because the application layer may hold no framework and no
  * instrumentation library, and because "was this recorded?" then becomes something a test can ask

@@ -30,15 +30,19 @@ import org.springframework.stereotype.Repository;
  * own clock: when something happened is an input the caller supplies.
  *
  * <p>Notifications raised at one instant are listed by {@code sequence}, the order the database has
- * inserted them in since V13, because the order somebody was told in is ADR-052's to decide and an
- * identity is random. Rows stored before V13 were numbered in no recorded order. The column never
- * leaves this class.
+ * inserted them in since V13, because a publication tells in an order that ADR-052 relies on to put
+ * an approval on top, and an identity is random. Rows stored before V13 were numbered in no
+ * recorded order. The column never leaves this class.
  */
 @Repository
 public class JdbcNotificationRepository implements NotificationRepository {
 
   private final JdbcClient jdbc;
 
+  /**
+   * @param jdbc the client every statement runs on
+   * @throws NullPointerException if {@code jdbc} is null
+   */
   public JdbcNotificationRepository(JdbcClient jdbc) {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
   }

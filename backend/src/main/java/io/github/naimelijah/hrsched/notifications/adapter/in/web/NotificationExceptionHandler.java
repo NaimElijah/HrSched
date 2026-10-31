@@ -27,7 +27,11 @@ public class NotificationExceptionHandler {
 
   private static final Logger log = LoggerFactory.getLogger(NotificationExceptionHandler.class);
 
-  /** Shared with the other handlers, so one query answers "who was refused" across all of them. */
+  /**
+   * Shared with the other classes that count a refusal under this name (the other three contexts'
+   * exception handlers, the two security handlers in {@code configuration.security}, and {@code
+   * AuthController}), so one query answers "who was refused" across all of them.
+   */
   private static final String DENIED = "hrsched.access.denied";
 
   private final MeterRegistry meters;
@@ -47,6 +51,11 @@ public class NotificationExceptionHandler {
         .increment();
   }
 
+  /**
+   * An actor who is not an employee asking for an inbox. A 403 rather than a 404: the actor is
+   * known, and so is what is missing, which is their own personnel record. Counted as {@code
+   * no_employee_record}, and logged with the actor's identity only.
+   */
   @ExceptionHandler(NotAddressableException.class)
   public ProblemDetail handleNotAddressable(NotAddressableException exception) {
     log.atWarn()
@@ -61,6 +70,14 @@ public class NotificationExceptionHandler {
     return problem;
   }
 
+  /**
+   * A notification that is not the caller's, or an organisation that is not theirs: both are a 404
+   * with the same body, so the response confirms nothing exists. The exception's own message is
+   * replaced by a constant, because it names identifiers the caller may not know.
+   *
+   * <p>Only the cross-tenant case is logged and counted (as {@code cross_tenant}). An unknown
+   * notification is an ordinary miss, and is neither.
+   */
   @ExceptionHandler({UnknownNotificationException.class, CrossTenantAccessException.class})
   public ProblemDetail handleUnknown(RuntimeException exception) {
     if (exception instanceof CrossTenantAccessException crossTenant) {

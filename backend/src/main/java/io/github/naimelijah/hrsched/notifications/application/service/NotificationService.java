@@ -36,6 +36,12 @@ public class NotificationService implements NotifyUseCase, ReadNotificationsUseC
   private final AuditTrail audit;
   private final Clock clock;
 
+  /**
+   * @param notifications where notifications are stored
+   * @param audit where each raising and each acknowledgement is recorded
+   * @param clock the source of every notification's {@code occurredAt}
+   * @throws NullPointerException if any argument is null
+   */
   public NotificationService(NotificationRepository notifications, AuditTrail audit, Clock clock) {
     this.notifications = Objects.requireNonNull(notifications, "notifications must not be null");
     this.audit = Objects.requireNonNull(audit, "audit must not be null");
@@ -49,6 +55,11 @@ public class NotificationService implements NotifyUseCase, ReadNotificationsUseC
    * "may cause a notification". What keeps that safe is that this port is not on a controller: the
    * only callers are use cases that already decided somebody deserves telling. See {@link
    * NotifyUseCase}.
+   *
+   * <p>Records {@code NOTIFICATION_RAISED} straight after its own save, inside the caller's
+   * transaction. When a caller tells two people and the second store fails, the first row rolls
+   * back and its line stays: no call order removes that, only a trail written in the same
+   * transaction would (ADR-052, #31).
    */
   @Override
   public NotificationId notify(Actor actor, NotifyCommand command) {
@@ -102,17 +113,21 @@ public class NotificationService implements NotifyUseCase, ReadNotificationsUseC
     return member.employee().orElseThrow(() -> new NotAddressableException(member.id()));
   }
 
-  /** Called after the repository, never before: see ADR-018. */
+  /**
+   * Called after the repository, never before: a line written before a write that can still fail
+   * records something that did not happen (ADR-018, ADR-052).
+   */
   private void recorded(
       Actor actor, OrganisationId organisation, NotificationChange change, NotificationId subject) {
     audit.record(new AuditedChange(organisation, actor.id(), change, subject.value()));
   }
 
   /**
-   * Translates the published vocabulary into the domain's own, and back.
+   * Translates the published vocabulary into the domain's own; {@link #eventOf} is the reverse.
    *
    * <p>Two enums that agree exactly today, kept apart so that changing one is not automatically a
-   * change to every other context. See {@link NotifiableEvent}.
+   * change to every other context. See {@link NotifiableEvent}. Both switches list every value with
+   * no default, so a value added to either enum fails to compile here instead of being dropped.
    */
   private static NotificationKind kindOf(NotifiableEvent event) {
     return switch (event) {

@@ -17,13 +17,16 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Driving adapter exposing one's own notifications over HTTP.
  *
- * <p>Reading only. There is deliberately no endpoint that raises a notification: {@code
- * NotifyUseCase} is an in-process port whose callers are use cases that already decided somebody
- * deserved telling, and putting it on a controller would make it a way to post anything into any
- * colleague's inbox.
+ * <p>Reading and acknowledging only. There is deliberately no endpoint that raises a notification:
+ * {@code NotifyUseCase} is an in-process port whose callers are use cases that already decided
+ * somebody deserved telling, and putting it on a controller would make it a way to post anything
+ * into any colleague's inbox.
  *
- * <p>Whose notifications are returned comes from the acting identity, never from a path or a query
- * parameter, so there is no request that even expresses "somebody else's".
+ * <p>Whose notifications are returned or acknowledged comes from the acting identity, never from a
+ * path or a query parameter, so there is no request that even expresses "somebody else's". The path
+ * names a notification, never an inbox.
+ *
+ * <p>Failures are translated by {@link NotificationExceptionHandler}.
  */
 @RestController
 @RequestMapping("/api/notifications")
@@ -35,6 +38,17 @@ public class NotificationController {
     this.readNotifications = readNotifications;
   }
 
+  /**
+   * Lists the acting employee's own notifications, newest first, and of those raised at one
+   * instant, the last raised first.
+   *
+   * <p>Answers 200 with an empty list when nothing has happened to them. Answers 403 to an actor
+   * with no personnel record, who has no inbox, and to the platform operator, who belongs to no
+   * organisation.
+   *
+   * @param actor whoever the token named
+   * @return their notifications, none of them anybody else's
+   */
   @GetMapping
   public List<NotificationResponse> list(@AuthenticationPrincipal Actor actor) {
     return readNotifications.findMine(actor, actingIn(actor)).stream()
@@ -42,6 +56,17 @@ public class NotificationController {
         .toList();
   }
 
+  /**
+   * Marks one of the acting employee's own notifications as read.
+   *
+   * <p>Answers 204, and answers 204 again when it was already read. Answers 404 when there is no
+   * such notification of theirs, which includes a colleague's: the two are not told apart. Answers
+   * 403 to an actor with no personnel record and to the platform operator.
+   *
+   * @param actor whoever the token named
+   * @param id the notification to acknowledge
+   * @return an empty 204
+   */
   @PostMapping("/{id}/read")
   public ResponseEntity<Void> markRead(
       @AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
@@ -52,9 +77,8 @@ public class NotificationController {
   /**
    * The organisation this request acts in, taken from the acting account and from nowhere else.
    *
-   * <p>It replaced {@code X-Organisation}, and the difference is the whole point: there is no
-   * longer anything in the request naming an organisation, so there is nothing for a caller to
-   * change. The platform operator is refused here, because it belongs to none (ADR-030).
+   * <p>Nothing in the request names an organisation, so there is nothing for a caller to change
+   * (ADR-031). The platform operator is refused here, because it belongs to none (ADR-030).
    *
    * @param actor whoever the token named
    * @return the organisation they belong to

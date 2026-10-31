@@ -10,6 +10,9 @@ import java.util.UUID;
  */
 public record NotificationId(UUID value) {
 
+  /**
+   * @throws NullPointerException if {@code value} is null
+   */
   public NotificationId {
     Objects.requireNonNull(value, "value must not be null");
   }

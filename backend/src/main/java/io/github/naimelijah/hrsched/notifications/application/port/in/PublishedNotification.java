@@ -20,6 +20,9 @@ import java.util.UUID;
 public record PublishedNotification(
     NotificationId id, NotifiableEvent kind, UUID subject, Instant occurredAt, boolean read) {
 
+  /**
+   * @throws NullPointerException if any component is null
+   */
   public PublishedNotification {
     Objects.requireNonNull(id, "id must not be null");
     Objects.requireNonNull(kind, "kind must not be null");

@@ -9,6 +9,10 @@ package io.github.naimelijah.hrsched.notifications.domain.model;
  */
 public class UnknownNotificationException extends RuntimeException {
 
+  /**
+   * @param notification the identity the caller named; it appears in the message, so the message
+   *     must not reach a response
+   */
   public UnknownNotificationException(NotificationId notification) {
     super("No such notification %s".formatted(notification.value()));
   }
