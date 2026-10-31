@@ -309,8 +309,8 @@ From the root, `npm run verify` runs both gates in turn.
 
 ## Testing
 
-The suite holds over 1,100 backend tests, each named `Given<scenario>_When<action>_Then<result>`,
-and over 300 frontend tests. Services take an injected `Clock`, and no test sleeps: the concurrency
+The suite holds over 2,000 backend tests, each named `Given<scenario>_When<action>_Then<result>`,
+and over 600 frontend tests. Services take an injected `Clock`, and no test sleeps: the concurrency
 tests coordinate real threads with barriers and latches.
 
 | Layer | What it proves | Examples |
@@ -374,7 +374,7 @@ HrSched/
 │   └── compose.yaml            local PostgreSQL for spring-boot:run
 ├── frontend/src/               React SPA: api/ · auth/ · components/ · pages/ · test-support/
 ├── docs/                       requirements/ (what) · architecture/ (how) · ADRs/ (why) · security/ · api.md
-├── scripts/run.mjs             root task runner for setup, dev and verify (ADR-014)
+├── scripts/run.mjs             root task runner for dev and verify (ADR-014)
 └── .github/                    CI and Dependabot
 ```
 
@@ -388,16 +388,16 @@ HrSched/
 | Publications take turns, and history is written once ([ADR-027](docs/ADRs/ADR-027-take-turns-publishing-within-an-organisation.md), [ADR-037](docs/ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md)) | `SERIALIZABLE`, whose aborts still need a retry; `SELECT … FOR UPDATE` on another context's row | Publications in one organisation queue |
 | Generation with CP-SAT behind a port ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md), [ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)) | Timefold, whose search must drive a broken rule's penalty to zero and proves no bound; a MIP solver | About 95 MB of native libraries; no determinism under a time limit; OR-Tools held at 9.12 for the Visual C++ runtime JDK 21 bundles on Windows |
 
-Every decision, and the two still waiting to be recorded, is in the
+Every decision, and every one still waiting to be recorded, is in the
 [ADR index](docs/ADRs/README.md).
 
 ## Status and limitations
 
-**Pre-release.** It works end to end locally and has never been deployed. Five
-[milestones](https://github.com/NaimElijah/HrSched/milestones) track the rest: M1 (v1 complete),
-M2 (engineering baseline), M3 (AWS staging), M4 (production) and M5 (ML that proposes, never
-decides). The [requirements](docs/requirements/requirements.md) mark each row decided but `not yet`
-built.
+**Pre-release.** It works end to end locally and has never been deployed. The
+[milestones](https://github.com/NaimElijah/HrSched/milestones) track the rest: M0 (the full-system
+scans now running), M1 (v1 complete), M2 (engineering baseline), M3 (AWS staging), M4 (production)
+and M5 (ML that proposes, never decides). The
+[requirements](docs/requirements/requirements.md) mark each row decided but `not yet` built.
 
 **Known limitations:**
 - **Generation takes minutes at the largest size.** It runs in the background and the Rosters page
