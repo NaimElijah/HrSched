@@ -65,7 +65,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-056](ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md) | Refuse a fraction where a whole number is bound | Accepted, amended | 2026-10-30 |
 | [ADR-057](ADR-057-name-every-kind-of-problem-with-a-urn.md) | Name every kind of problem with its own URN | Accepted | 2026-10-31 |
 | [ADR-058](ADR-058-refuse-a-request-member-the-request-type-does-not-have.md) | Refuse a request member the request type does not have | Accepted | 2026-10-31 |
-| [ADR-059](ADR-059-keep-focus-and-announce-changes-in-the-spa.md) | Keep focus and announce changes in the SPA | Accepted, amended | 2026-10-31 |
+| [ADR-059](ADR-059-keep-focus-and-announce-changes-in-the-spa.md) | Keep focus and announce changes in the SPA | Accepted | 2026-10-31 |
 
 ## Decisions waiting to be recorded
 
