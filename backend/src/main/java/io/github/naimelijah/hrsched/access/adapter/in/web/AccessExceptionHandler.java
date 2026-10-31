@@ -57,6 +57,15 @@ public class AccessExceptionHandler {
   /** Shared with the other handlers, so one query answers "who was refused" across all of them. */
   private static final String DENIED = "hrsched.access.denied";
 
+  /**
+   * What every body Jackson cannot bind is told, whatever was wrong with it: not JSON, a member
+   * missing or unknown, or a value of the wrong form. One constant sentence true of each, so
+   * nothing in it comes from what was sent, as Jackson's own message, which quotes it, would.
+   */
+  private static final String MALFORMED_BODY =
+      "The request body is not valid JSON, or it lacks a member this request requires, has one it"
+          + " does not take, or has one whose value is of the wrong form.";
+
   private final MeterRegistry meters;
 
   /**
@@ -270,8 +279,7 @@ public class AccessExceptionHandler {
       return problem;
     }
     ProblemDetail problem =
-        ProblemDetail.forStatusAndDetail(
-            HttpStatus.BAD_REQUEST, "The request body is malformed or is missing required fields.");
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, MALFORMED_BODY);
     problem.setTitle("Malformed request");
     return problem;
   }

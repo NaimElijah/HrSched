@@ -84,6 +84,14 @@ import tools.jackson.databind.json.JsonMapper;
  */
 class SchedulingExceptionHandlerTest {
 
+  /**
+   * The one sentence every malformed body is answered with, whatever was wrong with it, so it has
+   * to be true of each and repeat nothing sent.
+   */
+  private static final String MALFORMED_DETAIL =
+      "The request body is not valid JSON, or it lacks a member this request requires, has one"
+          + " it does not take, or has one whose value is of the wrong form.";
+
   /** The refusal's constant message, so the line found is this refusal's. */
   private static final String UNKNOWN_MEMBER_REFUSED =
       "Refused: a request body carried a member its request type does not have";
@@ -272,7 +280,7 @@ class SchedulingExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Malformed request");
-    assertThat(problem.getDetail()).doesNotContain("raw parser noise");
+    assertThat(problem.getDetail()).isEqualTo(MALFORMED_DETAIL);
   }
 
   @Test

@@ -438,7 +438,12 @@ class EmployeeHttpTest {
                 .content("{}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.title").value("Malformed request"))
-        .andExpect(jsonPath("$.detail").value(containsString("missing required fields")));
+        .andExpect(
+            jsonPath("$.detail")
+                .value(
+                    "The request body is not valid JSON, or it lacks a member this request"
+                        + " requires, has one it does not take, or has one whose value is of the"
+                        + " wrong form."));
   }
 
   @Test

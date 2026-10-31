@@ -72,6 +72,14 @@ class UnknownMemberHttpTest {
   /** What every context's handler says of a body it cannot read, whatever was wrong with it. */
   private static final String MALFORMED = "Malformed request";
 
+  /**
+   * The one sentence every malformed body is answered with, whatever was wrong with it, so it has
+   * to be true of each and repeat nothing sent.
+   */
+  private static final String MALFORMED_DETAIL =
+      "The request body is not valid JSON, or it lacks a member this request requires, has one"
+          + " it does not take, or has one whose value is of the wrong form.";
+
   /** The version every organisation's rules start at, before anybody revises them. */
   private static final int FIRST_CONSTRAINT_VERSION = 1;
 
@@ -168,6 +176,7 @@ class UnknownMemberHttpTest {
             .andExpect(status().isBadRequest())
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
             .andExpect(jsonPath("$.title").value(MALFORMED))
+            .andExpect(jsonPath("$.detail").value(MALFORMED_DETAIL))
             .andReturn()
             .getResponse()
             .getContentAsString();
