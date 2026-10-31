@@ -14,17 +14,7 @@ refuses to publish one that breaks them.**
 
 ---
 
-```mermaid
-flowchart LR
-    people(["Admin · Scheduler · Employee<br/>platform Operator"])
-    spa["React SPA<br/>Vite dev server :5173"]
-    api["Spring Boot API :8080<br/>access · workforce · scheduling · notifications"]
-    db[("PostgreSQL 18<br/>one schema, organisation_id on every root,<br/>bar the operator's account and the sessions")]
-
-    people -->|browser| spa
-    spa -->|"/api, proxied: one origin, no CORS"| api
-    api -->|"hand-written SQL, Flyway migrations"| db
-```
+<img src="docs/images/roster.png" width="820" alt="The Rosters page in the browser: a draft generated for four days, checked against the organisation's rules with no rule broken and every shift staffed, scored against its weighted objectives, and the first day's two shifts with the two people assigned to each.">
 
 ## Contents
 
@@ -81,16 +71,24 @@ the three adapters on the diagram are the only places that do
 
 ```mermaid
 flowchart TB
-    access["access<br/>organisations, accounts, sessions, tokens"]
-    workforce["workforce<br/>employees, qualifications, availability"]
-    scheduling["scheduling<br/>shifts, rules, rosters, swaps"]
-    notifications["notifications<br/>each person's inbox"]
-    kernel["shared kernel<br/>OrganisationId, EmployeeId, TimeRange, Actor, Role"]
+    people(["Admin · Scheduler · Employee<br/>platform Operator"])
+    spa["React SPA<br/>Vite dev server :5173"]
+    db[("PostgreSQL 18<br/>one schema, organisation_id on every root,<br/>bar the operator's account and the sessions")]
+    subgraph api ["Spring Boot API :8080"]
+        access["access<br/>organisations, accounts, sessions, tokens"]
+        workforce["workforce<br/>employees, qualifications, availability"]
+        scheduling["scheduling<br/>shifts, rules, rosters, swaps"]
+        notifications["notifications<br/>each person's inbox"]
+        kernel["shared kernel<br/>OrganisationId, EmployeeId, TimeRange, Actor, Role"]
+        scheduling -->|"WorkforceDirectoryAdapter"| workforce
+        scheduling -->|"NotificationAdapter"| notifications
+        access -->|"WorkforceEmployeeDirectory"| workforce
+        access & workforce & scheduling & notifications -.-> kernel
+    end
 
-    scheduling -->|"WorkforceDirectoryAdapter"| workforce
-    scheduling -->|"NotificationAdapter"| notifications
-    access -->|"WorkforceEmployeeDirectory"| workforce
-    access & workforce & scheduling & notifications -.-> kernel
+    people -->|browser| spa
+    spa -->|"/api, proxied: one origin, no CORS"| api
+    api -->|"hand-written SQL, Flyway migrations"| db
 ```
 
 A publication, `POST /api/rosters/{id}/publication`, shows the direction. The bearer token is one
