@@ -43,8 +43,10 @@ the transport's business. The type is set where each problem is built, beside it
 application and holds each constant to its own name: `NOT_FOUND` must be
 `urn:hrsched:problem:not-found`. Two constants of one name therefore cannot hold two URIs, and a
 renamed constant fails until its URI is renamed with it, which makes changing a type a deliberate
-act. HTTP tests assert `$.type` for at least one problem of every kind a request can reach; the
-handler tests assert it for the five no HTTP test reaches.
+act. It also reads every other class file in the application, and fails if one holds the prefix,
+so a type cannot be written inline where a problem is built, out of every constant's reach. HTTP
+tests assert `$.type` for at least one problem of every kind a request can reach; the handler
+tests assert it for the five no HTTP test reaches.
 
 **A URN, not a URL.** The type names a kind and is never fetched; nothing is served at it.
 

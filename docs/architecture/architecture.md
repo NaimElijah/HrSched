@@ -447,7 +447,8 @@ are not audited. Nothing at runtime depends on any of it.
   every context ([ADR-057](../ADRs/ADR-057-name-every-kind-of-problem-with-a-urn.md)). There is no
   class every producer may reach, so each context's `adapter.in.web` and `configuration.web` hold
   the URIs they answer with in a `ProblemTypes` of their own, and `ProblemTypesTest` holds every
-  constant to its name, which keeps the copies equal. `docs/api.md` lists them.
+  constant to its name, which keeps the copies equal. It also fails if any other class holds the
+  prefix, so a type cannot be written inline where a problem is built. `docs/api.md` lists them.
 - **The platform operator is refused inside an organisation, with a 403 rather than that 404.** The
   404 exists so a tenant cannot learn another organisation exists; an operator already knows,
   because listing them is the job. `NotATenantMemberException` carries that refusal and every

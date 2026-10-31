@@ -3,12 +3,17 @@ package io.github.naimelijah.hrsched.configuration.web;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.Source;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.BeforeAll;
@@ -25,6 +30,12 @@ import org.junit.jupiter.api.Test;
  *
  * <p>The classes are found by name across the whole application, so a context that adds one is
  * checked without being listed here.
+ *
+ * <p>Neither holds if a problem is typed with a URI written where it is built, such as {@code
+ * setType(URI.create("urn:hrsched:problem:not-found"))} in a handler: that copy is in no {@code
+ * ProblemTypes}, so nothing above reads it. So no other class may carry the prefix at all. The
+ * compiled class files are read rather than the source, because the literal of every string a class
+ * holds, a concatenation's included, is kept in its constant pool, and javadoc is not.
  */
 class ProblemTypesTest {
 
@@ -43,15 +54,20 @@ class ProblemTypesTest {
 
   private static List<Class<?>> problemTypes;
 
+  private static List<JavaClass> everyOtherClass;
+
   @BeforeAll
   static void findEveryProblemTypesClass() {
     problemTypes = new ArrayList<>();
+    everyOtherClass = new ArrayList<>();
     for (JavaClass found :
         new ClassFileImporter()
             .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
             .importPackages("io.github.naimelijah.hrsched")) {
       if (CLASS_NAME.equals(found.getSimpleName())) {
         problemTypes.add(found.reflect());
+      } else {
+        everyOtherClass.add(found);
       }
     }
   }
@@ -78,5 +94,40 @@ class ProblemTypesTest {
       }
     }
     assertThat(read).describedAs("the constants read").isPositive();
+  }
+
+  @Test
+  void GivenEveryOtherClass_WhenItsClassFileIsRead_ThenItWritesNoProblemTypeOfItsOwn()
+      throws IOException {
+    byte[] prefix = PREFIX.getBytes(StandardCharsets.US_ASCII);
+    List<String> writingOne = new ArrayList<>();
+    for (JavaClass candidate : everyOtherClass) {
+      if (contains(classFileOf(candidate), prefix)) {
+        writingOne.add(candidate.getName());
+      }
+    }
+    assertThat(everyOtherClass).describedAs("the classes read").isNotEmpty();
+    assertThat(writingOne)
+        .describedAs("classes outside a ProblemTypes holding %s", PREFIX)
+        .isEmpty();
+  }
+
+  private static byte[] classFileOf(JavaClass candidate) throws IOException {
+    Source source =
+        candidate
+            .getSource()
+            .orElseThrow(() -> new AssertionError("no class file for " + candidate.getName()));
+    try (InputStream in = source.getUri().toURL().openStream()) {
+      return in.readAllBytes();
+    }
+  }
+
+  private static boolean contains(byte[] haystack, byte[] needle) {
+    for (int start = 0; start <= haystack.length - needle.length; start++) {
+      if (Arrays.equals(haystack, start, start + needle.length, needle, 0, needle.length)) {
+        return true;
+      }
+    }
+    return false;
   }
 }
