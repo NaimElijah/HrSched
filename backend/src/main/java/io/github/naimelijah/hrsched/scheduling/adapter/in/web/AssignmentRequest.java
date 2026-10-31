@@ -5,6 +5,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import java.util.UUID;
 
 /**
+ * The body of a request to put one person on one shift of a draft.
+ *
  * @param shift which shift is being covered
  * @param employee who covers it
  */

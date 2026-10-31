@@ -21,6 +21,10 @@ import java.util.Optional;
 public record StoredRefreshToken(
     SignInSession session, Instant expiresAt, Optional<Instant> replacedAt) {
 
+  /**
+   * @throws NullPointerException if {@code session}, {@code expiresAt} or {@code replacedAt} is
+   *     null
+   */
   public StoredRefreshToken {
     Objects.requireNonNull(session, "session must not be null");
     Objects.requireNonNull(expiresAt, "expiresAt must not be null");

@@ -29,8 +29,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  *
  * <p>The suite's database is handed over as plain datasource properties. These contexts are closed
  * as soon as they start, which leaves the database running only because nothing in them holds the
- * container as a bean: Boot's Testcontainers lifecycle stops a container bean when its context
- * closes, and every test after this one would lose the database (#252).
+ * container as a bean: a container bean is stopped when its context closes, by Spring's inferred
+ * {@code close()} and, should Boot's Testcontainers module return to the classpath, by its
+ * lifecycle too, and every test after this one would lose the database (#252).
  *
  * <p>The limits are invented for the test.
  */

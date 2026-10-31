@@ -13,9 +13,17 @@ import java.util.Optional;
  */
 public interface QualificationRepository {
 
+  /**
+   * Stores a qualification, replacing any with the same identity.
+   *
+   * @param qualification the qualification to store
+   * @throws IllegalStateException if the identity already belongs to another organisation
+   */
   void save(Qualification qualification);
 
   /**
+   * Reads a qualification of one organisation.
+   *
    * @param organisation the organisation the qualification must belong to
    * @param id which qualification to look up
    * @return the qualification, or empty if that organisation defined no such qualification
@@ -25,6 +33,8 @@ public interface QualificationRepository {
   Optional<Qualification> findById(OrganisationId organisation, QualificationId id);
 
   /**
+   * Lists the qualifications an organisation defined.
+   *
    * @param organisation whose qualifications to list
    * @return every qualification that organisation defined, ordered by name, then by identity, so
    *     two sharing a name come back in the same order every time

@@ -20,6 +20,10 @@ import java.util.Objects;
 public record OnboardOrganisationCommand(
     String name, String firstAdminSignInName, String firstAdminTemporaryPassword) {
 
+  /**
+   * @throws NullPointerException if {@code name}, {@code firstAdminSignInName} or {@code
+   *     firstAdminTemporaryPassword} is null
+   */
   public OnboardOrganisationCommand {
     Objects.requireNonNull(name, "name must not be null");
     Objects.requireNonNull(firstAdminSignInName, "firstAdminSignInName must not be null");

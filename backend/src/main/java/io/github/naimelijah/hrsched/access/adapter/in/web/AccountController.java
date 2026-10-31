@@ -45,10 +45,21 @@ public class AccountController {
 
   private final ManageAccountsUseCase manageAccounts;
 
+  /**
+   * @param manageAccounts the use case that administers an organisation's accounts
+   */
   public AccountController(ManageAccountsUseCase manageAccounts) {
     this.manageAccounts = manageAccounts;
   }
 
+  /**
+   * Creates an account in the acting Admin's own organisation.
+   *
+   * @param actor the Admin, taken from their verified token
+   * @param request who to create; it names no organisation
+   * @return 201 with a {@code Location} naming the account and no body. The password is never
+   *     echoed
+   */
   @PostMapping
   public ResponseEntity<Void> create(
       @AuthenticationPrincipal Actor actor, @RequestBody CreateAccountRequest request) {
@@ -66,6 +77,12 @@ public class AccountController {
     return ResponseEntity.created(URI.create("/api/accounts/" + created.value())).build();
   }
 
+  /**
+   * Lists the accounts of the acting Admin's own organisation, oldest first.
+   *
+   * @param actor the Admin, taken from their verified token
+   * @return 200 with every account of that organisation, the platform operator never among them
+   */
   @GetMapping
   public List<AccountResponse> list(@AuthenticationPrincipal Actor actor) {
     return manageAccounts.findAccounts(actor, organisationOf(actor)).stream()
@@ -76,12 +93,24 @@ public class AccountController {
   /**
    * The account a creation's {@code Location} names. One the acting Admin's organisation does not
    * hold, another's included, is the same 404 as one that does not exist.
+   *
+   * @param actor the Admin, taken from their verified token
+   * @param id the account to read
+   * @return 200 with the account
    */
   @GetMapping("/{id}")
   public AccountResponse find(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
     return respond(manageAccounts.findAccount(actor, organisationOf(actor), new UserId(id)));
   }
 
+  /**
+   * Changes an account's role and the employee it is, together.
+   *
+   * @param actor the Admin, taken from their verified token
+   * @param id the account to change
+   * @param request the role it takes, and the employee it is; an absent employee unlinks it
+   * @return 204. The change applies to the account's next request, without ending its sessions
+   */
   @PutMapping("/{id}/membership")
   public ResponseEntity<Void> changeMembership(
       @AuthenticationPrincipal Actor actor,
@@ -97,6 +126,14 @@ public class AccountController {
     return ResponseEntity.noContent().build();
   }
 
+  /**
+   * Disables an account, or restores one. Disabling ends every session the account holds.
+   *
+   * @param actor the Admin, taken from their verified token
+   * @param id the account to change
+   * @param request whether the account may act
+   * @return 204
+   */
   @PutMapping("/{id}/activation")
   public ResponseEntity<Void> setActive(
       @AuthenticationPrincipal Actor actor,
@@ -109,6 +146,16 @@ public class AccountController {
     return ResponseEntity.noContent().build();
   }
 
+  /**
+   * Gives somebody else's account a new temporary password, clearing any lock on it and ending
+   * every session it holds. An Admin's own account is refused: that takes the current password, at
+   * {@code /api/auth/password}.
+   *
+   * @param actor the Admin, taken from their verified token
+   * @param id the account to reset
+   * @param request the temporary password to give it
+   * @return 204
+   */
   @PostMapping("/{id}/password")
   public ResponseEntity<Void> resetPassword(
       @AuthenticationPrincipal Actor actor,

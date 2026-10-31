@@ -17,6 +17,9 @@ import java.util.Objects;
  */
 public record ChangePasswordCommand(String currentPassword, String newPassword) {
 
+  /**
+   * @throws NullPointerException if {@code currentPassword} or {@code newPassword} is null
+   */
   public ChangePasswordCommand {
     Objects.requireNonNull(currentPassword, "currentPassword must not be null");
     Objects.requireNonNull(newPassword, "newPassword must not be null");

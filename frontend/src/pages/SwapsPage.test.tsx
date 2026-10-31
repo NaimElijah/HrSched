@@ -9,7 +9,7 @@ import { callsTo, holdingWrites, routeTo, writes, type Answer } from '../test-su
 import { SwapsPage } from './SwapsPage';
 
 /**
- * Where a Scheduler answers swap requests (F7).
+ * Where a Scheduler answers swap requests (F17).
  *
  * Approving publishes a replacement roster, so it can be refused exactly as publishing can — every
  * broken rule named, and no override. The decision buttons are offered whatever the role: whether
@@ -186,6 +186,24 @@ describe('the queue', () => {
     expect(within(row).getByText(/cannot describe \(ESCALATED\)/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Approve/ })).not.toBeInTheDocument();
   });
+
+  /**
+   * A status that happens to name a property every object inherits is still unknown: it has no
+   * words of its own, so it reads as any other unknown status would.
+   */
+  it.each(['constructor', 'toString'])(
+    'GivenAStatusNamingAnInheritedProperty_WhenListed_ThenItSaysSoByName (%s)',
+    async (status) => {
+      aQueue({ '/api/swaps': { status: 200, body: [{ ...PENDING, status }] } });
+
+      show();
+
+      const row = await rowOfTheShift();
+      expect(
+        within(row).getByText(`in a state this version of HrSched cannot describe (${status})`),
+      ).toBeInTheDocument();
+    },
+  );
 
   it('GivenNoSwaps_WhenOpened_ThenItSaysNothingHasBeenAskedFor', async () => {
     aQueue({ '/api/swaps': { status: 200, body: [] } });

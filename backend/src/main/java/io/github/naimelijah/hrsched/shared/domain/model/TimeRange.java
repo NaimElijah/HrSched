@@ -23,6 +23,7 @@ import java.util.Objects;
  *
  * @param start when the span begins, never {@code null}
  * @param end the first instant after the span, never {@code null} and strictly after {@code start}
+ * @throws NullPointerException if {@code start} or {@code end} is {@code null}
  * @throws InvalidTimeRangeException if {@code end} is not strictly after {@code start}
  */
 public record TimeRange(Instant start, Instant end) {
@@ -36,16 +37,21 @@ public record TimeRange(Instant start, Instant end) {
   }
 
   /**
-   * @return how long the span lasts, always positive
+   * Measures how long the span lasts.
+   *
+   * @return the time from start to end, always positive
    */
   public Duration length() {
     return Duration.between(start, end);
   }
 
   /**
+   * Tests whether this span and another share any instant.
+   *
    * @param other another span
    * @return whether the two spans share any instant; two that only touch, one ending where the
    *     other starts, do not, because an end is not part of its span
+   * @throws NullPointerException if {@code other} is {@code null}
    */
   public boolean overlaps(TimeRange other) {
     Objects.requireNonNull(other, "other must not be null");
@@ -53,8 +59,11 @@ public record TimeRange(Instant start, Instant end) {
   }
 
   /**
-   * @param other a span assumed not to overlap this one
+   * Measures the time between this span and another, whichever comes first.
+   *
+   * @param other another span, before or after this one, or overlapping it
    * @return the gap between them, or {@link Duration#ZERO} if they touch or overlap
+   * @throws NullPointerException if {@code other} is {@code null}
    */
   public Duration gapTo(TimeRange other) {
     Objects.requireNonNull(other, "other must not be null");

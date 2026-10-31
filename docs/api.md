@@ -87,8 +87,8 @@ everything the caller may see, unpaged ([#337](https://github.com/NaimElijah/HrS
 | `POST /api/employees/{id}/unavailability` | `204`, no `Location` | `400 Invalid request`; `409 Overlaps a declared span` |
 | `POST /api/employees/{id}/preferences` | `204`, no `Location` | `400 Invalid request` |
 | `GET /api/employees/{id}/unavailability`, `/preferences` | `200` | none |
-| `DELETE /api/employees/{id}/unavailability?start&end` | `204` | `404` when no span was declared exactly so |
-| `DELETE /api/employees/{id}/preferences?start&end&strength` | `204` | `404` when none was stated exactly so |
+| `DELETE /api/employees/{id}/unavailability?start&end` | `204` | `400 Invalid request`; `404` when no span was declared exactly so |
+| `DELETE /api/employees/{id}/preferences?start&end&strength` | `204` | `400 Invalid request`; `404` when none was stated exactly so |
 | `POST /api/qualifications` | `201`, `Location`, the qualification | `400 Invalid request` |
 | `GET /api/qualifications`, `/{id}` | `200` | none |
 | `PUT /api/constraints` | `200`, the revised rules and their `version` | `400 Invalid request`; `409 Revised concurrently` |
@@ -111,8 +111,8 @@ everything the caller may see, unpaged ([#337](https://github.com/NaimElijah/HrS
 | `POST /api/swaps/{id}/approval` | `200`, the replacement roster, published | `404` when the assignment has left the roster or the colleague is not employed; `409 No longer pending`; `409 Roster status forbids this`; `409 Already assigned`; `409 Published concurrently`; `422 Assignment refused`; `422 Roster breaks the rules`; `422 Roster cannot be checked against the rules` |
 | `POST /api/swaps/{id}/rejection` | `204` | `409 No longer pending` |
 | `GET /api/me/schedule?from&to` | `200`, earliest first | `400 Invalid request`; `403 Not permitted` with no personnel record; `422 Roster cannot be checked against the rules` |
-| `GET /api/notifications` | `200` | `403 Not permitted` with no personnel record |
-| `POST /api/notifications/{id}/read` | `204` | `403 Not permitted` with no personnel record; `404` for one not in the caller's own inbox |
+| `GET /api/notifications` | `200` | `403 Not permitted` with no personnel record, and for the Operator |
+| `POST /api/notifications/{id}/read` | `204` | `403 Not permitted` with no personnel record, and for the Operator; `404` for one not in the caller's own inbox |
 
 ## Signing in
 

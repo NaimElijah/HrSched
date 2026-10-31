@@ -68,6 +68,8 @@ public final class Notification {
   }
 
   /**
+   * Returns a copy of this notification marked as seen, leaving this instance unchanged.
+   *
    * @return this notification marked as seen; already-read is not an error, because acknowledging
    *     twice is what a reader with two tabs open does
    */
@@ -75,30 +77,51 @@ public final class Notification {
     return new Notification(id, organisation, recipient, kind, subject, occurredAt, true);
   }
 
+  /**
+   * @return the identity that equality is decided by
+   */
   public NotificationId id() {
     return id;
   }
 
+  /**
+   * @return the organisation it belongs to, which never changes
+   */
   public OrganisationId organisation() {
     return organisation;
   }
 
+  /**
+   * @return the personnel record it is addressed to, whose inbox it is in
+   */
   public EmployeeId recipient() {
     return recipient;
   }
 
+  /**
+   * @return what happened
+   */
   public NotificationKind kind() {
     return kind;
   }
 
+  /**
+   * @return the identifier of the thing it happened to, which the reader resolves
+   */
   public UUID subject() {
     return subject;
   }
 
+  /**
+   * @return when it happened, as the caller supplied it
+   */
   public Instant occurredAt() {
     return occurredAt;
   }
 
+  /**
+   * @return whether the recipient has acknowledged it
+   */
   public boolean isRead() {
     return read;
   }

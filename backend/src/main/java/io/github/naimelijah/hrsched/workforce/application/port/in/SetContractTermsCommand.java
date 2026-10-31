@@ -6,6 +6,8 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
+ * A request to set what an employee is contracted to work, replacing any previous terms.
+ *
  * @param organisation whose employee
  * @param employee whose terms these are
  * @param weeklyContractedHours what they are contracted to work each week, strictly positive
@@ -13,6 +15,10 @@ import java.util.Objects;
 public record SetContractTermsCommand(
     OrganisationId organisation, EmployeeId employee, Duration weeklyContractedHours) {
 
+  /**
+   * @throws NullPointerException if any component is {@code null}. Hours that are not positive
+   *     pass: {@code ContractTerms} refuses them
+   */
   public SetContractTermsCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(employee, "employee must not be null");

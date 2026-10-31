@@ -9,6 +9,13 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
  */
 public class SwapAlreadyRequestedException extends RuntimeException {
 
+  /**
+   * Builds the refusal. The message names the shift and the roster by identifier, never the people
+   * involved, and is the 409 response's detail.
+   *
+   * @param roster the roster the earlier request was raised against
+   * @param shift the shift it asks to hand over
+   */
   public SwapAlreadyRequestedException(RosterId roster, ShiftId shift) {
     super(
         "A swap of shift %s on roster %s is already waiting on a Scheduler"

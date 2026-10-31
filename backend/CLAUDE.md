@@ -133,8 +133,9 @@ so JPA would need a parallel annotated model, buying only what an adapter must n
 
 - **Every use case is one transaction**, wrapped in `UseCaseConfiguration` rather than annotated,
   because the architecture test forbids Spring in the application layer (ADR-023). The wrapper,
-  `TransactionalUseCases`, is a subclass proxy: a service must stay non-final, a service calling
-  its own method bypasses it, and only methods named `find…` run read-only. **The one exception is
+  `TransactionalUseCases`, is a subclass proxy: a service and its public methods must stay
+  non-final (a final method runs on the proxy itself, untransacted), a service calling its own
+  method bypasses it, and only methods named `find…` run read-only. **The one exception is
   `startGeneration`** (ADR-045, ADR-046): the proxy leaves it alone, and it marks out its own units
   through `UnitsOfWork`, so the generation commits before its solve is handed to a thread and the
   solve holds no connection. Do not add another without an ADR.
@@ -202,9 +203,11 @@ so JPA would need a parallel annotated model, buying only what an adapter must n
 
 - **One container, one context.** `PostgresDatabase` holds a container started once and never
   stopped. `PostgresBackedApplication` hands Spring its address as a `JdbcConnectionDetails`,
-  never the container as a bean: Boot's Testcontainers lifecycle stops every container bean when
-  its context closes, `destroyMethod = ""` or not, so a test closing a context it started would take
-  the database from every test after it (#252, pinned by `PostgresBackedApplicationTest`). A
+  never the container as a bean: a container bean is stopped when its context closes, by Spring's
+  inferred `close()`, and by Boot's Testcontainers lifecycle whatever its `destroyMethod`, so a test
+  closing a context it started would take the database from every test after it (#252, pinned by
+  `PostgresBackedApplicationTest`). That lifecycle's module, `spring-boot-testcontainers`, is kept
+  off the classpath for the same reason. A
   Spring test shares the suite's context only while its annotations are exactly
   `@Import(PostgresBackedApplication.class) @SpringBootTest @AutoConfigureMockMvc`, as the smoke
   test `HrSchedApplicationTests` does. Two more are started: `MetricsHttpTest`'s, and one on a real

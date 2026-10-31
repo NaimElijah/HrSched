@@ -18,7 +18,11 @@ public class NotATenantMemberException extends RuntimeException {
   private final UserId actor;
 
   /**
+   * Creates the refusal for an actor that belongs to no organisation.
+   *
    * @param actor who attempted it
+   * @throws NullPointerException if {@code actor} is {@code null}, because the message is built
+   *     from it
    */
   public NotATenantMemberException(UserId actor) {
     super(

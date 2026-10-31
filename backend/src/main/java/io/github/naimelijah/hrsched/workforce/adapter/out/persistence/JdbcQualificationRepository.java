@@ -18,15 +18,20 @@ import org.springframework.stereotype.Repository;
  * Driven adapter storing qualifications in PostgreSQL.
  *
  * <p>Every read names the organisation in its {@code WHERE} clause, so a cross-tenant read would
- * have to be written on purpose (ADR-009). There is no unique index on the name: the domain lets
- * two qualifications share one, and a constraint the domain does not enforce would be a new rule
- * introduced as a storage detail.
+ * have to be written on purpose (ADR-009). There is no unique index on the name yet: R23 requires
+ * the name to be unique within its organisation and #95 builds that, but until then the domain lets
+ * two qualifications share one, and a constraint it does not enforce would put the rule in storage
+ * alone.
  */
 @Repository
 public class JdbcQualificationRepository implements QualificationRepository {
 
   private final JdbcClient jdbc;
 
+  /**
+   * @param jdbc the client every statement runs through
+   * @throws NullPointerException if {@code jdbc} is {@code null}
+   */
   public JdbcQualificationRepository(JdbcClient jdbc) {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
   }

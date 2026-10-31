@@ -18,11 +18,19 @@ import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 public interface NotifyUseCase {
 
   /**
+   * Stores an unread notification for the command's recipient, timestamped by the service's clock,
+   * and records {@code NOTIFICATION_RAISED}.
+   *
+   * <p>Joins the caller's transaction, so a notification whose caller is refused later is not
+   * stored. This use case does not look the recipient up: it is addressed as given.
+   *
    * @param actor on whose behalf the notification is raised; must belong to the organisation
    * @param command who is being told, and about what
    * @return the new notification's identity
    * @throws io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException if the
-   *     actor may not touch that organisation
+   *     actor belongs to a different organisation than the command names
+   * @throws io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException if the actor
+   *     is the platform operator, which belongs to no organisation (ADR-030)
    */
   NotificationId notify(Actor actor, NotifyCommand command);
 }

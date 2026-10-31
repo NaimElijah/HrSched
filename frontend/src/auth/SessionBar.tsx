@@ -3,9 +3,10 @@ import { useSession } from './SessionProvider';
 /**
  * Who is signed in, and the two things they can do about it.
  *
- * Replaces the acting-as bar, and the difference is the point: that one let anybody claim any role
- * in any organisation, because the backend believed whatever it was sent. This one reports a fact
- * and offers no way to change it.
+ * It reports a fact and offers no way to change it: who is acting comes from the access token, so
+ * nothing in the UI can claim another role or organisation (ADR-031).
+ *
+ * @param onChangePassword called when the Change password button is pressed
  */
 export function SessionBar({ onChangePassword }: { onChangePassword: () => void }) {
   const { session, signOut } = useSession();

@@ -187,7 +187,7 @@ supplies a throwaway signing key and the local operator. A deployment sets the v
 | Property | Value | Why |
 | :--- | :--- | :--- |
 | `hrsched.security.token.issuer` / `.audience` | `hrsched` / `hrsched-api` | Required of every token, so one minted elsewhere is not spendable here |
-| `hrsched.security.token.lifetime` | `10m` | A stolen access token is useful only until it expires (Q27) |
+| `hrsched.security.token.lifetime` | `10m` | A stolen access token is useful until it expires, and for the decoder's clock skew past that (Q27) |
 | `hrsched.security.session.absolute-lifetime` | `12h` | Fixed when the session starts, so a stolen refresh token cannot extend it |
 | `hrsched.security.session.idle-lifetime` | `1h` | Closes a browser somebody walked away from |
 | `hrsched.security.password.minimum-length` | `15` | NIST SP 800-63B-4, single-factor |

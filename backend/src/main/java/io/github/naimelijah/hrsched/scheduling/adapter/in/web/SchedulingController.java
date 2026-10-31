@@ -58,6 +58,13 @@ public class SchedulingController {
   private final PlanRostersUseCase planRosters;
   private final ViewOwnScheduleUseCase viewOwnSchedule;
 
+  /**
+   * @param manageShifts defines, lists and reads shifts
+   * @param configureConstraints revises and reads the working-time rules
+   * @param configureObjectives revises and reads the objective weights
+   * @param planRosters generates, edits, publishes and reads rosters
+   * @param viewOwnSchedule reads the acting employee's own published assignments
+   */
   public SchedulingController(
       ManageShiftsUseCase manageShifts,
       ConfigureConstraintsUseCase configureConstraints,
@@ -71,6 +78,14 @@ public class SchedulingController {
     this.viewOwnSchedule = viewOwnSchedule;
   }
 
+  /**
+   * Defines a shift that needs covering. Only a Scheduler may. Answers 201 with the new shift and
+   * its location.
+   *
+   * @param request the shift; a missing or malformed member, a span the store cannot hold, an
+   *     unknown zone, or a required qualification the organisation has not defined is answered as a
+   *     400 problem detail
+   */
   @PostMapping("/shifts")
   public ResponseEntity<ShiftResponse> defineShift(
       @AuthenticationPrincipal Actor actor, @RequestBody DefineShiftRequest request) {
@@ -134,6 +149,15 @@ public class SchedulingController {
         .orElseThrow(() -> new UnknownShiftException(shift));
   }
 
+  /**
+   * Replaces the organisation's working-time rules with these, as a new version. Only an Admin may.
+   * A rule left out is no longer enforced, so the request carries every rule that should apply.
+   *
+   * @param request the rules, one optional field per kind; a threshold the domain refuses, or one
+   *     too large to count, is answered as a 400 problem detail, and a revision that lost a race to
+   *     another as a 409
+   * @return the new version
+   */
   @PutMapping("/constraints")
   public ConstraintSetResponse reviseConstraints(
       @AuthenticationPrincipal Actor actor, @RequestBody ConstraintSetRequest request) {
@@ -143,6 +167,10 @@ public class SchedulingController {
     return ConstraintSetResponse.from(revised);
   }
 
+  /**
+   * Reads the rules now in force. Any member of the organisation may. An organisation that never
+   * revised them is bound by the empty first version.
+   */
   @GetMapping("/constraints")
   public ConstraintSetResponse findCurrentConstraints(@AuthenticationPrincipal Actor actor) {
     return ConstraintSetResponse.from(
@@ -213,6 +241,7 @@ public class SchedulingController {
         .orElseThrow(() -> new UnknownGenerationException(generation));
   }
 
+  /** Lists every roster the organisation holds. Only an Admin or a Scheduler may (R12). */
   @GetMapping("/rosters")
   public List<RosterResponse> findRosters(@AuthenticationPrincipal Actor actor) {
     return planRosters.findRosters(actor, actingIn(actor)).stream()
@@ -229,6 +258,8 @@ public class SchedulingController {
    * @param from start of the span to look inside, an ISO-8601 instant
    * @param to end of that span
    * @return their published work overlapping it, earliest first
+   * @throws io.github.naimelijah.hrsched.scheduling.domain.model.NoEmployeeRecordException answered
+   *     as a 403 problem detail when the caller carries no personnel record
    */
   @GetMapping("/me/schedule")
   public List<RosteredShiftResponse> findOwnSchedule(
@@ -238,6 +269,16 @@ public class SchedulingController {
         .toList();
   }
 
+  /**
+   * Puts one person on one shift of a draft (F2). Only a Scheduler may.
+   *
+   * @param id the draft
+   * @param request the shift and the person; the domain refuses, as a 422 problem detail, a person
+   *     who lacks a qualification, declared they cannot work then, or would work two shifts at
+   *     once, and a shift outside the draft's period. A roster that is no longer a draft, or a
+   *     person already on that shift, is a 409
+   * @return the amended draft
+   */
   @PostMapping("/rosters/{id}/assignments")
   public RosterResponse assign(
       @AuthenticationPrincipal Actor actor,
@@ -253,6 +294,16 @@ public class SchedulingController {
                 request.requiredEmployee())));
   }
 
+  /**
+   * Takes one person off one shift of a draft (F2). Only a Scheduler may. An assignment the draft
+   * does not carry is answered as a 404 problem detail, and a roster that is no longer a draft as a
+   * 409.
+   *
+   * @param id the draft
+   * @param shift the shift they come off
+   * @param employee who comes off it
+   * @return the amended draft
+   */
   @DeleteMapping("/rosters/{id}/assignments/{shift}/{employee}")
   public RosterResponse unassign(
       @AuthenticationPrincipal Actor actor,
@@ -266,6 +317,16 @@ public class SchedulingController {
                 actingIn(actor), new RosterId(id), new ShiftId(shift), new EmployeeId(employee))));
   }
 
+  /**
+   * Publishes a draft (F3), superseding every published roster its period overlaps. Only a
+   * Scheduler may. A draft that breaks any rule is answered as a 422 problem detail listing every
+   * breach, and there is no override.
+   *
+   * @param id the draft
+   * @return the published roster
+   * @throws UnknownRosterException answered as a 404 problem detail when this organisation has no
+   *     such roster
+   */
   @PostMapping("/rosters/{id}/publication")
   public RosterResponse publish(@AuthenticationPrincipal Actor actor, @PathVariable UUID id) {
     return RosterResponse.from(planRosters.publish(actor, actingIn(actor), new RosterId(id)));

@@ -11,6 +11,9 @@ package io.github.naimelijah.hrsched.notifications.domain.model;
  * happened in {@code scheduling}. That is deliberate: a notification is a thing this context
  * publishes, and letting another context hand it arbitrary text is exactly how a notification store
  * becomes a second, unaudited copy of everybody's business.
+ *
+ * <p>The {@code notification_kind_known} check constraint on the table lists these values, so a new
+ * one needs a migration that replaces it, as V7 did for {@code SWAP_LAPSED}.
  */
 public enum NotificationKind {
 

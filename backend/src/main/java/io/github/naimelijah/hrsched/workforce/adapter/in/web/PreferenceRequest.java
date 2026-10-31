@@ -6,6 +6,10 @@ import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import java.time.Instant;
 
 /**
+ * The body of {@code POST /api/employees/{id}/preferences}: a span and a strength as a caller sends
+ * them. Any of the three may arrive absent, and {@code toPeriod} and {@code requiredStrength}
+ * refuse that.
+ *
  * @param start when the span begins
  * @param end when the span ends
  * @param strength how the employee feels about it

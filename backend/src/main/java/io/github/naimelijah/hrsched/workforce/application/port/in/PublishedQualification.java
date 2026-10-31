@@ -11,6 +11,9 @@ import java.util.Objects;
  */
 public record PublishedQualification(QualificationId id, String name) {
 
+  /**
+   * @throws NullPointerException if either component is {@code null}
+   */
   public PublishedQualification {
     Objects.requireNonNull(id, "id must not be null");
     Objects.requireNonNull(name, "name must not be null");

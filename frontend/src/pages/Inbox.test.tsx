@@ -104,6 +104,25 @@ describe('the words for what happened', () => {
     expect(await screen.findByText(/cannot describe \(SHIFT_CANCELLED\)/)).toBeInTheDocument();
   });
 
+  /**
+   * A kind that happens to name a property every object inherits is still unknown: it has no
+   * wording of its own, so it reads as any other unknown kind would.
+   */
+  it.each(['constructor', 'toString'])(
+    'GivenAKindNamingAnInheritedProperty_WhenRendered_ThenItSaysSoRatherThanGuessing (%s)',
+    async (kind) => {
+      serving([told(kind)]);
+
+      show();
+
+      expect(
+        await screen.findByText(
+          `Something happened that this version of HrSched cannot describe (${kind}).`,
+        ),
+      ).toBeInTheDocument();
+    },
+  );
+
   it('GivenNothingHasHappened_WhenRendered_ThenItSaysThereIsNothingToRead', async () => {
     serving([]);
 

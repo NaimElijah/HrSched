@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
+ * A request to replace an organisation's objective weights.
+ *
  * @param organisation whose weights
  * @param weights each objective to weigh and its weight; one absent is not weighed. Whether each
  *     weight is acceptable is the domain's to say (R40), so this only copies them

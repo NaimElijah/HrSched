@@ -8,13 +8,13 @@ import { useAsync } from '../components/useAsync';
 /**
  * Operator: the organisations on the platform (F13) — list them and onboard one.
  *
- * There is no longer a way to act inside one from here. The operator belongs to no organisation and
- * is refused everything inside every one of them (ADR-030); the button that used to switch an
- * "acting identity" only worked because the backend believed whatever headers it was sent.
+ * Nothing here acts inside an organisation. The operator belongs to no organisation and is refused
+ * everything inside every one of them (ADR-030).
  *
- * A tenant role is refused the listing and onboarding, and this page shows that refusal rather than
- * hiding itself: which identity administers the platform is the backend's rule (ADR-019), not
- * something to decide by hiding a tab.
+ * The shell offers this page to the operator alone, by account kind. The page itself decides
+ * nothing: a tenant role is refused the listing and onboarding by the backend, and were it to
+ * reach this page it would show that refusal. Which identity administers the platform is the
+ * backend's rule (ADR-019).
  */
 export function OrganisationsPage() {
   const sessionKey = useSessionKey();

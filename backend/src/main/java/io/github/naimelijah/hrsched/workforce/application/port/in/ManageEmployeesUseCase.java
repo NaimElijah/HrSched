@@ -16,11 +16,22 @@ import java.util.Optional;
  * Driving port: maintaining the people an organisation can roster.
  *
  * <p>Every method takes the {@link Actor} performing it. Authorisation is not something an adapter
- * is trusted to have checked before calling; it is checked here, once, for every caller.
+ * is trusted to have checked before calling; every implementation checks it, once, for every
+ * caller. The platform {@code Operator} belongs to no organisation, so every method refuses it with
+ * a {@code NotATenantMemberException}.
+ *
+ * <p>A method acting on or reading one employee's record refuses with an {@link
+ * UnknownEmployeeException} when the organisation holds nobody by that identity, and does not tell
+ * an employee of another organisation apart from none. {@link #findEmployee} answers empty instead.
  */
 public interface ManageEmployeesUseCase {
 
   /**
+   * Adds a person to the organisation's records, holding no qualification and with no absence,
+   * preference or contract.
+   *
+   * <p>A blank name is refused with an {@code InvalidEmployeeNameException}.
+   *
    * @param actor whoever is adding them; must be an Admin of the organisation
    * @param command who to add
    * @return the new employee's identity
@@ -30,27 +41,59 @@ public interface ManageEmployeesUseCase {
   EmployeeId addEmployee(Actor actor, AddEmployeeCommand command);
 
   /**
+   * Records that an employee holds a qualification the organisation defined; holding it already is
+   * not an error.
+   *
+   * <p>A qualification the organisation does not define, which includes another organisation's, is
+   * refused with an {@code UnknownQualificationException}.
+   *
    * @param actor whoever is granting it; must be an Admin of the organisation
    * @param command who holds what
    * @throws CrossTenantAccessException if the actor may not touch that organisation
+   * @throws NotPermittedException if the actor is not an Admin
+   * @throws UnknownEmployeeException if that organisation holds nobody by that identity
    */
   void grantQualification(Actor actor, GrantQualificationCommand command);
 
   /**
+   * Sets what an employee is contracted to work, replacing any terms they had.
+   *
+   * <p>Hours that are not positive are refused with an {@code InvalidContractTermsException}. Hours
+   * with a part smaller than a second are refused by the store with an {@link
+   * IllegalArgumentException}, as it holds whole seconds.
+   *
    * @param actor whoever is setting them; must be an Admin of the organisation
    * @param command whose terms, and what they are
+   * @throws CrossTenantAccessException if the actor may not touch that organisation
+   * @throws NotPermittedException if the actor is not an Admin
+   * @throws UnknownEmployeeException if that organisation holds nobody by that identity
    */
   void setContractTerms(Actor actor, SetContractTermsCommand command);
 
   /**
+   * Declares a span an employee cannot work (F6).
+   *
+   * <p>A span overlapping one already declared is refused with an {@code
+   * OverlappingUnavailabilityException}; a span that only abuts one is accepted.
+   *
    * @param actor the employee themselves, or an Admin or Scheduler of their organisation
    * @param command who is unavailable, and when
+   * @throws CrossTenantAccessException if the actor may not touch that organisation
+   * @throws NotPermittedException if the actor is somebody else without an Admin or Scheduler role
+   * @throws UnknownEmployeeException if that organisation holds nobody by that identity
    */
   void declareUnavailability(Actor actor, DeclareUnavailabilityCommand command);
 
   /**
+   * States a soft preference about when an employee would rather work (F6). It blocks nothing, so
+   * it is never refused for overlapping anything, a repeat of itself included. That preferences may
+   * overlap one another is R26.
+   *
    * @param actor the employee themselves, or an Admin or Scheduler of their organisation
    * @param command whose preference, and what it is
+   * @throws CrossTenantAccessException if the actor may not touch that organisation
+   * @throws NotPermittedException if the actor is somebody else without an Admin or Scheduler role
+   * @throws UnknownEmployeeException if that organisation holds nobody by that identity
    */
   void statePreference(Actor actor, StatePreferenceCommand command);
 

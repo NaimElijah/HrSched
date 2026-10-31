@@ -31,9 +31,10 @@ import org.springframework.stereotype.Repository;
 public class JdbcSessionRepository implements SessionRepository {
 
   /**
-   * The one query on the authenticated path. The session's columns are aliased because the two
-   * tables both have an {@code id}, an {@code expires_at} and a {@code created_at}-shaped column,
-   * and a mapper reading the wrong one of a pair would be a bug nothing would show.
+   * The one query on the authenticated path. The session's {@code id} is aliased because both
+   * tables have one, and a mapper reading the wrong one would be a bug nothing would show. Its
+   * {@code expires_at} takes the alias {@code findRefreshToken}'s query also gives it, because a
+   * refresh token has an {@code expires_at} of its own.
    */
   private static final String SELECT_AUTHENTICATED_SESSION =
       """
@@ -49,6 +50,10 @@ public class JdbcSessionRepository implements SessionRepository {
 
   private final JdbcClient jdbc;
 
+  /**
+   * @param jdbc the client every statement runs through
+   * @throws NullPointerException if {@code jdbc} is null
+   */
   public JdbcSessionRepository(JdbcClient jdbc) {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
   }

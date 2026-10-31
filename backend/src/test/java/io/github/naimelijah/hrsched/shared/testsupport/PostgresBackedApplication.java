@@ -15,11 +15,13 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * here, so no test has to name a property, and Flyway then applies the real migrations to it.
  *
  * <p>The container is the one {@link PostgresDatabase} already started, so the whole suite pays for
- * a single container once, and Spring is given only its address, never the container as a bean.
- * Boot's Testcontainers lifecycle stops every container bean when its context closes, {@code
- * destroyMethod = ""} or not (Boot 4.1.2), so a container bean here would let any test that closes
- * a context it started take the database away from every test after it (#252). {@code
- * PostgresBackedApplicationTest} pins that a context can close and leave the database answering.
+ * a single container once, and Spring is given only its address, never the container as a bean. A
+ * container bean is stopped when its context closes, by Spring's inferred {@code close()} and, were
+ * Boot's Testcontainers module on the classpath, by its lifecycle whatever the {@code
+ * destroyMethod} (Boot 4.1.2). Either would let any test that closes a context it started take the
+ * database away from every test after it (#252). The pom keeps that module off the classpath, and
+ * {@code PostgresBackedApplicationTest} pins that a context can close and leave the database
+ * answering.
  */
 @TestConfiguration(proxyBeanMethods = false)
 public class PostgresBackedApplication {

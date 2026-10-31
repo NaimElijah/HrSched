@@ -12,7 +12,7 @@ package io.github.naimelijah.hrsched.access.application.port.in;
  */
 public enum RefreshRefusal {
 
-  /** No such token was ever issued, or it is no longer remembered. */
+  /** No stored token matches: none was issued under that value, or the request carried none. */
   UNKNOWN_TOKEN,
 
   /** The token had already been exchanged, so somebody is holding a copy of somebody else's. */

@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
+ * A shift, as the API shows it.
+ *
  * @param id the shift identity
  * @param start when it begins
  * @param end when it ends

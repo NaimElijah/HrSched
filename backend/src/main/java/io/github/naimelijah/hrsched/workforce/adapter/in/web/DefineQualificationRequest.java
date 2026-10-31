@@ -1,6 +1,9 @@
 package io.github.naimelijah.hrsched.workforce.adapter.in.web;
 
 /**
+ * The body of {@code POST /api/qualifications}. Jackson binds an absent field to {@code null}, so
+ * {@code requiredName} is where a missing name is refused.
+ *
  * @param name what the qualification is called
  */
 public record DefineQualificationRequest(String name) {

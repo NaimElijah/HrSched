@@ -29,6 +29,9 @@ public class NotificationAdapter implements Notifier {
 
   private final NotifyUseCase notifications;
 
+  /**
+   * @param notifications the notifications context's published port that stores each telling
+   */
   public NotificationAdapter(NotifyUseCase notifications) {
     this.notifications = notifications;
   }

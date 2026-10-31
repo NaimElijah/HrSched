@@ -4,11 +4,17 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.Objects;
 
 /**
+ * A request to define a qualification within an organisation.
+ *
  * @param organisation who is defining it
  * @param name what the qualification is called
  */
 public record DefineQualificationCommand(OrganisationId organisation, String name) {
 
+  /**
+   * @throws NullPointerException if either component is {@code null}. A blank name passes: the
+   *     {@code Qualification} it creates refuses it
+   */
   public DefineQualificationCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(name, "name must not be null");

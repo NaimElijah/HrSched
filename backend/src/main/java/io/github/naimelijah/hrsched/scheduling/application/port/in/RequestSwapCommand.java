@@ -7,6 +7,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.Objects;
 
 /**
+ * A request to hand one assignment of a published roster to a colleague.
+ *
  * @param organisation whose roster
  * @param roster the published roster the shift is on
  * @param shift the shift being handed over

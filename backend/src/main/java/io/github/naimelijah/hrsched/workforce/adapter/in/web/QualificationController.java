@@ -25,10 +25,20 @@ public class QualificationController {
 
   private final ManageQualificationsUseCase manageQualifications;
 
+  /**
+   * @param manageQualifications the use case behind every endpoint
+   */
   public QualificationController(ManageQualificationsUseCase manageQualifications) {
     this.manageQualifications = manageQualifications;
   }
 
+  /**
+   * Defines a qualification in the acting organisation.
+   *
+   * @param request the qualification's name
+   * @return 201 with the qualification and its location. A missing, blank or unstorable name is
+   *     answered 400, and an actor who is not an Admin 403
+   */
   @PostMapping
   public ResponseEntity<QualificationResponse> define(
       @AuthenticationPrincipal Actor actor, @RequestBody DefineQualificationRequest request) {
@@ -41,6 +51,11 @@ public class QualificationController {
         .body(new QualificationResponse(id.value(), name));
   }
 
+  /**
+   * Lists the qualifications the acting organisation defines, to any member of it.
+   *
+   * @return every qualification, ordered by name
+   */
   @GetMapping
   public List<QualificationResponse> list(@AuthenticationPrincipal Actor actor) {
     return manageQualifications.findQualifications(actor, actingIn(actor)).stream()

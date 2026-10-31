@@ -20,6 +20,10 @@ public class NoEmployeeRecordException extends RuntimeException {
 
   private final UserId actor;
 
+  /**
+   * @param actor the account that asked, kept for the operator's log; the message names it by
+   *     identifier, and the 403 response uses a constant sentence instead
+   */
   public NoEmployeeRecordException(UserId actor) {
     super(
         "Actor %s has no personnel record, so has no schedule of their own"

@@ -20,6 +20,10 @@ import java.util.Objects;
  */
 public record RefreshTokenSecret(String value, byte[] digest) {
 
+  /**
+   * @throws NullPointerException if either component is null
+   * @throws IllegalArgumentException if {@code value} is blank or {@code digest} is empty
+   */
   public RefreshTokenSecret {
     Objects.requireNonNull(value, "value must not be null");
     Objects.requireNonNull(digest, "digest must not be null");

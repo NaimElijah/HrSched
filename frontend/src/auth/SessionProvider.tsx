@@ -58,15 +58,29 @@ export interface SignOutProgress {
 
 const NO_SIGN_OUT: SignOutProgress = { pending: false, failures: 0, failure: null };
 
+/**
+ * What {@link useSession} returns: where the session stands, who is signed in, and the actions that
+ * change it.
+ *
+ * Exported as a type so a test can build one and supply it through {@link SessionContext}.
+ */
 interface SessionContextValue {
   readonly state: SessionState;
+  /** Who is signed in, also while a password change is pending; null otherwise. */
   readonly session: Session | null;
   /** Why the restore failed while the state is `restore-failed`, and null otherwise. */
   readonly restoreFailure: unknown;
   /** Runs the whole restore again, from the refresh onwards. */
   readonly retryRestore: () => void;
-  /** Changes whenever who is signed in, or their role, changes, so loaded answers are asked again. */
+  /**
+   * Changes whenever who is signed in, their role, or whether a password change is pending
+   * changes, so loaded answers are asked again. Empty when nobody is signed in.
+   */
   readonly key: string;
+  /**
+   * Signs in and holds the session. Rejects with an `ApiError` when the backend refuses the
+   * credentials, and with `fetch`'s own error when the backend is not reached.
+   */
   readonly signIn: (signInName: string, password: string) => Promise<void>;
   /**
    * Signs out, and is also the retry while the state is `sign-out-unconfirmed`. The state is that
@@ -74,12 +88,20 @@ interface SessionContextValue {
    * did not confirm stays in that state instead.
    */
   readonly signOut: () => Promise<void>;
+  /**
+   * Where a sign-out stands, for the screen shown while the state is `sign-out-unconfirmed`.
+   * Cleared when a session ends confirmed and when somebody signs in.
+   */
   readonly signOutProgress: SignOutProgress;
   /**
    * Whether a session that was on screen — signed in, or waiting on an unconfirmed sign-out — has
    * ended since anybody last signed in. False on a first load, where there is nothing to explain.
    */
   readonly sessionEnded: boolean;
+  /**
+   * Changes the caller's own password and holds the new session. Rejects with an `ApiError` when
+   * the backend refuses the change, and with `fetch`'s own error when the backend is not reached.
+   */
   readonly changePassword: (current: string, replacement: string) => Promise<void>;
 }
 
@@ -111,7 +133,8 @@ function stateOf(session: Session | null): SessionState {
 }
 
 /**
- * Owns the session for the whole app.
+ * Owns the session for the whole app, and tries the refresh cookie once on mount (and again on
+ * `retryRestore`) to find out whether somebody is already signed in.
  *
  * It holds no token: the client does, in memory, and this only holds who that token belongs to so
  * that the shell can be drawn. Handing the token to React state would put it somewhere a component
@@ -273,6 +296,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
+/**
+ * Reads the session the nearest {@link SessionProvider} holds.
+ *
+ * @returns the session state and the actions on it
+ * @throws Error when no `SessionContext` value is present: outside a `SessionProvider`, unless
+ *     something else supplies one, as the test provider does
+ */
 export function useSession(): SessionContextValue {
   const value = useContext(SessionContext);
   if (value === null) {
@@ -282,10 +312,12 @@ export function useSession(): SessionContextValue {
 }
 
 /**
- * The reload key pages hand {@code useAsync}.
+ * The reload key pages hand `useAsync`.
  *
- * Every answer on screen belongs to whoever asked for it, so a change of session invalidates all of
- * them.
+ * Every answer on screen belongs to whoever asked for it, so a change of who is signed in, their
+ * role or the password flag asks every one again. The key leaves out the employee link, which a
+ * renewal can move to somebody else while those stay as they were, so an answer that depends on
+ * the link adds it to its own key, as the Me screen's reads do.
  */
 export function useSessionKey(): string {
   return useSession().key;

@@ -16,6 +16,14 @@ import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
  */
 public class OverlappingAssignmentException extends RuntimeException {
 
+  /**
+   * Builds the refusal for two shifts on one roster. The message names the employee and both shifts
+   * by identifier, never by name, and is the 422 response's detail.
+   *
+   * @param employee who would work both
+   * @param shift the shift being assigned
+   * @param overlapping the shift they already work that overlaps it
+   */
   public OverlappingAssignmentException(EmployeeId employee, ShiftId shift, ShiftId overlapping) {
     super(
         "Employee %s would work shifts %s and %s, which overlap"

@@ -15,6 +15,9 @@ import java.util.UUID;
  */
 public record SignInSessionId(UUID value) {
 
+  /**
+   * @throws NullPointerException if {@code value} is null
+   */
   public SignInSessionId {
     Objects.requireNonNull(value, "value must not be null");
   }

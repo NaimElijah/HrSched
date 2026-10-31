@@ -52,7 +52,10 @@ public class JsonCharsetFilter extends OncePerRequestFilter {
   private final ObjectMapper json;
 
   /**
+   * Creates the filter.
+   *
    * @param json writes the problem detail
+   * @throws NullPointerException if {@code json} is {@code null}
    */
   public JsonCharsetFilter(ObjectMapper json) {
     this.json = Objects.requireNonNull(json, "json must not be null");

@@ -28,14 +28,19 @@ public interface SwapRequestRepository {
    */
   void save(SwapRequest request);
 
+  /**
+   * @param organisation whose request; another organisation's is never found
+   * @param id which request
+   * @return the request, empty if this organisation holds none with that identity
+   */
   Optional<SwapRequest> findById(OrganisationId organisation, SwapRequestId id);
 
   /**
    * @param organisation whose requests
    * @return every swap request that organisation holds, oldest first — the order they were raised,
-   *     which is the order a Scheduler works through them. Ordered by {@code requestedAt}, which
-   *     the aggregate gained for this reason: the promise used to rest on a store that happened to
-   *     keep insertion order, and no store owes anybody that (ADR-004)
+   *     which is the order a Scheduler works through them. Ordered by {@code requestedAt}, so the
+   *     promise does not rest on a store that happens to keep insertion order, which no store owes
+   *     anybody (ADR-004)
    */
   List<SwapRequest> findByOrganisation(OrganisationId organisation);
 

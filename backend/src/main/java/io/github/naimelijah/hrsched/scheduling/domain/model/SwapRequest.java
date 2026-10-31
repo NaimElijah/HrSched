@@ -150,30 +150,52 @@ public final class SwapRequest {
     return new Assignment(shift, counterparty);
   }
 
+  /**
+   * @return this request's identity, the only thing its equality compares
+   */
   public SwapRequestId id() {
     return id;
   }
 
+  /**
+   * @return the organisation this request belongs to
+   */
   public OrganisationId organisation() {
     return organisation;
   }
 
+  /**
+   * @return the published roster the request was raised against
+   */
   public RosterId roster() {
     return roster;
   }
 
+  /**
+   * @return the shift being handed over
+   */
   public ShiftId shift() {
     return shift;
   }
 
+  /**
+   * @return whoever covered the shift when the request was raised and is handing it over
+   */
   public EmployeeId requester() {
     return requester;
   }
 
+  /**
+   * @return whoever is asked to take the shift over
+   */
   public EmployeeId counterparty() {
     return counterparty;
   }
 
+  /**
+   * @return where the request stands; only {@link SwapRequestStatus#REQUESTED} still awaits a
+   *     decision
+   */
   public SwapRequestStatus status() {
     return status;
   }

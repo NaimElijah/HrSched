@@ -38,6 +38,12 @@ public record RosterableEmployee(
     List<TimeRange> wouldLikeToWork,
     List<TimeRange> wouldRatherNotWork) {
 
+  /**
+   * Copies the collections, so the record cannot be changed through the ones passed in.
+   *
+   * @throws NullPointerException if any component is {@code null}, or a collection holds a {@code
+   *     null}
+   */
   public RosterableEmployee {
     Objects.requireNonNull(id, "id must not be null");
     Objects.requireNonNull(name, "name must not be null");

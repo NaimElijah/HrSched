@@ -4,6 +4,8 @@ import io.github.naimelijah.hrsched.scheduling.application.port.in.PublishedSwap
 import java.util.UUID;
 
 /**
+ * A swap request, as the API shows it.
+ *
  * @param id which request
  * @param roster the roster it was raised against
  * @param shift the shift being handed over

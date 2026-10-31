@@ -30,6 +30,12 @@ public interface ManageOrganisationsUseCase {
    * @throws io.github.naimelijah.hrsched.access.domain.model.InvalidOrganisationNameException if
    *     the name is blank, or carries a NUL or an unpaired surrogate, neither of which the store
    *     can hold as given
+   * @throws io.github.naimelijah.hrsched.access.domain.model.UnacceptablePasswordException if the
+   *     first Admin's temporary password does not satisfy the policy
+   * @throws io.github.naimelijah.hrsched.access.domain.model.InvalidSignInNameException if the
+   *     first Admin's sign-in name is blank, too long, or carries a NUL or an unpaired surrogate
+   * @throws io.github.naimelijah.hrsched.access.domain.model.SignInNameTakenException if another
+   *     account already signs in under the first Admin's name; no organisation is left behind
    */
   OrganisationId onboardOrganisation(Actor actor, OnboardOrganisationCommand command);
 

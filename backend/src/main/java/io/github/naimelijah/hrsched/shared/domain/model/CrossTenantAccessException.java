@@ -15,6 +15,13 @@ public class CrossTenantAccessException extends RuntimeException {
   private final UserId actor;
   private final OrganisationId organisation;
 
+  /**
+   * Creates the refusal for an actor reaching into an organisation that is not theirs.
+   *
+   * @param actor who attempted the access
+   * @param organisation the organisation they attempted to reach
+   * @throws NullPointerException if either is {@code null}, because the message is built from both
+   */
   public CrossTenantAccessException(UserId actor, OrganisationId organisation) {
     super("Actor %s may not access organisation %s".formatted(actor.value(), organisation.value()));
     this.actor = actor;

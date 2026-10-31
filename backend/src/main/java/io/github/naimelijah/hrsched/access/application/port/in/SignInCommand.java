@@ -17,6 +17,9 @@ import java.util.Objects;
  */
 public record SignInCommand(String signInName, String password) {
 
+  /**
+   * @throws NullPointerException if {@code signInName} or {@code password} is null
+   */
   public SignInCommand {
     Objects.requireNonNull(signInName, "signInName must not be null");
     Objects.requireNonNull(password, "password must not be null");

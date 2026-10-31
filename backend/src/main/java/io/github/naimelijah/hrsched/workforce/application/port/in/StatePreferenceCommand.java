@@ -7,6 +7,8 @@ import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import java.util.Objects;
 
 /**
+ * A request to record a soft preference about when an employee would rather work.
+ *
  * @param organisation whose employee
  * @param employee whose preference
  * @param period the span it is about
@@ -18,6 +20,9 @@ public record StatePreferenceCommand(
     TimeRange period,
     PreferenceStrength strength) {
 
+  /**
+   * @throws NullPointerException if any component is {@code null}
+   */
   public StatePreferenceCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(employee, "employee must not be null");

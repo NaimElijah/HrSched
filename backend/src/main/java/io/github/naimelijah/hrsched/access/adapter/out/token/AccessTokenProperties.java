@@ -24,7 +24,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param issuer the value put in, and required of, the {@code iss} claim
  * @param audience the value put in, and required of, the {@code aud} claim
- * @param lifetime how long an issued token remains valid, strictly positive
+ * @param lifetime how long an issued token remains valid, strictly positive. The decoder accepts a
+ *     token for up to a minute past its expiry, the default clock skew of Spring Security's {@code
+ *     JwtTimestampValidator}, so a stolen token stays useful for this long plus that minute
  * @param privateKey a PKCS#8 PEM RSA private key, or null to fall back on {@code ephemeral}
  * @param ephemeral whether a throwaway key may be generated when none is configured; true only for
  *     local development and tests, where tokens surviving a restart would be of no use anyway
@@ -36,6 +38,11 @@ public record AccessTokenProperties(
   /** Printed in place of a configured private key. */
   private static final String REDACTED = "[redacted]";
 
+  /**
+   * @throws NullPointerException if {@code issuer}, {@code audience} or {@code lifetime} is null
+   * @throws IllegalArgumentException if {@code issuer} or {@code audience} is blank, or {@code
+   *     lifetime} is zero or negative
+   */
   public AccessTokenProperties {
     Objects.requireNonNull(issuer, "issuer must not be null");
     Objects.requireNonNull(audience, "audience must not be null");

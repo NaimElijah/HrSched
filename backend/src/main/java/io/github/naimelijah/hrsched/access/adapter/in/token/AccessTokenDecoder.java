@@ -28,8 +28,9 @@ import org.springframework.stereotype.Component;
  * Driving adapter verifying access tokens, and the only {@link JwtDecoder} this application has.
  *
  * <p>Accepts exactly one kind of token: one this service signed, for this service, that has not
- * expired, and that names both an account and a session. Everything else is refused. Each check
- * below closes a way of acting as somebody else, so none of them is ceremony:
+ * expired (allowing for the clock skew described below), and that names both an account and a
+ * session. Everything else is refused. Each check below closes a way of acting as somebody else, so
+ * none of them is ceremony:
  *
  * <ul>
  *   <li><strong>The algorithm is pinned</strong>, not read from the token. A verifier that trusts
@@ -43,7 +44,9 @@ import org.springframework.stereotype.Component;
  *       another service that happens to share a key, is not spendable here.
  *   <li><strong>Expiry is required, not merely honoured.</strong> {@link JwtTimestampValidator}
  *       allows a missing {@code exp} by default, which would make a stolen token permanent, so that
- *       default is switched off. Its clock is injected, so expiry is testable arithmetic.
+ *       default is switched off. Its clock is injected, so expiry is testable arithmetic. Its
+ *       default clock skew, a minute in Spring Security 7.1, is kept: a token is accepted until a
+ *       minute past its {@code exp}.
  *   <li><strong>Subject, session and issued-at are required.</strong> A token without a subject
  *       names nobody, and one without a session cannot be revoked, so signing out would leave it
  *       working. Issued-at is enforced before conversion, for the reason given on {@code requiring}
@@ -57,10 +60,17 @@ import org.springframework.stereotype.Component;
 @Component
 public class AccessTokenDecoder implements JwtDecoder {
 
-  /** RFC 9068's media type for an access token; the header value this accepts and no other. */
+  /**
+   * RFC 9068's media type for an access token; the header value this accepts and no other. It must
+   * equal the one {@code JwtAccessTokenIssuer} signs, or every issued token is refused.
+   */
   private static final String ACCESS_TOKEN_TYPE = "at+jwt";
 
-  /** The session an access token belongs to. Not a registered claim; this service's own. */
+  /**
+   * The session an access token belongs to. Not a registered claim; this service's own. It must
+   * equal the name {@code JwtAccessTokenIssuer} writes, or every issued token is refused at
+   * decoding.
+   */
   private static final String SESSION_CLAIM = "sid";
 
   private final NimbusJwtDecoder delegate;

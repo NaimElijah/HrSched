@@ -15,8 +15,19 @@ import java.util.Optional;
  */
 public interface ShiftRepository {
 
+  /**
+   * Stores a shift, replacing the stored shift with that identity if there is one.
+   *
+   * @param shift the shift as it now is
+   * @throws IllegalStateException if that identity already belongs to another organisation
+   */
   void save(Shift shift);
 
+  /**
+   * @param organisation whose shift; another organisation's is never found
+   * @param id which shift
+   * @return the shift, empty if this organisation holds none with that identity
+   */
   Optional<Shift> findById(OrganisationId organisation, ShiftId id);
 
   /**

@@ -15,12 +15,20 @@ import java.util.List;
 public interface ReadNotificationsUseCase {
 
   /**
+   * Lists the acting employee's own notifications, read and unread.
+   *
+   * <p>Named {@code find…}, so the transaction wrapper runs it read-only (ADR-054).
+   *
    * @param actor whoever is asking
    * @param organisation whose notifications
    * @return their own notifications, newest first, and of those raised at one instant, the last
-   *     raised first
+   *     raised first; empty when nothing has happened to them
    * @throws io.github.naimelijah.hrsched.notifications.domain.model.NotAddressableException if the
    *     actor has no personnel record and therefore no inbox
+   * @throws io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException if the
+   *     actor belongs to a different organisation
+   * @throws io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException if the actor
+   *     is the platform operator, which belongs to no organisation (ADR-030)
    */
   List<PublishedNotification> findMine(Actor actor, OrganisationId organisation);
 
@@ -34,6 +42,10 @@ public interface ReadNotificationsUseCase {
    *     there is no such notification of theirs — including when it is somebody else's
    * @throws io.github.naimelijah.hrsched.notifications.domain.model.NotAddressableException if the
    *     actor has no personnel record
+   * @throws io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException if the
+   *     actor belongs to a different organisation
+   * @throws io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException if the actor
+   *     is the platform operator, which belongs to no organisation (ADR-030)
    */
   void markRead(Actor actor, OrganisationId organisation, NotificationId notification);
 }

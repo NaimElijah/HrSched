@@ -12,6 +12,7 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
  */
 public class UnknownRequiredQualificationException extends RuntimeException {
 
+  /** Builds the refusal with a constant message, which is the 400 response's detail. */
   public UnknownRequiredQualificationException() {
     super("A shift cannot require a qualification this organisation has not defined");
   }

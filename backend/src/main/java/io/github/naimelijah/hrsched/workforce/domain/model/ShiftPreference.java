@@ -11,6 +11,9 @@ import java.util.Objects;
  */
 public record ShiftPreference(TimeRange period, PreferenceStrength strength) {
 
+  /**
+   * @throws NullPointerException if either component is {@code null}
+   */
   public ShiftPreference {
     Objects.requireNonNull(period, "period must not be null");
     Objects.requireNonNull(strength, "strength must not be null");

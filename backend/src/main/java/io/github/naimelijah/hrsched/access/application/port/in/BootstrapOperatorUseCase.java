@@ -23,6 +23,10 @@ public interface BootstrapOperatorUseCase {
    *     and nothing was changed
    * @throws OperatorNameHeldByATenantException if a tenant account holds the name, so no operator
    *     can be created under it; nothing was changed, and the message never contains the name
+   * @throws io.github.naimelijah.hrsched.access.domain.model.InvalidSignInNameException if the name
+   *     is not one an account could hold
+   * @throws IllegalArgumentException if the password is longer than the hasher reads; the message
+   *     never contains it. The configured password is not otherwise checked against the policy
    */
   boolean ensureOperator(BootstrapOperatorCommand command);
 }

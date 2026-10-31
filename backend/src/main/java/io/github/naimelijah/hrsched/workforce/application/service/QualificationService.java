@@ -25,6 +25,11 @@ public class QualificationService implements ManageQualificationsUseCase {
   private final QualificationRepository qualifications;
   private final AuditTrail audit;
 
+  /**
+   * @param qualifications where qualifications are stored
+   * @param audit where each definition is recorded
+   * @throws NullPointerException if any argument is {@code null}
+   */
   public QualificationService(QualificationRepository qualifications, AuditTrail audit) {
     this.qualifications = Objects.requireNonNull(qualifications, "qualifications must not be null");
     this.audit = Objects.requireNonNull(audit, "audit must not be null");

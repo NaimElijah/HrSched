@@ -85,6 +85,7 @@ export function RostersPage({
    * instead of offering to start a second solve.
    */
   waitingFor: string | null;
+  /** Tells the shell which generation to wait for, or null once it ended or the wait gave up. */
   onWaitingFor: (generation: string | null) => void;
 }) {
   const sessionKey = useSessionKey();
@@ -95,8 +96,9 @@ export function RostersPage({
   // The constraint version whose rules are open, so a published roster can be checked against the
   // rules it actually passed rather than today's (Q9), and the roster whose button opened them.
   const [rulesOf, setRulesOf] = useState<{ version: number; roster: string } | null>(null);
-  // Bumped whenever the list changes a roster, so an open board is rebuilt from what is now stored.
-  // A change made on the board does not bump it: the board already holds what the server returned.
+  // Bumped when this page changes the roster an open board shows, by publishing it or by opening a
+  // generated draft, so the board is rebuilt from what is now stored. A change made on the board
+  // does not bump it: the board already holds what the server returned.
   const [revision, setRevision] = useState(0);
   const [starting, setStarting] = useState(false);
   // The roster being published. A second publication sent while the first is on its way would be

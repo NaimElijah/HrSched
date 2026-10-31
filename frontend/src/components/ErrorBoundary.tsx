@@ -2,8 +2,16 @@ import { Component, createRef } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { focusHeading } from './focus';
 
+/** The selector for the heading of the view in `main`, which the shell's own `h1` is not. */
 const THE_VIEWS_HEADING = 'main h2';
 
+/**
+ * The fallback selector, for a view whose heading is not an `h2` or has no `main` of its own.
+ *
+ * Inside the shell it is not a view's heading it finds: the shell's own `h1`, which names the app,
+ * comes first in the document and is the one that matches. It still gives focus somewhere other
+ * than the body.
+ */
 const A_HEADING = 'h1, h2, h3, h4, h5, h6';
 
 /**
@@ -11,7 +19,8 @@ const A_HEADING = 'h1, h2, h3, h4, h5, h6';
  *
  * React unmounts the entire root when a render throws and nothing catches it, so a single
  * unexpected shape from the API would leave the user with white space and no way back. This shows
- * what happened and offers a reload, which is the least a failure owes the person looking at it.
+ * what happened and offers to try again, which is the least a failure owes the person looking at
+ * it. "Try again" clears the failure and renders the children afresh; it does not reload the page.
  *
  * The fallback replaces everything, landmarks included, so it is a `main` of its own. "Try again"
  * removes the button that had focus, so once the children are back focus moves to the heading of

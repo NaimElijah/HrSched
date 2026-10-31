@@ -17,10 +17,19 @@ import java.util.List;
 public interface FindRosterableEmployeesUseCase {
 
   /**
-   * @param actor whoever is asking
+   * Lists everybody an organisation could roster. Their qualifications and absences decide where
+   * they may be put; their preferences only weigh one placement against another, and never block
+   * one. Their contracted hours are carried but not read by scheduling yet (#103).
+   *
+   * <p>Restricted to an Admin or a Scheduler: the answer carries every employee's absences, which
+   * are personal data, and an employee has no reason to read a colleague's. Any other role is
+   * refused with a {@code NotPermittedException}, and the platform Operator, which belongs to no
+   * organisation, with a {@code NotATenantMemberException}.
+   *
+   * @param actor whoever is asking; must be an Admin or Scheduler of the organisation
    * @param organisation whose employees to list
    * @return every employee of that organisation, as published data, ordered by name, then by
-   *     identity
+   *     identity; empty if it has none
    * @throws CrossTenantAccessException if the actor may not see that organisation
    */
   List<RosterableEmployee> findRosterable(Actor actor, OrganisationId organisation);

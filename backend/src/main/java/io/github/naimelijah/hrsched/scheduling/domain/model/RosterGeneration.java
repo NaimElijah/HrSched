@@ -193,18 +193,30 @@ public final class RosterGeneration {
         : status;
   }
 
+  /**
+   * @return this generation's identity, the only thing its equality compares
+   */
   public GenerationId id() {
     return id;
   }
 
+  /**
+   * @return the organisation this generation belongs to
+   */
   public OrganisationId organisation() {
     return organisation;
   }
 
+  /**
+   * @return the span the draft it produces is to cover
+   */
   public TimeRange period() {
     return period;
   }
 
+  /**
+   * @return when the generation was asked for
+   */
   public Instant requestedAt() {
     return requestedAt;
   }

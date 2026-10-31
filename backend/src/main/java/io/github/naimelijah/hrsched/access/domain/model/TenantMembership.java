@@ -26,6 +26,9 @@ import java.util.Optional;
 public record TenantMembership(
     OrganisationId organisation, Role role, Optional<EmployeeId> employee) implements Membership {
 
+  /**
+   * @throws NullPointerException if {@code organisation}, {@code role} or {@code employee} is null
+   */
   public TenantMembership {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(role, "role must not be null");

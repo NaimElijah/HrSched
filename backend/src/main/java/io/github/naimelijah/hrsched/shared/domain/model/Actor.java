@@ -17,11 +17,15 @@ import java.util.Objects;
 public sealed interface Actor permits TenantActor, Operator {
 
   /**
+   * Names whoever is acting.
+   *
    * @return the identity of whoever is acting, never {@code null}
    */
   UserId id();
 
   /**
+   * Tests whether this actor may act on an organisation's data.
+   *
    * @param organisation the organisation whose data is about to be touched
    * @return whether this actor may act on that organisation's data; never true for an {@link
    *     Operator}, which belongs to no organisation and acts inside none (ADR-030)

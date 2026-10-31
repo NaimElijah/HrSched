@@ -33,6 +33,11 @@ public class WorkforceDirectoryAdapter implements WorkforceDirectory {
   private final FindRosterableEmployeesUseCase workforce;
   private final ManageQualificationsUseCase qualifications;
 
+  /**
+   * @param workforce the workforce context's published port that lists the rosterable employees
+   * @param qualifications the workforce context's published port that lists the qualifications an
+   *     organisation has defined
+   */
   public WorkforceDirectoryAdapter(
       FindRosterableEmployeesUseCase workforce, ManageQualificationsUseCase qualifications) {
     this.workforce = workforce;
