@@ -5,7 +5,9 @@ import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingH
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.asThemself;
 import static io.github.naimelijah.hrsched.scheduling.adapter.in.web.SchedulingHttpRequests.generateDraft;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -358,7 +360,8 @@ class SwapHttpTest {
 
   /**
    * Refused by the request itself, deep in the domain, and answered as the bad request it is: the
-   * handler's routing of {@code SwapWithThemselfException} is what makes it a 400, not a 500.
+   * handler's routing of {@code SwapWithThemselfException} is what makes it a 400, not a 500. Its
+   * detail is a constant, so it repeats neither of the identifiers sent.
    */
   @Test
   void GivenThemselfAsTheColleague_WhenAskingForASwap_ThenItIsABadRequest() throws Exception {
@@ -373,7 +376,10 @@ class SwapHttpTest {
                     "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
                         .formatted(rostered.roster(), rostered.shift(), ada, ada)))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.title").value("Invalid request"));
+        .andExpect(jsonPath("$.title").value("Invalid request"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:invalid-request"))
+        .andExpect(jsonPath("$.detail").value(not(containsString(ada))))
+        .andExpect(jsonPath("$.detail").value("Nobody can swap a shift with themself."));
   }
 
   /** Raises Ada's request to hand her shift to Grace, and returns where its 201 said it lives. */

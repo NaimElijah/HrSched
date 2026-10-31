@@ -146,7 +146,7 @@ class SchedulingExceptionHandlerTest {
         new InvalidConstraintException("Minimum rest must be positive"),
         new InvalidObjectiveWeightException(Objective.FAIRNESS),
         new UnknownRequiredQualificationException(),
-        new SwapWithThemselfException(EmployeeId.newId()),
+        new SwapWithThemselfException(),
         new MalformedRequestException("shift is required"));
   }
 
