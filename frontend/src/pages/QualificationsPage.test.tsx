@@ -74,9 +74,7 @@ describe('listing what the organisation has defined', () => {
 
     show();
 
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
-    );
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not permitted.'));
     // A refused listing is no evidence that there are none.
     expect(screen.queryByText(/no qualifications/i)).not.toBeInTheDocument();
   });
@@ -110,9 +108,7 @@ describe('defining one', () => {
     await userEvent.type(screen.getByLabelText('Name'), 'Forklift', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Define' }));
 
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
-    );
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not permitted.'));
     expect(screen.getByLabelText('Name')).toHaveValue('Forklift');
     await waitFor(() => {
       const define = screen.getByRole('button', { name: 'Define' });

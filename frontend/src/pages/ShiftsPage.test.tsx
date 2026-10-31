@@ -448,7 +448,7 @@ describe('the shifts as a table', () => {
 
     show();
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Your role may not do this.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not permitted.');
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByRole('region')).not.toBeInTheDocument();
     expect(screen.queryByText(/no shifts/i)).not.toBeInTheDocument();

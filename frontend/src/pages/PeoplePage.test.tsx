@@ -102,9 +102,7 @@ describe('listing people', () => {
 
     show();
 
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
-    );
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not permitted.'));
   });
 });
 
@@ -190,9 +188,7 @@ describe('adding an employee', () => {
     await userEvent.type(screen.getByLabelText('Name'), 'Marie', WITHOUT_PAUSES);
     await userEvent.click(screen.getByRole('button', { name: 'Add employee' }));
 
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
-    );
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not permitted.'));
     expect(screen.getByLabelText('Name')).toHaveValue('Marie');
     await waitFor(() => {
       const add = screen.getByRole('button', { name: 'Add employee' });
@@ -220,7 +216,7 @@ describe('adding an employee', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Set contracted minutes for Ada' }));
 
     await screen.findByText(/^Set contracted minutes for Ada/);
-    expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Not permitted.');
   });
 
   /** Each addition is a person of their own, and none can be deleted afterwards. */
