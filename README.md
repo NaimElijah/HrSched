@@ -145,7 +145,7 @@ Open <http://localhost:5173> and sign in as `operator` / `local-development-only
 choose a password of at least 15 characters before the account can do anything. The API is up when
 `curl localhost:8080/actuator/health/readiness` answers `{"status":"UP"}`.
 
-The operator only onboards organisations. In the Organisations tab, onboard one together with its
+The operator can do nothing inside an organisation. In the Organisations tab, onboard one with its
 first Admin, then sign out and sign in as that Admin. There is no seed data; the
 [Walkthrough in `docs/api.md`](docs/api.md#walkthrough) scripts the path to a published roster.
 
