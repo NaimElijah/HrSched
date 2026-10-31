@@ -86,7 +86,7 @@ class EnumFieldHttpTest {
 
   // --- an account's role, when it is created ---------------------------------------------------
 
-  @ParameterizedTest
+  @ParameterizedTest(name = "the index sent quoted: {0}")
   @ValueSource(booleans = {false, true})
   void GivenARoleSentAsAnIndex_WhenCreatingAnAccount_ThenItIsMalformedAndNoAccountIsCreated(
       boolean quoted) throws Exception {
@@ -123,7 +123,7 @@ class EnumFieldHttpTest {
 
   // --- an account's role, when its membership changes -----------------------------------------
 
-  @ParameterizedTest
+  @ParameterizedTest(name = "the index sent quoted: {0}")
   @ValueSource(booleans = {false, true})
   void GivenARoleSentAsAnIndex_WhenChangingAMembership_ThenItIsMalformedAndTheRoleStays(
       boolean quoted) throws Exception {
@@ -162,7 +162,7 @@ class EnumFieldHttpTest {
 
   // --- the strength of a stated preference ----------------------------------------------------
 
-  @ParameterizedTest
+  @ParameterizedTest(name = "the index sent quoted: {0}")
   @ValueSource(booleans = {false, true})
   void GivenAStrengthSentAsAnIndex_WhenStatingAPreference_ThenItIsMalformedAndNothingIsStated(
       boolean quoted) throws Exception {

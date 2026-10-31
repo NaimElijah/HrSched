@@ -54,6 +54,9 @@ class UnknownMemberHttpTest {
   /** Invented: the run of days the misspelt member meant to cap. */
   private static final int INVENTED_CONSECUTIVE_DAYS = 3;
 
+  /** Invented: the weekly contracted hours sent under a member no employee has. */
+  private static final int INVENTED_CONTRACTED_HOURS = 37;
+
   /** Invented: a fairness weight sent beside the misspelt member. */
   private static final int INVENTED_FAIRNESS = 2;
 
@@ -157,7 +160,7 @@ class UnknownMemberHttpTest {
         asAdmin(post("/api/employees"), organisation)
             .content(
                 "{\"name\":\"Ada Lovelace\",\"%s\":%d}"
-                    .formatted(NOT_AN_EMPLOYEE_MEMBER, INVENTED_CONSECUTIVE_DAYS)),
+                    .formatted(NOT_AN_EMPLOYEE_MEMBER, INVENTED_CONTRACTED_HOURS)),
         NOT_AN_EMPLOYEE_MEMBER);
 
     mockMvc
