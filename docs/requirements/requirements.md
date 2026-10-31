@@ -1,8 +1,10 @@
 # Requirements — HrSched
 
 **Status: specified, partially built.** Every question that blocked modelling is answered. The
-domain is modelled, and a React user interface offers every capability below — for the three roles
-within an organisation and for the platform Operator — over a PostgreSQL that survives a restart.
+domain is modelled, and a React user interface offers the capabilities already built — for the
+three roles within an organisation and for the platform Operator — over a PostgreSQL that survives
+a restart. A member's read of their own organisation's record (F13) has no screen and is reached
+through the API alone.
 People sign in, and every request is authenticated by a token HrSched signed and authorised
 against the account it names. Generation fills every place the rules allow, then weighs the
 objectives.
@@ -280,8 +282,9 @@ filled every place it can, it keeps at least that many filled and minimises the 
   [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md). On the write side, by the
   guard on every upsert by identity, which refuses to store over another organisation's row:
   `JdbcAccountRepository`, `JdbcEmployeeRepository`, `JdbcQualificationRepository`,
-  `JdbcShiftRepository`, `JdbcRosterRepository`, `JdbcSwapRequestRepository` and
-  `JdbcNotificationRepository`, each covered by its own `…RepositoryTest`.*
+  `JdbcShiftRepository`, `JdbcRosterRepository`, `JdbcRosterGenerationRepository`,
+  `JdbcSwapRequestRepository` and `JdbcNotificationRepository`, each covered by its own
+  `…RepositoryTest`.*
 - **Persistence guarantees** — every accepted write is durable: once a request answers 2xx the
   change has committed and survives a crash or a restart. **A use case is one transaction**, so a
   request refused part-way leaves nothing behind — including the replacement roster a refused swap
@@ -292,7 +295,7 @@ filled every place it can, it keeps at least that many filled and minimises the 
   period is set — Q23. **Concurrent changes to one roster, employee or account take turns, and
   none is lost** ([#33](https://github.com/NaimElijah/HrSched/issues/33)): a failed sign-in cannot
   undo an Admin's disable or reset, nor open a session with the password a reset replaced.
-  *Enforced by `Jdbc*Repository` (×10) and their adapter tests, `TransactionalUseCases`,
+  *Enforced by `Jdbc*Repository` (×12) and their adapter tests, `TransactionalUseCases`,
   `SwapHttpTest`; for concurrent changes, `findForUpdate` in `JdbcRosterRepository`,
   `JdbcEmployeeRepository` and `JdbcAccountRepository`, raced on real threads in their adapter
   tests and in `RosteringHttpTest.GivenTwoSchedulersAssigningToOneDraftAtOnce_WhenBothCommit_ThenBothAssignmentsAreKept`,
@@ -384,7 +387,7 @@ applicant tracking, and being the HR system of record.
 | Q3 | Single organisation or multi-tenant | Multi-tenant: independent organisations, strict isolation | 2026-08-30 |
 | Q4 | Whose working-time rules apply | None hardcoded. A configurable constraint set; jurisdictions are presets | 2026-08-30 |
 | Q5 | Where it runs | Containerised, provider deferred to its own ADR | 2026-08-30 |
-| Q6 | How rosters are built | Automatic generation is the point — [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md) | 2026-08-30 |
+| Q6 | How rosters are built | Automatic generation is the point — [ADR-005](../ADRs/ADR-005-roster-generation-behind-a-port.md), superseded by [ADR-044](../ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md) | 2026-08-30 |
 | Q7 | Who administers organisations | A platform Operator, the only identity crossing tenants | 2026-08-30 |
 | Q9 | A published roster when rules change | It keeps the version that approved it; changes are never retroactive | 2026-08-30 |
 | Q10 | Emergency cover without an override | Supersede with a new compliant roster | 2026-08-30 |
@@ -408,6 +411,7 @@ applicant tracking, and being the HR system of record.
 | Q29 | Must a sign-in name be an email address? | Yes — R38, [#108](https://github.com/NaimElijah/HrSched/issues/108) | 2026-09-22 |
 | Q31 | Is multi-factor authentication required, and for which roles? | Yes, for Operators and Admins — R39, [#109](https://github.com/NaimElijah/HrSched/issues/109) | 2026-09-22 |
 
-Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21; building swaps raised Q22; giving the system a database raised Q23 and Q24; putting an employee's side of swaps into the user interface raised Q25; authentication raised
+Question numbers are never reused. The answers above raised Q12 to Q15; modelling raised Q16 and Q17; building the UI raised Q18; instrumenting the backend raised Q19 and Q20; building the notification inbox raised Q21; building swaps raised Q22; giving the system a database raised Q23 and Q24; putting an employee's side of swaps into the user interface raised Q25; the review of
+[#64](https://github.com/NaimElijah/HrSched/issues/64) raised Q26; authentication raised
 Q27 to Q32; and Q33 numbers the two questions [#55](https://github.com/NaimElijah/HrSched/issues/55)
 raised about pending swaps, answered as they were numbered.

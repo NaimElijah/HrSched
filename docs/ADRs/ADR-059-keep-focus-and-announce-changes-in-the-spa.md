@@ -1,6 +1,9 @@
 # ADR-059: Keep focus and announce changes in the SPA
 
 - **Status:** Accepted
+  - **Erratum 2026-10-31:** `main.test.tsx`, under Consequences, should read `Root.test.tsx`, which
+    renders `Root` instead of importing `main.tsx`, because importing it mounted a React root that
+    outlived the test's environment.
 - **Date:** 2026-10-31
 
 ## Context
