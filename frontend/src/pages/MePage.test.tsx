@@ -743,7 +743,8 @@ describe('declaring unavailability', () => {
         status: 409,
         body: {
           title: 'Overlaps a declared span',
-          detail: 'That span overlaps unavailability already declared for this employee.',
+          detail:
+            'That time overlaps a span already declared. Withdraw that one first, or choose another time.',
         },
       },
     });
@@ -754,7 +755,7 @@ describe('declaring unavailability', () => {
 
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
-        'That span overlaps unavailability already declared for this employee.',
+        'That time overlaps a span already declared. Withdraw that one first, or choose another time.',
       ),
     );
     expect(screen.queryByText('Recorded: you cannot work then.')).not.toBeInTheDocument();

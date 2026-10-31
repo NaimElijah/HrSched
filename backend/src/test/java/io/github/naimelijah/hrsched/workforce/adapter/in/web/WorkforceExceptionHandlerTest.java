@@ -172,7 +172,9 @@ class WorkforceExceptionHandlerTest {
 
   /**
    * A span overlapping one already declared is a conflict with what is on record, not a bad
-   * request. Found as Spring finds it, so a refusal still routed to the 400 handler fails here.
+   * request. Found as Spring finds it, so a refusal still routed to the 400 handler fails here. The
+   * detail is read by whoever declared the span, often the person themself, so it says what they
+   * can do next rather than whose span it was.
    */
   @Test
   void GivenUnavailabilityOverlappingADeclaredSpan_WhenSpringRoutesIt_ThenItIsAConflict()
@@ -188,6 +190,10 @@ class WorkforceExceptionHandlerTest {
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getTitle()).isEqualTo("Overlaps a declared span");
     assertThat(problem.getType()).hasToString("urn:hrsched:problem:overlaps-a-declared-span");
+    assertThat(problem.getDetail())
+        .isEqualTo(
+            "That time overlaps a span already declared. Withdraw that one first, or choose another"
+                + " time.");
   }
 
   @Test

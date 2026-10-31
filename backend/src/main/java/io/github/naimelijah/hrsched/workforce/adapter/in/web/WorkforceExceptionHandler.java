@@ -83,7 +83,8 @@ public class WorkforceExceptionHandler {
    * Unavailability overlapping a span the employee already declared. A conflict rather than a bad
    * request (RFC 9110 section 15.5.10): the span sent is well formed, and what refuses it is a
    * declaration already on record. The detail is a fixed sentence naming neither span, because one
-   * of them is an absence somebody declared.
+   * of them is an absence somebody declared. Whoever declares a span is often the person themself,
+   * so it says what they can do next, rather than speaking of them as "this employee".
    */
   @ExceptionHandler(OverlappingUnavailabilityException.class)
   public ProblemDetail handleOverlappingUnavailability(
@@ -91,7 +92,8 @@ public class WorkforceExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.CONFLICT,
-            "That span overlaps unavailability already declared for this employee.");
+            "That time overlaps a span already declared. Withdraw that one first, or choose another"
+                + " time.");
     problem.setTitle("Overlaps a declared span");
     problem.setType(ProblemTypes.OVERLAPS_A_DECLARED_SPAN);
     return problem;

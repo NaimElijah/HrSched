@@ -553,7 +553,12 @@ class EmployeeHttpTest {
                 .content("{\"start\":\"2026-11-07T00:00:00Z\",\"end\":\"2026-11-09T00:00:00Z\"}"))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.title").value("Overlaps a declared span"))
-        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:overlaps-a-declared-span"));
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:overlaps-a-declared-span"))
+        .andExpect(
+            jsonPath("$.detail")
+                .value(
+                    "That time overlaps a span already declared. Withdraw that one first, or"
+                        + " choose another time."));
   }
 
   /**

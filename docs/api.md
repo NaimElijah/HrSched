@@ -295,8 +295,8 @@ Everything above is. These are not, and carry no `type`:
   as a second press of the same button does, answers `409` titled `Already assigned`. Reload the
   roster: the first press was stored. The detail names neither the shift nor the person.
 - **Unavailability overlapping a declared span.** Declaring unavailability that overlaps a span the
-  employee already declared answers `409` titled `Overlaps a declared span`, and the detail names
-  neither span.
+  employee already declared answers `409` titled `Overlaps a declared span`. The detail names
+  neither span, and says to withdraw the one declared or choose another time.
 - **A roster whose status forbids the change.** Editing or publishing a roster that is no longer a
   draft, or asking for a swap against one that is not the published roster, answers `409` titled
   `Roster status forbids this`. Reload it: somebody most likely published it first.
