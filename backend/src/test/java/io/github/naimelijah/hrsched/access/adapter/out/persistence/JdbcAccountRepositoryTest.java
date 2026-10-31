@@ -136,6 +136,18 @@ class JdbcAccountRepositoryTest {
     assertThat(repository.findAll(ACME)).extracting(Account::id).containsExactly(ours.id());
   }
 
+  /**
+   * Nor is it one account a tenant's administrator can read, whichever organisation is named: the
+   * read behind {@code GET /api/accounts/{id}} would otherwise show an Admin the operator.
+   */
+  @Test
+  void GivenAnOperatorAccount_WhenFoundInAnOrganisation_ThenNothingIsReturned() {
+    Account operator = operator("operator@example.com");
+    repository.save(operator);
+
+    assertThat(repository.find(ACME, operator.id())).isEmpty();
+  }
+
   @Test
   void GivenASavedOperatorAccount_WhenFoundBySignInName_ThenItIsReturned() {
     Account stored = operator("operator@example.com");
