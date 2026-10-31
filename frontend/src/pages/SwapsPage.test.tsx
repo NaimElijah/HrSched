@@ -9,7 +9,7 @@ import { callsTo, holdingWrites, routeTo, writes, type Answer } from '../test-su
 import { SwapsPage } from './SwapsPage';
 
 /**
- * Where a Scheduler answers swap requests (F7).
+ * Where a Scheduler answers swap requests (F17).
  *
  * Approving publishes a replacement roster, so it can be refused exactly as publishing can — every
  * broken rule named, and no override. The decision buttons are offered whatever the role: whether
