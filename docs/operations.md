@@ -12,7 +12,7 @@ Every setting below is set in `backend/src/main/resources/application.properties
 | Property | Value | Why |
 | :--- | :--- | :--- |
 | `hrsched.security.token.issuer` / `.audience` | `hrsched` / `hrsched-api` | Required of every token, so one minted elsewhere is not spendable here |
-| `hrsched.security.token.lifetime` | `10m` | A stolen access token is useful until it expires, and for the decoder's clock skew past that (Q27) |
+| `hrsched.security.token.lifetime` | `10m` | A stolen access token is useful until it expires, and for the decoder's clock skew past that (the owner confirmed the security defaults, [Q27](requirements/requirements.md#open-questions)) |
 | `hrsched.security.session.absolute-lifetime` | `12h` | Fixed when the session starts, so a stolen refresh token cannot extend it |
 | `hrsched.security.session.idle-lifetime` | `1h` | Closes a browser somebody walked away from |
 | `hrsched.security.password.minimum-length` | `15` | NIST SP 800-63B-4, single-factor |
@@ -36,7 +36,7 @@ Every setting below is set in `backend/src/main/resources/application.properties
 | `logging.structured.format.console` | `ecs` | Elastic Common Schema JSON, always ([ADR-016](ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md)) |
 | `logging.structured.ecs.service.name` / `.version` | app name / Maven version | Identify the emitting service on every line |
 | `management.tracing.sampling.probability` | `1.0` | Free while nothing is exported |
-| `management.{tracing,logging}.export.otlp.enabled`, `management.otlp.metrics.export.enabled` | `false` | No collector exists yet (Q19) |
+| `management.{tracing,logging}.export.otlp.enabled`, `management.otlp.metrics.export.enabled` | `false` | No collector exists yet; which backend receives the export is an [open question](requirements/requirements.md#open-questions) |
 | `spring.application.name` | `HrSched` | Reported in logs and Actuator |
 
 ## Meters

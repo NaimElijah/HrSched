@@ -307,7 +307,7 @@ the application reports ready.
 | :--- | :--- |
 | Liveness, readiness | `GET /actuator/health/liveness`, `GET /actuator/health/readiness` |
 | Logs | One ECS JSON object per line on stdout; every line a request produces carries `traceId` and `spanId` |
-| Traces | A W3C trace id on every response as `X-Trace-Id`, refusals included, and shown by the UI so a person's report joins the log. Nothing is exported yet (Q19) |
+| Traces | A W3C trace id on every response as `X-Trace-Id`, refusals included, and shown by the UI so a person's report joins the log. Nothing is exported yet: which backend receives it is an [open question](docs/requirements/requirements.md#open-questions) |
 
 The metrics endpoints, `/actuator/prometheus` and `/actuator/metrics`, are refused to every caller
 until [#78](https://github.com/NaimElijah/HrSched/issues/78) is decided
@@ -411,7 +411,8 @@ Docker. The [requirements](docs/requirements/requirements.md) mark each row that
 - **The audit trail is a log stream.** An Admin cannot read it. A record written in a transaction
   that fails to commit outlives the change it describes. A durable trail is decided
   ([#31](https://github.com/NaimElijah/HrSched/issues/31)).
-- **Notifications are pull-only.** A colleague learns of a change when they next open the app (Q21).
+- **Notifications are pull-only.** A colleague learns of a change when they next open the app; any other channel is an
+  [open question](docs/requirements/requirements.md#open-questions).
 - **Nothing proves the UI and the API agree.** The client is written by hand, and there is no
   contract or browser test ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)).
 - **Nothing blocks a merge on a red build or a vulnerable dependency.** CI runs both gates and a
