@@ -87,8 +87,8 @@ everything the caller may see, unpaged ([#337](https://github.com/NaimElijah/HrS
 | `POST /api/employees/{id}/unavailability` | `204`, no `Location` | `400 Invalid request`; `409 Overlaps a declared span` |
 | `POST /api/employees/{id}/preferences` | `204`, no `Location` | `400 Invalid request` |
 | `GET /api/employees/{id}/unavailability`, `/preferences` | `200` | none |
-| `DELETE /api/employees/{id}/unavailability?start&end` | `204` | `404` when no span was declared exactly so |
-| `DELETE /api/employees/{id}/preferences?start&end&strength` | `204` | `404` when none was stated exactly so |
+| `DELETE /api/employees/{id}/unavailability?start&end` | `204` | `400 Invalid request`; `404` when no span was declared exactly so |
+| `DELETE /api/employees/{id}/preferences?start&end&strength` | `204` | `400 Invalid request`; `404` when none was stated exactly so |
 | `POST /api/qualifications` | `201`, `Location`, the qualification | `400 Invalid request` |
 | `GET /api/qualifications`, `/{id}` | `200` | none |
 | `PUT /api/constraints` | `200`, the revised rules and their `version` | `400 Invalid request`; `409 Revised concurrently` |
