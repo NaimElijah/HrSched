@@ -66,22 +66,42 @@ describe('choosing the message', () => {
 
 /**
  * RFC 9457 section 3.1.1: a problem detail without a type is of the type about:blank. The backend
- * gives every kind its own; nothing in the app branches on one yet, so it is only kept.
+ * gives every kind its own; nothing in the app branches on one yet, so it is only kept. A `type`
+ * means that only in a body sent as `application/problem+json`: in any other JSON, a gateway's or a
+ * proxy's, it is a field of somebody else's, and naming a kind of refusal by it would be a guess.
  */
 describe('the problem type', () => {
-  it('GivenAType_WhenTranslating_ThenItIsKept', () => {
-    const error = toApiError(409, {
-      type: 'urn:hrsched:problem:already-assigned',
-      title: 'Already assigned',
-    });
+  const PROBLEM_JSON = 'application/problem+json';
+
+  it('GivenATypeInAProblemDetail_WhenTranslating_ThenItIsKept', () => {
+    const error = toApiError(
+      409,
+      { type: 'urn:hrsched:problem:already-assigned', title: 'Already assigned' },
+      null,
+      PROBLEM_JSON,
+    );
 
     expect(error.type).toBe('urn:hrsched:problem:already-assigned');
   });
 
+  it.each([['application/json'], ['text/plain'], [null]])(
+    'GivenATypeInABodyThatIsNotAProblemDetail_WhenTranslating_ThenItIsAboutBlank (%s)',
+    (mediaType) => {
+      const error = toApiError(
+        409,
+        { type: 'urn:hrsched:problem:already-assigned', title: 'Already assigned' },
+        null,
+        mediaType,
+      );
+
+      expect(error.type).toBe('about:blank');
+    },
+  );
+
   it.each([[{ title: 'Not found' }], [{ type: 42 }], ['plain text'], [null]])(
     'GivenNoTypeThatIsAString_WhenTranslating_ThenItIsAboutBlank (%j)',
     (body) => {
-      expect(toApiError(404, body).type).toBe('about:blank');
+      expect(toApiError(404, body, null, PROBLEM_JSON).type).toBe('about:blank');
     },
   );
 });
