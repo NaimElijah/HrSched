@@ -1,8 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './App';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import { SessionProvider } from './auth/SessionProvider';
+import { Root } from './Root';
 import './styles.css';
 
 const root = document.getElementById('root');
@@ -12,10 +10,6 @@ if (root === null) {
 
 createRoot(root).render(
   <StrictMode>
-    <ErrorBoundary>
-      <SessionProvider>
-        <App />
-      </SessionProvider>
-    </ErrorBoundary>
+    <Root />
   </StrictMode>,
 );

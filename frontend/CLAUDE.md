@@ -1,7 +1,7 @@
 <!--
 Maintainers: this file loads the first time a file under frontend/ is read or edited, on top of
 .claude/CLAUDE.md, which every session already has. It holds what only frontend work needs. Keep
-it under about 60 lines; the commands stay in .claude/CLAUDE.md because running one reads no
+it under about 70 lines; the commands stay in .claude/CLAUDE.md because running one reads no
 file. Prettier checks this file as part of npm run verify. This comment is stripped before Claude
 sees the file.
 -->
@@ -24,8 +24,8 @@ sees the file.
   `RosterBoard`, `ApprovingRules` and `ObjectiveScores` belong to `RostersPage`, `Inbox` to
   `MePage`. A helper only one screen uses stays beside it; once a second screen uses it, it moves
   to `src/components/`. Pages never call `fetch` directly.
-- `src/components/` — what several screens share: `ErrorBoundary`, `Feedback`, `useAsync`,
-  `localDates`, `useShiftsById`, `swapStatus`, and the wording tables `ruleFields` and
+- `src/components/` — what several screens share: `ErrorBoundary`, `Feedback`, `focus`,
+  `useAsync`, `localDates`, `useShiftsById`, `swapStatus`, and the wording tables `ruleFields` and
   `objectiveFields`. It imports `src/api` only. The folders depend one way,
   `api ← components ← auth ← pages`, so a shared hook that needs the session takes it from its
   caller; lint refuses an import against the direction, and production code importing
@@ -54,3 +54,20 @@ sees the file.
   because `package.json` cannot hold a comment. Adding, replacing or removing one updates its row
   in the same commit, and a choice between alternatives gets an ADR. ADR-051 records the reasons
   for the ones adopted before 2026-10-29.
+
+## Focus and announcements
+
+WCAG 2.2 AA as #257 applies it (ADR-059). Tests assert roles, names and focus, never markup.
+
+- **C1** A button in flight is `aria-disabled` (`disabled` drops focus) and ignores a press.
+- **C2** Removing the focused control focuses its row's `<th scope="row" tabIndex={-1}>`, its
+  section's heading, or the control that takes its place (the shift's picker after Remove).
+- **C3** A successful write says so in a `role="status"` present before its text.
+- **C4** A view change focuses its heading, and titles the page `<view> · HrSched`.
+- **C5** A control that cannot act yet is `aria-disabled` and described by a visible hint; a form
+  that waits for stored values says so, and offers to try again when their load failed.
+- **C6** A refusal shows at its cause, inside its row or item, pinned to the visible part of a
+  scrolled table; a field it is about is `aria-invalid` and described by it until the next send.
+- **C7** A repeated button's `aria-label` starts with its visible text, then names its item.
+- **C8** A table has a `<caption>`, named headers, an empty-list message; if wide, `.table-scroll`.
+- **C9** A success status clears as soon as the form or row it reported is edited again.

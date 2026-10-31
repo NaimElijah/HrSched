@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError } from '../api/problem';
 import { useSession } from './SessionProvider';
 
@@ -14,16 +14,23 @@ const SIGNED_OUT = 'You have been signed out. Sign in to continue.';
  * The backend answers an unknown name, a wrong password, a disabled account and a locked one
  * identically, and this must not undo that by guessing at a friendlier message. "That name is not
  * registered" would tell somebody trying names which ones exist here; "your account is locked"
- * would tell them their guessing had been noticed.
+ * would tell them their guessing had been noticed. What it suggests holds for every reason and
+ * every account alike: a typo is put right by checking, and anything else, a disabled account, a
+ * locked one, a forgotten password, takes an administrator, whoever administers that account.
  */
-const REFUSED = 'Those credentials were not accepted.';
+const REFUSED =
+  'Those credentials were not accepted. Check your sign-in name and password. If they are right, ask an administrator.';
+
+/** What the status region says while a sign-in is on its way. */
+const SIGNING_IN = 'Signing in…';
 
 /**
  * The way into the application: there is nothing else to do until this succeeds.
  *
- * When it replaces a session that was on screen, it says why and takes focus on its heading:
- * somebody who was using the shell a moment ago would otherwise see the app apparently fail, and a
- * screen-reader user would hear nothing. On a first load it does neither.
+ * When it replaces a session that was on screen, it says why, and the shell moves focus to its
+ * heading: somebody who was using the shell a moment ago would otherwise see the app apparently
+ * fail, and a screen-reader user would hear nothing. On a first load it says nothing, and focus
+ * stays where the browser put it.
  */
 export function SignInPage() {
   const { signIn, sessionEnded } = useSession();
@@ -32,13 +39,11 @@ export function SignInPage() {
   const [failure, setFailure] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [reason, setReason] = useState<string | null>(null);
-  const heading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     if (!sessionEnded) {
       return;
     }
-    heading.current?.focus();
     // A live region announces a change to what it holds, not what it was inserted holding, so the
     // reason arrives in a second render, once the empty region is already in the page.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- that second render is the point
@@ -47,7 +52,12 @@ export function SignInPage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (submitting) {
+      return;
+    }
     setFailure(null);
+    // Said once; from here the region reports this sign-in.
+    setReason(null);
     setSubmitting(true);
     try {
       await signIn(signInName, password);
@@ -60,11 +70,9 @@ export function SignInPage() {
 
   return (
     <section className="sign-in">
-      <h2 ref={heading} tabIndex={-1}>
-        Sign in
-      </h2>
+      <h2>Sign in</h2>
       <p className="done" role="status">
-        {reason}
+        {submitting ? SIGNING_IN : reason}
       </p>
       <form onSubmit={submit}>
         <label>
@@ -86,8 +94,9 @@ export function SignInPage() {
             required
           />
         </label>
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'Signing in…' : 'Sign in'}
+        {/* aria-disabled rather than disabled, so focus stays on the button while it is in flight. */}
+        <button type="submit" aria-disabled={submitting}>
+          {submitting ? SIGNING_IN : 'Sign in'}
         </button>
       </form>
       {failure === null ? null : (
