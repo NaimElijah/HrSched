@@ -59,6 +59,10 @@ public class JdbcEmployeeRepository implements EmployeeRepository {
 
   private final JdbcClient jdbc;
 
+  /**
+   * @param jdbc the client every statement runs through
+   * @throws NullPointerException if {@code jdbc} is {@code null}
+   */
   public JdbcEmployeeRepository(JdbcClient jdbc) {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
   }

@@ -17,8 +17,9 @@ import java.util.List;
 public interface FindRosterableEmployeesUseCase {
 
   /**
-   * Lists everybody an organisation could roster, with the absences, preferences and contracted
-   * hours that decide where they may be put.
+   * Lists everybody an organisation could roster. Their qualifications and absences decide where
+   * they may be put; their preferences only weigh one placement against another, and never block
+   * one. Their contracted hours are carried but not read by scheduling yet (#103).
    *
    * <p>Restricted to an Admin or a Scheduler: the answer carries every employee's absences, which
    * are personal data, and an employee has no reason to read a colleague's. Any other role is

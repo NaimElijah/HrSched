@@ -25,6 +25,9 @@ public class QualificationController {
 
   private final ManageQualificationsUseCase manageQualifications;
 
+  /**
+   * @param manageQualifications the use case behind every endpoint
+   */
   public QualificationController(ManageQualificationsUseCase manageQualifications) {
     this.manageQualifications = manageQualifications;
   }

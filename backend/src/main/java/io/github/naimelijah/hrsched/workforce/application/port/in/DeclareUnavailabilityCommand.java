@@ -15,6 +15,9 @@ import java.util.Objects;
 public record DeclareUnavailabilityCommand(
     OrganisationId organisation, EmployeeId employee, TimeRange period) {
 
+  /**
+   * @throws NullPointerException if any component is {@code null}
+   */
   public DeclareUnavailabilityCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(employee, "employee must not be null");

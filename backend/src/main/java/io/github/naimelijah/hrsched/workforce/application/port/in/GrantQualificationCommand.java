@@ -15,6 +15,9 @@ import java.util.Objects;
 public record GrantQualificationCommand(
     OrganisationId organisation, EmployeeId employee, QualificationId qualification) {
 
+  /**
+   * @throws NullPointerException if any component is {@code null}
+   */
   public GrantQualificationCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(employee, "employee must not be null");

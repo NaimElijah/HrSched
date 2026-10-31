@@ -36,8 +36,9 @@ import tools.jackson.databind.exc.UnrecognizedPropertyException;
  * there is nothing here for them.
  *
  * <p>It is also where refusals are recorded, because it is the only place that sees every one of
- * them. What the caller is told does not depend on the recording; only whoever reads the log sees
- * it. See ADR-018.
+ * them. What the caller is told does not depend on the recording: a refusal is logged at WARN and
+ * counted by kind in the {@code hrsched.access.denied} meter, and the caller sees neither. See
+ * ADR-018.
  */
 @RestControllerAdvice(assignableTypes = {EmployeeController.class, QualificationController.class})
 public class WorkforceExceptionHandler {

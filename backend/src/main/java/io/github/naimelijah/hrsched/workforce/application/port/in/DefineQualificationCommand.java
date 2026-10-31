@@ -11,6 +11,10 @@ import java.util.Objects;
  */
 public record DefineQualificationCommand(OrganisationId organisation, String name) {
 
+  /**
+   * @throws NullPointerException if either component is {@code null}. A blank name passes: the
+   *     {@code Qualification} it creates refuses it
+   */
   public DefineQualificationCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(name, "name must not be null");

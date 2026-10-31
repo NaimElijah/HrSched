@@ -15,6 +15,9 @@ import java.util.Objects;
 public record WithdrawUnavailabilityCommand(
     OrganisationId organisation, EmployeeId employee, TimeRange period) {
 
+  /**
+   * @throws NullPointerException if any component is {@code null}
+   */
   public WithdrawUnavailabilityCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(employee, "employee must not be null");

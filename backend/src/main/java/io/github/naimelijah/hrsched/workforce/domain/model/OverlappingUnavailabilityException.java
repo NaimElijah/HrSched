@@ -8,6 +8,10 @@ package io.github.naimelijah.hrsched.workforce.domain.model;
  */
 public class OverlappingUnavailabilityException extends RuntimeException {
 
+  /**
+   * Builds the refusal with a fixed message that names neither span. The 409 does not use it: the
+   * web adapter answers with a sentence of its own.
+   */
   public OverlappingUnavailabilityException() {
     super("Unavailability overlaps a span already declared");
   }

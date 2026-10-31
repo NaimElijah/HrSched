@@ -8,6 +8,10 @@ package io.github.naimelijah.hrsched.workforce.domain.model;
  */
 public class InvalidContractTermsException extends RuntimeException {
 
+  /**
+   * Builds the refusal with a fixed message that names no hours, so it can be the detail of a 400
+   * as it stands (ADR-024).
+   */
   public InvalidContractTermsException() {
     super("Contracted hours must be positive");
   }

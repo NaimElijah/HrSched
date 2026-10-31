@@ -5,6 +5,9 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.time.Instant;
 
 /**
+ * The body of {@code POST /api/employees/{id}/unavailability}: a span as a caller sends it. Either
+ * end may arrive absent, and {@code toPeriod} refuses that.
+ *
  * @param start when the span begins
  * @param end when the span ends
  */

@@ -20,6 +20,9 @@ public record WithdrawPreferenceCommand(
     TimeRange period,
     PreferenceStrength strength) {
 
+  /**
+   * @throws NullPointerException if any component is {@code null}
+   */
   public WithdrawPreferenceCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(employee, "employee must not be null");

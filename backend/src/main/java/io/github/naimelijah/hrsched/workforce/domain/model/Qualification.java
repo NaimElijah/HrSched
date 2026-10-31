@@ -19,12 +19,10 @@ public final class Qualification {
   private final String name;
 
   /**
-   * Creates a qualification.
-   *
    * @param id its identity
    * @param organisation the organisation that defines it
-   * @param name what it is called; not blank, but not required to be unique within the
-   *     organisation, as the schema also allows two to share one
+   * @param name what it is called; not blank. R23 requires it to be unique within the organisation,
+   *     which #95 has yet to build, so for now two may share one
    * @throws NullPointerException if any argument is {@code null}
    * @throws InvalidQualificationNameException if {@code name} is blank
    */
@@ -38,14 +36,23 @@ public final class Qualification {
     this.name = name;
   }
 
+  /**
+   * @return the identity that two qualifications are compared and hashed by
+   */
   public QualificationId id() {
     return id;
   }
 
+  /**
+   * @return the organisation that defines it, which never changes
+   */
   public OrganisationId organisation() {
     return organisation;
   }
 
+  /**
+   * @return what it is called; never blank, and not yet unique within the organisation (R23, #95)
+   */
   public String name() {
     return name;
   }

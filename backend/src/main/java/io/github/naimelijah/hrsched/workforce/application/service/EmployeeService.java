@@ -52,6 +52,9 @@ public class EmployeeService implements ManageEmployeesUseCase, FindRosterableEm
   private final AuditTrail audit;
 
   /**
+   * @param employees where employees are stored
+   * @param qualifications where a granted qualification is looked up in the employee's organisation
+   * @param audit where each change is recorded
    * @throws NullPointerException if any argument is {@code null}
    */
   public EmployeeService(

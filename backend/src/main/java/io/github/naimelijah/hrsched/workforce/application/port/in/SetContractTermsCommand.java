@@ -15,6 +15,10 @@ import java.util.Objects;
 public record SetContractTermsCommand(
     OrganisationId organisation, EmployeeId employee, Duration weeklyContractedHours) {
 
+  /**
+   * @throws NullPointerException if any component is {@code null}. Hours that are not positive
+   *     pass: {@code ContractTerms} refuses them
+   */
   public SetContractTermsCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(employee, "employee must not be null");

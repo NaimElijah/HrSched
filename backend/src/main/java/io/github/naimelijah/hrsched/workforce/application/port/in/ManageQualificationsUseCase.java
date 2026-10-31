@@ -12,7 +12,8 @@ public interface ManageQualificationsUseCase {
   /**
    * Defines a qualification an employee of the organisation can then be granted.
    *
-   * <p>The name need not be unique within the organisation. A blank one is refused with an {@code
+   * <p>R23 requires the name to be unique within the organisation, and #95 builds that; until then,
+   * two qualifications may share one. A blank name is refused with an {@code
    * InvalidQualificationNameException}; any role but an Admin, with a {@code
    * NotPermittedException}; an actor of another organisation, with a {@code
    * CrossTenantAccessException}; and the platform Operator, which belongs to none, with a {@code

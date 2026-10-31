@@ -86,7 +86,8 @@ public interface ManageEmployeesUseCase {
 
   /**
    * States a soft preference about when an employee would rather work (F6). It blocks nothing, so
-   * it is never refused for overlapping anything, a repeat of itself included.
+   * it is never refused for overlapping anything, a repeat of itself included. That preferences may
+   * overlap one another is R26.
    *
    * @param actor the employee themselves, or an Admin or Scheduler of their organisation
    * @param command whose preference, and what it is

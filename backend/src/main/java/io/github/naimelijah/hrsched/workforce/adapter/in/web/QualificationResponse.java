@@ -4,6 +4,8 @@ import io.github.naimelijah.hrsched.workforce.application.port.in.PublishedQuali
 import java.util.UUID;
 
 /**
+ * What a caller is told about a qualification an organisation defines.
+ *
  * @param id the qualification identity
  * @param name what it is called
  */

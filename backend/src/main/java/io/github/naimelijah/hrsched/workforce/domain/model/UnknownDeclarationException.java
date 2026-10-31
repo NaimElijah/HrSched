@@ -9,6 +9,10 @@ package io.github.naimelijah.hrsched.workforce.domain.model;
  */
 public class UnknownDeclarationException extends RuntimeException {
 
+  /**
+   * Builds the refusal with a fixed message that names no span. The 404 does not use it: the web
+   * adapter answers with a constant sentence.
+   */
   public UnknownDeclarationException() {
     super("Nothing declared matches what was asked to be withdrawn");
   }

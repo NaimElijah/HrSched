@@ -46,6 +46,10 @@ public class EmployeeController {
   private final ManageEmployeesUseCase manageEmployees;
   private final FindRosterableEmployeesUseCase findEmployees;
 
+  /**
+   * @param manageEmployees the use case behind every write and every read of one person
+   * @param findEmployees the use case behind the listing of everybody the organisation could roster
+   */
   public EmployeeController(
       ManageEmployeesUseCase manageEmployees, FindRosterableEmployeesUseCase findEmployees) {
     this.manageEmployees = manageEmployees;
@@ -146,9 +150,10 @@ public class EmployeeController {
    *
    * @param id who is unavailable
    * @param request the span
-   * @return 204. A span missing an end, ending at or before its start, or beyond what the store
-   *     holds is answered 400; one overlapping a span already declared, 409; somebody else without
-   *     an Admin or Scheduler role, 403; an employee this organisation does not hold, 404
+   * @return 204. A span missing a start or an end, ending at or before its start, or beyond what
+   *     the store holds is answered 400; one overlapping a span already declared, 409; somebody
+   *     else without an Admin or Scheduler role, 403; an employee this organisation does not hold,
+   *     404
    */
   @PostMapping("/{id}/unavailability")
   public ResponseEntity<Void> declareUnavailability(
@@ -228,9 +233,9 @@ public class EmployeeController {
    *
    * @param id whose preference it is
    * @param request the span and how they feel about it
-   * @return 204. A missing strength or end, an invalid span, or one beyond what the store holds is
-   *     answered 400; somebody else without an Admin or Scheduler role, 403; an employee this
-   *     organisation does not hold, 404
+   * @return 204. A missing strength, start or end, an invalid span, or one beyond what the store
+   *     holds is answered 400; somebody else without an Admin or Scheduler role, 403; an employee
+   *     this organisation does not hold, 404
    */
   @PostMapping("/{id}/preferences")
   public ResponseEntity<Void> statePreference(

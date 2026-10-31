@@ -20,6 +20,9 @@ public record StatePreferenceCommand(
     TimeRange period,
     PreferenceStrength strength) {
 
+  /**
+   * @throws NullPointerException if any component is {@code null}
+   */
   public StatePreferenceCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(employee, "employee must not be null");

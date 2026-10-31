@@ -11,6 +11,10 @@ import java.util.Objects;
  */
 public record AddEmployeeCommand(OrganisationId organisation, String name) {
 
+  /**
+   * @throws NullPointerException if either component is {@code null}. A blank name passes: the
+   *     {@code Employee} it creates refuses it
+   */
   public AddEmployeeCommand {
     Objects.requireNonNull(organisation, "organisation must not be null");
     Objects.requireNonNull(name, "name must not be null");
