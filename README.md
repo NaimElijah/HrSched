@@ -73,6 +73,7 @@ flowchart TB
     spa["React SPA<br/>Vite dev server :5173"]
     db[("PostgreSQL 18<br/>one schema, organisation_id on every root,<br/>bar the operator's account and the sessions")]
     subgraph api ["Spring Boot API :8080"]
+        direction LR
         access["access<br/>organisations, accounts, sessions, tokens"]
         workforce["workforce<br/>employees, qualifications, availability"]
         scheduling["scheduling<br/>shifts, rules, rosters, swaps"]
