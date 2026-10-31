@@ -5,7 +5,7 @@
 **Staff rostering for many organisations at once: it turns shifts that need covering and people
 with constraints into a roster that is legal to work, and refuses to publish one that is not.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/NaimElijah/HrSched/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/NaimElijah/HrSched/actions/workflows/ci.yml) [![Java](https://img.shields.io/badge/Java-21_LTS-blue?style=flat-square)](backend/pom.xml) [![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1.2-blue?style=flat-square)](backend/pom.xml) [![React](https://img.shields.io/badge/React-19-blue?style=flat-square)](frontend/package.json) [![Licence](https://img.shields.io/badge/licence-proprietary-lightgrey?style=flat-square)](LICENSE)
+[![Licence](https://img.shields.io/badge/licence-proprietary-lightgrey?style=flat-square)](LICENSE)
 
 [Requirements](docs/requirements/requirements.md) · [Architecture](docs/architecture/architecture.md) · [Decisions](docs/ADRs/README.md) · [API](docs/api.md) · [Threat model](docs/security/threat-model.md) · [Roadmap](https://github.com/NaimElijah/HrSched/milestones)
 
@@ -378,10 +378,11 @@ that proposes, never decides). The
 - **Notifications are pull-only.** A colleague learns of a change when they next open the app (Q21).
 - **Nothing proves the UI and the API agree.** The client is written by hand, and there is no
   contract or browser test ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)).
-- **Nothing blocks a merge on a red build or a vulnerable dependency.** CI runs the build gates
-  and a dependency audit, but none of its jobs is a required check yet
-  ([#217](https://github.com/NaimElijah/HrSched/issues/217)), so a red one blocks nothing. The audit
-  has no severity threshold, and does not audit Maven build plugins such as Spotless and JaCoCo.
+- **Nothing blocks a merge on a red build or a vulnerable dependency.** CI runs both gates and a
+  dependency audit on every push and on every pull request into `main` or `dev`, but none of its
+  jobs is a required check yet ([#217](https://github.com/NaimElijah/HrSched/issues/217)), so a red
+  one blocks nothing. The audit has no severity threshold, and does not audit Maven build plugins
+  such as Spotless and JaCoCo.
 
 ## Contributing and licence
 
