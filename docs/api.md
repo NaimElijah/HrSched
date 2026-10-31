@@ -44,6 +44,10 @@ Creating an account answers `201` with no body and the new account in `Location`
 `role`, `employee`, `active`, `passwordChangeRequired`, `locked` and `createdAt`, and never a
 password. Another organisation's account answers `404`, the same as one that does not exist.
 
+`GET /api/me/schedule` answers each shift the caller works on a published roster, earliest first:
+`shift`, `start`, `end`, the shift's IANA `zone`, in which its working-time days are counted, and
+the `roster` that says so.
+
 ## Signing in
 
 A sign-in returns a short-lived access token and sets a rotating refresh cookie: `HttpOnly`,

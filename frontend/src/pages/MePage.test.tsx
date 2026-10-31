@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { RosteredShift } from '../api/scheduling';
 import { dayLabel, spanLabel, timeLabel } from '../components/localDates';
 import { routeTo } from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
@@ -27,10 +28,12 @@ const COLLEAGUE = '44444444-4444-4444-8444-444444444444';
 
 const SPAN = { from: '2026-10-05T00:00:00.000Z', to: '2026-10-19T00:00:00.000Z' };
 
-const WORK = {
+/** Typed as the client's mirror of the backend's answer, so the two cannot drift apart unseen. */
+const WORK: RosteredShift = {
   shift: 'shift-1',
   start: '2026-10-06T08:00:00Z',
   end: '2026-10-06T16:00:00Z',
+  zone: 'Europe/London',
   roster: 'roster-1',
 };
 
