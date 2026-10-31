@@ -261,8 +261,8 @@ context's `@RestControllerAdvice`, and tests; the steps are in
 
 Backend tests are named `Given<scenario>_When<action>_Then<result>`. Services take an injected
 `Clock`, and no test sleeps: the concurrency tests coordinate real threads with barriers and
-latches. Each layer below is run by one class as an example; `./mvnw test` runs them all. Spotless
-checks formatting before any test, so `spotless:apply` comes first.
+latches. Each layer below is run by one class as an example; `./mvnw test` runs every backend
+layer. Spotless checks formatting before any test, so `spotless:apply` comes first.
 
 | Layer | What it proves | Command (from `backend/`) |
 | :--- | :--- | :--- |
@@ -270,7 +270,7 @@ checks formatting before any test, so `spotless:apply` comes first.
 | Application | Use cases against hand-written fakes of their own ports: no Spring, no mocking framework | `./mvnw spotless:apply test -Dtest=SchedulingServiceTest` |
 | Persistence | Every query scoped to its organisation, on a real PostgreSQL 18; migrations pinned; concurrent publications and edits raced on real threads | `./mvnw spotless:apply test -Dtest=JdbcRosterRepositoryTest` |
 | HTTP | Every endpoint through the real security chain: who reaches what, every problem body, and a trace id on every response | `./mvnw spotless:apply test -Dtest=RosteringHttpTest` |
-| Architecture | The twenty architecture rules, and the ones with our own logic run against classes built to break them | `./mvnw spotless:apply test -Dtest=HexagonalArchitectureTest` |
+| Architecture | The twenty architecture rules, and the ones with our own logic run against classes built to break them | `./mvnw spotless:apply test -Dtest='HexagonalArchitecture*Test'` |
 | Frontend | The one module that calls `fetch`, error-body validation, session renewal, and one test file per screen | `npm test` (from `frontend/`) |
 
 CI runs both gates, and a dependency audit, on every push and on every pull request into `main` or
