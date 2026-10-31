@@ -23,6 +23,8 @@ import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -455,12 +457,16 @@ class AccountHttpTest {
 
   // Reading one
 
-  /** The Location a creation answers with is a route that serves the account it created. */
+  /**
+   * The Location a creation answers with is a route that serves the account it created, with every
+   * member {@code docs/api.md} promises and no other.
+   */
   @Test
   void GivenAnAccountCreated_WhenFollowingItsLocation_ThenTheAccountIsRead() throws Exception {
     OrganisationId acme = anOrganisation();
     String admin = admin(acme);
     String signInName = anInventedSignInName();
+    Instant before = Instant.now().truncatedTo(ChronoUnit.SECONDS);
     String location =
         mockMvc
             .perform(
@@ -470,14 +476,34 @@ class AccountHttpTest {
             .getResponse()
             .getHeader("Location");
 
-    mockMvc
-        .perform(with(get(location), admin))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.id").value(location.substring(location.lastIndexOf('/') + 1)))
-        .andExpect(jsonPath("$.signInName").value(signInName))
-        .andExpect(jsonPath("$.role").value("SCHEDULER"))
-        .andExpect(jsonPath("$.active").value(true))
-        .andExpect(jsonPath("$.passwordChangeRequired").value(true));
+    String body =
+        mockMvc
+            .perform(with(get(location), admin))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    Map<String, Object> account = JsonPath.read(body, "$");
+    assertThat(account)
+        .containsOnlyKeys(
+            "id",
+            "signInName",
+            "role",
+            "employee",
+            "active",
+            "passwordChangeRequired",
+            "locked",
+            "createdAt")
+        .containsEntry("id", location.substring(location.lastIndexOf('/') + 1))
+        .containsEntry("signInName", signInName)
+        .containsEntry("role", "SCHEDULER")
+        .containsEntry("employee", null)
+        .containsEntry("active", true)
+        .containsEntry("passwordChangeRequired", true)
+        .containsEntry("locked", false);
+    assertThat(Instant.parse((String) account.get("createdAt")))
+        .isBetween(before, Instant.now().plusSeconds(1));
   }
 
   /** Another organisation's account is answered exactly as one that does not exist. */
@@ -510,6 +536,43 @@ class AccountHttpTest {
                 get("/api/accounts/" + account),
                 TestTenants.tokenFor(mockMvc, acme, Role.SCHEDULER)))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenNoToken_WhenReadingAnAccount_ThenItIsUnauthorised() throws Exception {
+    String account = create(admin(anOrganisation()), anInventedSignInName(), Role.SCHEDULER);
+
+    mockMvc.perform(get("/api/accounts/" + account)).andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void GivenAnEmployeeRole_WhenReadingAnAccount_ThenItIsForbidden() throws Exception {
+    OrganisationId acme = anOrganisation();
+    String account = create(admin(acme), anInventedSignInName(), Role.SCHEDULER);
+
+    mockMvc
+        .perform(
+            with(
+                get("/api/accounts/" + account),
+                TestTenants.tokenFor(mockMvc, acme, Role.EMPLOYEE)))
+        .andExpect(status().isForbidden());
+  }
+
+  /** As listing and creating are: the operator is confined to the register (ADR-030). */
+  @Test
+  void GivenTheOperator_WhenReadingAnAccount_ThenItIsForbidden() throws Exception {
+    String account = create(admin(anOrganisation()), anInventedSignInName(), Role.SCHEDULER);
+
+    mockMvc
+        .perform(with(get("/api/accounts/" + account), TestTenants.operatorToken(mockMvc)))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenAnIdentifierThatIsNotAUuid_WhenReadingAnAccount_ThenItIsABadRequest() throws Exception {
+    mockMvc
+        .perform(with(get("/api/accounts/not-a-uuid"), admin(anOrganisation())))
+        .andExpect(status().isBadRequest());
   }
 
   @Test
