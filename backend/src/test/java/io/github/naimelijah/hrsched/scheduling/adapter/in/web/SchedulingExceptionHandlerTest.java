@@ -387,7 +387,7 @@ class SchedulingExceptionHandlerTest {
   /**
    * A second press of the same assignment is a conflict with what the roster holds, not a bad
    * request, so the board reloads. Found as Spring finds it, so a refusal still routed to the 400
-   * handler fails here.
+   * handler fails here. The detail is the exception's own constant sentence, as its javadoc says.
    */
   @Test
   void GivenAnAssignmentTheRosterAlreadyHolds_WhenSpringRoutesIt_ThenItIsAConflict()
@@ -403,6 +403,7 @@ class SchedulingExceptionHandlerTest {
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getTitle()).isEqualTo("Already assigned");
     assertThat(problem.getType()).hasToString("urn:hrsched:problem:already-assigned");
+    assertThat(problem.getDetail()).isEqualTo(duplicate.getMessage());
   }
 
   /**

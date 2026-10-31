@@ -9,6 +9,6 @@ package io.github.naimelijah.hrsched.scheduling.domain.model;
 public class DuplicateAssignmentException extends RuntimeException {
 
   public DuplicateAssignmentException() {
-    super("That employee is already assigned to that shift on this roster");
+    super("That employee is already assigned to that shift on this roster.");
   }
 }
