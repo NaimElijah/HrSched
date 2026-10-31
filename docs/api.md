@@ -242,6 +242,10 @@ Everything above is. These are not, and carry no `type`:
   application does not handle (`500`) are rendered by the container's error page, Boot's
   `application/json` with `timestamp`, `status`, `error` and `path`, or HTML to a browser asking for
   it.
+- **A context's refusal to an `Accept` that does not parse.** A refusal a context's handler writes,
+  such as a `404` or a `409`, keeps its status, but to a request whose `Accept` is not a media type
+  at all it has no body and no `Content-Type`: the type its body would be written in is chosen from
+  that `Accept`, and it cannot be. Send `application/json`, or no `Accept`.
 - **Actuator's own answers.** Health answers `503` with its own body when it is down; that is a
   state, not a refusal.
 
@@ -269,9 +273,9 @@ Everything above is. These are not, and carry no `type`:
 - **What Spring refuses before a route decides anything.** A method the path does not take answers
   `405` titled `Method not allowed`, with `Allow` naming the methods it does. An `Accept` the route
   cannot answer in answers `406` titled `Not acceptable`, written as `application/problem+json`
-  whatever was accepted. A path no route maps, inside a family the chain admits the caller to,
-  answers the same `404` as any absence. None of the details repeats the method, the type or the
-  path sent, and these hold on every path, `/actuator` included
+  whatever was accepted, an `Accept` that does not parse included. A path no route maps, inside a
+  family the chain admits the caller to, answers the same `404` as any absence. None of the details
+  repeats the method, the type or the path sent, and these hold on every path, `/actuator` included
   ([#275](https://github.com/NaimElijah/HrSched/issues/275)).
 - **Any rule a draft breaks.** Publication answers `422` titled `Roster breaks the rules`, with a
   `violations` list naming every breach: `overlapping work`, `required qualifications`,

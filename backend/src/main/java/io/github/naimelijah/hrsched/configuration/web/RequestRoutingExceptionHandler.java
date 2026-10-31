@@ -2,6 +2,7 @@ package io.github.naimelijah.hrsched.configuration.web;
 
 import java.net.URI;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.ErrorResponse;
@@ -30,8 +31,10 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
  *
  * <p>Each detail is a fixed sentence that repeats nothing sent: neither the method, nor the media
  * type, nor the path. The headers Spring attaches to the refusal are kept, so a 405 still names the
- * methods the route does take in {@code Allow}, as RFC 9110 section 15.5.6 requires. Nothing is
- * logged or counted: none of these is a refusal of anything the application decided (ADR-018).
+ * methods the route does take in {@code Allow}, as RFC 9110 section 15.5.6 requires. The media type
+ * is set here rather than chosen from {@code Accept}: Spring writes no body at all for an {@code
+ * Accept} it cannot parse, which a 406 is exactly the answer to. Nothing is logged or counted: none
+ * of these is a refusal of anything the application decided (ADR-018).
  */
 @RestControllerAdvice
 public class RequestRoutingExceptionHandler {
@@ -99,6 +102,9 @@ public class RequestRoutingExceptionHandler {
     ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
     problem.setType(type);
     problem.setTitle(title);
-    return ResponseEntity.status(status).headers(exception.getHeaders()).body(problem);
+    return ResponseEntity.status(status)
+        .headers(exception.getHeaders())
+        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        .body(problem);
   }
 }

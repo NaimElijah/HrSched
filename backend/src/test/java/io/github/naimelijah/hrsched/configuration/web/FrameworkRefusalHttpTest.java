@@ -51,6 +51,9 @@ class FrameworkRefusalHttpTest {
   /** A charset name that is not one, so the declared type does not parse at all. */
   private static final String UNPARSABLE_CHARSET = "application/json;charset=no-such-charset";
 
+  /** Invented: an {@code Accept} that names no media type, so it does not parse at all. */
+  private static final String UNPARSABLE_ACCEPT = "invented-not-a-media-type";
+
   @Autowired private MockMvc mockMvc;
 
   private String anOrganisation() throws Exception {
@@ -99,6 +102,22 @@ class FrameworkRefusalHttpTest {
         .andExpect(jsonPath("$.type").value(PROBLEM + "not-acceptable"))
         .andExpect(jsonPath("$.title").value("Not acceptable"))
         .andExpect(jsonPath("$.detail").value(not(containsString(MediaType.TEXT_PLAIN_VALUE))));
+  }
+
+  /**
+   * An {@code Accept} that is not a media type at all. Spring refuses it as one it cannot answer
+   * in, and the refusal still has to be written in some type: the one a problem detail is always
+   * written in, rather than none, which would leave the caller a status and no body.
+   */
+  @Test
+  void GivenAnAcceptThatDoesNotParse_WhenReading_ThenItIsStillANotAcceptableProblem()
+      throws Exception {
+    mockMvc
+        .perform(asAdmin(get("/api/qualifications")).header(HttpHeaders.ACCEPT, UNPARSABLE_ACCEPT))
+        .andExpect(status().isNotAcceptable())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.type").value(PROBLEM + "not-acceptable"))
+        .andExpect(jsonPath("$.detail").value(not(containsString(UNPARSABLE_ACCEPT))));
   }
 
   /**
