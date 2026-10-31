@@ -171,14 +171,17 @@ yet, which is left to the edge ([#162](https://github.com/NaimElijah/HrSched/iss
 and every controller takes it from `@AuthenticationPrincipal Actor`
 ([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md)).
 
-**The organisation comes from the account, never from the request.** Each web adapter has one
-`actingIn(actor)` helper over `Actor.requireTenantMembership()`, and that helper is the only way an
-organisation enters a request — there is no identifier in a path, body or header for a caller to
-change ([ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)). That also makes the
+**The organisation comes from the account, never from the request.** The five tenant
+controllers (`NotificationController`, `SchedulingController`, `SwapController`,
+`EmployeeController` and `QualificationController`) each have an `actingIn(actor)` helper over
+`Actor.requireTenantMembership()`, and `AccountController` has the same helper as `organisationOf`.
+That helper is the only way an organisation enters a request — there is no identifier in a path,
+body or header for a caller to change ([ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)). That also makes the
 platform operator's refusal structural rather than a check: it belongs to no organisation, so there
 is nothing inside one for it to act in ([ADR-030](../ADRs/ADR-030-confine-the-operator-to-the-register-of-organisations.md)).
-The one exception is `GET /api/organisations/{id}`, where the target is in the path because the
-register is what the operator administers.
+`AuthController` and `OrganisationController` have neither helper. The one exception is
+`GET /api/organisations/{id}`, where the target is in the path because the register is what the
+operator administers.
 
 A request carrying an invalid token is refused on every route, including the ones that do not
 require one — that is the bearer filter's own behaviour, and why a client must send no token rather
@@ -621,9 +624,10 @@ are not audited. Nothing at runtime depends on any of it.
   have no record" and "you are rostered for nothing" are different answers.
 - **The acting identity comes from the access token and from nowhere else.** `X-User`, `X-Role`,
   `X-Organisation` and `X-Employee` are gone: no controller reads them, no filter checks them, and
-  a request that sends them anyway is answered as whoever its token says it is. Each web adapter
-  has one `actingIn(actor)` helper over `Actor.requireTenantMembership()`, which is the only way an
-  organisation enters a request
+  a request that sends them anyway is answered as whoever its token says it is. The five tenant
+  controllers each have an `actingIn(actor)` helper over `Actor.requireTenantMembership()`, and
+  `AccountController` has the same helper as `organisationOf`; it is the only way an organisation
+  enters a request
   ([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)).
 - **Every constraint version is stored, and any of them can be read back.** The table is keyed
   `(organisation_id, version)`, so revising never discards what came before, and
@@ -906,9 +910,10 @@ are not audited. Nothing at runtime depends on any of it.
   all to find the few that matter: `generationRequestFor` (a generation's request), `assign` and
   `publish`, which want the ones that overlap one week or stay authoritative beside it,
   `findOwnSchedule`, which keeps the published ones, and `findAssessment`. The sixth, `findRosters`,
-  returns them all, because listing is its job. The second cost is that `violations()` fetches
-  each assignment's shift one at a time, an N+1 inside the publish transaction, and the work held
-  elsewhere for R35 is resolved the same way. The third is that every owned collection is written
+  returns them all, because listing is its job. The second cost is that `SchedulingService`'s
+  `assignedShifts` and `periodsOf` fetch each assignment's shift one at a time, an N+1 inside the
+  publish transaction, and `heldElsewhere` resolves the work held elsewhere for R35 one shift at a
+  time. The third is that every owned collection is written
   one `INSERT` per row. All three were free against a map and are not against a database. Fixing
   the first two means new port methods that push the predicate into SQL, which is a change inward
   of the ports and so a decision of its own. The requirement that sizes it is now stated —
