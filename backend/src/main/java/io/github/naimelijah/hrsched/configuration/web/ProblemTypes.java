@@ -25,6 +25,9 @@ public final class ProblemTypes {
 
   public static final URI NOT_PERMITTED = URI.create("urn:hrsched:problem:not-permitted");
 
+  public static final URI PASSWORD_CHANGE_REQUIRED =
+      URI.create("urn:hrsched:problem:password-change-required");
+
   public static final URI UNAUTHENTICATED = URI.create("urn:hrsched:problem:unauthenticated");
 
   public static final URI UNSUPPORTED_MEDIA_TYPE =

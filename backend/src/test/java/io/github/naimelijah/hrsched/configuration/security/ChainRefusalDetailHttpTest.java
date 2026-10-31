@@ -24,8 +24,10 @@ import org.springframework.test.web.servlet.MockMvc;
  * an account whose temporary password is still pending is told to change it, because a message
  * about its role would send it looking for an administrator instead of a password field (ADR-029).
  * Every other caller the chain refuses hears the same sentence about its role, whichever rule
- * refused it. Both are titled as every context's handler titles a 403 of the same kind, so a
- * refusal reads the same whether the chain or a use case made it.
+ * refused it, titled and typed as every context's handler titles and types a 403 of that kind, so a
+ * role refusal reads the same whether the chain or a use case made it. The pending change is a kind
+ * of its own, with its own title and type, so a client can tell the two apart without reading the
+ * sentence (ADR-057).
  *
  * <p>Annotated identically to the other HTTP tests so they all share one Spring context. Every name
  * here is invented for the test.
@@ -42,6 +44,8 @@ class ChainRefusalDetailHttpTest {
   /** The title every 403 of this kind carries, whether the chain or a use case refused it. */
   private static final String NOT_PERMITTED = "Not permitted";
 
+  private static final String PASSWORD_CHANGE_REQUIRED = "Password change required";
+
   @Autowired private MockMvc mockMvc;
 
   /**
@@ -57,8 +61,8 @@ class ChainRefusalDetailHttpTest {
     mockMvc
         .perform(TestTenants.with(get("/api/qualifications"), token))
         .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.title").value(NOT_PERMITTED))
-        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:not-permitted"))
+        .andExpect(jsonPath("$.title").value(PASSWORD_CHANGE_REQUIRED))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:password-change-required"))
         .andExpect(jsonPath("$.detail").value(CHANGE_YOUR_PASSWORD_FIRST));
   }
 

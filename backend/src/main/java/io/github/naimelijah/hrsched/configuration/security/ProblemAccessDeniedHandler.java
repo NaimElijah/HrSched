@@ -25,15 +25,19 @@ import tools.jackson.databind.ObjectMapper;
  * Answers an authenticated caller who may not do this with a problem detail.
  *
  * <p>Distinguishes one case, and only one: a caller whose password change is still pending is told
- * so. That is not a leak — they already know they were given a temporary password — and without it
- * every screen would refuse them with a message about their role, which is not the reason and would
- * send them looking for an administrator instead of a password field.
+ * so, in a problem of its own kind, titled "Password change required", so a client can tell it from
+ * a role refusal without reading the sentence (ADR-057). That is not a leak — they already know
+ * they were given a temporary password — and without it every screen would refuse them with a
+ * message about their role, which is not the reason and would send them looking for an
+ * administrator instead of a password field.
  *
  * <p>Everything else is the same 403 with the same sentence. Which rule refused a caller is a fact
  * about how this API is arranged, and there is no reason to hand it out.
  *
- * <p>Titled "Not permitted", as every context's handler titles the same refusal, so a 403 reads the
- * same whether the chain or a use case made it.
+ * <p>A role refusal is titled "Not permitted" and typed {@code not-permitted}, as every context's
+ * handler titles and types the same refusal, so a client tells it apart the same way whether the
+ * chain or a use case made it. A handler's 403 also carries {@code instance}, the path refused,
+ * which Spring fills in for a problem an advice returns; this one, written in a filter, has none.
  *
  * <p>Runs in a filter, before any controller is chosen, so the exception handlers never see it.
  */
@@ -75,12 +79,15 @@ public class ProblemAccessDeniedHandler implements AccessDeniedHandler {
         .increment();
 
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
-    problem.setTitle("Not permitted");
-    problem.setType(ProblemTypes.NOT_PERMITTED);
-    problem.setDetail(
-        pendingChange
-            ? "Change your temporary password first."
-            : "Your role does not permit this.");
+    if (pendingChange) {
+      problem.setTitle("Password change required");
+      problem.setType(ProblemTypes.PASSWORD_CHANGE_REQUIRED);
+      problem.setDetail("Change your temporary password first.");
+    } else {
+      problem.setTitle("Not permitted");
+      problem.setType(ProblemTypes.NOT_PERMITTED);
+      problem.setDetail("Your role does not permit this.");
+    }
 
     response.setStatus(HttpStatus.FORBIDDEN.value());
     response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);

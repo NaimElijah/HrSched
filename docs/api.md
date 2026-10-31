@@ -47,7 +47,8 @@ A sign-in returns a short-lived access token and sets a rotating refresh cookie:
 `Secure`, `SameSite=Strict`, scoped to `/api/auth`
 ([ADR-028](ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md)). An account
 whose password somebody else chose gets a token that can do one thing, change that password; every
-other route answers `403` titled `Not permitted`, whose detail says to change it first, until it
+other route answers `403` titled `Password change required`, of type
+`urn:hrsched:problem:password-change-required`, whose detail says to change it first, until it
 does. The new password must be at least 15 characters. Changing
 it revokes every earlier session, so only the token in that response works. A first sign-in answers
 like this, with the token shortened and every identifier invented. An Employee account is always
@@ -204,6 +205,7 @@ to be read. `detail` is the sentence to show a person.
 | `urn:hrsched:problem:sign-in-refused` | `401` | `Sign-in refused` |
 | `urn:hrsched:problem:unauthenticated` | `401` | `Unauthenticated` |
 | `urn:hrsched:problem:not-permitted` | `403` | `Not permitted` |
+| `urn:hrsched:problem:password-change-required` | `403` | `Password change required` |
 | `urn:hrsched:problem:password-not-changed` | `403` | `Password not changed` |
 | `urn:hrsched:problem:not-found` | `404` | `Not found` |
 | `urn:hrsched:problem:method-not-allowed` | `405` | `Method not allowed` |
