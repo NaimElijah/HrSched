@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { callsTo, routeTo, writes } from '../test-support/routeTo';
+import { callsTo, holdingWrites, routeTo, writes } from '../test-support/routeTo';
+import type { Answer } from '../test-support/routeTo';
 import type { Session } from '../api/session';
 import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { ObjectivesPage } from './ObjectivesPage';
@@ -60,10 +61,9 @@ describe('the objectives page', () => {
   it('GivenNothingWeighted_WhenOpened_ThenNoWeightIsSuggested', async () => {
     weighing({ fairness: null, preferences: null, disruption: null });
     show();
-    // Enabled only once the stored weights have loaded: before that every field is blank anyway.
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Weigh objectives' })).toBeEnabled(),
-    );
+    // Only once the stored weights have loaded: before that every field is blank anyway. Waited for
+    // through the busy region, since the button stays enabled and only says it is unavailable (#257).
+    await waitFor(() => expect(screen.queryByText('Working…')).not.toBeInTheDocument());
 
     for (const label of [/Fairness weight/, /Preferences weight/, /Disruption weight/]) {
       expect(screen.getByLabelText(label)).toHaveValue(null);
@@ -130,5 +130,130 @@ describe('the objectives page', () => {
 
     await waitFor(() => expect(sentBody(stub)).not.toHaveProperty('fairness'));
     expect(sentBody(stub).disruption).toBe(1);
+  });
+});
+
+/** What a keyboard or screen reader user is told about the form (#257). Every weight is invented. */
+describe('the objectives form, told rather than shown', () => {
+  /** Answers every request only once the returned function is called. */
+  function holdingEverything(routed: ReturnType<typeof routeTo>): () => void {
+    let answer!: () => void;
+    const answering = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) => answering.then(() => routed(path, init))),
+    );
+    return answer;
+  }
+
+  /** A bare disabled button cannot be reached to learn why it does nothing (C5). */
+  it('GivenTheStoredWeightsNotYetLoaded_WhenShown_ThenWeighIsUnavailableAndSaysItIsLoading', async () => {
+    const answer = holdingEverything(weighing(STORED));
+    show();
+    const weigh = screen.getByRole('button', { name: 'Weigh objectives' });
+
+    expect(weigh).toHaveAttribute('aria-disabled', 'true');
+    expect(weigh).not.toBeDisabled();
+    expect(weigh).toHaveAccessibleDescription(/load/i);
+    answer();
+    await waitFor(() => expect(screen.getByLabelText(/Fairness weight/)).toHaveValue(3));
+    expect(weigh).not.toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('GivenTheStoredWeightsNotYetLoaded_WhenWeighIsPressed_ThenNothingIsSent', async () => {
+    const routed = weighing(STORED);
+    const answer = holdingEverything(routed);
+    show();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
+
+    answer();
+    await waitFor(() => expect(screen.getByLabelText(/Fairness weight/)).toHaveValue(3));
+    expect(writes(routed)).toHaveLength(0);
+  });
+
+  /** A load that failed is otherwise a dead end: the weights can never be sent (C5). */
+  it('GivenTheStoredWeightsFailedToLoad_WhenTryAgainIsPressed_ThenTheyAreAskedForAgain', async () => {
+    const server: Record<string, Answer> = {
+      '/api/objectives': { status: 500, body: { detail: 'Something went wrong.' } },
+      'PUT /api/objectives': { status: 200, body: STORED },
+    };
+    const routed = routeTo(server);
+    show();
+    const tryAgain = await screen.findByRole('button', { name: /^Try again/ });
+    const askedBefore = callsTo(routed, 'GET', '/api/objectives').length;
+    server['/api/objectives'] = { status: 200, body: STORED };
+
+    await userEvent.click(tryAgain);
+
+    await waitFor(() => expect(screen.getByLabelText(/Fairness weight/)).toHaveValue(3));
+    expect(callsTo(routed, 'GET', '/api/objectives').length).toBeGreaterThan(askedBefore);
+    expect(screen.getByRole('button', { name: 'Weigh objectives' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
+  /**
+   * A disabled button drops the keyboard focus to the page in a browser (C1), and a second
+   * revision sent meanwhile would be one nobody asked for.
+   */
+  it('GivenAWeighingInFlight_WhenPressedAgain_ThenTheButtonKeepsFocusAndOnlyOneIsSent', async () => {
+    const routed = weighing(STORED);
+    show();
+    await waitFor(() => expect(screen.getByLabelText(/Fairness weight/)).toHaveValue(3));
+    const release = holdingWrites(routed);
+    const weigh = screen.getByRole('button', { name: 'Weigh objectives' });
+
+    await userEvent.click(weigh);
+    await userEvent.click(weigh);
+
+    expect(weigh).toHaveAttribute('aria-disabled', 'true');
+    expect(weigh).not.toBeDisabled();
+    expect(weigh).toHaveFocus();
+    release();
+    await waitFor(() => expect(callsTo(routed, 'PUT', '/api/objectives')).toHaveLength(1));
+    await waitFor(() => expect(weigh).not.toHaveAttribute('aria-disabled', 'true'));
+    expect(writes(routed)).toHaveLength(1);
+  });
+
+  /** The fields look the same before and after, so without a word nothing says it was stored (C3). */
+  it('GivenAWeighing_WhenItSucceeds_ThenAStatusSaysTheObjectivesWereWeighed', async () => {
+    weighing(STORED);
+    show();
+    await waitFor(() => expect(screen.getByLabelText(/Fairness weight/)).toHaveValue(3));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
+
+    await waitFor(() =>
+      expect(screen.getAllByRole('status').map((status) => status.textContent)).toContainEqual(
+        expect.stringMatching(/objectives weighed/i),
+      ),
+    );
+  });
+
+  /** A success left on screen while the next weighing is typed reads as that one's (C9). */
+  it('GivenAWeighingSucceeded_WhenTheFormIsEditedAgain_ThenTheSuccessIsNoLongerSaid', async () => {
+    weighing(STORED);
+    show();
+    await waitFor(() => expect(screen.getByLabelText(/Fairness weight/)).toHaveValue(3));
+    await userEvent.click(screen.getByRole('button', { name: 'Weigh objectives' }));
+    await screen.findByText(/objectives weighed/i);
+
+    await userEvent.type(screen.getByLabelText(/Fairness weight/), '1', WITHOUT_PAUSES);
+
+    expect(screen.queryByText(/objectives weighed/i)).not.toBeInTheDocument();
+  });
+
+  /** Try again goes once pressed, and focus left on a button that is gone falls to the page (C2). */
+  it('GivenTheStoredWeightsFailedToLoad_WhenTryAgainIsPressed_ThenTheSectionHeadingHasFocus', async () => {
+    routeTo({ '/api/objectives': { status: 500, body: { detail: 'Something went wrong.' } } });
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Try again/ }));
+
+    expect(screen.getByRole('heading', { name: 'What makes a roster better' })).toHaveFocus();
   });
 });
