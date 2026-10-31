@@ -30,24 +30,31 @@ import org.springframework.test.web.servlet.MockMvc;
  *
  * <p>When a request fails in a way no handler answers, the container renders the error by
  * dispatching once more, to {@code /error}, and that second dispatch passes through the security
- * chain too. A wrong method on a mapped path used to be such a failure; Spring's own refusals are
+ * chain too. The chain lets every {@code ERROR} dispatch through, whoever made the request, because
+ * {@code denyAll} would otherwise turn the error into a refusal and hide what went wrong. The
+ * request firewall's 400 is such a failure any anonymous caller can provoke, so it pins that an
+ * {@code ERROR} dispatch carrying no token is rendered rather than refused. A request a caller
+ * makes to {@code /error} is a {@code REQUEST} dispatch, and no rule opens it, so it is refused
+ * like any other route nobody decided was safe (ADR-032).
+ *
+ * <p>A wrong method on a mapped path used to reach the error page too; Spring's own refusals are
  * now answered with a problem detail in the request itself (issue #275), which the first test pins
- * on a real port. What still reaches the error page is a form body over the server's form limit,
- * which the server refuses while Spring is reading the body (see {@code FormPostLimitHttpTest}),
- * and any failure nothing handles. The tests use the first, because nothing here can provoke the
- * second. The chain lets every {@code ERROR} dispatch through, because {@code denyAll} would
- * otherwise turn the error into a refusal and hide what went wrong. A request a caller makes to
- * {@code /error} is a {@code REQUEST} dispatch, and no rule opens it, so it is refused like any
- * other route nobody decided was safe (ADR-032).
+ * on a real port, headers included.
  *
  * <p>The page the container renders carries the same {@code Content-Security-Policy} and {@code
  * nosniff} as every other answer, as JSON and as the HTML a browser asks for. The chain's header
  * writer does not run in the {@code ERROR} dispatch: the headers reach that page only because the
  * first dispatch's response wrote them when the error was sent, so nothing but a test on a real
- * port would notice them going.
+ * port would notice them going. The firewall's 400 is written before that first dispatch's headers
+ * are, so those tests use the other failure that still reaches the page: a form body over the
+ * server's form limit, which the server refuses while Spring is reading the body (see {@code
+ * FormPostLimitHttpTest}). That is the case issue #340 removes, by answering the oversized form
+ * with a problem detail; when it does, these tests need another failure that is rendered at {@code
+ * /error} after the chain has run.
  *
- * <p>Real HTTP on a random port, not MockMvc, because MockMvc never performs the container's error
- * dispatch. Annotated as {@code FormPostLimitHttpTest} is, so the two share one real-port context.
+ * <p>The form's one field and the character its value repeats are invented. Real HTTP on a random
+ * port, not MockMvc, because MockMvc never performs the container's error dispatch. Annotated as
+ * {@code FormPostLimitHttpTest} is, so the two share one real-port context.
  */
 @Import(PostgresBackedApplication.class)
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
@@ -57,6 +64,8 @@ class ErrorDispatchHttpTest {
   private static final String HEALTH = "/actuator/health";
 
   private static final String EMPLOYEES = "/api/employees";
+
+  private static final int BAD_REQUEST = 400;
 
   private static final int METHOD_NOT_ALLOWED = 405;
 
@@ -74,6 +83,12 @@ class ErrorDispatchHttpTest {
   private static final int UNAUTHORIZED = 401;
 
   private static final int FORBIDDEN = 403;
+
+  /**
+   * A path whose {@code %2561} decodes twice, which the request firewall refuses before any rule is
+   * matched (see {@code SessionHttpTest}).
+   */
+  private static final String A_PATH_THE_FIREWALL_REFUSES = "/%2561pi/auth/session";
 
   private static final String CONTENT_SECURITY_POLICY = "Content-Security-Policy";
   private static final String NOTHING_LOADS_AND_NOTHING_FRAMES =
@@ -113,6 +128,29 @@ class ErrorDispatchHttpTest {
     assertThat(response.headers().firstValue(CONTENT_SECURITY_POLICY))
         .as("the Content-Security-Policy of the problem detail")
         .hasValue(NOTHING_LOADS_AND_NOTHING_FRAMES);
+    assertThat(response.headers().firstValue(CONTENT_TYPE_OPTIONS))
+        .as("the X-Content-Type-Options of the problem detail")
+        .hasValue(NOSNIFF);
+  }
+
+  /**
+   * The firewall refuses the path by sending an error, which the container renders at {@code
+   * /error} in a dispatch that carries no token, because the request carried none. Refused there,
+   * it would answer 401 and say nothing of the path that failed.
+   */
+  @Test
+  void GivenNoTokenAndAPathTheFirewallRefuses_WhenSent_ThenTheErrorIsRenderedRatherThanRefused()
+      throws Exception {
+    HttpResponse<String> response =
+        send(HttpRequest.newBuilder(uri(A_PATH_THE_FIREWALL_REFUSES)).GET());
+
+    assertThat(response.statusCode())
+        .describedAs("status, which answered: %s", response.body())
+        .isNotIn(UNAUTHORIZED, FORBIDDEN)
+        .isEqualTo(BAD_REQUEST);
+    assertThat(JsonPath.<Integer>read(response.body(), "$.status"))
+        .describedAs("the status the rendered error names")
+        .isEqualTo(BAD_REQUEST);
   }
 
   /**
