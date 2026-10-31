@@ -48,6 +48,8 @@ label {
   gap: 0.2rem;
   font-size: 0.82rem;
   color: #5f5a52;
+  /* Lets the field inside it be capped: an auto-width label otherwise grows to the field. */
+  max-width: 100%;
 }
 
 input,
@@ -57,8 +59,13 @@ select {
   border: 1px solid var(--control-line);
   border-radius: 4px;
   background: #fff;
-  /* Never wider than its container, so a field does not push a 320 px page sideways (1.4.10). */
+  /*
+   * Never wider than its container, so a field does not push a 320 px page sideways (1.4.10): the
+   * minimum gives way to a narrow container, and the maximum stops a select growing to its longest
+   * option, such as an employee's name with an identifier.
+   */
   min-width: min(12rem, 100%);
+  max-width: 100%;
 }
 
 input[type='checkbox'] {
@@ -202,6 +209,12 @@ table {
 .table-scroll {
   overflow-x: auto;
   container-type: inline-size;
+  /*
+   * A containing block, so what the table positions absolutely, such as a visually hidden
+   * "Actions" header, is clipped with it. Otherwise it sits where the scrolled column is and
+   * widens the page at 320 px.
+   */
+  position: relative;
 }
 
 .table-scroll:focus-visible {
