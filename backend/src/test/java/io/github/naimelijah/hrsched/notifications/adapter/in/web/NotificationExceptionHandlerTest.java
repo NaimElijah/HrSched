@@ -86,6 +86,7 @@ class NotificationExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
     assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
     assertThat(problem.getDetail())
         .isEqualTo("You have no personnel record, so you have no notifications.");
   }
@@ -137,6 +138,7 @@ class NotificationExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
     assertThat(problem.getTitle()).isEqualTo("Not found");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-found");
     assertThat(problem.getDetail()).isEqualTo("No such resource.");
   }
 
@@ -164,6 +166,7 @@ class NotificationExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
     assertThat(problem.getTitle()).isEqualTo("Not found");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-found");
     assertThat(problem.getDetail()).isEqualTo("No such resource.");
     assertThat(problem.getDetail()).doesNotContain(theirs.value().toString());
   }
@@ -205,6 +208,7 @@ class NotificationExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
     assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
     assertThat(problem.getDetail())
         .isEqualTo("The platform operator may not act inside an organisation.");
     assertThat(denied("operator_confined")).isEqualTo(1.0);

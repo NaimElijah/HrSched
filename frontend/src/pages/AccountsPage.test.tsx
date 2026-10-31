@@ -891,12 +891,14 @@ describe('resetting a colleague’s password', () => {
 
   it('GivenAResetRefused_WhenShown_ThenTheTypedPasswordIsKept', async () => {
     theOrganisation({
-      // What AccessExceptionHandler answers a temporary password the policy refuses.
+      // What AccessExceptionHandler answers a temporary password the policy refuses. The minimum
+      // the detail names is this fixture's, invented: the backend names the one it is configured
+      // with, and the page shows whatever it is sent.
       'POST /api/accounts/99999999-9999-4999-8999-999999999999/password': {
         status: 422,
         body: {
           title: 'Password not accepted',
-          detail: 'That temporary password does not satisfy the policy.',
+          detail: 'A password must be at least 15 characters long.',
           reason: 'TOO_SHORT',
         },
       },
@@ -911,8 +913,9 @@ describe('resetting a colleague’s password', () => {
     await userEvent.type(field, A_SHORT_PASSWORD, WITHOUT_PAUSES);
     await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
 
+    // The fixture's invented detail, shown as sent.
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'That temporary password does not satisfy the policy.',
+      'A password must be at least 15 characters long.',
     );
     expect(field).toHaveValue(A_SHORT_PASSWORD);
   });

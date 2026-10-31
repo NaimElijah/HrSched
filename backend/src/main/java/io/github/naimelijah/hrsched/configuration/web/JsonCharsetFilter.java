@@ -95,6 +95,7 @@ public class JsonCharsetFilter extends OncePerRequestFilter {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.UNSUPPORTED_MEDIA_TYPE, "A JSON request body must be encoded in UTF-8.");
     problem.setTitle("Unsupported media type");
+    problem.setType(ProblemTypes.UNSUPPORTED_MEDIA_TYPE);
 
     response.setStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE.value());
     response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);

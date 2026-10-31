@@ -69,13 +69,33 @@ public class WorkforceExceptionHandler {
     InvalidQualificationNameException.class,
     InvalidContractTermsException.class,
     InvalidTimeRangeException.class,
-    OverlappingUnavailabilityException.class,
     MalformedRequestException.class
   })
   public ProblemDetail handleInvalidInput(RuntimeException exception) {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     problem.setTitle("Invalid request");
+    problem.setType(ProblemTypes.INVALID_REQUEST);
+    return problem;
+  }
+
+  /**
+   * Unavailability overlapping a span the employee already declared. A conflict rather than a bad
+   * request (RFC 9110 section 15.5.10): the span sent is well formed, and what refuses it is a
+   * declaration already on record. The detail is a fixed sentence naming neither span, because one
+   * of them is an absence somebody declared. Whoever declares a span is often the person themself,
+   * so it says what they can do next, rather than speaking of them as "this employee".
+   */
+  @ExceptionHandler(OverlappingUnavailabilityException.class)
+  public ProblemDetail handleOverlappingUnavailability(
+      OverlappingUnavailabilityException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT,
+            "That time overlaps a span already declared. Withdraw that one first, or choose another"
+                + " time.");
+    problem.setTitle("Overlaps a declared span");
+    problem.setType(ProblemTypes.OVERLAPS_A_DECLARED_SPAN);
     return problem;
   }
 
@@ -95,12 +115,14 @@ public class WorkforceExceptionHandler {
               "The request body exceeds a limit on its size, its nesting or the length of a value"
                   + " in it.");
       problem.setTitle("Request too large");
+      problem.setType(ProblemTypes.REQUEST_TOO_LARGE);
       return problem;
     }
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.BAD_REQUEST, "The request body is malformed or is missing required fields.");
     problem.setTitle("Malformed request");
+    problem.setType(ProblemTypes.MALFORMED_REQUEST);
     return problem;
   }
 
@@ -114,18 +136,25 @@ public class WorkforceExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your role does not permit this.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 
+  /**
+   * Something this organisation does not hold, answered with the sentence every context's 404
+   * gives. The exceptions' own messages name the identifier asked for, and a caller is not told
+   * back what it sent (ADR-024).
+   */
   @ExceptionHandler({
     UnknownEmployeeException.class,
     UnknownQualificationException.class,
     UnknownDeclarationException.class
   })
   public ProblemDetail handleUnknown(RuntimeException exception) {
-    ProblemDetail problem =
-        ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, exception.getMessage());
+    ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
+    problem.setType(ProblemTypes.NOT_FOUND);
+    problem.setDetail("No such resource.");
     return problem;
   }
 
@@ -143,6 +172,7 @@ public class WorkforceExceptionHandler {
     denied("cross_tenant");
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
+    problem.setType(ProblemTypes.NOT_FOUND);
     problem.setDetail("No such resource.");
     return problem;
   }
@@ -162,6 +192,7 @@ public class WorkforceExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "The platform operator may not act inside an organisation.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 }

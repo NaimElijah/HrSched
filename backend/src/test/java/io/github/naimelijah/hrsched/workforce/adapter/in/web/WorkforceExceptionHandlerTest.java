@@ -24,6 +24,7 @@ import io.github.naimelijah.hrsched.workforce.domain.model.UnknownEmployeeExcept
 import io.github.naimelijah.hrsched.workforce.domain.model.UnknownQualificationException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
@@ -41,6 +42,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.method.annotation.ExceptionHandlerMethodResolver;
 
 /**
  * Specification of which workforce failure earns which status.
@@ -121,11 +123,10 @@ class WorkforceExceptionHandlerTest {
         new InvalidQualificationNameException(),
         new InvalidContractTermsException(),
         new InvalidTimeRangeException(),
-        new OverlappingUnavailabilityException(),
         new MalformedRequestException("name is required"));
   }
 
-  /** Every failure the handler promises to render as a 404 carrying its own message. */
+  /** Every failure the handler promises to render as a 404 carrying the constant detail. */
   private static Stream<RuntimeException> unknownRecords() {
     return Stream.of(
         new UnknownEmployeeException(EmployeeId.newId()),
@@ -141,18 +142,20 @@ class WorkforceExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Invalid request");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:invalid-request");
     assertThat(problem.getDetail()).isEqualTo(failure.getMessage());
   }
 
   @ParameterizedTest
   @MethodSource("unknownRecords")
-  void GivenAnUnknownRecord_WhenTranslated_ThenItIsNotFoundCarryingTheMessage(
+  void GivenAnUnknownRecord_WhenTranslated_ThenItIsNotFoundAndTheMessageIsReplaced(
       RuntimeException failure) {
     ProblemDetail problem = handler.handleUnknown(failure);
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
     assertThat(problem.getTitle()).isEqualTo("Not found");
-    assertThat(problem.getDetail()).isEqualTo(failure.getMessage());
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-found");
+    assertThat(problem.getDetail()).isEqualTo("No such resource.");
   }
 
   @Test
@@ -163,7 +166,34 @@ class WorkforceExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Malformed request");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:malformed-request");
     assertThat(problem.getDetail()).doesNotContain("raw parser noise");
+  }
+
+  /**
+   * A span overlapping one already declared is a conflict with what is on record, not a bad
+   * request. Found as Spring finds it, so a refusal still routed to the 400 handler fails here. The
+   * detail is read by whoever declared the span, often the person themself, so it says what they
+   * can do next rather than whose span it was.
+   */
+  @Test
+  void GivenUnavailabilityOverlappingADeclaredSpan_WhenSpringRoutesIt_ThenItIsAConflict()
+      throws Exception {
+    OverlappingUnavailabilityException overlap = new OverlappingUnavailabilityException();
+    Method routed =
+        new ExceptionHandlerMethodResolver(WorkforceExceptionHandler.class)
+            .resolveMethodByThrowable(overlap);
+    assertThat(routed).describedAs("the handler Spring routes the overlap to").isNotNull();
+
+    ProblemDetail problem = (ProblemDetail) routed.invoke(handler, overlap);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getTitle()).isEqualTo("Overlaps a declared span");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:overlaps-a-declared-span");
+    assertThat(problem.getDetail())
+        .isEqualTo(
+            "That time overlaps a span already declared. Withdraw that one first, or choose another"
+                + " time.");
   }
 
   @Test
@@ -175,6 +205,7 @@ class WorkforceExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
     assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
     assertThat(problem.getDetail()).isEqualTo("Your role does not permit this.");
   }
 
@@ -191,6 +222,7 @@ class WorkforceExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
     assertThat(problem.getTitle()).isEqualTo("Not found");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-found");
     assertThat(problem.getDetail()).isEqualTo("No such resource.");
     assertThat(problem.getDetail()).doesNotContain(theirs.value().toString());
   }
@@ -269,6 +301,7 @@ class WorkforceExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
     assertThat(problem.getTitle()).isEqualTo("Not permitted");
+    assertThat(problem.getType()).hasToString("urn:hrsched:problem:not-permitted");
     assertThat(problem.getDetail())
         .isEqualTo("The platform operator may not act inside an organisation.");
     assertThat(denied("operator_confined")).isEqualTo(1.0);

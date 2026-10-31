@@ -16,6 +16,7 @@ import io.github.naimelijah.hrsched.access.application.port.out.AccountRepositor
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
 import io.github.naimelijah.hrsched.access.domain.model.OperatorMembership;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
@@ -66,6 +67,7 @@ class OrganisationHttpTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private AccountRepository accounts;
   @Autowired private PasswordHasher passwords;
+  @Autowired private PasswordPolicy policy;
 
   private String operator() throws Exception {
     return TestTenants.operatorToken(mockMvc);
@@ -524,7 +526,12 @@ class OrganisationHttpTest {
                     "{\"name\":\"%s\",\"firstAdmin\":{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\"}}"
                         .formatted(refused, anInventedSignInName(), "short")))
         .andExpect(status().isUnprocessableEntity())
-        .andExpect(jsonPath("$.reason").value("TOO_SHORT"));
+        .andExpect(jsonPath("$.reason").value("TOO_SHORT"))
+        .andExpect(
+            jsonPath("$.detail")
+                .value(
+                    "A password must be at least %d characters long."
+                        .formatted(policy.minimumLength())));
 
     assertThatNoOrganisationIsCalled(refused);
   }

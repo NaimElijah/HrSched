@@ -151,6 +151,7 @@ function interpret<T>(path: string, answered: Answered): T {
       answered.status,
       parseOrNull(answered.text) ?? (plain ? { detail: answered.text } : null),
       answered.reference,
+      answered.mediaType,
     );
   }
   if (answered.status === 204 || answered.text.length === 0) {

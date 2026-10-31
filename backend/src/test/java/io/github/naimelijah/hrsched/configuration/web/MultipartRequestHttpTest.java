@@ -2,6 +2,7 @@ package io.github.naimelijah.hrsched.configuration.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
@@ -28,7 +29,7 @@ import org.springframework.http.HttpHeaders;
  * to everybody. A multipart request to it is answered 415, the answer to any body sign-in does not
  * take, and is not parsed first. A part over the default upload limit tells the two apart: parsed,
  * it is refused 413 for its size, which only a parser can know; unparsed, it is refused 415 for its
- * type.
+ * type, with the problem detail any type a route does not take gets (issue #275).
  *
  * <p>Real HTTP on a random port, not MockMvc, because MockMvc never parses a multipart body: its
  * mock request hands the dispatcher only the parts a test registered on it, so the parser this is
@@ -58,6 +59,9 @@ class MultipartRequestHttpTest {
 
   private static final int UNSUPPORTED_MEDIA_TYPE = 415;
 
+  private static final String UNSUPPORTED_MEDIA_TYPE_PROBLEM =
+      "urn:hrsched:problem:unsupported-media-type";
+
   private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
   @LocalServerPort private int port;
@@ -84,6 +88,9 @@ class MultipartRequestHttpTest {
     assertThat(response.statusCode())
         .describedAs("status, which answered: %s", response.body())
         .isEqualTo(UNSUPPORTED_MEDIA_TYPE);
+    assertThat(JsonPath.<String>read(response.body(), "$.type"))
+        .describedAs("the refusal's type, which answered: %s", response.body())
+        .isEqualTo(UNSUPPORTED_MEDIA_TYPE_PROBLEM);
   }
 
   /** One file part of {@link #PART_BYTES} bytes, framed as RFC 7578 says. */

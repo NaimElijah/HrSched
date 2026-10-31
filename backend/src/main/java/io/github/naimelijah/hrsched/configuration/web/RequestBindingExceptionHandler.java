@@ -70,6 +70,7 @@ public class RequestBindingExceptionHandler {
   private static ProblemDetail invalid(String detail) {
     ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail);
     problem.setTitle(TITLE);
+    problem.setType(ProblemTypes.INVALID_REQUEST);
     return problem;
   }
 }

@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.configuration.security;
 
+import io.github.naimelijah.hrsched.configuration.web.ProblemTypes;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.ServletException;
@@ -98,6 +99,7 @@ public class ProblemAuthenticationEntryPoint implements AuthenticationEntryPoint
 
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
     problem.setTitle("Unauthenticated");
+    problem.setType(ProblemTypes.UNAUTHENTICATED);
     problem.setDetail("A valid access token is required.");
 
     response.setStatus(HttpStatus.UNAUTHORIZED.value());

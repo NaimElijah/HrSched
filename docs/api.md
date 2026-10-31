@@ -5,8 +5,9 @@ roster. The README shows the responses that matter most; this page is the rest.
 
 Every call except sign-in carries a bearer token HrSched signed itself. The organisation is never
 part of a request: it comes from the account the token names
-([ADR-031](ADRs/ADR-031-take-the-organisation-from-the-account.md)). Errors are RFC 9457 problem
-details, `application/problem+json`, and every response carries its trace id as `X-Trace-Id`. Every
+([ADR-031](ADRs/ADR-031-take-the-organisation-from-the-account.md)). A refusal is an RFC 9457
+problem detail, `application/problem+json`, bar the few [listed below](#what-is-not-a-problem-detail),
+and every response carries its trace id as `X-Trace-Id`. Every
 response the security chain writes also carries `Content-Security-Policy: default-src 'none';
 frame-ancestors 'none'` and `Referrer-Policy: no-referrer`. The request firewall's own `400`, for a
 malformed path, is written before the chain and carries neither.
@@ -15,7 +16,9 @@ malformed path, is written before the chain and carries neither.
 
 The security chain admits a role to a family of routes, and closes everything it does not name
 ([ADR-032](ADRs/ADR-032-close-the-security-chain-by-default.md)). Each use case then checks the
-exact role. A resource in another organisation answers `404`, the same as one that does not exist.
+exact role. A resource in another organisation answers `404`, the same as one that does not exist,
+and every `404` problem detail gives the same detail, `No such resource.`, naming nothing that was
+asked for.
 
 | Area | Endpoints | Who |
 | :--- | :--- | :--- |
@@ -45,7 +48,9 @@ A sign-in returns a short-lived access token and sets a rotating refresh cookie:
 `Secure`, `SameSite=Strict`, scoped to `/api/auth`
 ([ADR-028](ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md)). An account
 whose password somebody else chose gets a token that can do one thing, change that password; every
-other route answers `403` until it does. The new password must be at least 15 characters. Changing
+other route answers `403` titled `Password change required`, of type
+`urn:hrsched:problem:password-change-required`, whose detail says to change it first, until it
+does. The new password must be at least 15 characters. Changing
 it revokes every earlier session, so only the token in that response works. A first sign-in answers
 like this, with the token shortened and every identifier invented. An Employee account is always
 linked to an employee (R34), so `employee` is null only for the other roles:
@@ -187,6 +192,75 @@ rules`, as publishing it would. With invented identifiers and weights:
 }
 ```
 
+## Problem types
+
+Every problem detail names its kind in `type`, a URN that is never fetched
+([ADR-057](ADRs/ADR-057-name-every-kind-of-problem-with-a-urn.md)). A kind has one status and one
+title wherever it is answered, so a client can tell refusals apart by `type` and leave the title
+to be read. `detail` is the sentence to show a person.
+
+A `409` and a `422` both refuse a request that is well formed, for different reasons. A `409` is
+refused by the present state of what it acts on, and reading that again shows why: a draft somebody
+published, a swap already decided, an assignment the roster already holds. A `422` breaks a rule
+whatever the state: a qualification the person lacks, a roster over a working-time limit, a password
+the policy refuses. Two `409`s predate the rule and bend it: `Sign-in name taken`, whose clashing
+account may belong to an organisation the caller cannot read, and `Not your own password`, which
+refuses the route rather than a state.
+
+| Type | Status | Title |
+| :--- | :--- | :--- |
+| `urn:hrsched:problem:invalid-request` | `400` | `Invalid request` |
+| `urn:hrsched:problem:malformed-request` | `400` | `Malformed request` |
+| `urn:hrsched:problem:sign-in-refused` | `401` | `Sign-in refused` |
+| `urn:hrsched:problem:unauthenticated` | `401` | `Unauthenticated` |
+| `urn:hrsched:problem:not-permitted` | `403` | `Not permitted` |
+| `urn:hrsched:problem:password-change-required` | `403` | `Password change required` |
+| `urn:hrsched:problem:password-not-changed` | `403` | `Password not changed` |
+| `urn:hrsched:problem:not-found` | `404` | `Not found` |
+| `urn:hrsched:problem:method-not-allowed` | `405` | `Method not allowed` |
+| `urn:hrsched:problem:not-acceptable` | `406` | `Not acceptable` |
+| `urn:hrsched:problem:already-assigned` | `409` | `Already assigned` |
+| `urn:hrsched:problem:already-requested` | `409` | `Already requested` |
+| `urn:hrsched:problem:employee-already-linked` | `409` | `Employee already linked` |
+| `urn:hrsched:problem:last-active-admin` | `409` | `Last active Admin` |
+| `urn:hrsched:problem:no-longer-pending` | `409` | `No longer pending` |
+| `urn:hrsched:problem:not-your-own-password` | `409` | `Not your own password` |
+| `urn:hrsched:problem:overlaps-a-declared-span` | `409` | `Overlaps a declared span` |
+| `urn:hrsched:problem:published-concurrently` | `409` | `Published concurrently` |
+| `urn:hrsched:problem:revised-concurrently` | `409` | `Revised concurrently` |
+| `urn:hrsched:problem:roster-status-forbids-this` | `409` | `Roster status forbids this` |
+| `urn:hrsched:problem:sign-in-name-taken` | `409` | `Sign-in name taken` |
+| `urn:hrsched:problem:request-too-large` | `413` | `Request too large` |
+| `urn:hrsched:problem:unsupported-media-type` | `415` | `Unsupported media type` |
+| `urn:hrsched:problem:assignment-refused` | `422` | `Assignment refused` |
+| `urn:hrsched:problem:employee-account-not-linked` | `422` | `Employee account not linked` |
+| `urn:hrsched:problem:password-not-accepted` | `422` | `Password not accepted` |
+| `urn:hrsched:problem:roster-breaks-the-rules` | `422` | `Roster breaks the rules` |
+| `urn:hrsched:problem:roster-cannot-be-checked-against-the-rules` | `422` | `Roster cannot be checked against the rules` |
+| `urn:hrsched:problem:unknown-employee` | `422` | `Unknown employee` |
+| `urn:hrsched:problem:generation-is-busy` | `503` | `Generation is busy` |
+| `urn:hrsched:problem:generation-is-unavailable` | `503` | `Generation is unavailable` |
+
+### What is not a problem detail
+
+Everything above is. These are not, and carry no `type`:
+
+- **A session read that finds no account.** `GET /api/auth/session` answers a bare `404` with no
+  body when the token's account no longer exists; what it should answer is an open decision
+  ([#126](https://github.com/NaimElijah/HrSched/issues/126)).
+- **What the container renders.** A request the firewall refuses (a malformed path, `400`), a form
+  body over the server's form limit (`413`, refused while the body is read;
+  [#340](https://github.com/NaimElijah/HrSched/issues/340)), and any failure the
+  application does not handle (`500`) are rendered by the container's error page, Boot's
+  `application/json` with `timestamp`, `status`, `error` and `path`, or HTML to a browser asking for
+  it.
+- **A context's refusal to an `Accept` that does not parse.** A refusal a context's handler writes,
+  such as a `404` or a `409`, keeps its status, but to a request whose `Accept` is not a media type
+  at all it has no body and no `Content-Type`: the type its body would be written in is chosen from
+  that `Accept`, and it cannot be. Send `application/json`, or no `Accept`.
+- **Actuator's own answers.** Health answers `503` with its own body when it is down; that is a
+  state, not a refusal.
+
 ## Other refusals
 
 - **No token, or one that is not accepted.** Answers `401` titled `Unauthenticated`, whose
@@ -205,8 +279,21 @@ rules`, as publishing it would. With invented identifiers and weights:
   ([ADR-056](ADRs/ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md)).
 - **A body that is not read.** JSON declared in any charset but UTF-8, UTF-16 and UTF-32 included,
   answers `415` titled `Unsupported media type` before it is read; `application/json` with no
-  charset, or with `charset=UTF-8`, is accepted. A multipart request answers `415` and is never
-  parsed; that refusal is Spring's own and carries no problem detail.
+  charset, or with `charset=UTF-8`, is accepted. A multipart request, any other type a route does
+  not take, and a `Content-Type` whose charset does not parse, answer `415` titled
+  `Unsupported media type` without being read.
+- **What Spring refuses on its own.** These are answered only once the security chain has admitted
+  the request: without a token, or with a role the chain refuses the route, the answer is its `401`
+  or `403`, whatever the method or the path. A method the path does not take answers `405` titled
+  `Method not allowed`, with `Allow` naming the methods it does. An `Accept` the route cannot answer
+  in answers `406` titled `Not acceptable`, written as `application/problem+json` whatever was
+  accepted, an `Accept` that does not parse included. No route declares what it produces, so the
+  `406` is found only when the answer is written: on a route that changes something, the change has
+  already been made when the `406` arrives
+  ([#344](https://github.com/NaimElijah/HrSched/issues/344) tracks refusing it first). A path no
+  route maps, inside a family the chain admits the caller to, answers the same `404` as any
+  absence. None of the details repeats the method, the type or the path sent, and these hold on
+  every path, `/actuator` included ([#275](https://github.com/NaimElijah/HrSched/issues/275)).
 - **Any rule a draft breaks.** Publication answers `422` titled `Roster breaks the rules`, with a
   `violations` list naming every breach: `overlapping work`, `required qualifications`,
   `declared unavailability`, `not of this organisation`, or the working-time rule broken. Each
@@ -219,6 +306,15 @@ rules`, as publishing it would. With invented identifiers and weights:
   moment both take the next version; the later answers `409` titled `Revised concurrently`, and
   nothing of it is kept. Reload the rules and revise them again
   ([#238](https://github.com/NaimElijah/HrSched/issues/238)).
+- **An assignment the roster already holds.** Assigning somebody to a shift they are already on,
+  as a second press of the same button does, answers `409` titled `Already assigned`. Reload the
+  roster: the first press was stored. The detail names neither the shift nor the person.
+  Approving a swap (`POST /api/swaps/{id}/approval`) that hands a shift to a colleague already on
+  it answers the same `409`, and publishes nothing. Whether such a swap should be refused when it
+  is asked for is open ([#343](https://github.com/NaimElijah/HrSched/issues/343)).
+- **Unavailability overlapping a declared span.** Declaring unavailability that overlaps a span the
+  employee already declared answers `409` titled `Overlaps a declared span`. The detail names
+  neither span, and says to withdraw the one declared or choose another time.
 - **A roster whose status forbids the change.** Editing or publishing a roster that is no longer a
   draft, or asking for a swap against one that is not the published roster, answers `409` titled
   `Roster status forbids this`. Reload it: somebody most likely published it first.
@@ -233,6 +329,9 @@ rules`, as publishing it would. With invented identifiers and weights:
   what PostgreSQL stores; or setting a working-time value in `PUT /api/constraints` too many
   minutes to count in nanoseconds. Each answers `400` titled `Invalid request`. Nothing is stored,
   and the detail repeats no value sent; for a working-time value it names the field.
+- **A shift nobody could fill.** Defining a shift that requires fewer than one person, or a
+  qualification the organisation has not defined, answers `400` titled `Invalid request`. The detail
+  repeats neither the number nor the identifiers sent.
 - **A span that ends at or before it starts.** On any route that takes a span, the shared time
   range answers `400` titled `Invalid request`, with a constant detail that names neither instant.
 - **A sign-in name that cannot be one, or is taken.** Creating an account, or onboarding an
@@ -249,6 +348,12 @@ rules`, as publishing it would. With invented identifiers and weights:
   answers `400` titled `Invalid request`, stores nothing, and the detail repeats no name. The limit
   is in bytes, not characters, so a name in a script needing two or three bytes a character reaches
   it sooner.
+- **A password the policy refuses.** A temporary password chosen when onboarding an organisation,
+  creating an account or resetting one, and a new password chosen at `POST /api/auth/password`,
+  answer `422` titled `Password not accepted`. The detail says what would satisfy the policy, such
+  as the fewest characters a password may have, and `reason` names the rule broken: `TOO_SHORT`,
+  `TOO_LONG` or, for a change of one's own password only, `SAME_AS_CURRENT`. Neither repeats the
+  password.
 - **An Employee account linked to nobody.** Creating one, taking the link away from one, giving
   the Employee role to an account linked to nobody, or restoring one stored unlinked before R34
   answers `422` titled `Employee account not linked`.

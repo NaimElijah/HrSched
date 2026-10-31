@@ -101,6 +101,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Roster breaks the rules");
+    problem.setType(ProblemTypes.ROSTER_BREAKS_THE_RULES);
     problem.setProperty("violations", describe(exception.violations()));
     return problem;
   }
@@ -114,7 +115,6 @@ public class SchedulingExceptionHandler {
     InvalidHeadcountException.class,
     InvalidConstraintException.class,
     InvalidObjectiveWeightException.class,
-    DuplicateAssignmentException.class,
     UnknownRequiredQualificationException.class,
     SwapWithThemselfException.class,
     MalformedRequestException.class
@@ -123,6 +123,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     problem.setTitle("Invalid request");
+    problem.setType(ProblemTypes.INVALID_REQUEST);
     return problem;
   }
 
@@ -142,12 +143,14 @@ public class SchedulingExceptionHandler {
               "The request body exceeds a limit on its size, its nesting or the length of a value"
                   + " in it.");
       problem.setTitle("Request too large");
+      problem.setType(ProblemTypes.REQUEST_TOO_LARGE);
       return problem;
     }
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.BAD_REQUEST, "The request body is malformed or is missing required fields.");
     problem.setTitle("Malformed request");
+    problem.setType(ProblemTypes.MALFORMED_REQUEST);
     return problem;
   }
 
@@ -170,6 +173,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Roster cannot be checked against the rules");
+    problem.setType(ProblemTypes.ROSTER_CANNOT_BE_CHECKED_AGAINST_THE_RULES);
     return problem;
   }
 
@@ -192,6 +196,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("Published concurrently");
+    problem.setType(ProblemTypes.PUBLISHED_CONCURRENTLY);
     return problem;
   }
 
@@ -208,6 +213,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("Revised concurrently");
+    problem.setType(ProblemTypes.REVISED_CONCURRENTLY);
     return problem;
   }
 
@@ -226,6 +232,7 @@ public class SchedulingExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "You have no personnel record, so you have no schedule.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 
@@ -239,6 +246,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your role does not permit this.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 
@@ -263,6 +271,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
     problem.setTitle("Assignment refused");
+    problem.setType(ProblemTypes.ASSIGNMENT_REFUSED);
     return problem;
   }
 
@@ -278,6 +287,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("No longer pending");
+    problem.setType(ProblemTypes.NO_LONGER_PENDING);
     return problem;
   }
 
@@ -293,6 +303,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("Roster status forbids this");
+    problem.setType(ProblemTypes.ROSTER_STATUS_FORBIDS_THIS);
     return problem;
   }
 
@@ -306,6 +317,22 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
     problem.setTitle("Already requested");
+    problem.setType(ProblemTypes.ALREADY_REQUESTED);
+    return problem;
+  }
+
+  /**
+   * An assignment the roster already holds, as a second press of the same button sends. A conflict
+   * rather than a bad request (RFC 9110 section 15.5.10): the request names a real shift and a real
+   * person, and what refuses it is the roster's present state, which reloading shows. The detail is
+   * the exception's fixed sentence, so it repeats neither the shift nor the person sent.
+   */
+  @ExceptionHandler(DuplicateAssignmentException.class)
+  public ProblemDetail handleAlreadyAssigned(DuplicateAssignmentException exception) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+    problem.setTitle("Already assigned");
+    problem.setType(ProblemTypes.ALREADY_ASSIGNED);
     return problem;
   }
 
@@ -323,6 +350,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
     problem.setTitle("Generation is busy");
+    problem.setType(ProblemTypes.GENERATION_IS_BUSY);
     return problem;
   }
 
@@ -338,6 +366,7 @@ public class SchedulingExceptionHandler {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage());
     problem.setTitle("Generation is unavailable");
+    problem.setType(ProblemTypes.GENERATION_IS_UNAVAILABLE);
     return problem;
   }
 
@@ -365,6 +394,7 @@ public class SchedulingExceptionHandler {
     }
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
     problem.setTitle("Not found");
+    problem.setType(ProblemTypes.NOT_FOUND);
     problem.setDetail("No such resource.");
     return problem;
   }
@@ -384,6 +414,7 @@ public class SchedulingExceptionHandler {
         ProblemDetail.forStatusAndDetail(
             HttpStatus.FORBIDDEN, "The platform operator may not act inside an organisation.");
     problem.setTitle("Not permitted");
+    problem.setType(ProblemTypes.NOT_PERMITTED);
     return problem;
   }
 }

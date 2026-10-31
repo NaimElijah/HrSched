@@ -1,9 +1,14 @@
 package io.github.naimelijah.hrsched.scheduling.domain.model;
 
-/** Raised when a shift would require fewer than one person. */
+/**
+ * Raised when a shift would require fewer than one person.
+ *
+ * <p>The message states the rule and not the number refused: it becomes the refusal's detail, and a
+ * caller is not told back what it sent (ADR-024).
+ */
 public class InvalidHeadcountException extends RuntimeException {
 
-  public InvalidHeadcountException(int requested) {
-    super("A shift must require at least one person, but got " + requested);
+  public InvalidHeadcountException() {
+    super("A shift must require at least one person");
   }
 }
