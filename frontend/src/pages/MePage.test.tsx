@@ -138,11 +138,31 @@ function expectActionable(control: HTMLElement) {
 
 /** The list item a control sits in: one shift of my work, or one entry of what I declared. */
 function itemOf(control: HTMLElement): HTMLElement {
-  const item = control.closest('li');
-  if (item === null) {
+  const item = screen
+    .getAllByRole('listitem')
+    .filter((candidate) => candidate.contains(control))
+    .at(-1);
+  if (item === undefined) {
     throw new Error('the control is not in a list item');
   }
   return item;
+}
+
+/**
+ * A section of the page runs from its heading to the next one, so an element between the two is
+ * shown in that section rather than somewhere else on the page.
+ */
+function expectBetween(element: HTMLElement, opening: string, next: string) {
+  const after = (earlier: Node, later: Node) =>
+    (earlier.compareDocumentPosition(later) & earlier.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  expect(
+    after(screen.getByRole('heading', { name: opening }), element),
+    `shown after the "${opening}" heading`,
+  ).toBe(true);
+  expect(
+    after(element, screen.getByRole('heading', { name: next })),
+    `shown before the "${next}" heading`,
+  ).toBe(true);
 }
 
 afterEach(() => {
@@ -574,20 +594,30 @@ describe('what they declared', () => {
   /** One write at a time, so each confirmation is shown against the list its own write left. */
   it('GivenAWithdrawalInFlight_WhenDeclaring_ThenDeclaringWaitsForIt', async () => {
     actingAsEmployee(EMPLOYEE);
-    const release = holdWrites(stubbed({ unavailability: { status: 200, body: [ABSENCE] } }));
+    const routed = stubbed({ unavailability: { status: 200, body: [ABSENCE] } });
+    const release = holdWrites(routed);
     show();
 
     await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
 
-    expectWaiting(screen.getByRole('button', { name: 'I cannot work this' }));
-    expectWaiting(screen.getByRole('button', { name: 'State a preference' }));
+    const declare = screen.getByRole('button', { name: 'I cannot work this' });
+    const state = screen.getByRole('button', { name: 'State a preference' });
+    expectWaiting(declare);
+    expectWaiting(state);
+    // aria-disabled stops nothing by itself (C1): a period the form accepts, pressed meanwhile,
+    // must still send nothing.
+    await fillSpan('2026-10-05T08:00', '2026-10-05T16:00');
+    await userEvent.click(declare);
+    await userEvent.click(state);
     release();
     await screen.findByText(/^Withdrawn:/);
+    expect(writes(routed), 'only the withdrawal was sent').toHaveLength(1);
   });
 
   it('GivenADeclarationInFlight_WhenWithdrawing_ThenWithdrawingWaitsForIt', async () => {
     actingAsEmployee(EMPLOYEE);
-    const release = holdWrites(stubbed({ unavailability: { status: 200, body: [ABSENCE] } }));
+    const routed = stubbed({ unavailability: { status: 200, body: [ABSENCE] } });
+    const release = holdWrites(routed);
     show();
     const withdraw = await screen.findByRole('button', { name: /^Withdraw absence/ });
 
@@ -595,8 +625,11 @@ describe('what they declared', () => {
     await userEvent.click(screen.getByRole('button', { name: 'I cannot work this' }));
 
     expectWaiting(withdraw);
+    // aria-disabled stops nothing by itself (C1): pressing the waiting Withdraw must send nothing.
+    await userEvent.click(withdraw);
     release();
     await screen.findByText('Recorded: you cannot work then.');
+    expect(writes(routed), 'only the declaration was sent').toHaveLength(1);
   });
 
   /**
@@ -626,11 +659,15 @@ describe('what they declared', () => {
 
     await screen.findByText(/^Withdrawn:/);
     expectWaiting(withdraw);
+    // aria-disabled stops nothing by itself (C1): pressing it while the list is read again must
+    // send nothing, since the entry may be the one just withdrawn.
+    await userEvent.click(withdraw);
     release();
     // Waits for the read it released, so its answer lands inside this test rather than after it.
     await waitFor(() =>
       expectActionable(screen.getByRole('button', { name: /^Withdraw absence/ })),
     );
+    expect(deletesOf(routed), 'only the first withdrawal was sent').toHaveLength(1);
   });
 
   /** A refusal may mean the list on screen is stale, withdrawn already by somebody else. */
@@ -1024,6 +1061,245 @@ describe('for a keyboard and screen-reader user', () => {
     for (const alert of screen.getAllByRole('alert')) {
       expect(item, 'no copy of the refusal at the top of the page').toContainElement(alert);
     }
+  });
+
+  /**
+   * A 404: the entry was withdrawn elsewhere, so the list read again no longer holds it, and its
+   * refusal and the focused button would go with it. The refusal stays, under the list's heading.
+   */
+  it('GivenAWithdrawalRefusedForAnEntryGoneMeanwhile_WhenTheListIsReadAgain_ThenTheRefusalStaysUnderItsHeadingWithFocus', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const stub = stubbed({
+      unavailability: {
+        status: 200,
+        get body() {
+          return withdrawalsOf(stub).length > 0 ? [] : [ABSENCE];
+        },
+      },
+      write: { status: 404, body: { detail: 'No such resource.' } },
+    });
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
+
+    await screen.findByText('You have declared no time you cannot work.');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Nothing here for this organisation.');
+    expectBetween(alert, 'Times I cannot work', 'Preferences');
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Times I cannot work' })).toHaveFocus(),
+    );
+  });
+
+  it('GivenAWithdrawalRefusedWithTheEntryStillListed_WhenTheListIsReadAgain_ThenFocusStaysOnWithdraw', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const stub = stubbed({
+      unavailability: { status: 200, body: [ABSENCE] },
+      write: { status: 403, body: { detail: 'You may not act on this record.' } },
+    });
+    show();
+    const withdraw = await screen.findByRole('button', { name: /^Withdraw absence/ });
+    const path = `/api/employees/${EMPLOYEE}/unavailability`;
+
+    await userEvent.click(withdraw);
+
+    await within(itemOf(withdraw)).findByRole('alert');
+    await waitFor(() =>
+      expect(stub.mock.calls.filter(([called]) => called === path)).toHaveLength(2),
+    );
+    await waitFor(() => expectActionable(withdraw));
+    expect(withdraw, 'a refusal leaves focus where it was').toHaveFocus();
+  });
+
+  /** A second absence, a week after the first, so the two entries are told apart by name. */
+  const LATER_ABSENCE = {
+    start: new Date(2026, 9, 14, 8, 0, 0).toISOString(),
+    end: new Date(2026, 9, 15, 18, 0, 0).toISOString(),
+  };
+
+  /**
+   * Withdrawing one of two absences, with what the server holds worked out from the withdrawals
+   * received so far.
+   */
+  function twoAbsencesWithdrawing(withdrawn: { start: string; end: string }) {
+    const stub = stubbed({
+      unavailability: {
+        status: 200,
+        get body() {
+          return withdrawalsOf(stub).length > 0
+            ? [ABSENCE, LATER_ABSENCE].filter((absence) => absence !== withdrawn)
+            : [ABSENCE, LATER_ABSENCE];
+        },
+      },
+    });
+    return stub;
+  }
+
+  /** C2: the next entry is where a keyboard user was going, so focus moves there, not to the top. */
+  it.each([
+    ['the first', ABSENCE, LATER_ABSENCE],
+    ['the last', LATER_ABSENCE, ABSENCE],
+  ])(
+    'GivenTwoAbsences_WhenOneIsWithdrawn_ThenFocusIsOnTheNeighboursWithdraw (%s)',
+    async (_which, withdrawn, neighbour) => {
+      actingAsEmployee(EMPLOYEE);
+      twoAbsencesWithdrawing(withdrawn);
+      show();
+      const label = (absence: { start: string; end: string }) =>
+        `Withdraw absence: ${spanLabel(absence.start, absence.end)}`;
+
+      await userEvent.click(await screen.findByRole('button', { name: label(withdrawn) }));
+
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: label(withdrawn) })).not.toBeInTheDocument(),
+      );
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: label(neighbour) })).toHaveFocus(),
+      );
+    },
+  );
+
+  it('GivenFocusMovedWhileAWithdrawalIsOut_WhenItIsStored_ThenFocusIsNotTaken', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const routed = twoAbsencesWithdrawing(ABSENCE);
+    const release = holdingWrites(routed);
+    show();
+    await userEvent.click(
+      await screen.findByRole('button', {
+        name: `Withdraw absence: ${spanLabel(ABSENCE.start, ABSENCE.end)}`,
+      }),
+    );
+    const elsewhere = screen.getByLabelText('From');
+    elsewhere.focus();
+
+    release();
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', {
+          name: `Withdraw absence: ${spanLabel(ABSENCE.start, ABSENCE.end)}`,
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(elsewhere, 'focus stays where the user moved it').toHaveFocus();
+  });
+
+  /** C5: a button waiting for another's answer says why it cannot act yet. */
+  it('GivenAWithdrawalInFlight_WhenTheOtherButtonsAreRead_ThenAVisibleHintSaysWhyTheyWait', async () => {
+    actingAsEmployee(EMPLOYEE);
+    const release = holdingWrites(stubbed({ unavailability: { status: 200, body: [ABSENCE] } }));
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Withdraw absence/ }));
+
+    const hint = screen.getByText(/^A change is on its way/);
+    expect(hint).toBeVisible();
+    for (const name of ['I cannot work this', 'State a preference']) {
+      expect(screen.getByRole('button', { name })).toHaveAccessibleDescription(
+        hint.textContent ?? '',
+      );
+    }
+    release();
+    await screen.findByText(/^Withdrawn:/);
+    expect(screen.queryByText(/^A change is on its way/)).not.toBeInTheDocument();
+  });
+
+  /** A repeated alert with the same words is not announced again; the field it is about is. */
+  it.each([
+    ['nothing given', '', '', 'From'],
+    ['an end before its start', '2026-10-05T16:00', '2026-10-05T08:00', 'To'],
+  ])(
+    'GivenAPeriodTheFormRefuses_WhenDeclaringTwice_ThenFocusIsOnTheFirstInvalidFieldEachTime (%s)',
+    async (_case, from, to, first) => {
+      actingAsEmployee(EMPLOYEE);
+      stubbed();
+      show();
+      await fillSpan(from, to);
+      const declare = screen.getByRole('button', { name: 'I cannot work this' });
+
+      await userEvent.click(declare);
+      await waitFor(() => expect(screen.getByLabelText(first)).toHaveFocus());
+      await userEvent.click(declare);
+
+      await waitFor(() => expect(screen.getByLabelText(first), 'and again').toHaveFocus());
+    },
+  );
+
+  it.each(['From', 'To'])(
+    'GivenAPeriodMissingBothFields_WhenOneIsEdited_ThenNeitherIsInvalidAndTheMessageIsGone (%s)',
+    async (edited) => {
+      actingAsEmployee(EMPLOYEE);
+      stubbed();
+      show();
+      await userEvent.click(screen.getByRole('button', { name: 'I cannot work this' }));
+      expect(screen.getByLabelText(edited)).toHaveAttribute('aria-invalid', 'true');
+
+      await userEvent.type(screen.getByLabelText(edited), '2026-10-05T08:00', WITHOUT_PAUSES);
+
+      for (const label of ['From', 'To']) {
+        expect(screen.getByLabelText(label)).not.toHaveAttribute('aria-invalid', 'true');
+        expect(screen.getByLabelText(label)).not.toHaveAccessibleDescription(/Give both/);
+      }
+      expect(screen.queryByText('Give both a start and an end.')).not.toBeInTheDocument();
+    },
+  );
+
+  it('GivenADeclarationRefused_WhenShown_ThenItIsInTheWhenICannotWorkSectionAndAnEditClearsIt', async () => {
+    actingAsEmployee(EMPLOYEE);
+    stubbed({
+      write: {
+        status: 409,
+        body: { title: 'Overlaps a declared span', detail: 'That time overlaps a span.' },
+      },
+    });
+    show();
+    await fillSpan('2026-10-05T08:00', '2026-10-05T16:00');
+    await userEvent.click(screen.getByRole('button', { name: 'I cannot work this' }));
+    const refusal = await screen.findByRole('alert');
+    expect(refusal).toHaveTextContent('That time overlaps a span.');
+    expectInTheWhenICannotWorkSection(refusal);
+
+    await userEvent.clear(screen.getByLabelText('To'));
+
+    expect(refusal, 'the refusal was of the period as it stood').not.toBeInTheDocument();
+  });
+
+  it('GivenNoColleagueIdentifier_WhenAsking_ThenTheMessageIsInThatShiftAndTypingClearsIt', async () => {
+    actingAsEmployee(EMPLOYEE);
+    stubbed({ schedule: { status: 200, body: [WORK] } });
+    show();
+    const field = await screen.findByLabelText(/^Colleague's employee identifier/);
+    await userEvent.click(screen.getByRole('button', { name: /^Ask to hand/ }));
+    expect(within(itemOf(field)).getByRole('alert')).toHaveTextContent(
+      'Give the identifier of the colleague',
+    );
+
+    await userEvent.type(field, COLLEAGUE, WITHOUT_PAUSES);
+
+    expect(field).not.toHaveAttribute('aria-invalid', 'true');
+    expect(field).not.toHaveAccessibleDescription(/Give the identifier/);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('GivenAHandOverRefused_WhenTheAnswerArrives_ThenAskCanActAgainAndKeepsFocus', async () => {
+    actingAsEmployee(EMPLOYEE);
+    stubbed({
+      schedule: { status: 200, body: [WORK] },
+      write: { status: 400, body: { detail: 'Nobody can swap a shift with themself.' } },
+    });
+    show();
+    await userEvent.type(
+      await screen.findByLabelText(/^Colleague's employee identifier/),
+      EMPLOYEE,
+      WITHOUT_PAUSES,
+    );
+    const ask = screen.getByRole('button', { name: /^Ask to hand/ });
+
+    await userEvent.click(ask);
+
+    await screen.findByRole('alert');
+    await waitFor(() => expectActionable(ask));
+    expect(ask, 'a refusal leaves focus where it was').toHaveFocus();
   });
 });
 

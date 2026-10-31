@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type RefObject } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { scheduling } from '../api/scheduling';
 import type { RosteredShift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
@@ -16,6 +16,23 @@ type PeriodField = 'from' | 'to';
 interface PeriodProblem {
   readonly message: string;
   readonly fields: readonly PeriodField[];
+}
+
+/** One of the two lists of what they declared, which an entry, its refusal and its focus belong to. */
+type DeclaredList = 'absence' | 'preference';
+
+/**
+ * A Withdraw pressed, until the list read again after its answer shows whether the button is still
+ * there, and so where focus belongs.
+ */
+interface Withdrawing {
+  readonly list: DeclaredList;
+  /** Where the entry stood in its list, so its neighbour is the one now standing there. */
+  readonly index: number;
+  readonly control: HTMLElement;
+  /** The list as it was read before, so the effect waits for the next read rather than this one. */
+  readonly before: unknown;
+  readonly refused: boolean;
 }
 
 /** The action a success status is about, so that editing its form again clears it (C9). */
@@ -59,7 +76,8 @@ function focusIsUnclaimed(control: Element | null): boolean {
  *
  * Whatever refuses an action is shown where the action was taken: the period's own checks and the
  * backend's refusal of it in the "When I cannot work" section, a refused hand-over in its shift, and
- * a refused withdrawal in its entry.
+ * a refused withdrawal in its entry, or under its list's heading once the list read again no longer
+ * holds that entry. A withdrawal moves focus to the entry that took its place.
  */
 export function MePage({
   span,
@@ -79,16 +97,32 @@ export function MePage({
   const [periodProblem, setPeriodProblem] = useState<PeriodProblem | null>(null);
   // The backend's refusal of declaring or stating, shown beside the form that asked.
   const [declarationRefused, setDeclarationRefused] = useState<unknown>(null);
-  // The backend's refusal of a withdrawal, shown in the entry it was about.
+  // The backend's refusal of a withdrawal, shown in the entry it was about, or under its list's
+  // heading once the list read again no longer holds that entry.
   const [withdrawalRefused, setWithdrawalRefused] = useState<{
+    list: DeclaredList;
     entry: string;
     error: unknown;
   } | null>(null);
   const [done, setDone] = useState<Done | null>(null);
   const [writing, setWriting] = useState(false);
   const periodMessage = useId();
+  const writingHint = useId();
+  const fromField = useRef<HTMLInputElement>(null);
+  const toField = useRef<HTMLInputElement>(null);
   const absencesHeading = useRef<HTMLHeadingElement>(null);
   const preferencesHeading = useRef<HTMLHeadingElement>(null);
+  const withdrawing = useRef<Withdrawing | null>(null);
+  // Each entry's Withdraw, by its list and its place in it, for focus to move to a neighbour.
+  const withdrawButtons = useRef(new Map<string, HTMLElement>());
+  const rememberWithdraw = (list: DeclaredList, index: number) => (button: HTMLElement | null) => {
+    const key = `${list}|${String(index)}`;
+    if (button === null) {
+      withdrawButtons.current.delete(key);
+    } else {
+      withdrawButtons.current.set(key, button);
+    }
+  };
 
   // The employee link comes from the session the backend established, never from anything typed:
   // a user is not an employee, and the two are linked by the account rather than by matching ids.
@@ -109,6 +143,42 @@ export function MePage({
     () => (employee === null ? Promise.resolve([]) : workforce.findPreferences(employee)),
     `${sessionKey}|${employee ?? ''}`,
   );
+
+  // A repeated alert with the same words is not announced again, so each failed check moves focus
+  // to the first field it is about, whose description then says why (C6).
+  useEffect(() => {
+    const first = periodProblem?.fields[0];
+    if (first !== undefined) {
+      (first === 'from' ? fromField : toField).current?.focus();
+    }
+  }, [periodProblem]);
+
+  // Once the list a Withdraw was pressed in has been read again: if that button went and nobody has
+  // taken the focus since, a refusal moves it to the list's heading, under which the refusal now
+  // shows, and a withdrawal to the entry that took its place, or the one before it, or the heading
+  // once none is left.
+  useEffect(() => {
+    const pending = withdrawing.current;
+    if (pending === null) {
+      return;
+    }
+    const absences = pending.list === 'absence';
+    const busy = absences ? unavailability.busy : preferences.busy;
+    const value = absences ? unavailability.value : preferences.value;
+    if (busy || value === pending.before) {
+      return;
+    }
+    withdrawing.current = null;
+    if (pending.control.isConnected || !focusIsUnclaimed(pending.control)) {
+      return;
+    }
+    const heading = absences ? absencesHeading : preferencesHeading;
+    const neighbour = pending.refused
+      ? undefined
+      : (withdrawButtons.current.get(`${pending.list}|${String(pending.index)}`) ??
+        withdrawButtons.current.get(`${pending.list}|${String(pending.index - 1)}`));
+    (neighbour ?? heading.current)?.focus();
+  }, [unavailability.busy, unavailability.value, preferences.busy, preferences.value]);
 
   /** A success stays only until its form is edited again, when it no longer describes the form. */
   const editedAgain = (outcome: Outcome) =>
@@ -211,30 +281,32 @@ export function MePage({
 
   /**
    * Withdraws one entry. The entry leaves its list once the list is read again, and its button with
-   * it, so focus moves to the list's heading.
+   * it, so focus moves on then, as the effect above decides.
    *
+   * @param list the list the entry is in
    * @param entry names the entry, so a refusal is shown in it
+   * @param index where the entry stands in its list
    * @param control the Withdraw pressed
    * @param declared the list the entry is in, whose entries wait while it is read again
-   * @param heading that list's heading
    */
   async function withdraw(
+    list: DeclaredList,
     entry: string,
+    index: number,
     control: HTMLElement,
     action: () => Promise<unknown>,
     message: string,
-    declared: { reload: () => void; busy: boolean },
-    heading: RefObject<HTMLHeadingElement | null>,
+    declared: { reload: () => void; busy: boolean; value: unknown },
   ) {
     if (writing || declared.busy) {
       return;
     }
-    const withdrawn = await write(action, { text: message, of: 'withdrawal' }, declared, (error) =>
-      setWithdrawalRefused({ entry, error }),
-    );
-    if (withdrawn && focusIsUnclaimed(control)) {
-      heading.current?.focus();
-    }
+    const pending: Withdrawing = { list, index, control, before: declared.value, refused: false };
+    withdrawing.current = pending;
+    await write(action, { text: message, of: 'withdrawal' }, declared, (error) => {
+      withdrawing.current = { ...pending, refused: true };
+      setWithdrawalRefused({ list, entry, error });
+    });
   }
 
   /** @throws whatever the backend refused the request with, for the shift to show */
@@ -251,6 +323,23 @@ export function MePage({
       of: 'handOver',
     });
   }
+
+  const absences = (unavailability.value ?? []).map((period) => ({
+    period,
+    // Unique: two declared absences may not overlap (R7), so no two share a span.
+    entry: `absence|${period.start}|${period.end}`,
+  }));
+  const stated = (preferences.value ?? []).map((preference, index) => ({
+    preference,
+    // Indexed: preferences may repeat one another exactly (R26), so a span alone is no key.
+    entry: `preference|${String(index)}|${preference.start}|${preference.end}|${preference.strength}`,
+  }));
+  /** A refused withdrawal whose entry the list read again no longer holds, shown under its heading. */
+  const refusedAndGone = (list: DeclaredList, entries: readonly { entry: string }[]): unknown =>
+    withdrawalRefused?.list === list &&
+    !entries.some(({ entry }) => entry === withdrawalRefused.entry)
+      ? withdrawalRefused.error
+      : null;
 
   if (employee === null) {
     return (
@@ -311,6 +400,7 @@ export function MePage({
         <label>
           From
           <input
+            ref={fromField}
             type="datetime-local"
             value={start}
             aria-invalid={isInvalid('from')}
@@ -326,6 +416,7 @@ export function MePage({
         <label>
           To
           <input
+            ref={toField}
             type="datetime-local"
             value={end}
             aria-invalid={isInvalid('to')}
@@ -356,6 +447,7 @@ export function MePage({
         <button
           type="button"
           aria-disabled={writing}
+          aria-describedby={writing ? writingHint : undefined}
           onClick={() =>
             void act(
               (when) => workforce.declareUnavailability(employee, when.start, when.end),
@@ -369,6 +461,7 @@ export function MePage({
         <button
           type="button"
           aria-disabled={writing}
+          aria-describedby={writing ? writingHint : undefined}
           onClick={() =>
             void act(
               (when) => workforce.statePreference(employee, when.start, when.end, strength),
@@ -386,36 +479,44 @@ export function MePage({
         </p>
       )}
       <Failure error={declarationRefused} />
+      {/* One hint, which every button waiting on the write in flight refers to (C5). */}
+      {writing ? (
+        <p className="hint" id={writingHint}>
+          A change is on its way. Declaring and withdrawing wait for its answer.
+        </p>
+      ) : null}
 
       <h3>What I declared</h3>
       <h4 ref={absencesHeading} tabIndex={-1}>
         Times I cannot work
       </h4>
+      <Failure error={refusedAndGone('absence', absences)} />
       <Failure error={unavailability.error} />
       <Busy busy={unavailability.busy} />
       {unavailability.value?.length === 0 ? (
         <p>You have declared no time you cannot work.</p>
       ) : null}
       <ul className="spans">
-        {(unavailability.value ?? []).map((period) => {
+        {absences.map(({ period, entry }, index) => {
           const label = spanLabel(period.start, period.end);
-          // Unique: two declared absences may not overlap (R7), so no two share a span.
-          const entry = `absence|${period.start}|${period.end}`;
           return (
             <li key={entry}>
               <span>{label}</span>{' '}
               <button
+                ref={rememberWithdraw('absence', index)}
                 type="button"
                 aria-disabled={writing || unavailability.busy}
+                aria-describedby={writing ? writingHint : undefined}
                 aria-label={`Withdraw absence: ${label}`}
                 onClick={(event) =>
                   void withdraw(
+                    'absence',
                     entry,
+                    index,
                     event.currentTarget,
                     () => workforce.withdrawUnavailability(employee, period.start, period.end),
                     'Withdrawn: that absence no longer keeps you off a roster.',
                     unavailability,
-                    absencesHeading,
                   )
                 }
               >
@@ -432,24 +533,27 @@ export function MePage({
       <h4 ref={preferencesHeading} tabIndex={-1}>
         Preferences
       </h4>
+      <Failure error={refusedAndGone('preference', stated)} />
       <Failure error={preferences.error} />
       <Busy busy={preferences.busy} />
       {preferences.value?.length === 0 ? <p>You have stated no preferences.</p> : null}
       <ul className="spans">
-        {(preferences.value ?? []).map((preference, index) => {
+        {stated.map(({ preference, entry }, index) => {
           const label = `${spanLabel(preference.start, preference.end)}: ${FEELING[preference.strength]}`;
-          // Indexed: preferences may repeat one another exactly (R26), so a span alone is no key.
-          const entry = `preference|${index}|${preference.start}|${preference.end}|${preference.strength}`;
           return (
             <li key={entry}>
               <span>{label}</span>{' '}
               <button
+                ref={rememberWithdraw('preference', index)}
                 type="button"
                 aria-disabled={writing || preferences.busy}
+                aria-describedby={writing ? writingHint : undefined}
                 aria-label={`Withdraw preference: ${label}`}
                 onClick={(event) =>
                   void withdraw(
+                    'preference',
                     entry,
+                    index,
                     event.currentTarget,
                     () =>
                       workforce.withdrawPreference(
@@ -460,7 +564,6 @@ export function MePage({
                       ),
                     'Withdrawn: that preference no longer stands.',
                     preferences,
-                    preferencesHeading,
                   )
                 }
               >
