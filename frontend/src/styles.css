@@ -57,9 +57,8 @@ select {
   border: 1px solid var(--control-line);
   border-radius: 4px;
   background: #fff;
-  min-width: 12rem;
-  /* The min-width must not push a field past a 320 px viewport (1.4.10 Reflow). */
-  max-width: 100%;
+  /* Never wider than its container, so a field does not push a 320 px page sideways (1.4.10). */
+  min-width: min(12rem, 100%);
 }
 
 input[type='checkbox'] {
@@ -87,10 +86,11 @@ button:hover {
 }
 
 /*
- * A button that cannot act yet keeps focus, so it is aria-disabled rather than disabled (#257), and
+ * A control that cannot act yet keeps focus, so it is aria-disabled rather than disabled (#257), and
  * looks it. The text stays at 5.7:1 on #fff, because it is still read.
  */
-button[aria-disabled='true'] {
+button[aria-disabled='true'],
+select[aria-disabled='true'] {
   color: #6b665e;
   border-color: var(--line);
   cursor: not-allowed;
@@ -100,12 +100,26 @@ button[aria-disabled='true']:hover {
   border-color: var(--line);
 }
 
+/*
+ * Forced colours replace every author colour, which is all that marks the state above, so the
+ * system's own colour for a control that cannot act is asked for instead.
+ */
+@media (forced-colors: active) {
+  button[aria-disabled='true'],
+  select[aria-disabled='true'] {
+    color: GrayText;
+    border-color: GrayText;
+  }
+}
+
 .session-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem 0.75rem;
   margin: 0 0 1rem;
+  /* A long sign-in name or organisation id breaks rather than widening a 320 px page. */
+  overflow-wrap: anywhere;
 }
 
 nav {
@@ -177,14 +191,29 @@ table {
   margin-top: 0.75rem;
 }
 
-/* Only the table scrolls at 320 px, not the page; it takes focus so a keyboard can scroll it. */
+/*
+ * Only the table scrolls at 320 px, not the page; it takes focus so a keyboard can scroll it.
+ *
+ * It is a size container so that a row's refusal can be as wide as what shows of the table (100cqi)
+ * rather than the table itself. Inline-size containment stops its content setting its width, which
+ * leaves a block in normal flow as wide as its parent, as it was. Placed where its width comes from
+ * its content instead, a flex row or a content-sized grid track, it would shrink to nothing.
+ */
 .table-scroll {
   overflow-x: auto;
+  container-type: inline-size;
 }
 
 .table-scroll:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
+}
+
+/* A refusal inside a row stays in view, at the region's left edge, however far it is scrolled. */
+.row-refusal {
+  position: sticky;
+  left: 0;
+  max-inline-size: 100cqi;
 }
 
 th,
