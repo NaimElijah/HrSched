@@ -34,6 +34,14 @@
     `(organisation_id, id)`, so neither can name another organisation's. The count of child tables
     carrying no `organisation_id` that `V1` and this record give has moved; `V14`'s header
     corrects it.
+  - **Amended 2026-10-30:** The schema now holds R7, non-overlapping unavailability, with the
+    `employee_unavailability_does_not_overlap` exclusion constraint (migration `V15`). The
+    alternatives table said to revisit the `EXCLUDE` for it "when the `btree_gist` extension is
+    wanted for another reason", and `V2` installed `btree_gist` for the published-roster exclusion.
+    The constraint is checked immediately, not deferred, and no adapter translates its violation:
+    the domain refuses an overlap before anything is written. **Revisit when** a save needs the
+    check deferred, as one inserting a new span before deleting the one it replaces would, or when
+    a second database engine is to be supported, since `EXCLUDE` is PostgreSQL's alone.
 - **Date:** 2026-09-06
 
 ## Context

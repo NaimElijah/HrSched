@@ -343,7 +343,7 @@ deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
 | `spring-boot-starter-jdbc` | `JdbcClient`, the connection pool, and the transaction manager | [ADR-004](../ADRs/ADR-004-postgresql-behind-the-driven-ports.md). Chosen over JPA because the domain may not carry `jakarta.persistence` annotations. |
 | `spring-boot-starter-flyway` + `flyway-database-postgresql` | Versioned schema migrations, applied on startup | ADR-004. New in Boot 4.x; 3.x had no Flyway starter. |
 | `postgresql` | The JDBC driver | ADR-004. Runtime scope; nothing compiles against it. |
-| `btree_gist` (PostgreSQL extension) | The `uuid` equality the `roster_one_published_per_moment` exclusion constraint indexes on | [ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md), which widened the constraint in `V6` and kept `btree_gist`. Ships with PostgreSQL and is trusted, so the migrating role needs `CREATE` on the database, not superuser. Installed by migration `V2`, under [ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md), which ADR-037 superseded. |
+| `btree_gist` (PostgreSQL extension) | The `uuid` equality the `roster_one_published_per_moment` and `employee_unavailability_does_not_overlap` (`V15`) exclusion constraints index on | [ADR-037](../ADRs/ADR-037-keep-roster-history-as-a-record-in-time.md), which widened the constraint in `V6` and kept `btree_gist`. Ships with PostgreSQL and is trusted, so the migrating role needs `CREATE` on the database, not superuser. Installed by migration `V2`, under [ADR-026](../ADRs/ADR-026-make-overlapping-published-rosters-unrepresentable.md), which ADR-037 superseded. |
 | `spring-boot-docker-compose` | Starting the local database on `./mvnw spring-boot:run` | ADR-004, and it keeps `scripts/run.mjs` free of build logic as [ADR-014](../ADRs/ADR-014-root-task-runner.md) requires. Optional scope, so it never reaches a deployed artifact. |
 | `testcontainers-postgresql`, `spring-boot-testcontainers` | The real database the tests run against | ADR-004. Docker is required to build; there is deliberately no skip-when-absent. Version-managed by the Boot BOM, which imports the Testcontainers BOM. |
 | `spring-boot-starter-opentelemetry` | A W3C trace id per request, in the MDC and on the response | [ADR-016](../ADRs/ADR-016-structured-logs-and-a-propagated-trace-id.md). Supplies the OpenTelemetry API, the Micrometer Tracing bridge and the OTLP exporters; export is switched off until Q19 is answered. OpenTelemetry is held at 1.67.0, ahead of the Boot BOM, for a `tracestate` parsing advisory ([#285](https://github.com/NaimElijah/HrSched/issues/285)); removing the hold once Boot catches up is [#289](https://github.com/NaimElijah/HrSched/issues/289). |
@@ -776,6 +776,37 @@ are not audited. Nothing at runtime depends on any of it.
   Contracted hours travel on `RosterableEmployee` too, as `weeklyContractedHours`, but
   scheduling's `WorkforceDirectoryAdapter` drops them, so nothing in scheduling reads them until
   [#103](https://github.com/NaimElijah/HrSched/issues/103) bounds a roster by them.
+- **An employee or qualification stored breaking a rule is this system's defect, not the
+  caller's mistake.** `JdbcEmployeeRepository` and `JdbcQualificationRepository` rebuild every
+  aggregate they read through its own constructor, and an employee through its withers too, so
+  each rule they check is checked again on the way out of the store. Only one refusal can be
+  reached from stored rows: a name the domain calls blank (R2). The schema's `btrim` trims spaces
+  only, so a name that is only a tab stores. The adapter replaces that refusal with an
+  `IllegalStateException` naming the identity and the rule, never the name. No workforce handler
+  takes it, so it is answered as a server error, not the 400 the same refusal earns a caller. The
+  refusal travels suppressed, not as the cause, because Spring resolves a handler by an
+  exception's causes too.
+- **An employee's unavailability cannot be stored overlapping (R7).** The domain refuses an
+  overlapping declaration, and behind it the `employee_unavailability_does_not_overlap` exclusion
+  constraint (`V15`) ranges over the employee and `[starts_at, ends_at)`, so spans that only abut
+  both store. It is checked as each statement runs, not deferred: a save deletes the employee's
+  spans before inserting the new set, so a span replaced by one overlapping it is never compared
+  with it, and two saves of one employee take turns on the employee's row
+  ([ADR-041](../ADRs/ADR-041-make-concurrent-changes-take-turns-on-the-row.md)). No adapter
+  translates a violation, as nothing the domain accepts reaches one. Both owned tables' ordinals,
+  which only keep the aggregate's list order, are list positions from 0, and a check refuses a
+  negative one.
+- **Contracted hours are stored in whole seconds, exactly or not at all.** A request carries them
+  as whole minutes. `JdbcEmployeeRepository` refuses a `ContractTerms` with a part smaller than a
+  second with an `IllegalArgumentException` before it writes anything, rather than drop the part,
+  or, for hours under a second, reach `employee_contracted_hours_positive` with 0. The refusal
+  names the employee, never the hours. Whole seconds that are not whole minutes store exactly
+  (`JdbcEmployeeRepositoryTest.GivenContractedHoursOfWholeSecondsButNotWholeMinutes_WhenReadBack_ThenTheyComeBackExactly`);
+  the refusals are pinned by
+  `JdbcEmployeeRepositoryTest.GivenContractedHoursWithASubSecondPart_WhenSaved_ThenTheyAreRefusedAndNothingIsWritten`
+  and `…GivenContractedHoursUnderASecond_WhenSaved_ThenTheyAreRefusedBeforeTheStoreSeesThem`,
+  and through the use case by
+  `EmployeeServiceTest.GivenHoursWithASubSecondPart_WhenSettingSomebodysContract_ThenItIsRefusedAndNothingIsRecorded`.
 - **A declaration is withdrawn by what it says, because it has no identity** (F26). Unavailability
   is a `TimeRange` and a preference a `ShiftPreference` value inside the `Employee` aggregate, and
   their rows are keyed by an ordinal the repository renumbers on every save. So

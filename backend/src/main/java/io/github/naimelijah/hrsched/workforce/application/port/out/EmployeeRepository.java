@@ -18,6 +18,9 @@ public interface EmployeeRepository {
 
   /**
    * @param employee the employee to store, replacing any with the same identity
+   * @throws IllegalArgumentException if their contracted hours have a part smaller than a second,
+   *     which the store, holding whole seconds, would drop; refused before anything is written
+   * @throws IllegalStateException if the identity already belongs to another organisation
    */
   void save(Employee employee);
 
@@ -25,6 +28,8 @@ public interface EmployeeRepository {
    * @param organisation the organisation the employee must belong to
    * @param id who to look up
    * @return the employee, or empty if that organisation has no such employee
+   * @throws IllegalStateException if the employee is stored as no employee the domain allows, such
+   *     as with a name it calls blank (R2): a defect of the store, not of the caller's request
    */
   Optional<Employee> findById(OrganisationId organisation, EmployeeId id);
 
@@ -41,7 +46,8 @@ public interface EmployeeRepository {
    * @param id who to read and hold
    * @return the employee, or empty if that organisation has no such employee
    * @throws IllegalStateException if called outside a writable unit of work, where there is nothing
-   *     to hold them until
+   *     to hold them until, or if the employee is stored as no employee the domain allows, as for
+   *     {@link #findById}
    */
   Optional<Employee> findForUpdate(OrganisationId organisation, EmployeeId id);
 
@@ -49,6 +55,8 @@ public interface EmployeeRepository {
    * @param organisation whose employees to list
    * @return every employee of that organisation, ordered by name, then by identity, so two sharing
    *     a name come back in the same order every time
+   * @throws IllegalStateException if any of them is stored as no employee the domain allows, as for
+   *     {@link #findById}
    */
   List<Employee> findByOrganisation(OrganisationId organisation);
 }

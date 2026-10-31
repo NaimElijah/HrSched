@@ -11,8 +11,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication;
 import io.github.naimelijah.hrsched.shared.testsupport.PostgresDatabase;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,14 +23,17 @@ import org.springframework.test.web.servlet.MockMvc;
  * Stored rows breaking a rule the domain enforces are this system's defect, never the caller's
  * mistake.
  *
- * <p>The schema does not refuse overlapping unavailability (V1, ADR-004), so a row written by hand,
- * a restore or a bug can break R7, and the rebuild through the aggregate refuses it. That refusal
- * must not reach the handler that answers a caller's own overlapping declaration with a 400 and no
- * log line: Spring resolves a handler by an exception's causes as well as its type, so the failure
- * carries no domain exception at all. No handler takes it, so it escapes the controller, which
- * MockMvc surfaces as the exception itself.
+ * <p>The schema's {@code employee_name_not_blank} and {@code qualification_name_not_blank} trim
+ * spaces only (V1), so a name that is only a tab, written by hand, a restore or a bug, stores, and
+ * the rebuild through the aggregate refuses it as blank (R2). That refusal must not reach the
+ * handler that answers a caller's own blank name with a 400 and no log line: Spring resolves a
+ * handler by an exception's causes as well as its type, so the failure carries no domain exception
+ * as its cause, only suppressed, where Spring does not look. No handler takes it, so it escapes the
+ * controller, which MockMvc surfaces as the exception itself. Its message names the identity and
+ * the rule, never the stored name.
  *
- * <p>Every instant below is invented.
+ * <p>Overlapping unavailability was the breach this pinned until {@code V15} made it unstorable;
+ * {@code JdbcEmployeeRepositoryTest} pins that the store refuses one.
  *
  * <p>Annotated identically to {@code EmployeeHttpTest}, so it shares the suite's Spring context.
  */
@@ -41,27 +42,22 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 class StoreBreakingAnInvariantHttpTest {
 
+  /** Blank to the domain's {@code isBlank}, but not to the schema's {@code btrim}. */
+  private static final String BLANK_TO_THE_DOMAIN_ONLY = "\t";
+
   @Autowired private MockMvc mockMvc;
 
-  /** Writes past the adapter, because no {@code Employee} can carry what this stores. */
-  private static void storeUnavailabilityDirectly(
-      String employee, int ordinal, String start, String end) {
+  /** Writes past the adapter, because no {@code Employee} can carry a blank name. */
+  private static void storeNameDirectly(String employee, String name) {
     PostgresDatabase.jdbcClient()
-        .sql(
-            """
-            INSERT INTO employee_unavailability (employee_id, ordinal, starts_at, ends_at)
-            VALUES (:id, :ordinal, :startsAt, :endsAt)
-            """)
+        .sql("UPDATE employee SET name = :name WHERE id = :id")
+        .param("name", name)
         .param("id", UUID.fromString(employee))
-        .param("ordinal", ordinal)
-        .param("startsAt", Instant.parse(start).atOffset(ZoneOffset.UTC))
-        .param("endsAt", Instant.parse(end).atOffset(ZoneOffset.UTC))
         .update();
   }
 
   @Test
-  void GivenOverlappingUnavailabilityInTheStore_WhenListingEmployees_ThenItFailsAsOurDefect()
-      throws Exception {
+  void GivenABlankNameInTheStore_WhenListingEmployees_ThenItFailsAsOurDefect() throws Exception {
     String organisation = anOrganisation(mockMvc);
     String ada =
         JsonPath.read(
@@ -74,9 +70,7 @@ class StoreBreakingAnInvariantHttpTest {
                 .getResponse()
                 .getContentAsString(),
             "$.id");
-    // Invented: a fortnight, and a week overlapping its last day.
-    storeUnavailabilityDirectly(ada, 0, "2026-08-01T00:00:00Z", "2026-08-15T00:00:00Z");
-    storeUnavailabilityDirectly(ada, 1, "2026-08-14T00:00:00Z", "2026-08-21T00:00:00Z");
+    storeNameDirectly(ada, BLANK_TO_THE_DOMAIN_ONLY);
 
     Throwable failure =
         catchThrowable(
@@ -88,8 +82,43 @@ class StoreBreakingAnInvariantHttpTest {
         .rootCause()
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining(ada)
-        .hasMessageContaining("R7")
-        .hasMessageNotContaining("Ada")
-        .hasMessageNotContaining("2026-08");
+        .hasMessageContaining("R2")
+        .hasMessageNotContaining(BLANK_TO_THE_DOMAIN_ONLY);
+  }
+
+  /** {@code qualification_name_not_blank} trims spaces only too, and R2 covers qualifications. */
+  @Test
+  void GivenABlankQualificationNameInTheStore_WhenListingQualifications_ThenItFailsAsOurDefect()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String forklift =
+        JsonPath.read(
+            mockMvc
+                .perform(
+                    as(mockMvc, post("/api/qualifications"), organisation, "ADMIN")
+                        .content("{\"name\":\"Forklift\"}"))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(),
+            "$.id");
+    PostgresDatabase.jdbcClient()
+        .sql("UPDATE qualification SET name = :name WHERE id = :id")
+        .param("name", BLANK_TO_THE_DOMAIN_ONLY)
+        .param("id", UUID.fromString(forklift))
+        .update();
+
+    Throwable failure =
+        catchThrowable(
+            () -> mockMvc.perform(as(mockMvc, get("/api/qualifications"), organisation, "ADMIN")));
+
+    assertThat(failure)
+        .describedAs("answered as the caller's mistake rather than escaping as our defect")
+        .isNotNull()
+        .rootCause()
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(forklift)
+        .hasMessageContaining("R2")
+        .hasMessageNotContaining(BLANK_TO_THE_DOMAIN_ONLY);
   }
 }
