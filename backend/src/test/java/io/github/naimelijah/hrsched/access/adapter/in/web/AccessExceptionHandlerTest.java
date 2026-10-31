@@ -2,11 +2,13 @@ package io.github.naimelijah.hrsched.access.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.assertj.core.api.Assertions.tuple;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.github.naimelijah.hrsched.access.domain.model.UnknownAccountException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
@@ -27,7 +29,8 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.web.method.annotation.ExceptionHandlerMethodResolver;
 
 /**
- * Specification of the access refusals no HTTP test can reach today.
+ * Specification of the access refusals no HTTP test can reach today, and of what is recorded of one
+ * that can.
  *
  * <p>A use case behind these routes refuses a role it does not permit, as {@code AccountService}
  * does for anybody but an Admin. Over HTTP the URL rule refuses that caller first, so the use
@@ -37,7 +40,9 @@ import org.springframework.web.method.annotation.ExceptionHandlerMethodResolver;
  * fails on that lookup, which is exactly the 500 this guards against.
  *
  * <p>The refusal is logged at WARN, asserted against Logback rather than the rendered JSON, and
- * counted under the metric every context's handler shares.
+ * counted under the metric every context's handler shares. So is an account named that the Admin's
+ * organisation does not hold, whose line must say who asked; its 404 is pinned over HTTP in {@code
+ * AccountHttpTest}.
  */
 class AccessExceptionHandlerTest {
 
@@ -99,6 +104,46 @@ class AccessExceptionHandlerTest {
     var counter = meters.find("hrsched.access.denied").tag("kind", "role").counter();
     assertThat(counter).isNotNull();
     assertThat(counter.count()).isEqualTo(1.0);
+  }
+
+  /**
+   * An Admin naming an account their organisation does not hold. A hundred of these are somebody
+   * looking for accounts that are not theirs, and reading one changes nothing, so the line has to
+   * say who asked as well as what was named.
+   */
+  @Test
+  void GivenAnUnknownAccount_WhenTranslated_ThenOneWarningNamesTheActorAndTheAccount() {
+    UserId actor = UserId.newId();
+    UserId named = UserId.newId();
+
+    handler.handleUnknownAccount(
+        new UnknownAccountException(named),
+        new TenantActor(actor, OrganisationId.newId(), Role.ADMIN));
+
+    assertThat(captured.list).hasSize(1);
+    ILoggingEvent event = captured.list.getFirst();
+    assertThat(event.getLevel()).isEqualTo(Level.WARN);
+    assertThat(event.getFormattedMessage())
+        .isEqualTo("Refused: an account this organisation does not hold was named");
+    assertThat(event.getKeyValuePairs())
+        .extracting(pair -> pair.key, pair -> pair.value)
+        .containsExactlyInAnyOrder(tuple("actor", actor.value()), tuple("account", named.value()));
+  }
+
+  /** A principal that is not an actor: the refusal is still answered and recorded, without one. */
+  @Test
+  void GivenNoActor_WhenAnUnknownAccountIsTranslated_ThenItIsStillNotFoundAndRecorded() {
+    UserId named = UserId.newId();
+
+    ProblemDetail problem = handler.handleUnknownAccount(new UnknownAccountException(named), null);
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
+    assertThat(captured.list.getFirst().getKeyValuePairs())
+        .extracting(pair -> pair.key, pair -> pair.value)
+        .containsExactlyInAnyOrder(tuple("actor", null), tuple("account", named.value()));
+    assertThat(
+            meters.find("hrsched.access.denied").tag("kind", "unknown_account").counter().count())
+        .isEqualTo(1.0);
   }
 
   /**

@@ -149,14 +149,21 @@ public class AccessExceptionHandler {
    * An account named by an Admin that their organisation does not hold. A 404, and the same 404
    * whether it never existed or belongs to another customer: telling those apart would let an Admin
    * discover, one identifier at a time, that a colleague holds an account somewhere else.
+   *
+   * @param actor the acting account, taken from the access token as the controllers take it; the
+   *     exception carries only the account named. Null if the principal is not an {@code Actor}:
+   *     the refusal is then still answered and recorded, without one
    */
   @ExceptionHandler(UnknownAccountException.class)
-  public ProblemDetail handleUnknownAccount(UnknownAccountException exception) {
+  public ProblemDetail handleUnknownAccount(
+      UnknownAccountException exception, @AuthenticationPrincipal Actor actor) {
     // Counted, like a cross-tenant attempt and for the same reason. One mistyped identifier is a
     // mistake; a hundred is somebody looking for accounts that are not theirs, and the 404 is
     // deliberately indistinguishable from "that one is somebody else's" - which is exactly what
-    // makes trying the way to find out.
+    // makes trying the way to find out. Who is trying is what makes it actionable: reading an
+    // account changes nothing, so this line may be all such a search leaves behind.
     log.atWarn()
+        .addKeyValue("actor", actor == null ? null : actor.id().value())
         .addKeyValue("account", exception.account().value())
         .log("Refused: an account this organisation does not hold was named");
     denied("unknown_account");
