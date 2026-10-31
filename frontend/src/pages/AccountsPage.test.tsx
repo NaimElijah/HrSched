@@ -1436,6 +1436,53 @@ describe('the accounts table, told rather than shown', () => {
     );
   });
 
+  /** A role refused the change says nothing about the role chosen, so it is not marked (C6). */
+  it('GivenARoleChangeForbiddenToTheRole_WhenShown_ThenTheRoleStaysValidAndTheRefusalIsInItsRow', async () => {
+    theOrganisation({
+      [`PUT /api/accounts/${GRACE.id}/membership`]: {
+        status: 403,
+        body: { detail: 'Your role does not permit this.' },
+      },
+    });
+    show();
+    await screen.findByRole('rowheader', { name: 'grace@example.com' });
+    const role = within(rowFor('grace@example.com')).getByLabelText('Role for grace@example.com');
+
+    await userEvent.selectOptions(role, 'EMPLOYEE');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the role of grace@example.com' }),
+    );
+
+    expect(
+      await within(rowAfter(rowFor('grace@example.com'))).findByRole('alert'),
+    ).toHaveTextContent('Your role does not permit this.');
+    expect(role).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
+  /** An account nobody here can find says nothing about the employee chosen (C6). */
+  it('GivenAnEmployeeChangeForAnAccountNotFound_WhenShown_ThenTheEmployeeStaysValid', async () => {
+    theOrganisation({
+      [`PUT /api/accounts/${ADA.id}/membership`]: {
+        status: 404,
+        body: { detail: 'No such resource.' },
+      },
+    });
+    show();
+    await screen.findByRole('rowheader', { name: 'ada@example.com' });
+    await within(rowFor('ada@example.com')).findByRole('option', {
+      name: `Robin Example · ${ROBIN.id}`,
+    });
+    const choice = within(rowFor('ada@example.com')).getByLabelText('Employee for ada@example.com');
+
+    await userEvent.selectOptions(choice, ROBIN.id);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change the employee of ada@example.com' }),
+    );
+
+    await within(rowAfter(rowFor('ada@example.com'))).findByRole('alert');
+    expect(choice).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
   /** Only the policy's refusal, a 422, is about the password typed; a missing account is not. */
   it('GivenAResetRefusedForAReasonOtherThanThePassword_WhenShown_ThenThePasswordIsNotMarkedInvalid', async () => {
     theOrganisation({

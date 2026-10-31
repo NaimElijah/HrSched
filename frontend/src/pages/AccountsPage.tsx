@@ -5,7 +5,7 @@ import { ApiError } from '../api/problem';
 import { workforce } from '../api/workforce';
 import type { Employee } from '../api/workforce';
 import { useSessionKey } from '../auth/SessionProvider';
-import { Busy, Failure } from '../components/Feedback';
+import { Busy, Failure, isAboutTheValue } from '../components/Feedback';
 import { RowRefusal } from '../components/RowRefusal';
 import { TableRegion } from '../components/TableRegion';
 import { useAsync } from '../components/useAsync';
@@ -22,12 +22,18 @@ const COLUMNS = 6;
 type RowField = 'password' | 'role' | 'employee' | null;
 
 /**
- * Whether a refused reset is about the password typed. Only the policy's refusal, a 422, is: a 401,
- * 404 or 409, or a request that never arrived, says nothing about it, and marking the field would
- * send the Admin to correct a password nothing was wrong with.
+ * The control a refusal of the change sent from `field` marks: that one when the refusal is about
+ * its value, otherwise none. A password is about its value only when the policy refused it, a 422:
+ * a 409 on a reset is about the account, never the password typed.
+ *
+ * @param field the control the change was sent from, if any
+ * @param error what refused the change
  */
-function passwordOrNothing(error: unknown): RowField {
-  return error instanceof ApiError && error.isRefused ? 'password' : null;
+function markedBy(field: RowField, error: unknown): RowField {
+  if (field === 'password') {
+    return error instanceof ApiError && error.isRefused ? 'password' : null;
+  }
+  return isAboutTheValue(error) ? field : null;
 }
 
 /**
@@ -326,7 +332,7 @@ function AccountRow({
     setRefusal(null);
     setSending(true);
     const changed = await administer(what, request, (error) =>
-      setRefusal({ error, field: field === 'password' ? passwordOrNothing(error) : field }),
+      setRefusal({ error, field: markedBy(field, error) }),
     );
     setSending(false);
     // A refusal reads nothing back, so there is no new copy to wait for.

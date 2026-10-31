@@ -1,7 +1,7 @@
 import { Fragment, useId, useState } from 'react';
 import { workforce } from '../api/workforce';
 import type { Qualification } from '../api/workforce';
-import { Busy, Failure } from '../components/Feedback';
+import { Busy, Failure, isAboutTheValue } from '../components/Feedback';
 import { RowRefusal } from '../components/RowRefusal';
 import { TableRegion } from '../components/TableRegion';
 import { useAsync } from '../components/useAsync';
@@ -13,10 +13,10 @@ const COLUMNS = 5;
 /** The control in a person's row that a refusal of its change is about. */
 type RowField = 'grant' | 'contract';
 
-/** A refusal of one row's change, and the control it marks (C6). */
+/** A refusal of one row's change, and the control it marks if it is about that one's value (C6). */
 interface RefusedChange {
   readonly error: unknown;
-  readonly field: RowField;
+  readonly field: RowField | null;
 }
 
 /**
@@ -95,7 +95,7 @@ export function PeoplePage() {
       if (row === undefined) {
         setFailure(error);
       } else {
-        refuse(row.employee, { error, field: row.field });
+        refuse(row.employee, { error, field: isAboutTheValue(error) ? row.field : null });
       }
       return false;
     }

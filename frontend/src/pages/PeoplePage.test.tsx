@@ -24,6 +24,18 @@ const ADAS_CONTRACT = 2101;
 /** Invented minutes a week, the contract typed in its place. */
 const TYPED_CONTRACT = 2401;
 
+/**
+ * Invented: a refusal of the qualification chosen, as a 422 carries one. The workforce context
+ * refuses no grant for the value chosen today, so nothing real stands for one.
+ */
+const GRANT_REFUSED = 'An invented refusal of the qualification chosen.';
+
+/** What WorkforceExceptionHandler answers terms InvalidContractTermsException refuses. */
+const TERMS_INVALID: Answer = {
+  status: 400,
+  body: { title: 'Invalid request', detail: 'Contracted hours must be positive' },
+};
+
 const ABSENCE = { start: '2026-10-07T08:00:00Z', end: '2026-10-07T12:00:00Z' };
 
 /** The full shape the API sends: F4 is exactly the fields a thinner fixture would leave out. */
@@ -416,6 +428,26 @@ describe('granting a qualification', () => {
   /** The control the refusal is about says so, and says why, where the cursor already is (C6). */
   it('GivenTheBackendRefusesAGrant_WhenShown_ThenThatRowsPickerIsMarkedInvalidWithTheReason', async () => {
     theOrganisation({
+      'PUT /api/employees/e-1/qualifications/q-1': { status: 422, body: { detail: GRANT_REFUSED } },
+    });
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    const picker = screen.getByLabelText('Grant a qualification to Ada');
+
+    await userEvent.selectOptions(picker, 'q-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada · e-1' }));
+
+    await waitFor(() => expect(picker).toHaveAttribute('aria-invalid', 'true'));
+    expect(picker).toHaveAccessibleDescription(new RegExp(GRANT_REFUSED));
+    expect(screen.getByLabelText('Grant a qualification to Grace')).not.toHaveAttribute(
+      'aria-invalid',
+      'true',
+    );
+  });
+
+  /** A grant nobody here can find says nothing about the qualification chosen (C6). */
+  it('GivenAGrantForSomebodyNotFound_WhenShown_ThenThePickerStaysValidAndTheRefusalIsInTheirRow', async () => {
+    theOrganisation({
       'PUT /api/employees/e-1/qualifications/q-1': {
         status: 404,
         body: { detail: 'No such resource.' },
@@ -428,12 +460,10 @@ describe('granting a qualification', () => {
     await userEvent.selectOptions(picker, 'q-1');
     await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada · e-1' }));
 
-    await waitFor(() => expect(picker).toHaveAttribute('aria-invalid', 'true'));
-    expect(picker).toHaveAccessibleDescription(/Nothing here for this organisation/);
-    expect(screen.getByLabelText('Grant a qualification to Grace')).not.toHaveAttribute(
-      'aria-invalid',
-      'true',
+    expect(await within(rowAfter(rowOf('Ada'))).findByRole('alert')).toHaveTextContent(
+      'Nothing here for this organisation.',
     );
+    expect(picker).not.toHaveAttribute('aria-invalid', 'true');
   });
 });
 
@@ -600,8 +630,32 @@ describe('setting contracted hours', () => {
     expect(screen.getAllByRole('alert'), 'every alert on the page').toHaveLength(1);
   });
 
-  /** The field the refusal is about says so, and says why, where the cursor already is (C6). */
-  it('GivenTheBackendRefusesTheTerms_WhenShown_ThenThatRowsMinutesAreMarkedInvalidWithTheReason', async () => {
+  /**
+   * The field the refusal is about says so, and says why, where the cursor already is (C6). Invalid
+   * terms are answered with a 400 by the backend's own check, whatever the field's `min` lets through.
+   */
+  it('GivenTheTermsRefusedAsInvalid_WhenShown_ThenThatRowsMinutesAreMarkedInvalidWithTheReason', async () => {
+    theOrganisation({ 'PUT /api/employees/e-1/contract': TERMS_INVALID });
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    const field = screen.getByLabelText('Contracted minutes per week for Ada');
+
+    await userEvent.type(field, String(TYPED_CONTRACT), WITHOUT_PAUSES);
+    await userEvent.click(within(rowOf('Ada')).getByRole('button', { name: /^Set/ }));
+
+    expect(await within(rowAfter(rowOf('Ada'))).findByRole('alert')).toHaveTextContent(
+      'Contracted hours must be positive',
+    );
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(field).toHaveAccessibleDescription(/Contracted hours must be positive/);
+    expect(screen.getByLabelText('Contracted minutes per week for Grace')).not.toHaveAttribute(
+      'aria-invalid',
+      'true',
+    );
+  });
+
+  /** Refusing the role says nothing about the minutes typed, so they are not marked (C6). */
+  it('GivenASetForbiddenToTheRole_WhenShown_ThenTheMinutesStayValidAndTheRefusalIsInTheirRow', async () => {
     theOrganisation({
       'PUT /api/employees/e-1/contract': {
         status: 403,
@@ -615,12 +669,10 @@ describe('setting contracted hours', () => {
     await userEvent.type(field, '5', WITHOUT_PAUSES);
     await userEvent.click(within(rowOf('Ada')).getByRole('button', { name: /^Set/ }));
 
-    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'));
-    expect(field).toHaveAccessibleDescription(/Your role does not permit this/);
-    expect(screen.getByLabelText('Contracted minutes per week for Grace')).not.toHaveAttribute(
-      'aria-invalid',
-      'true',
+    expect(await within(rowAfter(rowOf('Ada'))).findByRole('alert')).toHaveTextContent(
+      'Your role does not permit this.',
     );
+    expect(field).not.toHaveAttribute('aria-invalid', 'true');
   });
 });
 
