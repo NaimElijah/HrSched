@@ -48,28 +48,23 @@ owner has chosen to leave open for now ([Q15](docs/requirements/requirements.md#
 
 ## Features
 
-- **Run many organisations on one deployment.** A platform Operator onboards each one with its
-  first Admin, and is then refused everything inside it.
-- **Provision accounts from the top down.** Each account is an Admin, a Scheduler or an Employee.
-  A temporary password grants nothing until it is replaced, and nobody signs themselves up.
-- **Describe your people.** Record their qualifications, when they cannot work, their soft
-  preferences and their weekly contracted hours. A mistaken absence or preference can be withdrawn.
-- **Configure the rules, and read back any version.** Set minimum rest, maximum daily and weekly
-  working time, and maximum consecutive days. Each limit is optional, and none has a default.
-- **Define shifts in their own time zone.** A shift has a headcount, the qualifications it
-  requires, and an IANA zone. Its days are counted in that zone, across daylight saving changes.
-- **Generate, adjust and publish a roster.** Generation leaves a shift short rather than break a
-  rule to fill it, and a Scheduler can change the draft by hand, seeing every rule it breaks and every
-  shift it leaves short as they go. Publishing is refused with every violation listed; a roster
-  that passes supersedes whatever it overlaps.
-- **Swap a shift.** An employee asks a colleague to cover, and a Scheduler decides. Approving
-  publishes a replacement roster, judged by the same rules. An assignment can have one pending
-  request at most, and it lapses with its roster. Both people see every outcome in their inbox.
-- **See your own work.** An employee sees their assignments on published rosters only, and reads
-  back the absences and preferences they declared.
+- **Run many organisations on one deployment.** An Operator onboards each with its first Admin.
+- **Provision accounts from the top down.** Admin, Scheduler or Employee; nobody signs themselves up.
+- **Describe your people.** Qualifications, absences, preferences and weekly contracted hours.
+- **Configure the working-time rules.** Every limit is optional, none has a default, and any
+  version can be read back.
+- **Define shifts in their own time zone.** A headcount, required qualifications, and days counted
+  across daylight saving changes.
+- **Generate, adjust and publish a roster.** The CP-SAT solver
+  ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) fills every place the
+  rules allow, a Scheduler edits the draft, and publishing is refused with every violation listed.
+- **Swap a shift.** An employee asks a colleague to cover, a Scheduler decides, and approval
+  publishes a replacement roster judged by the same rules.
+- **See your own work.** Assignments on published rosters, and the absences and preferences you
+  declared.
 
-Generation fills every place the rules allow, then weighs the organisation's objectives, with the
-CP-SAT solver ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)).
+The rules behind each capability, and what is decided but not yet built, are in
+[`requirements.md`](docs/requirements/requirements.md).
 
 ## Architecture
 
