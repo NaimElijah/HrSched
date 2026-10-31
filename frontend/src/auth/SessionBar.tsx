@@ -17,6 +17,8 @@ export function SessionBar({ onChangePassword }: { onChangePassword: () => void 
       <span>
         Signed in as <strong>{session.signInName}</strong>
       </span>
+      {/* Text, not only a gap, so the two parts are read apart as well as shown apart. */}
+      <span>{' · '}</span>
       <span>
         {session.kind === 'OPERATOR' ? (
           'Platform operator'
