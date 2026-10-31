@@ -43,7 +43,9 @@ import org.springframework.stereotype.Component;
  *       another service that happens to share a key, is not spendable here.
  *   <li><strong>Expiry is required, not merely honoured.</strong> {@link JwtTimestampValidator}
  *       allows a missing {@code exp} by default, which would make a stolen token permanent, so that
- *       default is switched off. Its clock is injected, so expiry is testable arithmetic.
+ *       default is switched off. Its clock is injected, so expiry is testable arithmetic. Its
+ *       default clock skew, a minute in Spring Security 7.1, is kept: a token is accepted until a
+ *       minute past its {@code exp}.
  *   <li><strong>Subject, session and issued-at are required.</strong> A token without a subject
  *       names nobody, and one without a session cannot be revoked, so signing out would leave it
  *       working. Issued-at is enforced before conversion, for the reason given on {@code requiring}
