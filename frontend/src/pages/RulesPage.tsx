@@ -33,12 +33,30 @@ export function RulesPage() {
   const [done, setDone] = useState<string | null>(null);
   // A second revision sent meanwhile would be made from a copy the first has already replaced.
   const [revising, setRevising] = useState(false);
+  // What the next read to settle answers: a stored revision's read-back, until which the edits
+  // stay in the fields, or a retried load, which says so once it has loaded.
+  const [awaiting, setAwaiting] = useState<'read-back' | 'retry' | null>(null);
   const sessionKey = useSessionKey();
   const waitingId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
 
   const current = useAsync(() => scheduling.currentConstraints(), sessionKey);
   const loaded = current.value;
+  // Until the read-back lands the form holds the copy the revision replaced, and a revision sent
+  // from it would put the old values back.
+  const unavailable = loaded === null || revising || current.busy;
+
+  if (awaiting !== null && !current.busy) {
+    // Adjusted while rendering rather than in an effect, so no frame shows the replaced values
+    // beside the new version: the pattern React documents as storing information from previous
+    // renders, under useState.
+    setAwaiting(null);
+    if (awaiting === 'read-back') {
+      setEdits({});
+    } else if (current.error === null) {
+      setDone('Stored rules loaded.');
+    }
+  }
 
   const shown = (key: RuleField): string => edits[key] ?? configured(loaded, key);
 
@@ -46,7 +64,7 @@ export function RulesPage() {
     event.preventDefault();
     // Until the stored rules are known every field reads "not enforced" while nothing is, and a
     // revision sent then would switch off every rule that was not retyped (#239).
-    if (loaded === null || revising) {
+    if (unavailable) {
       return;
     }
     setFailure(null);
@@ -64,9 +82,9 @@ export function RulesPage() {
     setRevising(true);
     try {
       const revised = await scheduling.reviseConstraints(body);
-      setEdits({});
       // The fields look the same before and after, so without a word nothing says it was stored.
       setDone(`Rules revised: now version ${String(revised.version)}.`);
+      setAwaiting('read-back');
       current.reload();
     } catch (error) {
       setFailure(error);
@@ -112,7 +130,7 @@ export function RulesPage() {
         {/* aria-disabled rather than disabled, so the button keeps focus and can say why. */}
         <button
           type="submit"
-          aria-disabled={loaded === null || revising}
+          aria-disabled={unavailable}
           aria-describedby={loaded === null ? waitingId : undefined}
         >
           Revise rules
@@ -125,12 +143,14 @@ export function RulesPage() {
             : 'The stored rules did not load, so there is nothing to revise from yet.'}
         </p>
       ) : null}
+      <Failure error={current.error} />
       {current.error === null ? null : (
         <button
           type="button"
           onClick={() => {
             // The button goes with the failure it answers, so focus moves on before it does.
             heading.current?.focus();
+            setAwaiting('retry');
             current.reload();
           }}
         >
@@ -142,7 +162,6 @@ export function RulesPage() {
       <p className="done" role="status">
         {done}
       </p>
-      <Failure error={current.error} />
       <Busy busy={current.busy} />
     </section>
   );

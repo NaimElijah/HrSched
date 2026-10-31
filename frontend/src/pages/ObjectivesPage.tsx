@@ -38,12 +38,29 @@ export function ObjectivesPage() {
   const [done, setDone] = useState<string | null>(null);
   // A second revision sent meanwhile would be one nobody asked for.
   const [weighing, setWeighing] = useState(false);
+  // What the next read to settle answers: a stored weighing's read-back, until which the edits
+  // stay in the fields, or a retried load, which says so once it has loaded.
+  const [awaiting, setAwaiting] = useState<'read-back' | 'retry' | null>(null);
   const sessionKey = useSessionKey();
   const waitingId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
 
   const current = useAsync(() => scheduling.findObjectives(), sessionKey);
   const loaded = current.value;
+  // Until the read-back lands the form holds the weights the revision replaced, and a revision
+  // sent from them would put the old weights back.
+  const unavailable = loaded === null || weighing || current.busy;
+
+  if (awaiting !== null && !current.busy) {
+    // Adjusted while rendering rather than in an effect, so no frame shows the replaced weights:
+    // the pattern React documents as storing information from previous renders, under useState.
+    setAwaiting(null);
+    if (awaiting === 'read-back') {
+      setEdits({});
+    } else if (current.error === null) {
+      setDone('Stored weights loaded.');
+    }
+  }
 
   const shown = (key: ObjectiveField): string => edits[key] ?? stored(loaded, key);
 
@@ -51,7 +68,7 @@ export function ObjectivesPage() {
     event.preventDefault();
     // Unlike the rules, weights are not versioned: a revision sent before the stored weights are
     // known would unweigh them for good, so there is nothing to send until they are.
-    if (loaded === null || weighing) {
+    if (unavailable) {
       return;
     }
     setFailure(null);
@@ -68,9 +85,9 @@ export function ObjectivesPage() {
     setWeighing(true);
     try {
       const weighed = await scheduling.reviseObjectives(body);
-      setEdits({});
       // The fields look the same before and after, so without a word nothing says it was stored.
       setDone(`Objectives weighed: ${described(weighed)}.`);
+      setAwaiting('read-back');
       current.reload();
     } catch (error) {
       setFailure(error);
@@ -109,7 +126,7 @@ export function ObjectivesPage() {
         {/* aria-disabled rather than disabled, so the button keeps focus and can say why. */}
         <button
           type="submit"
-          aria-disabled={loaded === null || weighing}
+          aria-disabled={unavailable}
           aria-describedby={loaded === null ? waitingId : undefined}
         >
           Weigh objectives
@@ -122,12 +139,14 @@ export function ObjectivesPage() {
             : 'The stored weights did not load, so there is nothing to weigh from yet.'}
         </p>
       ) : null}
+      <Failure error={current.error} />
       {current.error === null ? null : (
         <button
           type="button"
           onClick={() => {
             // The button goes with the failure it answers, so focus moves on before it does.
             heading.current?.focus();
+            setAwaiting('retry');
             current.reload();
           }}
         >
@@ -139,7 +158,6 @@ export function ObjectivesPage() {
       <p className="done" role="status">
         {done}
       </p>
-      <Failure error={current.error} />
       <Busy busy={current.busy} />
     </section>
   );

@@ -113,6 +113,11 @@ describe('the rules page', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Your role does not permit this.');
     expect(daily).toHaveValue(REVISED_DAILY);
+    // A refusal reads nothing back, so a guard still held here would leave the form dead.
+    expect(screen.getByRole('button', { name: 'Revise rules' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
   /**
@@ -141,10 +146,9 @@ describe('the rules page', () => {
 
     expect(writes(stub)).toHaveLength(0);
     // Unavailable, and still focusable and so able to say why (#257, C5).
-    expect(screen.getByRole('button', { name: 'Revise rules' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    const revise = screen.getByRole('button', { name: 'Revise rules' });
+    expect(revise).toHaveAttribute('aria-disabled', 'true');
+    expect(revise).toHaveAccessibleDescription(/did not load/);
   });
 
   it('GivenAClearedField_WhenRevising_ThenThatRuleIsSwitchedOff', async () => {
@@ -198,8 +202,9 @@ describe('the rules form, told rather than shown', () => {
     const revise = screen.getByRole('button', { name: 'Revise rules' });
 
     expect(revise).toHaveAttribute('aria-disabled', 'true');
+    // jsdom keeps focus on a disabled button, so this, not toHaveFocus(), is what C1 rests on.
     expect(revise).not.toBeDisabled();
-    expect(revise).toHaveAccessibleDescription(/load/i);
+    expect(revise).toHaveAccessibleDescription(/waits until/);
     answer();
     await waitFor(() => expect(screen.getByLabelText(/Minimum rest/)).toHaveValue(REST));
     expect(revise).not.toHaveAttribute('aria-disabled', 'true');
@@ -239,6 +244,24 @@ describe('the rules form, told rather than shown', () => {
     );
   });
 
+  /** Focus is on the heading by then, so the form turning usable is otherwise silent (C3). */
+  it('GivenTheStoredRulesFailedToLoad_WhenTryAgainSucceeds_ThenAStatusSaysTheyLoaded', async () => {
+    const server: Record<string, Answer> = {
+      '/api/constraints': { status: 500, body: { detail: 'Something went wrong.' } },
+    };
+    routeTo(server);
+    show();
+    const tryAgain = await screen.findByRole('button', { name: /^Try again/ });
+    const statuses = screen.getAllByRole('status');
+    server['/api/constraints'] = { status: 200, body: CONFIGURED };
+
+    await userEvent.click(tryAgain);
+
+    await waitFor(() =>
+      expect(statuses.map((status) => status.textContent)).toContain('Stored rules loaded.'),
+    );
+  });
+
   /**
    * A disabled button drops the keyboard focus to the page in a browser (C1), and a second
    * revision sent meanwhile would be made from a copy the first has already replaced.
@@ -262,17 +285,65 @@ describe('the rules form, told rather than shown', () => {
     expect(writes(routed)).toHaveLength(1);
   });
 
+  /**
+   * Until the read-back lands, the form still holds the copy the revision replaced. Pressed again
+   * then, Revise would store the old values over the new ones, and the status would call it a
+   * success; and the fields must not flash the replaced values meanwhile.
+   */
+  it('GivenARevisionStoredButNotYetReadBack_WhenPressedAgain_ThenOnlyOneIsSentAndTheEditStays', async () => {
+    const server: Record<string, Answer> = {
+      '/api/constraints': { status: 200, body: CONFIGURED },
+      'PUT /api/constraints': { status: 200, body: { ...CONFIGURED, version: 5 } },
+    };
+    const routed = routeTo(server);
+    let readBack!: () => void;
+    const readingBack = new Promise<void>((resolve) => {
+      readBack = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) =>
+        (init?.method ?? 'GET') === 'GET' && callsTo(routed, 'PUT', '/api/constraints').length > 0
+          ? readingBack.then(() => routed(path, init))
+          : routed(path, init),
+      ),
+    );
+    show();
+    const daily = screen.getByLabelText(/Maximum daily/);
+    await waitFor(() => expect(daily).toHaveValue(DAILY));
+    await userEvent.clear(daily);
+    await userEvent.type(daily, String(REVISED_DAILY), WITHOUT_PAUSES);
+    const revise = screen.getByRole('button', { name: 'Revise rules' });
+
+    await userEvent.click(revise);
+    await screen.findByText(/rules revised/i);
+    await userEvent.click(revise);
+
+    expect(revise).toHaveAttribute('aria-disabled', 'true');
+    expect(daily).toHaveValue(REVISED_DAILY);
+    server['/api/constraints'] = {
+      status: 200,
+      body: { ...CONFIGURED, version: 5, maximumDailyMinutes: REVISED_DAILY },
+    };
+    readBack();
+    await waitFor(() => expect(revise).not.toHaveAttribute('aria-disabled', 'true'));
+    expect(daily).toHaveValue(REVISED_DAILY);
+    expect(callsTo(routed, 'PUT', '/api/constraints')).toHaveLength(1);
+  });
+
   /** The fields look the same before and after, so without a word nothing says it was stored (C3). */
   it('GivenARevision_WhenItSucceeds_ThenAStatusSaysTheRulesWereRevised', async () => {
     configured();
     show();
     await waitFor(() => expect(screen.getByLabelText(/Minimum rest/)).toHaveValue(REST));
+    // Captured before the revision: a live region that appears along with its text is not read.
+    const statuses = screen.getAllByRole('status');
 
     await userEvent.click(screen.getByRole('button', { name: 'Revise rules' }));
 
     await waitFor(() =>
-      expect(screen.getAllByRole('status').map((status) => status.textContent)).toContainEqual(
-        expect.stringMatching(/rules revised/i),
+      expect(statuses.map((status) => status.textContent)).toContainEqual(
+        expect.stringMatching(/rules revised: now version 5/i),
       ),
     );
   });
@@ -298,5 +369,18 @@ describe('the rules form, told rather than shown', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^Try again/ }));
 
     expect(screen.getByRole('heading', { name: 'Working-time rules' })).toHaveFocus();
+  });
+
+  /** Read in order, Try again comes after what it answers, not before it. */
+  it('GivenTheStoredRulesFailedToLoad_WhenShown_ThenTheFailureIsReadBeforeTryAgain', async () => {
+    routeTo({ '/api/constraints': { status: 500, body: { detail: 'Something went wrong.' } } });
+    show();
+
+    const tryAgain = await screen.findByRole('button', { name: /^Try again/ });
+
+    expect(
+      screen.getByRole('alert').compareDocumentPosition(tryAgain) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
