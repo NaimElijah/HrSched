@@ -3,7 +3,8 @@
 # HrSched
 
 **Staff rostering for many organisations at once: it turns shifts that need covering and people
-with constraints into a roster that is legal to work, and refuses to publish one that is not.**
+with constraints into a roster that keeps every working-time rule the organisation sets, and
+refuses to publish one that breaks them.**
 
 [![Licence](https://img.shields.io/badge/licence-proprietary-lightgrey?style=flat-square)](LICENSE)
 
@@ -39,8 +40,8 @@ flowchart LR
 
 Rostering shift work by hand collapses under its own constraints. A scheduler balancing
 availability, qualifications, rest periods and contracted hours across a few dozen people produces
-a roster that looks finished and is quietly illegal, and the mistake surfaces on the shop floor at
-04:00 rather than in the spreadsheet. HrSched generates a roster from the shifts that need covering
+a roster that looks finished and quietly breaks a rule, and the mistake surfaces on the shop floor
+at 04:00 rather than in the spreadsheet. HrSched generates a roster from the shifts that need covering
 and the people who can cover them, refuses to publish any roster that breaks a rule, and keeps the
 published one correct as swaps arrive. One deployment serves many organisations, and every record
 belongs to exactly one of them.
@@ -61,8 +62,8 @@ owner has chosen to leave open for now ([Q15](docs/requirements/requirements.md#
   working time, and maximum consecutive days. Each limit is optional, and none has a default.
 - **Define shifts in their own time zone.** A shift has a headcount, the qualifications it
   requires, and an IANA zone. Its days are counted in that zone, across daylight saving changes.
-- **Generate, adjust and publish a roster.** Generation leaves a shift short rather than fill it
-  illegally, and a Scheduler can change the draft by hand, seeing every rule it breaks and every
+- **Generate, adjust and publish a roster.** Generation leaves a shift short rather than break a
+  rule to fill it, and a Scheduler can change the draft by hand, seeing every rule it breaks and every
   shift it leaves short as they go. Publishing is refused with every violation listed; a roster
   that passes supersedes whatever it overlaps.
 - **Swap a shift.** An employee asks a colleague to cover, and a Scheduler decides. Approving
@@ -133,7 +134,7 @@ Components, the authentication sequence and the data flow are in
 | Security | Spring Security, OAuth2 resource server | 7.1.2 | Verifies the RS256 tokens HrSched signs itself |
 | Database | PostgreSQL | 18 | Its constraints refuse what the domain must never store |
 | Persistence | Spring JDBC + Flyway | 12.4.0 | Hand-written SQL behind the ports, no ORM ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)) |
-| Generation | Google OR-Tools, CP-SAT | 9.12.4544 | Every rule is a constraint, so a generated roster is legal by construction ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) |
+| Generation | Google OR-Tools, CP-SAT | 9.12.4544 | Every rule is a constraint, so a generated roster keeps every configured rule by construction ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) |
 | Tests | JUnit Jupiter, Testcontainers | 6.0.3 / 2.0.5 | Every test that touches storage runs on a real PostgreSQL |
 | Architecture | ArchUnit | 1.5.1 | Turns the dependency rules into build failures |
 | Observability | OpenTelemetry starter, Micrometer Prometheus | Boot BOM; OpenTelemetry 1.67.0 | A trace id on every response and log line; metrics pull-only, and unreadable until [#78](https://github.com/NaimElijah/HrSched/issues/78) |
@@ -192,7 +193,7 @@ responses are real ones from a local run; [`docs/api.md`](docs/api.md) has every
 and the whole walkthrough from an empty database.
 
 **Publish a roster.** Only a Scheduler may. The roster records the rule version that approved it,
-so a later change to the rules can never make it illegal after the fact.
+so a later change to the rules does not change what it was approved against.
 
 ```bash
 curl -s -X POST "localhost:8080/api/rosters/$ROSTER/publication" \
@@ -361,11 +362,13 @@ that proposes, never decides). The
 [requirements](docs/requirements/requirements.md) mark each row decided but `not yet` built.
 
 **Known limitations:**
+- **No jurisdiction preset exists yet.** HrSched ships no statute's numbers, so every limit is
+  typed in by the organisation ([#105](https://github.com/NaimElijah/HrSched/issues/105)).
 - **Generation takes minutes at the largest size.** It runs in the background and the Rosters page
   waits for it ([ADR-046](docs/ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). Each of the solver's two searches stops at
   `hrsched.generation.time-limit-per-phase` with the best roster it has found, which at the largest
-  stated size may not be the best there is. Two generations of one week can differ, each as legal
-  as the other.
+  stated size may not be the best there is. Two generations of one week can differ, each keeping
+  every configured rule.
 - **A shift's zone is the Scheduler's browser zone.** The Shifts page sends the zone its times were
   typed in, and no page shows a shift's zone yet
   ([#136](https://github.com/NaimElijah/HrSched/issues/136)).
