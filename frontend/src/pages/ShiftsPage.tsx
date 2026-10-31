@@ -1,8 +1,9 @@
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { scheduling } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { spanLabel } from '../components/localDates';
+import { TableRegion } from '../components/TableRegion';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
 
@@ -26,7 +27,6 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
   const [defining, setDefining] = useState(false);
-  const captionId = useId();
 
   const shifts = useAsync(
     () => scheduling.findShifts(span.from, span.to),
@@ -167,39 +167,34 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
       {shifts.value === null ? null : shifts.value.length === 0 ? (
         <p>No shifts in this span.</p>
       ) : (
-        <div className="table-scroll" role="region" aria-labelledby={captionId} tabIndex={0}>
-          <table>
-            <caption id={captionId} className="visually-hidden">
-              Shifts in the planning span
-            </caption>
-            <thead>
-              <tr>
-                <th>Starts</th>
-                <th>Ends</th>
-                <th>Needs</th>
-                <th>Requires</th>
-                <th>Unpopular</th>
+        <TableRegion caption="Shifts in the planning span">
+          <thead>
+            <tr>
+              <th>Starts</th>
+              <th>Ends</th>
+              <th>Needs</th>
+              <th>Requires</th>
+              <th>Unpopular</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shifts.value.map((shift) => (
+              <tr key={shift.id}>
+                <td>{new Date(shift.start).toLocaleString()}</td>
+                <td>{new Date(shift.end).toLocaleString()}</td>
+                <td>{shift.requiredHeadcount}</td>
+                <td>
+                  {shift.requiredQualifications.length === 0
+                    ? '—'
+                    : shift.requiredQualifications
+                        .map((id) => qualificationNames.get(id) ?? id)
+                        .join(', ')}
+                </td>
+                <td>{shift.unpopular ? 'Unpopular' : '—'}</td>
               </tr>
-            </thead>
-            <tbody>
-              {shifts.value.map((shift) => (
-                <tr key={shift.id}>
-                  <td>{new Date(shift.start).toLocaleString()}</td>
-                  <td>{new Date(shift.end).toLocaleString()}</td>
-                  <td>{shift.requiredHeadcount}</td>
-                  <td>
-                    {shift.requiredQualifications.length === 0
-                      ? '—'
-                      : shift.requiredQualifications
-                          .map((id) => qualificationNames.get(id) ?? id)
-                          .join(', ')}
-                  </td>
-                  <td>{shift.unpopular ? 'Unpopular' : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </TableRegion>
       )}
     </section>
   );

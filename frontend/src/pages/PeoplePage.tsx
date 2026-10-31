@@ -2,6 +2,8 @@ import { Fragment, useId, useState } from 'react';
 import { workforce } from '../api/workforce';
 import type { Qualification } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
+import { RowRefusal } from '../components/RowRefusal';
+import { TableRegion } from '../components/TableRegion';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
 
@@ -37,7 +39,6 @@ export function PeoplePage() {
   // Each row's own refusal, by employee id, shown in that row rather than at the top of the page,
   // where it would say nothing about whose it was.
   const [refusals, setRefusals] = useState<ReadonlyMap<string, RefusedChange>>(new Map());
-  const captionId = useId();
   // One prefix for the ids each row derives from its employee: the name header a refusal's cell
   // names as its header, and the refusal the refused control is described by.
   const rowIds = useId();
@@ -147,110 +148,98 @@ export function PeoplePage() {
       {people.value === null ? null : people.value.length === 0 ? (
         <p>No people yet.</p>
       ) : (
-        <div className="table-scroll" role="region" aria-labelledby={captionId} tabIndex={0}>
-          <table>
-            <caption id={captionId} className="visually-hidden">
-              People in this organisation
-            </caption>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Qualifications</th>
-                <th>Cannot work</th>
-                <th>Grant</th>
-                <th>Contracted minutes / week</th>
-              </tr>
-            </thead>
-            <tbody>
-              {people.value.map((employee) => {
-                const refusal = refusals.get(employee.id);
-                return (
-                  <Fragment key={employee.id}>
-                    <tr>
-                      <th scope="row" id={headerOf(employee.id)}>
-                        {employee.name}
-                        <br />
-                        <code>{employee.id}</code>
-                      </th>
-                      <td>
-                        {employee.qualifications.length === 0
-                          ? '—'
-                          : employee.qualifications
-                              .map((id) => qualificationNames.get(id) ?? id)
-                              .join(', ')}
-                      </td>
-                      <td>
-                        {employee.unavailability.length === 0 ? (
-                          '—'
-                        ) : (
-                          <ul className="spans">
-                            {employee.unavailability.map((period) => (
-                              <li key={`${period.start}|${period.end}`}>
-                                {new Date(period.start).toLocaleString()} to{' '}
-                                {new Date(period.end).toLocaleString()}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </td>
-                      <td>
-                        <GrantField
-                          employee={employee.name}
-                          identifier={employee.id}
-                          qualifications={qualifications.value ?? []}
-                          refusedBy={refusedBy(employee.id, 'grant')}
-                          onEdit={() => setDone(null)}
-                          onSubmit={(qualification) =>
-                            act(
-                              () => workforce.grantQualification(employee.id, qualification),
-                              `Granted ${qualificationNames.get(qualification) ?? qualification} to ${employee.name}.`,
-                              { employee: employee.id, field: 'grant' },
-                            )
-                          }
-                        />
-                      </td>
-                      <td>
-                        {/* Beside the field, never in it: a prefilled number could be submitted unchosen. */}
-                        <p className="stored">
-                          {employee.weeklyContractedMinutes === null
-                            ? 'None set'
-                            : `${employee.weeklyContractedMinutes} minutes a week`}
-                        </p>
-                        <ContractField
-                          employee={employee.name}
-                          refusedBy={refusedBy(employee.id, 'contract')}
-                          onEdit={() => setDone(null)}
-                          onSubmit={(minutes) =>
-                            act(
-                              () => workforce.setContract(employee.id, minutes),
-                              `Set contracted minutes for ${employee.name} to ${String(minutes)} a week.`,
-                              { employee: employee.id, field: 'contract' },
-                            )
-                          }
-                        />
-                      </td>
-                    </tr>
-                    {refusal === undefined ? null : (
-                      <tr>
-                        {/* Named by its row's header, so table mode says whose refusal it is. */}
-                        <td
-                          colSpan={COLUMNS}
-                          id={refusalOf(employee.id)}
-                          headers={headerOf(employee.id)}
-                        >
-                          {/* Pinned to the visible part of the scrolled table by its CSS. */}
-                          <div className="row-refusal">
-                            <Failure error={refusal.error} />
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <TableRegion caption="People in this organisation">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Qualifications</th>
+              <th>Cannot work</th>
+              <th>Grant</th>
+              <th>Contracted minutes / week</th>
+            </tr>
+          </thead>
+          <tbody>
+            {people.value.map((employee) => {
+              const refusal = refusals.get(employee.id);
+              return (
+                <Fragment key={employee.id}>
+                  <tr>
+                    <th scope="row" id={headerOf(employee.id)}>
+                      {employee.name}
+                      <br />
+                      <code>{employee.id}</code>
+                    </th>
+                    <td>
+                      {employee.qualifications.length === 0
+                        ? '—'
+                        : employee.qualifications
+                            .map((id) => qualificationNames.get(id) ?? id)
+                            .join(', ')}
+                    </td>
+                    <td>
+                      {employee.unavailability.length === 0 ? (
+                        '—'
+                      ) : (
+                        <ul className="spans">
+                          {employee.unavailability.map((period) => (
+                            <li key={`${period.start}|${period.end}`}>
+                              {new Date(period.start).toLocaleString()} to{' '}
+                              {new Date(period.end).toLocaleString()}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                    <td>
+                      <GrantField
+                        employee={employee.name}
+                        identifier={employee.id}
+                        qualifications={qualifications.value ?? []}
+                        refusedBy={refusedBy(employee.id, 'grant')}
+                        onEdit={() => setDone(null)}
+                        onSubmit={(qualification) =>
+                          act(
+                            () => workforce.grantQualification(employee.id, qualification),
+                            `Granted ${qualificationNames.get(qualification) ?? qualification} to ${employee.name}.`,
+                            { employee: employee.id, field: 'grant' },
+                          )
+                        }
+                      />
+                    </td>
+                    <td>
+                      {/* Beside the field, never in it: a prefilled number could be submitted unchosen. */}
+                      <p className="stored">
+                        {employee.weeklyContractedMinutes === null
+                          ? 'None set'
+                          : `${employee.weeklyContractedMinutes} minutes a week`}
+                      </p>
+                      <ContractField
+                        employee={employee.name}
+                        refusedBy={refusedBy(employee.id, 'contract')}
+                        onEdit={() => setDone(null)}
+                        onSubmit={(minutes) =>
+                          act(
+                            () => workforce.setContract(employee.id, minutes),
+                            `Set contracted minutes for ${employee.name} to ${String(minutes)} a week.`,
+                            { employee: employee.id, field: 'contract' },
+                          )
+                        }
+                      />
+                    </td>
+                  </tr>
+                  {refusal === undefined ? null : (
+                    <RowRefusal
+                      error={refusal.error}
+                      id={refusalOf(employee.id)}
+                      headers={headerOf(employee.id)}
+                      columns={COLUMNS}
+                    />
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </TableRegion>
       )}
     </section>
   );

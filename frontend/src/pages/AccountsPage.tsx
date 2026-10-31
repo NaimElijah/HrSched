@@ -6,6 +6,8 @@ import { workforce } from '../api/workforce';
 import type { Employee } from '../api/workforce';
 import { useSessionKey } from '../auth/SessionProvider';
 import { Busy, Failure } from '../components/Feedback';
+import { RowRefusal } from '../components/RowRefusal';
+import { TableRegion } from '../components/TableRegion';
 import { useAsync } from '../components/useAsync';
 
 const ROLES: readonly TenantRole[] = ['EMPLOYEE', 'SCHEDULER', 'ADMIN'];
@@ -73,7 +75,6 @@ export function AccountsPage() {
 
   const listed = useAsync(() => accounts.findAccounts(), sessionKey);
   const staff = useAsync(() => workforce.findEmployees(), sessionKey);
-  const captionId = useId();
 
   /**
    * Runs one administrative request, says how it went, and then reloads the list, because every
@@ -188,36 +189,31 @@ export function AccountsPage() {
       {listed.value === null ? null : listed.value.length === 0 ? (
         <p>No accounts yet.</p>
       ) : (
-        <div className="table-scroll" role="region" aria-labelledby={captionId} tabIndex={0}>
-          <table>
-            <caption id={captionId} className="visually-hidden">
-              Accounts in this organisation
-            </caption>
-            <thead>
-              <tr>
-                <th>Sign-in name</th>
-                <th>Role</th>
-                <th>Employee</th>
-                <th>State</th>
-                <th>Reset password</th>
-                <th>
-                  <span className="visually-hidden">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {listed.value.map((account) => (
-                <AccountRow
-                  key={account.id}
-                  account={account}
-                  staff={staff.value ?? []}
-                  administer={administer}
-                  onEdit={() => setDone(null)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <TableRegion caption="Accounts in this organisation">
+          <thead>
+            <tr>
+              <th>Sign-in name</th>
+              <th>Role</th>
+              <th>Employee</th>
+              <th>State</th>
+              <th>Reset password</th>
+              <th>
+                <span className="visually-hidden">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {listed.value.map((account) => (
+              <AccountRow
+                key={account.id}
+                account={account}
+                staff={staff.value ?? []}
+                administer={administer}
+                onEdit={() => setDone(null)}
+              />
+            ))}
+          </tbody>
+        </TableRegion>
       )}
     </section>
   );
@@ -509,15 +505,7 @@ function AccountRow({
         </td>
       </tr>
       {refusal === null ? null : (
-        <tr>
-          {/* Named by its row's header, so table mode says whose refusal it is. */}
-          <td colSpan={COLUMNS} id={refusalId} headers={headerId}>
-            {/* Pinned to the visible part of the scrolled table by its CSS. */}
-            <div className="row-refusal">
-              <Failure error={refusal.error} />
-            </div>
-          </td>
-        </tr>
+        <RowRefusal error={refusal.error} id={refusalId} headers={headerId} columns={COLUMNS} />
       )}
     </>
   );

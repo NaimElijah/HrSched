@@ -1,7 +1,13 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { callsTo, holdingWrites, routeTo, writes } from '../test-support/routeTo';
+import {
+  callsTo,
+  holdingEverything,
+  holdingWrites,
+  routeTo,
+  writes,
+} from '../test-support/routeTo';
 import type { Answer } from '../test-support/routeTo';
 import { A_SCHEDULER, A_TENANT, SignedIn } from '../test-support/session';
 import { RulesPage } from './RulesPage';
@@ -180,19 +186,6 @@ describe('the rules form, told rather than shown', () => {
         <RulesPage />
       </SignedIn>,
     );
-  }
-
-  /** Answers every request only once the returned function is called. */
-  function holdingEverything(routed: ReturnType<typeof routeTo>): () => void {
-    let answer!: () => void;
-    const answering = new Promise<void>((resolve) => {
-      answer = resolve;
-    });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((path: string, init?: RequestInit) => answering.then(() => routed(path, init))),
-    );
-    return answer;
   }
 
   /** A bare disabled button cannot be reached to learn why it does nothing (C5). */

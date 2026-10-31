@@ -1,7 +1,8 @@
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { access } from '../api/access';
 import { useSessionKey } from '../auth/SessionProvider';
 import { Busy, Failure } from '../components/Feedback';
+import { TableRegion } from '../components/TableRegion';
 import { useAsync } from '../components/useAsync';
 
 /**
@@ -25,8 +26,6 @@ export function OrganisationsPage() {
   // A second onboarding sent while the first is on its way would be refused for the name the first
   // took, and that refusal shown beside the first one's success.
   const [onboarding, setOnboarding] = useState(false);
-
-  const captionId = useId();
 
   const organisations = useAsync(() => access.findOrganisations(), sessionKey);
 
@@ -122,29 +121,24 @@ export function OrganisationsPage() {
       {organisations.value === null ? null : organisations.value.length === 0 ? (
         <p>No organisations yet.</p>
       ) : (
-        <div className="table-scroll" role="region" aria-labelledby={captionId} tabIndex={0}>
-          <table>
-            <caption id={captionId} className="visually-hidden">
-              Organisations on the platform
-            </caption>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Identifier</th>
+        <TableRegion caption="Organisations on the platform">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Identifier</th>
+            </tr>
+          </thead>
+          <tbody>
+            {organisations.value.map((organisation) => (
+              <tr key={organisation.id}>
+                <td>{organisation.name}</td>
+                <td>
+                  <code>{organisation.id}</code>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {organisations.value.map((organisation) => (
-                <tr key={organisation.id}>
-                  <td>{organisation.name}</td>
-                  <td>
-                    <code>{organisation.id}</code>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </TableRegion>
       )}
     </section>
   );
