@@ -207,6 +207,11 @@ rules`, as publishing it would. With invented identifiers and weights:
   a constant's name, such as `"ADMIN"` or `"PREFERS_NOT"`. A number, or a string holding one, such
   as `2` or `"2"`, answers `400` titled `Malformed request`. Nothing is stored, and the detail
   repeats nothing that was sent (#326).
+- **A member the request does not have.** A body carrying a member its route does not take, a
+  misspelling such as `maximumConsecutiveDay` included, answers `400` titled `Malformed request`
+  on every route that takes a body, rather than being read as if the member were absent. Nothing
+  is stored, and the detail does not repeat the member's name. A body naming an organisation is
+  refused this way too: the organisation is always the account's.
 - **A body that is not read.** JSON declared in any charset but UTF-8, UTF-16 and UTF-32 included,
   answers `415` titled `Unsupported media type` before it is read; `application/json` with no
   charset, or with `charset=UTF-8`, is accepted. A multipart request answers `415` and is never
