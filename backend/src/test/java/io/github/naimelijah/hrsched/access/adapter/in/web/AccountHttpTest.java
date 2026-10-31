@@ -71,6 +71,12 @@ class AccountHttpTest {
       "An Employee account must be linked to one of this organisation's employees; one that is not"
           + " cannot be restored until it is.";
 
+  /**
+   * What an Admin is told of an account their organisation does not hold, whether it is another
+   * organisation's or nobody's.
+   */
+  private static final String NO_SUCH_ACCOUNT = "No such account.";
+
   /** Invented: when an account {@link #migrated} stands for was created. */
   private static final Instant STORED_BEFORE_R34 = Instant.parse("2026-09-01T09:00:00Z");
 
@@ -439,6 +445,82 @@ class AccountHttpTest {
     String body =
         mockMvc
             .perform(with(get("/api/accounts"), admin(acme)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(body).doesNotContain(A_PASSWORD).doesNotContain("passwordHash").doesNotContain("$2");
+  }
+
+  // Reading one
+
+  /** The Location a creation answers with is a route that serves the account it created. */
+  @Test
+  void GivenAnAccountCreated_WhenFollowingItsLocation_ThenTheAccountIsRead() throws Exception {
+    OrganisationId acme = anOrganisation();
+    String admin = admin(acme);
+    String signInName = anInventedSignInName();
+    String location =
+        mockMvc
+            .perform(
+                with(post("/api/accounts"), admin).content(creating(signInName, Role.SCHEDULER)))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getHeader("Location");
+
+    mockMvc
+        .perform(with(get(location), admin))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(location.substring(location.lastIndexOf('/') + 1)))
+        .andExpect(jsonPath("$.signInName").value(signInName))
+        .andExpect(jsonPath("$.role").value("SCHEDULER"))
+        .andExpect(jsonPath("$.active").value(true))
+        .andExpect(jsonPath("$.passwordChangeRequired").value(true));
+  }
+
+  /** Another organisation's account is answered exactly as one that does not exist. */
+  @Test
+  void GivenAnotherOrganisationsAccount_WhenAnAdminReadsIt_ThenItIsNotFound() throws Exception {
+    String theirs = create(admin(anOrganisation()), anInventedSignInName(), Role.SCHEDULER);
+
+    mockMvc
+        .perform(with(get("/api/accounts/" + theirs), admin(anOrganisation())))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail").value(NO_SUCH_ACCOUNT));
+  }
+
+  @Test
+  void GivenAnUnknownAccount_WhenAnAdminReadsIt_ThenItIsNotFound() throws Exception {
+    mockMvc
+        .perform(with(get("/api/accounts/" + UUID.randomUUID()), admin(anOrganisation())))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail").value(NO_SUCH_ACCOUNT));
+  }
+
+  @Test
+  void GivenASchedulerRole_WhenReadingAnAccount_ThenItIsForbidden() throws Exception {
+    OrganisationId acme = anOrganisation();
+    String account = create(admin(acme), anInventedSignInName(), Role.SCHEDULER);
+
+    mockMvc
+        .perform(
+            with(
+                get("/api/accounts/" + account),
+                TestTenants.tokenFor(mockMvc, acme, Role.SCHEDULER)))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void GivenAnAccount_WhenReadAlone_ThenNoPasswordHashIsInTheAnswer() throws Exception {
+    OrganisationId acme = anOrganisation();
+    String admin = admin(acme);
+    String account = create(admin, anInventedSignInName(), Role.SCHEDULER);
+
+    String body =
+        mockMvc
+            .perform(with(get("/api/accounts/" + account), admin))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()

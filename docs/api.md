@@ -22,7 +22,7 @@ exact role. A resource in another organisation answers `404`, the same as one th
 | Session | `POST /api/auth/sign-in`, `/refresh`, `/sign-out` | Anyone; refresh and sign-out need the cookie and `X-Requested-With` |
 | Own account | `GET /api/auth/session`, `POST /api/auth/password` | Any signed-in account, even before its password is changed |
 | Tenants | `POST`, `GET /api/organisations`; `GET /api/organisations/{id}` | Operator; a tenant may read only its own |
-| Accounts | `POST`, `GET /api/accounts`; `PUT /{id}/membership`, `/{id}/activation`; `POST /{id}/password` | Admin |
+| Accounts | `POST`, `GET /api/accounts`; `GET /{id}`; `PUT /{id}/membership`, `/{id}/activation`; `POST /{id}/password` | Admin |
 | People | `POST /api/employees`; `PUT /{id}/qualifications/{qualification}`, `/{id}/contract`; `GET` list and one | Admin; reading also Scheduler |
 | Availability | `POST`, `GET /api/employees/{id}/unavailability`, `/{id}/preferences`; `DELETE /{id}/unavailability?start&end`, `/{id}/preferences?start&end&strength` | The person, Admin or Scheduler |
 | Qualifications | `POST /api/qualifications`; `GET` list and one | Admin; reading any member |
@@ -38,6 +38,11 @@ exact role. A resource in another organisation answers `404`, the same as one th
 token and `403` with any token, the Operator's included
 ([ADR-049](ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)).
 `GET /actuator` no longer lists the endpoints.
+
+Creating an account answers `201` with no body and the new account in `Location`,
+`/api/accounts/{id}`. Reading that answers the account as the listing shows it: `id`, `signInName`,
+`role`, `employee`, `active`, `passwordChangeRequired`, `locked` and `createdAt`, and never a
+password. Another organisation's account answers `404`, the same as one that does not exist.
 
 ## Signing in
 

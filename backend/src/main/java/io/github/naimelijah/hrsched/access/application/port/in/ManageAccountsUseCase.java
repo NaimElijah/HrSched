@@ -55,6 +55,19 @@ public interface ManageAccountsUseCase {
   List<PublishedAccount> findAccounts(Actor actor, OrganisationId organisation);
 
   /**
+   * One account, as {@link #findAccounts} lists it: what a creation's {@code Location} names.
+   *
+   * @param actor the Admin asking
+   * @param organisation whose account it must be
+   * @param account which account
+   * @return that account
+   * @throws CrossTenantAccessException if the actor may not act in that organisation
+   * @throws UnknownAccountException if that organisation holds no such account, which is also what
+   *     another organisation's account is, so the answer confirms nothing about it
+   */
+  PublishedAccount findAccount(Actor actor, OrganisationId organisation, UserId account);
+
+  /**
    * Changes what an account is inside the organisation: its role, and the person it belongs to.
    *
    * <p>Both at once because they are one value. A role and an employee link that were set by two

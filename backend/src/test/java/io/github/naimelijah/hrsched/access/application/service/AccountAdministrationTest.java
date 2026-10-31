@@ -331,6 +331,55 @@ class AccountAdministrationTest {
         .returns(false, PublishedAccount::locked);
   }
 
+  // Reading one account
+
+  @Test
+  void GivenAnAccountOfTheOrganisation_WhenTheAdminReadsIt_ThenItIsPublishedAsListed() {
+    Account ours = existing(acme, Role.SCHEDULER, true);
+
+    assertThat(service.findAccount(admin(acme), acme, ours.id()))
+        .isEqualTo(service.findAccounts(admin(acme), acme).getFirst());
+  }
+
+  /** The same refusal as an account that never existed, so it confirms nothing about it. */
+  @Test
+  void GivenAnotherOrganisationsAccount_WhenTheAdminReadsItInTheirOwn_ThenItIsUnknown() {
+    Account theirs = existing(rival, Role.SCHEDULER, true);
+
+    assertThatThrownBy(() -> service.findAccount(admin(acme), acme, theirs.id()))
+        .isInstanceOf(UnknownAccountException.class);
+  }
+
+  @Test
+  void GivenNoSuchAccount_WhenTheAdminReadsIt_ThenItIsUnknown() {
+    assertThatThrownBy(() -> service.findAccount(admin(acme), acme, UserId.newId()))
+        .isInstanceOf(UnknownAccountException.class);
+  }
+
+  @Test
+  void GivenAnAdminOfAnotherOrganisation_WhenReadingAnAccount_ThenItIsRefused() {
+    Account ours = existing(acme, Role.SCHEDULER, true);
+
+    assertThatThrownBy(() -> service.findAccount(admin(rival), acme, ours.id()))
+        .isInstanceOf(CrossTenantAccessException.class);
+  }
+
+  @Test
+  void GivenASchedulerRole_WhenReadingAnAccount_ThenItIsRefused() {
+    Account ours = existing(acme, Role.EMPLOYEE, true);
+
+    assertThatThrownBy(() -> service.findAccount(actor(acme, Role.SCHEDULER), acme, ours.id()))
+        .isInstanceOf(NotPermittedException.class);
+  }
+
+  @Test
+  void GivenTheOperator_WhenReadingAnOrganisationsAccount_ThenItIsRefused() {
+    Account ours = existing(acme, Role.ADMIN, true);
+
+    assertThatThrownBy(() -> service.findAccount(new Operator(UserId.newId()), acme, ours.id()))
+        .isInstanceOf(NotATenantMemberException.class);
+  }
+
   // Changing what an account is
 
   @Test
