@@ -301,6 +301,47 @@ class SwapHttpTest {
         .andExpect(status().isConflict());
   }
 
+  /**
+   * A swap handing a shift to a colleague who is already on it. The request is taken, and approving
+   * it would put the colleague on the shift twice, which the replacement roster refuses as a second
+   * press of the same assignment is refused: a 409, and nothing is published. Whether such a
+   * request should be refused when it is asked for instead is issue #343, and this pins only what
+   * approval answers today.
+   */
+  @Test
+  void GivenAColleagueAlreadyOnTheShift_WhenTheSwapIsApproved_ThenItIsAlreadyAssigned()
+      throws Exception {
+    String organisation = anOrganisation(mockMvc);
+    String ada = addEmployee(organisation, "Ada Lovelace");
+    String grace = addEmployee(organisation, "Grace Hopper");
+    String roster =
+        generateDraft(mockMvc, organisation, "2026-12-07T00:00:00Z", "2026-12-08T00:00:00Z");
+    String shift = defineShift(organisation, "2026-12-07T08:00:00Z", "2026-12-07T16:00:00Z");
+    assign(organisation, roster, shift, ada);
+    assign(organisation, roster, shift, grace);
+    mockMvc
+        .perform(
+            as(mockMvc, post("/api/rosters/" + roster + "/publication"), organisation, "SCHEDULER"))
+        .andExpect(status().isOk());
+    String swap =
+        JsonPath.read(
+            created(
+                asThemself(mockMvc, post("/api/swaps"), organisation, ada)
+                    .content(
+                        "{\"roster\":\"%s\",\"shift\":\"%s\",\"requester\":\"%s\",\"counterparty\":\"%s\"}"
+                            .formatted(roster, shift, ada, grace))),
+            "$.id");
+
+    mockMvc
+        .perform(as(mockMvc, post("/api/swaps/" + swap + "/approval"), organisation, "SCHEDULER"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.title").value("Already assigned"))
+        .andExpect(jsonPath("$.type").value("urn:hrsched:problem:already-assigned"));
+    mockMvc
+        .perform(as(mockMvc, get("/api/rosters/" + roster), organisation, "SCHEDULER"))
+        .andExpect(jsonPath("$.status").value("PUBLISHED"));
+  }
+
   @Test
   void GivenAnEmployeeRole_WhenApprovingASwap_ThenItIsForbidden() throws Exception {
     String organisation = anOrganisation(mockMvc);

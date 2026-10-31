@@ -294,6 +294,9 @@ Everything above is. These are not, and carry no `type`:
 - **An assignment the roster already holds.** Assigning somebody to a shift they are already on,
   as a second press of the same button does, answers `409` titled `Already assigned`. Reload the
   roster: the first press was stored. The detail names neither the shift nor the person.
+  Approving a swap (`POST /api/swaps/{id}/approval`) that hands a shift to a colleague already on
+  it answers the same `409`, and publishes nothing. Whether such a swap should be refused when it
+  is asked for is open ([#343](https://github.com/NaimElijah/HrSched/issues/343)).
 - **Unavailability overlapping a declared span.** Declaring unavailability that overlaps a span the
   employee already declared answers `409` titled `Overlaps a declared span`. The detail names
   neither span, and says to withdraw the one declared or choose another time.
