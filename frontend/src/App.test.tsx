@@ -419,10 +419,14 @@ describe('navigating', () => {
       await user.click(screen.getByRole('button', { name: 'Rosters' }));
 
       expect(await screen.findByText('Generating a draft…')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: 'Generate a draft for this span' }),
+      ).toHaveAttribute('aria-disabled', 'true');
       await vi.advanceTimersByTimeAsync(1000);
       expect(await screen.findByText(/^Generation refused/)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Generate a draft for this span' })).toBeEnabled();
+      expect(
+        screen.getByRole('button', { name: 'Generate a draft for this span' }),
+      ).not.toHaveAttribute('aria-disabled', 'true');
     } finally {
       vi.useRealTimers();
     }
