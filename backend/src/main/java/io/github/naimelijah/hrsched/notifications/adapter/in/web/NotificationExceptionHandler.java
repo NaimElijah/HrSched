@@ -72,8 +72,9 @@ public class NotificationExceptionHandler {
 
   /**
    * A notification that is not the caller's, or an organisation that is not theirs: both are a 404
-   * with the same body, so the response confirms nothing exists. The exception's own message is
-   * replaced by a constant, because it names identifiers the caller may not know.
+   * with the same body, so the response confirms the existence of nothing. The exceptions' own
+   * messages name the identifiers involved, and a caller is not told back what it sent (ADR-024),
+   * so the detail is a constant.
    *
    * <p>Only the cross-tenant case is logged and counted (as {@code cross_tenant}). An unknown
    * notification is an ordinary miss, and is neither.

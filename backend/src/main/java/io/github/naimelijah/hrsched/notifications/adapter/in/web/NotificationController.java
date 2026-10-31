@@ -23,10 +23,11 @@ import org.springframework.web.bind.annotation.RestController;
  * into any colleague's inbox.
  *
  * <p>Whose notifications are returned or acknowledged comes from the acting identity, never from a
- * path or a query parameter, so there is no request that even expresses "somebody else's". The path
- * names a notification, never an inbox.
+ * path or a query parameter, so no request can name somebody else's inbox. A colleague's
+ * notification named in the path is simply not found in the caller's.
  *
- * <p>Failures are translated by {@link NotificationExceptionHandler}.
+ * <p>The use cases' refusals are translated by {@link NotificationExceptionHandler}. The security
+ * chain answers 401, and the platform operator's 403, before this controller runs.
  */
 @RestController
 @RequestMapping("/api/notifications")
@@ -34,6 +35,9 @@ public class NotificationController {
 
   private final ReadNotificationsUseCase readNotifications;
 
+  /**
+   * @param readNotifications the use case behind both routes
+   */
   public NotificationController(ReadNotificationsUseCase readNotifications) {
     this.readNotifications = readNotifications;
   }
@@ -43,8 +47,8 @@ public class NotificationController {
    * instant, the last raised first.
    *
    * <p>Answers 200 with an empty list when nothing has happened to them. Answers 403 to an actor
-   * with no personnel record, who has no inbox, and to the platform operator, who belongs to no
-   * organisation.
+   * with no personnel record, who has no inbox. The platform operator, who belongs to no
+   * organisation, is refused 403 by the security chain before this runs.
    *
    * @param actor whoever the token named
    * @return their notifications, none of them anybody else's
@@ -61,7 +65,8 @@ public class NotificationController {
    *
    * <p>Answers 204, and answers 204 again when it was already read. Answers 404 when there is no
    * such notification of theirs, which includes a colleague's: the two are not told apart. Answers
-   * 403 to an actor with no personnel record and to the platform operator.
+   * 403 to an actor with no personnel record, and 400 when the identifier is not a UUID. The
+   * platform operator is refused 403 by the security chain before this runs.
    *
    * @param actor whoever the token named
    * @param id the notification to acknowledge
@@ -78,7 +83,8 @@ public class NotificationController {
    * The organisation this request acts in, taken from the acting account and from nowhere else.
    *
    * <p>Nothing in the request names an organisation, so there is nothing for a caller to change
-   * (ADR-031). The platform operator is refused here, because it belongs to none (ADR-030).
+   * (ADR-031). The security chain refuses the platform operator before this runs; this refuses it
+   * again, should a route ever let it through, because it belongs to none (ADR-030).
    *
    * @param actor whoever the token named
    * @return the organisation they belong to
