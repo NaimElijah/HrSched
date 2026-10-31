@@ -910,11 +910,12 @@ are not audited. Nothing at runtime depends on any of it.
   all to find the few that matter: `generationRequestFor` (a generation's request), `assign` and
   `publish`, which want the ones that overlap one week or stay authoritative beside it,
   `findOwnSchedule`, which keeps the published ones, and `findAssessment`. The sixth, `findRosters`,
-  returns them all, because listing is its job. The second cost is that `SchedulingService`'s
-  `assignedShifts` and `periodsOf` fetch each assignment's shift one at a time, an N+1 inside the
-  publish transaction, and `heldElsewhere` resolves the work held elsewhere for R35 one shift at a
-  time. The third is that every owned collection is written
-  one `INSERT` per row. All three were free against a map and are not against a database. Fixing
+  returns them all, because listing is its job. The second cost is that `SchedulingService`
+  resolves shifts one at a time: `assignedShifts` fetches each shift a roster assigns, an N+1 inside
+  the publish transaction and `findAssessment`; `periodsOf` does the same for one employee's shifts
+  when assigning by hand; and `heldElsewhere` resolves the work held elsewhere for R35 one shift at
+  a time. The third is that every owned collection is written one `INSERT` per row. All three were
+  free against a map and are not against a database. Fixing
   the first two means new port methods that push the predicate into SQL, which is a change inward
   of the ports and so a decision of its own. The requirement that sizes it is now stated —
   interactive requests within 300 ms at the 95th percentile — and nothing measures it yet
