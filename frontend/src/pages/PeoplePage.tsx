@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { Fragment, useId, useState } from 'react';
 import { workforce } from '../api/workforce';
 import type { Qualification } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
+
+/** How many columns the people table has, so a row's refusal can span all of them. */
+const COLUMNS = 5;
 
 /**
  * Admin: who works here, what they hold, and what they are contracted to.
@@ -20,6 +23,10 @@ export function PeoplePage() {
   // qualification's picker empties, so neither is otherwise confirmed where the Admin is looking.
   const [done, setDone] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  // Each row's own refusal, by employee id, shown in that row rather than at the top of the page,
+  // where it would say nothing about whose it was.
+  const [refusals, setRefusals] = useState<ReadonlyMap<string, unknown>>(new Map());
+  const captionId = useId();
 
   const people = useAsync(() => workforce.findEmployees(), sessionKey);
   const qualifications = useAsync(() => workforce.findQualifications(), sessionKey);
@@ -27,20 +34,40 @@ export function PeoplePage() {
     (qualifications.value ?? []).map((qualification) => [qualification.id, qualification.name]),
   );
 
+  function refuse(row: string, error: unknown) {
+    setRefusals((previous) => new Map(previous).set(row, error));
+  }
+
+  function forgetRefusal(row: string) {
+    setRefusals((previous) => {
+      const next = new Map(previous);
+      next.delete(row);
+      return next;
+    });
+  }
+
   /**
-   * @param said what to say once the action has succeeded, if anything
+   * @param said what to say once the action has succeeded
+   * @param row the employee whose row acted, whose refusal is shown there; none for the page's own
    * @returns whether the action succeeded
    */
-  async function act(action: () => Promise<unknown>, said?: string): Promise<boolean> {
+  async function act(action: () => Promise<unknown>, said: string, row?: string): Promise<boolean> {
     setFailure(null);
     setDone(null);
+    if (row !== undefined) {
+      forgetRefusal(row);
+    }
     try {
       await action();
-      setDone(said ?? null);
+      setDone(said);
       people.reload();
       return true;
     } catch (error) {
-      setFailure(error);
+      if (row === undefined) {
+        setFailure(error);
+      } else {
+        refuse(row, error);
+      }
       return false;
     }
   }
@@ -53,8 +80,10 @@ export function PeoplePage() {
         a Scheduler. An account holding the Employee role is refused this list.
       </p>
 
+      {/* Change events bubble, so any edit clears a success that would read as the next one's. */}
       <form
         className="row"
+        onChange={() => setDone(null)}
         onSubmit={(event) => {
           event.preventDefault();
           if (adding) {
@@ -71,7 +100,8 @@ export function PeoplePage() {
           Name
           <input value={name} onChange={(event) => setName(event.target.value)} required />
         </label>
-        <button type="submit" disabled={adding}>
+        {/* aria-disabled rather than disabled, so focus stays on the button while it is out. */}
+        <button type="submit" aria-disabled={adding}>
           Add employee
         </button>
       </form>
@@ -83,74 +113,100 @@ export function PeoplePage() {
       <Failure error={people.error} />
       <Busy busy={people.busy} />
 
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Qualifications</th>
-            <th>Cannot work</th>
-            <th>Grant</th>
-            <th>Contracted minutes / week</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(people.value ?? []).map((employee) => (
-            <tr key={employee.id}>
-              <td>
-                {employee.name}
-                <br />
-                <code>{employee.id}</code>
-              </td>
-              <td>
-                {employee.qualifications.length === 0
-                  ? '—'
-                  : employee.qualifications
-                      .map((id) => qualificationNames.get(id) ?? id)
-                      .join(', ')}
-              </td>
-              <td>
-                {employee.unavailability.length === 0 ? (
-                  '—'
-                ) : (
-                  <ul className="spans">
-                    {employee.unavailability.map((period) => (
-                      <li key={`${period.start}|${period.end}`}>
-                        {new Date(period.start).toLocaleString()} to{' '}
-                        {new Date(period.end).toLocaleString()}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </td>
-              <td>
-                <GrantField
-                  employee={employee.name}
-                  identifier={employee.id}
-                  qualifications={qualifications.value ?? []}
-                  onSubmit={(qualification) =>
-                    act(
-                      () => workforce.grantQualification(employee.id, qualification),
-                      `Granted ${qualificationNames.get(qualification) ?? qualification} to ${employee.name}.`,
-                    )
-                  }
-                />
-              </td>
-              <td>
-                {/* Beside the field, never in it: a prefilled number could be submitted unchosen. */}
-                <p className="stored">
-                  {employee.weeklyContractedMinutes === null
-                    ? 'None set'
-                    : `${employee.weeklyContractedMinutes} minutes a week`}
-                </p>
-                <ContractField
-                  employee={employee.name}
-                  onSubmit={(minutes) => act(() => workforce.setContract(employee.id, minutes))}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* Only an answer says nobody works here: a refused listing has no value at all. */}
+      {people.value?.length === 0 ? (
+        <p>No people yet.</p>
+      ) : (
+        <div className="table-scroll" role="region" aria-labelledby={captionId} tabIndex={0}>
+          <table>
+            <caption id={captionId} className="visually-hidden">
+              People in this organisation
+            </caption>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Qualifications</th>
+                <th>Cannot work</th>
+                <th>Grant</th>
+                <th>Contracted minutes / week</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(people.value ?? []).map((employee) => (
+                <Fragment key={employee.id}>
+                  <tr>
+                    <td>
+                      {employee.name}
+                      <br />
+                      <code>{employee.id}</code>
+                    </td>
+                    <td>
+                      {employee.qualifications.length === 0
+                        ? '—'
+                        : employee.qualifications
+                            .map((id) => qualificationNames.get(id) ?? id)
+                            .join(', ')}
+                    </td>
+                    <td>
+                      {employee.unavailability.length === 0 ? (
+                        '—'
+                      ) : (
+                        <ul className="spans">
+                          {employee.unavailability.map((period) => (
+                            <li key={`${period.start}|${period.end}`}>
+                              {new Date(period.start).toLocaleString()} to{' '}
+                              {new Date(period.end).toLocaleString()}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                    <td>
+                      <GrantField
+                        employee={employee.name}
+                        identifier={employee.id}
+                        qualifications={qualifications.value ?? []}
+                        onSubmit={(qualification) =>
+                          act(
+                            () => workforce.grantQualification(employee.id, qualification),
+                            `Granted ${qualificationNames.get(qualification) ?? qualification} to ${employee.name}.`,
+                            employee.id,
+                          )
+                        }
+                      />
+                    </td>
+                    <td>
+                      {/* Beside the field, never in it: a prefilled number could be submitted unchosen. */}
+                      <p className="stored">
+                        {employee.weeklyContractedMinutes === null
+                          ? 'None set'
+                          : `${employee.weeklyContractedMinutes} minutes a week`}
+                      </p>
+                      <ContractField
+                        employee={employee.name}
+                        onSubmit={(minutes) =>
+                          act(
+                            () => workforce.setContract(employee.id, minutes),
+                            `Set contracted minutes for ${employee.name} to ${String(minutes)} a week.`,
+                            employee.id,
+                          )
+                        }
+                      />
+                    </td>
+                  </tr>
+                  {refusals.has(employee.id) ? (
+                    <tr>
+                      <td colSpan={COLUMNS}>
+                        <Failure error={refusals.get(employee.id)} />
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
@@ -210,7 +266,11 @@ function GrantField({
           </option>
         ))}
       </select>
-      <button type="submit" disabled={granting} aria-label={`Grant to ${employee} · ${identifier}`}>
+      <button
+        type="submit"
+        aria-disabled={granting}
+        aria-label={`Grant to ${employee} · ${identifier}`}
+      >
         Grant
       </button>
     </form>
@@ -223,15 +283,22 @@ function ContractField({
 }: {
   /** Whose field it is, so every row's input has a name of its own. */
   employee: string;
+  /** Sets the typed minutes; settles once the answer is in, whatever it was. */
   onSubmit: (minutes: number) => Promise<unknown>;
 }) {
   const [minutes, setMinutes] = useState('');
+  // A second contract sent meanwhile is a second change nobody made.
+  const [setting, setSetting] = useState(false);
   return (
     <form
       className="row"
       onSubmit={(event) => {
         event.preventDefault();
-        void onSubmit(Number(minutes));
+        if (setting) {
+          return;
+        }
+        setSetting(true);
+        void onSubmit(Number(minutes)).finally(() => setSetting(false));
       }}
     >
       <input
@@ -242,7 +309,13 @@ function ContractField({
         onChange={(event) => setMinutes(event.target.value)}
         required
       />
-      <button type="submit">Set</button>
+      <button
+        type="submit"
+        aria-disabled={setting}
+        aria-label={`Set contracted minutes for ${employee}`}
+      >
+        Set
+      </button>
     </form>
   );
 }

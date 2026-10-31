@@ -196,7 +196,11 @@ describe('adding an employee', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
     );
     expect(screen.getByLabelText('Name')).toHaveValue('Marie');
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Add employee' })).toBeEnabled());
+    await waitFor(() => {
+      const add = screen.getByRole('button', { name: 'Add employee' });
+      expect(add).toBeEnabled();
+      expect(add).not.toHaveAttribute('aria-disabled', 'true');
+    });
   });
 
   /** Each addition is a person of their own, and none can be deleted afterwards. */
@@ -211,11 +215,46 @@ describe('adding an employee', () => {
     await userEvent.click(add);
     await userEvent.click(add);
 
-    expect(add).toBeDisabled();
+    expect(add).toHaveAttribute('aria-disabled', 'true');
     release();
     await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue(''));
     expect(writes(routed)).toHaveLength(1);
-    await waitFor(() => expect(add).toBeEnabled());
+    await waitFor(() => expect(add).not.toHaveAttribute('aria-disabled', 'true'));
+  });
+
+  /**
+   * A disabled button drops the keyboard focus to the page in a browser (#257, C1). While the
+   * addition is on its way the button says it is unavailable and keeps the focus.
+   */
+  it('GivenAnAdditionInFlight_WhenPressed_ThenTheButtonKeepsFocusAndIsMarkedUnavailable', async () => {
+    const routed = theOrganisation();
+    const release = holdingWrites(routed);
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    await userEvent.type(screen.getByLabelText('Name'), 'Marie', WITHOUT_PAUSES);
+    const add = screen.getByRole('button', { name: 'Add employee' });
+
+    await userEvent.click(add);
+
+    expect(add).toHaveAttribute('aria-disabled', 'true');
+    expect(add).not.toBeDisabled();
+    expect(add).toHaveFocus();
+    release();
+    await screen.findByText('Added Marie.');
+  });
+
+  /** A success left on screen while the next name is typed reads as that one's (C9). */
+  it('GivenAnAdditionSucceeded_WhenTheFormIsEditedAgain_ThenTheSuccessIsNoLongerSaid', async () => {
+    theOrganisation();
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    await userEvent.type(screen.getByLabelText('Name'), 'Marie', WITHOUT_PAUSES);
+    await userEvent.click(screen.getByRole('button', { name: 'Add employee' }));
+    await screen.findByText('Added Marie.');
+
+    await userEvent.type(screen.getByLabelText('Name'), 'L', WITHOUT_PAUSES);
+
+    expect(screen.queryByText('Added Marie.')).not.toBeInTheDocument();
   });
 });
 
@@ -258,9 +297,11 @@ describe('granting a qualification', () => {
     await waitFor(() =>
       expect(callsTo(stub, 'PUT', '/api/employees/e-1/qualifications/q-1')).toHaveLength(1),
     );
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Grant to Ada · e-1' })).toBeEnabled(),
-    );
+    await waitFor(() => {
+      const grant = screen.getByRole('button', { name: 'Grant to Ada · e-1' });
+      expect(grant).toBeEnabled();
+      expect(grant).not.toHaveAttribute('aria-disabled', 'true');
+    });
   });
 
   /**
@@ -305,9 +346,55 @@ describe('granting a qualification', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Nothing here for this organisation.'),
     );
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Grant to Ada · e-1' })).toBeEnabled(),
+    await waitFor(() => {
+      const grant = screen.getByRole('button', { name: 'Grant to Ada · e-1' });
+      expect(grant).toBeEnabled();
+      expect(grant).not.toHaveAttribute('aria-disabled', 'true');
+    });
+  });
+
+  /**
+   * A disabled button drops the keyboard focus to the page in a browser (#257, C1), and a grant
+   * cannot be revoked, so a second one sent meanwhile is one nobody can take back.
+   */
+  it('GivenAGrantInFlight_WhenPressedAgain_ThenTheButtonKeepsFocusAndOnlyOneIsSent', async () => {
+    const routed = theOrganisation();
+    const release = holdingWrites(routed);
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), 'q-1');
+    const grant = screen.getByRole('button', { name: 'Grant to Ada · e-1' });
+
+    await userEvent.click(grant);
+    await userEvent.click(grant);
+
+    expect(grant).toHaveAttribute('aria-disabled', 'true');
+    expect(grant).not.toBeDisabled();
+    expect(grant).toHaveFocus();
+    release();
+    await screen.findByText('Granted Forklift to Ada.');
+    expect(writes(routed)).toHaveLength(1);
+  });
+
+  /** A refusal at the top of the page says nothing about whose row it belongs to (#257, C6). */
+  it('GivenTheBackendRefusesAGrant_WhenShown_ThenTheRefusalIsInThePeopleTable', async () => {
+    theOrganisation({
+      'PUT /api/employees/e-1/qualifications/q-1': {
+        status: 404,
+        body: { detail: 'No such resource.' },
+      },
+    });
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+
+    await userEvent.selectOptions(screen.getByLabelText('Grant a qualification to Ada'), 'q-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Grant to Ada · e-1' }));
+
+    expect(await within(screen.getByRole('table')).findByRole('alert')).toHaveTextContent(
+      'Nothing here for this organisation.',
     );
+    expect(screen.getAllByRole('alert'), 'every alert on the page').toHaveLength(1);
+    expect(within(rowOf('Grace')).queryByRole('alert')).not.toBeInTheDocument();
   });
 });
 
@@ -332,7 +419,7 @@ describe('setting contracted hours', () => {
       String(TYPED_CONTRACT),
       WITHOUT_PAUSES,
     );
-    await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
+    await userEvent.click(screen.getByRole('button', { name: 'Set contracted minutes for Ada' }));
 
     await waitFor(() =>
       expect(callsTo(stub, 'PUT', '/api/employees/e-1/contract')).toHaveLength(1),
@@ -358,10 +445,131 @@ describe('setting contracted hours', () => {
       '5',
       WITHOUT_PAUSES,
     );
-    await userEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
+    await userEvent.click(screen.getByRole('button', { name: 'Set contracted minutes for Ada' }));
 
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Your role does not permit this.'),
     );
+  });
+
+  /** One name repeated on every row gave a screen reader no way to tell whose button it was (C7). */
+  it('GivenSeveralPeople_WhenListed_ThenEachSetButtonIsNamedForItsEmployee', async () => {
+    theOrganisation();
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+
+    expect(
+      within(rowOf('Ada')).getByRole('button', { name: 'Set contracted minutes for Ada' }),
+    ).toBeInTheDocument();
+    expect(
+      within(rowOf('Grace')).getByRole('button', { name: 'Set contracted minutes for Grace' }),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * A disabled button drops the keyboard focus to the page in a browser (C1), and a second
+   * contract sent meanwhile is a second change nobody made.
+   */
+  it('GivenAContractInFlight_WhenPressedAgain_ThenTheButtonKeepsFocusAndOnlyOneIsSent', async () => {
+    const routed = theOrganisation();
+    const release = holdingWrites(routed);
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    await userEvent.type(
+      screen.getByLabelText('Contracted minutes per week for Ada'),
+      String(TYPED_CONTRACT),
+      WITHOUT_PAUSES,
+    );
+    const set = within(rowOf('Ada')).getByRole('button', { name: /^Set/ });
+
+    await userEvent.click(set);
+    await userEvent.click(set);
+
+    expect(set).toHaveAttribute('aria-disabled', 'true');
+    expect(set).not.toBeDisabled();
+    expect(set).toHaveFocus();
+    release();
+    await waitFor(() =>
+      expect(callsTo(routed, 'PUT', '/api/employees/e-1/contract')).toHaveLength(1),
+    );
+    await waitFor(() => expect(set).not.toHaveAttribute('aria-disabled', 'true'));
+    expect(writes(routed)).toHaveLength(1);
+  });
+
+  /** The field keeps no echo of what was stored, so without a word nothing says it was (C3). */
+  it('GivenTypedMinutes_WhenSetSucceeds_ThenAStatusNamesTheContractAndThePerson', async () => {
+    theOrganisation();
+    show();
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    const statuses = () => screen.getAllByRole('status').map((status) => status.textContent);
+
+    await userEvent.type(
+      screen.getByLabelText('Contracted minutes per week for Ada'),
+      String(TYPED_CONTRACT),
+      WITHOUT_PAUSES,
+    );
+    await userEvent.click(within(rowOf('Ada')).getByRole('button', { name: /^Set/ }));
+
+    await waitFor(() =>
+      expect(statuses()).toContainEqual(expect.stringMatching(/contracted minutes/i)),
+    );
+    expect(statuses().find((said) => /contracted minutes/i.test(said ?? ''))).toMatch(/Ada/);
+  });
+
+  /** A refusal at the top of the page says nothing about whose row it belongs to (#257, C6). */
+  it('GivenTheBackendRefusesTheTerms_WhenShown_ThenTheRefusalIsInThePeopleTable', async () => {
+    theOrganisation({
+      'PUT /api/employees/e-1/contract': {
+        status: 403,
+        body: { detail: 'Your role does not permit this.' },
+      },
+    });
+    show(A_SCHEDULER);
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+
+    await userEvent.type(
+      screen.getByLabelText('Contracted minutes per week for Ada'),
+      '5',
+      WITHOUT_PAUSES,
+    );
+    await userEvent.click(within(rowOf('Ada')).getByRole('button', { name: /^Set/ }));
+
+    expect(await within(screen.getByRole('table')).findByRole('alert')).toHaveTextContent(
+      'Your role does not permit this.',
+    );
+    expect(screen.getAllByRole('alert'), 'every alert on the page').toHaveLength(1);
+    expect(within(rowOf('Grace')).queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+describe('the people as a table', () => {
+  it('GivenPeople_WhenListed_ThenTheTableHasAName', async () => {
+    theOrganisation();
+
+    show();
+
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+    expect(screen.getByRole('table')).toHaveAccessibleName();
+  });
+
+  /** An empty table says nothing at all to somebody who cannot see that it is empty (C8). */
+  it('GivenNobodyEmployed_WhenListed_ThenTheListSaysSo', async () => {
+    theOrganisation({ '/api/employees': { status: 200, body: [] } });
+
+    show();
+
+    expect(await screen.findByText(/no people/i)).toBeInTheDocument();
+  });
+
+  /** "Nobody works here" is a claim, and a refused listing is no evidence for it. */
+  it('GivenTheListingIsRefused_WhenShown_ThenItDoesNotSayThereIsNobody', async () => {
+    theOrganisation({
+      '/api/employees': { status: 403, body: { detail: 'Your role does not permit this.' } },
+    });
+
+    show();
+
+    await screen.findByRole('alert');
+    expect(screen.queryByText(/no people/i)).not.toBeInTheDocument();
   });
 });
