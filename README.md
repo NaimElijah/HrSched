@@ -131,8 +131,10 @@ Components, the authentication sequence and the data flow are in
 > every build tests against a throwaway one through Testcontainers. There is no in-memory fallback,
 > because a check that quietly does not run still reports green.
 
-You need JDK 21, Node 22 or later (CI uses 24), and Docker. Maven is not needed: the committed
-wrapper downloads its own pinned version.
+You need JDK 21, Node 22 or later (CI uses 24), and Docker with Compose v2. Maven is not needed:
+the committed wrapper downloads its own pinned version. The first run downloads Maven's
+dependencies, the PostgreSQL image and the OR-Tools native libraries (about 95 MB), so it takes
+several minutes.
 
 ```bash
 git clone https://github.com/NaimElijah/HrSched.git && cd HrSched
@@ -144,9 +146,14 @@ Open <http://localhost:5173> and sign in as `operator` / `local-development-only
 choose a password of at least 15 characters before the account can do anything. The API is up when
 `curl localhost:8080/actuator/health/readiness` answers `{"status":"UP"}`.
 
-The database keeps its rows between runs, so after that only your new password works;
-`docker compose -f backend/compose.yaml down -v` starts over by deleting every local row. There is
-no seed data. On Windows without a POSIX shell, use `mvnw.cmd` for `./mvnw`.
+The operator only onboards organisations. In the Organisations tab, onboard one together with its
+first Admin, then sign out and sign in as that Admin. There is no seed data; the
+[Walkthrough in `docs/api.md`](docs/api.md#walkthrough) scripts the whole path to a published
+roster.
+
+> [!CAUTION]
+> The database keeps its rows between runs, so after the first sign-in only your new password
+> works. `docker compose -f backend/compose.yaml down -v` starts over by deleting every local row.
 
 ## Configuration
 
@@ -232,10 +239,12 @@ npm run verify                                  # format, lint, typecheck, tests
 
 From the root, `npm run verify` runs both gates in turn.
 
-> [!WARNING]
-> Spring Boot 4 renamed things that most tutorials and AI answers still call by their 3.x names.
-> `spring-boot-starter-web` is now `spring-boot-starter-webmvc`, `@MockBean` is now `@MockitoBean`,
-> and Jackson 3 lives in `tools.jackson.databind`. Check `pom.xml` and the jars, not the internet.
+On Windows without a POSIX shell, use `mvnw.cmd` for `./mvnw`. It needs PowerShell on `PATH`, and
+its exit code is unreliable: it has exited 0 and 1 when Maven never started. A run has passed only
+when its log shows `Tests run:` and `BUILD SUCCESS`.
+
+Spring Boot 4 renamed some things that tutorials still call by their 3.x names; check `pom.xml`
+and [`backend/CLAUDE.md`](backend/CLAUDE.md), not older answers.
 
 **Adding a use case:**
 1. **Choose its context.** If it fits none, that is a new context and a new ADR.
