@@ -68,9 +68,12 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
    * caller can act on by reloading the rules (#238).
    *
    * @throws ConstraintsRevisedConcurrentlyException if that version is already stored
+   * @throws IllegalArgumentException if a limit has a part of a second, before anything is written
    */
   @Override
   public void save(ConstraintSet constraintSet) {
+    List<StoredConstraint> rows =
+        constraintSet.constraints().stream().map(JdbcConstraintSetRepository::stored).toList();
     try {
       jdbc.sql(
               """
@@ -83,7 +86,7 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
     } catch (DataAccessException refused) {
       // Matched by name, so only two revisions taking one version are a lost race; any other unique
       // constraint a later migration adds surfaces as the store reported it.
-      if (UniqueViolations.isViolationOf(refused, VERSION_TAKEN)) {
+      if (StoreRefusals.isViolationOf(refused, StoreRefusals.UNIQUE_VIOLATION, VERSION_TAKEN)) {
         throw new ConstraintsRevisedConcurrentlyException(constraintSet.version(), refused);
       }
       throw refused;
@@ -98,9 +101,22 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
         .param("version", constraintSet.version())
         .update();
 
-    List<WorkingTimeConstraint> constraints = constraintSet.constraints();
-    for (int ordinal = 0; ordinal < constraints.size(); ordinal++) {
-      insert(constraintSet, ordinal, constraints.get(ordinal));
+    for (int ordinal = 0; ordinal < rows.size(); ordinal++) {
+      insert(constraintSet, ordinal, rows.get(ordinal));
+    }
+  }
+
+  /**
+   * One constraint as its row stores it: its kind, and exactly one of the two values. Held here as
+   * well as by {@code working_time_constraint_carries_its_one_value}, so a mapping that gave a row
+   * both or neither fails before anything is written rather than partway through a revision.
+   */
+  private record StoredConstraint(String kind, Long durationSeconds, Integer dayCount) {
+    StoredConstraint {
+      if ((durationSeconds == null) == (dayCount == null)) {
+        throw new IllegalArgumentException(
+            "A stored %s carries exactly one of a duration and a count of days".formatted(kind));
+      }
     }
   }
 
@@ -109,29 +125,34 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
    * compile until it is given a stored representation here, which is what stops one silently
    * becoming unstorable.
    */
-  private void insert(ConstraintSet set, int ordinal, WorkingTimeConstraint constraint) {
-    String kind;
-    Long durationSeconds = null;
-    Integer dayCount = null;
-    switch (constraint) {
-      case MinimumRestBetweenAssignments rest -> {
-        kind = MINIMUM_REST;
-        durationSeconds = rest.minimumRest().toSeconds();
-      }
-      case MaximumDailyWorkingTime daily -> {
-        kind = MAXIMUM_DAILY;
-        durationSeconds = daily.maximum().toSeconds();
-      }
-      case MaximumWeeklyWorkingTime weekly -> {
-        kind = MAXIMUM_WEEKLY;
-        durationSeconds = weekly.maximum().toSeconds();
-      }
-      case MaximumConsecutiveWorkingDays days -> {
-        kind = MAXIMUM_CONSECUTIVE_DAYS;
-        dayCount = days.maximum();
-      }
-    }
+  private static StoredConstraint stored(WorkingTimeConstraint constraint) {
+    return switch (constraint) {
+      case MinimumRestBetweenAssignments rest ->
+          new StoredConstraint(MINIMUM_REST, wholeSeconds(rest, rest.minimumRest()), null);
+      case MaximumDailyWorkingTime daily ->
+          new StoredConstraint(MAXIMUM_DAILY, wholeSeconds(daily, daily.maximum()), null);
+      case MaximumWeeklyWorkingTime weekly ->
+          new StoredConstraint(MAXIMUM_WEEKLY, wholeSeconds(weekly, weekly.maximum()), null);
+      case MaximumConsecutiveWorkingDays days ->
+          new StoredConstraint(MAXIMUM_CONSECUTIVE_DAYS, null, days.maximum());
+    };
+  }
 
+  /**
+   * The column holds whole seconds, so a limit with a part of a second could only be stored as
+   * another limit: cut, a minimum rest would permit less rest than was configured, and a limit
+   * under a second would become none at all. Refused instead, naming the rule but not its value.
+   */
+  private static long wholeSeconds(WorkingTimeConstraint constraint, Duration limit) {
+    if (limit.getNano() != 0) {
+      throw new IllegalArgumentException(
+          "A %s is stored in whole seconds, and this one has a part of a second"
+              .formatted(constraint.name()));
+    }
+    return limit.toSeconds();
+  }
+
+  private void insert(ConstraintSet set, int ordinal, StoredConstraint constraint) {
     jdbc.sql(
             """
             INSERT INTO working_time_constraint
@@ -141,9 +162,9 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
         .param("organisation", set.organisation().value())
         .param("version", set.version())
         .param("ordinal", ordinal)
-        .param("kind", kind)
-        .param("durationSeconds", durationSeconds)
-        .param("dayCount", dayCount)
+        .param("kind", constraint.kind())
+        .param("durationSeconds", constraint.durationSeconds())
+        .param("dayCount", constraint.dayCount())
         .update();
   }
 
@@ -178,9 +199,10 @@ public class JdbcConstraintSetRepository implements ConstraintSetRepository {
   /**
    * One stored version, rebuilt with its rules.
    *
-   * <p>The schema permits what the domain refuses, such as two rules of one kind (R24, #96), so a
-   * set written past the domain could be stored. It is a fault in stored data, not the caller's
-   * mistake, so it fails loudly rather than as the domain's refusal of a request.
+   * <p>The schema holds every rule {@code ConstraintSet} enforces today, two of a kind included
+   * (R24, V14), so a refusal here means rows stored before the domain gained a rule the schema did
+   * not then hold. It is a fault in stored data, not the caller's mistake, so it fails loudly
+   * rather than as the domain's refusal of a request (#96).
    *
    * @throws IllegalStateException naming the set and what the domain refused in it, if what is
    *     stored is no set the domain allows

@@ -107,6 +107,6 @@ class JdbcObjectiveWeightsRepositoryTest {
                         """)
                     .param("id", ACME.value())
                     .update())
-        .hasMessageContaining("objective_weights_fairness_check");
+        .hasMessageContaining("objective_weights_fairness_at_least_one");
   }
 }

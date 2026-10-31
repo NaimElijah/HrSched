@@ -22,6 +22,8 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -32,6 +34,7 @@ import java.util.concurrent.TimeoutException;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DelegatingDataSource;
@@ -53,6 +56,9 @@ class JdbcRosterGenerationRepositoryTest {
 
   /** Invented: a quarter of an hour. */
   private static final GenerationPolicy POLICY = new GenerationPolicy(Duration.ofMinutes(15));
+
+  /** The finest instant {@code timestamptz} holds, so the nearest one either side of a bound. */
+  private static final Duration A_MICROSECOND = Duration.of(1, ChronoUnit.MICROS);
 
   private final JdbcRosterGenerationRepository repository =
       new JdbcRosterGenerationRepository(PostgresDatabase.jdbcClient());
@@ -96,6 +102,25 @@ class JdbcRosterGenerationRepositoryTest {
     assertThat(read.finishedAt()).contains(ASKED.plusSeconds(3));
   }
 
+  /**
+   * A generation names a draft of its own organisation, and the schema refuses one naming another's
+   * (V14): read back, it would hand that roster's identity to a Scheduler who has no business with
+   * it.
+   */
+  @Test
+  void GivenADraftOfAnotherOrganisation_WhenAGenerationEndsNamingIt_ThenTheSchemaRefusesIt() {
+    Roster theirs = new Roster(RosterId.newId(), RIVAL, THE_WEEK);
+    new JdbcRosterRepository(PostgresDatabase.jdbcClient()).save(theirs);
+    RosterGeneration ours = askedBy(ACME);
+    repository.save(ours);
+
+    assertThatThrownBy(() -> repository.save(ours.succeeded(theirs.id(), ASKED.plusSeconds(3))))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("roster_generation_names_a_roster_of_its_organisation");
+    assertThat(repository.findById(ACME, ours.id()).orElseThrow().status())
+        .isEqualTo(GenerationStatus.PENDING);
+  }
+
   @Test
   void GivenARefusedGeneration_WhenReadBack_ThenEveryRuleItBreaksComesBackInOrder() {
     EmployeeId ada = EmployeeId.newId();
@@ -110,6 +135,76 @@ class JdbcRosterGenerationRepositoryTest {
 
     assertThat(repository.findById(ACME, asked.id()).orElseThrow().violations())
         .containsExactlyElementsOf(broken);
+  }
+
+  /**
+   * A generation ends no earlier than it was asked for and no later than it was lost (V14), and the
+   * schema refuses a row recording otherwise, for a writer that skips the domain.
+   */
+  @Test
+  void GivenAnEndingAfterItWasLost_WhenStoredDirectly_ThenTheSchemaRefusesIt() {
+    assertThatThrownBy(() -> storedEndingAt(ASKED.plus(POLICY.lostAfter()).plus(A_MICROSECOND)))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("roster_generation_finished_while_it_could");
+  }
+
+  @Test
+  void GivenAnEndingBeforeItWasAskedFor_WhenStoredDirectly_ThenTheSchemaRefusesIt() {
+    assertThatThrownBy(() -> storedEndingAt(ASKED.minus(A_MICROSECOND)))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("roster_generation_finished_while_it_could");
+  }
+
+  /**
+   * The domain lets a generation end up to the instant before it is lost, to the nanosecond, and
+   * the column holds microseconds, rounding to the nearest. An ending in the last half microsecond
+   * is stored at the lost-at instant itself, and is still an ending the domain made, so the schema
+   * accepts it.
+   */
+  @Test
+  void GivenAnEndingInTheLastHalfMicrosecondBeforeItIsLost_WhenSaved_ThenItIsStored() {
+    RosterGeneration asked = askedBy(ACME);
+    repository.save(asked);
+
+    repository.save(asked.failed(asked.lostAt().minusNanos(100)));
+
+    assertThat(repository.findById(ACME, asked.id()).orElseThrow().finishedAt())
+        .contains(asked.lostAt());
+  }
+
+  /**
+   * The clock can be stepped back while a generation runs, and {@code RosterGeneration} then ends
+   * it at the moment it was asked for rather than before it. The schema accepts that ending, the
+   * earliest it can hold.
+   */
+  @Test
+  void GivenAClockSteppedBackBeforeTheRequest_WhenAGenerationEnds_ThenItIsStoredEndingAsAsked() {
+    RosterGeneration asked = askedBy(ACME);
+    repository.save(asked);
+
+    repository.save(asked.failed(ASKED.minusSeconds(60)));
+
+    assertThat(repository.findById(ACME, asked.id()).orElseThrow().finishedAt()).contains(ASKED);
+  }
+
+  /** A failed generation of ours, asked for at {@code ASKED} and lost under the policy. */
+  private static void storedEndingAt(Instant finishedAt) {
+    PostgresDatabase.jdbcClient()
+        .sql(
+            """
+            INSERT INTO roster_generation (id, organisation_id, starts_at, ends_at, requested_at,
+                                           lost_at, status, finished_at)
+            VALUES (:id, :organisation, :startsAt, :endsAt, :requestedAt, :lostAt, 'FAILED',
+                    :finishedAt)
+            """)
+        .param("id", GenerationId.newId().value())
+        .param("organisation", ACME.value())
+        .param("startsAt", THE_WEEK.start().atOffset(ZoneOffset.UTC))
+        .param("endsAt", THE_WEEK.end().atOffset(ZoneOffset.UTC))
+        .param("requestedAt", ASKED.atOffset(ZoneOffset.UTC))
+        .param("lostAt", ASKED.plus(POLICY.lostAfter()).atOffset(ZoneOffset.UTC))
+        .param("finishedAt", finishedAt.atOffset(ZoneOffset.UTC))
+        .update();
   }
 
   /** Refused, so it has violation rows too, which are reached only through their organisation's. */

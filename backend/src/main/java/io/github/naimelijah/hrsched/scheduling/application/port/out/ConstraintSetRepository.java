@@ -17,14 +17,16 @@ public interface ConstraintSetRepository {
    * @param constraintSet a new version of its organisation's rules
    * @throws ConstraintsRevisedConcurrentlyException if that version is already stored: another
    *     revision computed the same next version and was stored first
+   * @throws IllegalArgumentException if a limit has a part of a second, which the store, holding
+   *     whole seconds, could keep only as another limit; refused before anything is written
    */
   void save(ConstraintSet constraintSet);
 
   /**
    * @param organisation whose rules to read
    * @return the highest version stored, empty if the organisation has never revised its rules
-   * @throws IllegalStateException if that version is stored as no set the domain allows, such as
-   *     two rules of one kind (R24): a fault in stored data, not the caller's mistake (#96)
+   * @throws IllegalStateException if that version is stored as no set the domain allows: a fault in
+   *     stored data, not the caller's mistake (#96)
    */
   Optional<ConstraintSet> findCurrent(OrganisationId organisation);
 

@@ -1,6 +1,11 @@
 # ADR-037: Keep roster history as a record of when each roster governed, written once
 
 - **Status:** Accepted
+  - **Amended 2026-10-31:** The adapter no longer turns every `23P01` into
+    `RosterPublicationConflictException`: an exclusion violation is translated only when it names
+    `roster_one_published_per_moment`, so one of another exclusion constraint surfaces as the store
+    reports it. A deadlock, `40P01`, names no constraint and is still translated by its SQLSTATE
+    ([#255](https://github.com/NaimElijah/HrSched/issues/255)).
 - **Date:** 2026-10-14
 
 ## Context

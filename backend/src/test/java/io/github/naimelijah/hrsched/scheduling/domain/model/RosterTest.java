@@ -156,6 +156,19 @@ class RosterTest {
         .isEqualTo(7);
   }
 
+  /**
+   * Every constraint set version starts at one, so a roster published under one below it would
+   * record a version that cannot exist, and the schema would refuse to store it (V14).
+   */
+  @Test
+  void GivenADraft_WhenPublishedUnderAVersionBelowOne_ThenItIsRefused() {
+    Roster draft = draft();
+
+    assertThatThrownBy(() -> draft.publishedUnder(0, PUBLISHED_AT))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("starts at one");
+  }
+
   @Test
   void GivenAPublishedRoster_WhenChangingIt_ThenItIsRefused() {
     Roster published = draft().publishedUnder(1, PUBLISHED_AT);
