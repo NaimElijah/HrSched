@@ -2,8 +2,8 @@
 
 - **Status:** Accepted
   - **Amended 2026-10-31:** [ADR-044](ADR-044-generate-rosters-with-or-tools-cp-sat.md) adds the
-    solver that minimises this weighted score, so "Generation is unchanged" under Consequences no
-    longer holds.
+    solver that minimises this weighted score, so "Generation is unchanged", under *Where the
+    score is used*, no longer holds.
 - **Date:** 2026-10-20
 
 ## Context
