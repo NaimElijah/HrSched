@@ -20,14 +20,10 @@ flowchart LR
     spa["React SPA<br/>Vite dev server :5173"]
     api["Spring Boot API :8080<br/>access · workforce · scheduling · notifications"]
     db[("PostgreSQL 18<br/>one schema, organisation_id on every root,<br/>bar the operator's account and the sessions")]
-    scraper["A metrics scraper<br/>(none deployed yet)"]
-    logs["A log collector<br/>(none deployed yet)"]
 
     people -->|browser| spa
     spa -->|"/api, proxied: one origin, no CORS"| api
     api -->|"hand-written SQL, Flyway migrations"| db
-    scraper -.->|"/actuator/prometheus, refused until #78"| api
-    api -.->|"ECS JSON on stdout, a trace id per request"| logs
 ```
 
 **Contents:** [What and why](#what-and-why) · [Features](#features) · [Architecture](#architecture)
@@ -137,7 +133,7 @@ Components, the authentication sequence and the data flow are in
 | Generation | Google OR-Tools, CP-SAT | 9.12.4544 | Every rule is a constraint, so a generated roster keeps every configured rule by construction ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md)) |
 | Tests | JUnit Jupiter, Testcontainers | 6.0.3 / 2.0.5 | Every test that touches storage runs on a real PostgreSQL |
 | Architecture | ArchUnit | 1.5.1 | Turns the dependency rules into build failures |
-| Observability | OpenTelemetry starter, Micrometer Prometheus | Boot BOM; OpenTelemetry 1.67.0 | A trace id on every response and log line; metrics pull-only, and unreadable until [#78](https://github.com/NaimElijah/HrSched/issues/78) |
+| Observability | OpenTelemetry starter, Micrometer Prometheus | Boot BOM; OpenTelemetry 1.67.0 | A trace id on every response and log line; metrics pull-only |
 | Frontend | React, TypeScript, Vite | 19.3.1 / 6.0.3 / 8.3.5 | Strict types turn API drift into a compile error ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)) |
 | Frontend tests | Vitest, Testing Library | 5.0.5 / 16.3.3 | `fetch` is stubbed at the one module that calls it |
 | Format and lint | Spotless (google-java-format), Prettier, ESLint | 3.10.4 / 3.9.6 / 10.13.0 | Formatting is checked by the same command that builds |
@@ -305,20 +301,23 @@ reported but never enforced
 
 ## Deployment and operations
 
-HrSched is not deployed anywhere yet. The chosen target is AWS (ECS Fargate, RDS and CloudFront,
-defined in CDK; [#153](https://github.com/NaimElijah/HrSched/issues/153)), planned as milestones M3
-and M4 and to be recorded as ADR-035 and ADR-036. Today `./mvnw verify` builds the executable jar
+HrSched is not deployed anywhere; the planned AWS target is under
+[Status and limitations](#status-and-limitations). `./mvnw verify` builds the executable jar
 `backend/target/hrsched-0.0.1-SNAPSHOT.jar`, and Flyway migrates the database at startup, before
 the application reports ready.
 
 | Concern | Where |
 | :--- | :--- |
 | Liveness, readiness | `GET /actuator/health/liveness`, `GET /actuator/health/readiness` |
-| Metrics | Recorded, and readable by nobody over HTTP: `/actuator/prometheus` and `/actuator/metrics` are refused to every caller until [#78](https://github.com/NaimElijah/HrSched/issues/78) is decided, and nothing pushes ([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md), [ADR-049](docs/ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)) |
 | Logs | One ECS JSON object per line on stdout; every line a request produces carries `traceId` and `spanId` |
 | Traces | A W3C trace id on every response as `X-Trace-Id`, refusals included, and shown by the UI so a person's report joins the log. Nothing is exported yet (Q19) |
 
-The meters, and what each one answers, are in [`docs/operations.md`](docs/operations.md#meters).
+The metrics endpoints, `/actuator/prometheus` and `/actuator/metrics`, are refused to every caller
+until [#78](https://github.com/NaimElijah/HrSched/issues/78) is decided
+([ADR-017](docs/ADRs/ADR-017-expose-metrics-to-be-scraped.md),
+[ADR-049](docs/ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)). The
+meters the application records, and what each one answers, are in
+[`docs/operations.md`](docs/operations.md#meters).
 
 ## Project structure
 
@@ -355,11 +354,21 @@ Every decision, and every one still waiting to be recorded, is in the
 
 ## Status and limitations
 
-**Pre-release.** It works end to end locally and has never been deployed. The
-[milestones](https://github.com/NaimElijah/HrSched/milestones) track the rest: M0 (the full-system
-scans), M1 (v1 complete), M2 (engineering baseline), M3 (AWS staging), M4 (production) and M5 (ML
-that proposes, never decides). The
-[requirements](docs/requirements/requirements.md) mark each row decided but `not yet` built.
+**Alpha.** It works end to end on a developer's machine, has never been deployed, and has no
+release or tag yet.
+
+**Shipped:** everything under [Features](#features), running locally against a PostgreSQL in
+Docker. The [requirements](docs/requirements/requirements.md) mark each row that is decided but
+`not yet` built.
+
+**Planned**, tracked by the [milestones](https://github.com/NaimElijah/HrSched/milestones):
+
+- M0, the full-system scans of the code and the docs.
+- M1, v1 feature-complete, and M2, the engineering baseline.
+- M3 and M4, AWS staging and production: ECS Fargate, RDS and CloudFront, defined in CDK
+  ([#153](https://github.com/NaimElijah/HrSched/issues/153)). ADR-035 and ADR-036 are reserved to
+  record the topology.
+- M5, machine learning that proposes and never decides.
 
 **Known limitations:**
 - **No jurisdiction preset exists yet.** HrSched ships no statute's numbers, so every limit is
