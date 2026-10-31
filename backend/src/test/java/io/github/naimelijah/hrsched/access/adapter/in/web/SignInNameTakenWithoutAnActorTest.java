@@ -6,6 +6,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.SignInNameTakenException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
@@ -36,8 +37,11 @@ class SignInNameTakenWithoutAnActorTest {
 
   private static final String ACTOR = "actor";
 
+  /** Invented: a policy to build the handler with; no refusal here is judged against it. */
+  private static final PasswordPolicy INVENTED_POLICY = new PasswordPolicy(12, 72);
+
   private final AccessExceptionHandler handler =
-      new AccessExceptionHandler(new SimpleMeterRegistry());
+      new AccessExceptionHandler(new SimpleMeterRegistry(), INVENTED_POLICY);
 
   private ch.qos.logback.classic.Logger logger;
   private ListAppender<ILoggingEvent> captured;

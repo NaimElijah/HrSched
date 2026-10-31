@@ -7,6 +7,7 @@ import io.github.naimelijah.hrsched.access.domain.model.InvalidSignInNameExcepti
 import io.github.naimelijah.hrsched.access.domain.model.LastActiveAdminException;
 import io.github.naimelijah.hrsched.access.domain.model.NotAnEmployeeHereException;
 import io.github.naimelijah.hrsched.access.domain.model.NotThePlatformOperatorException;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.SignInNameTakenException;
 import io.github.naimelijah.hrsched.access.domain.model.UnacceptablePasswordException;
 import io.github.naimelijah.hrsched.access.domain.model.UnknownAccountException;
@@ -18,6 +19,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberExceptio
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -57,12 +59,15 @@ public class AccessExceptionHandler {
   private static final String DENIED = "hrsched.access.denied";
 
   private final MeterRegistry meters;
+  private final PasswordPolicy policy;
 
   /**
    * @param meters where refusals are counted
+   * @param policy the password policy, for the numbers a refused temporary password is told
    */
-  public AccessExceptionHandler(MeterRegistry meters) {
-    this.meters = meters;
+  public AccessExceptionHandler(MeterRegistry meters, PasswordPolicy policy) {
+    this.meters = Objects.requireNonNull(meters, "meters must not be null");
+    this.policy = Objects.requireNonNull(policy, "policy must not be null");
   }
 
   private void denied(String kind) {
@@ -89,15 +94,16 @@ public class AccessExceptionHandler {
   }
 
   /**
-   * A temporary password the policy refuses. A 422 naming the rule, because whoever typed it has to
-   * know what would satisfy it; the password itself is never echoed.
+   * A temporary password the policy refuses. A 422 whose detail says what would satisfy it, in the
+   * sentence a refused change of one's own password gets, because whoever typed it has to know and
+   * the {@code reason} member is not something a screen shows; the password itself is never echoed.
    */
   @ExceptionHandler(UnacceptablePasswordException.class)
   public ProblemDetail handleUnacceptablePassword(UnacceptablePasswordException exception) {
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.UNPROCESSABLE_ENTITY,
-            "That temporary password does not satisfy the policy.");
+            PasswordRejectionDetail.of(exception.reason(), policy));
     problem.setTitle("Password not accepted");
     problem.setProperty("reason", exception.reason().name());
     return problem;

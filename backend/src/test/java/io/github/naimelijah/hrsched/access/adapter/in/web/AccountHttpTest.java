@@ -13,6 +13,7 @@ import com.jayway.jsonpath.JsonPath;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
 import io.github.naimelijah.hrsched.access.domain.model.SignInName;
 import io.github.naimelijah.hrsched.access.domain.model.TenantMembership;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
@@ -77,6 +78,7 @@ class AccountHttpTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private AccountRepository accounts;
   @Autowired private PasswordHasher passwords;
+  @Autowired private PasswordPolicy policy;
 
   private OrganisationId anOrganisation() throws Exception {
     String body =
@@ -278,6 +280,10 @@ class AccountHttpTest {
     assertThat(body).doesNotContain(taken);
   }
 
+  /**
+   * The detail says what would satisfy the policy, in the sentence a refused change of one's own
+   * password gets, because the reason member alone is not something the screen shows.
+   */
   @Test
   void GivenATemporaryPasswordBelowThePolicy_WhenCreatingAnAccount_ThenTheRuleIsNamed()
       throws Exception {
@@ -288,7 +294,12 @@ class AccountHttpTest {
                     "{\"signInName\":\"%s\",\"temporaryPassword\":\"%s\",\"role\":\"SCHEDULER\"}"
                         .formatted(anInventedSignInName(), TOO_SHORT)))
         .andExpect(status().isUnprocessableEntity())
-        .andExpect(jsonPath("$.reason").value("TOO_SHORT"));
+        .andExpect(jsonPath("$.reason").value("TOO_SHORT"))
+        .andExpect(
+            jsonPath("$.detail")
+                .value(
+                    "A password must be at least %d characters long."
+                        .formatted(policy.minimumLength())));
   }
 
   @Test

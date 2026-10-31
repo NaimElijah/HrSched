@@ -255,6 +255,12 @@ rules`, as publishing it would. With invented identifiers and weights:
   answers `400` titled `Invalid request`, stores nothing, and the detail repeats no name. The limit
   is in bytes, not characters, so a name in a script needing two or three bytes a character reaches
   it sooner.
+- **A password the policy refuses.** A temporary password chosen when onboarding an organisation,
+  creating an account or resetting one, and a new password chosen at `POST /api/auth/password`,
+  answer `422` titled `Password not accepted`. The detail says what would satisfy the policy, such
+  as the fewest characters a password may have, and `reason` names the rule broken: `TOO_SHORT`,
+  `TOO_LONG` or, for a change of one's own password only, `SAME_AS_CURRENT`. Neither repeats the
+  password.
 - **An Employee account linked to nobody.** Creating one, taking the link away from one, giving
   the Employee role to an account linked to nobody, or restoring one stored unlinked before R34
   answers `422` titled `Employee account not linked`.

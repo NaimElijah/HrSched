@@ -896,7 +896,7 @@ describe('resetting a colleague’s password', () => {
         status: 422,
         body: {
           title: 'Password not accepted',
-          detail: 'That temporary password does not satisfy the policy.',
+          detail: 'A password must be at least 15 characters long.',
           reason: 'TOO_SHORT',
         },
       },
@@ -912,7 +912,7 @@ describe('resetting a colleague’s password', () => {
     await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'That temporary password does not satisfy the policy.',
+      'A password must be at least 15 characters long.',
     );
     expect(field).toHaveValue(A_SHORT_PASSWORD);
   });

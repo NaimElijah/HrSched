@@ -7,6 +7,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.github.naimelijah.hrsched.access.domain.model.PasswordPolicy;
 import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
@@ -41,8 +42,12 @@ import org.springframework.web.method.annotation.ExceptionHandlerMethodResolver;
  */
 class AccessExceptionHandlerTest {
 
+  /** Invented: a policy to build the handler with; no refusal here is judged against it. */
+  private static final PasswordPolicy INVENTED_POLICY = new PasswordPolicy(12, 72);
+
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
-  private final AccessExceptionHandler handler = new AccessExceptionHandler(meters);
+  private final AccessExceptionHandler handler =
+      new AccessExceptionHandler(meters, INVENTED_POLICY);
 
   private ch.qos.logback.classic.Logger logger;
   private ListAppender<ILoggingEvent> captured;
