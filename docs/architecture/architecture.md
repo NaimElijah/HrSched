@@ -171,7 +171,7 @@ yet, which is left to the edge ([#162](https://github.com/NaimElijah/HrSched/iss
 and every controller takes it from `@AuthenticationPrincipal Actor`
 ([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md)).
 
-**The organisation comes from the account, never from the request.** The five tenant
+**The organisation comes from the account, never from the request.** Five of the six tenant
 controllers (`NotificationController`, `SchedulingController`, `SwapController`,
 `EmployeeController` and `QualificationController`) each have an `actingIn(actor)` helper over
 `Actor.requireTenantMembership()`, and `AccountController` has the same helper as `organisationOf`.
@@ -624,10 +624,10 @@ are not audited. Nothing at runtime depends on any of it.
   have no record" and "you are rostered for nothing" are different answers.
 - **The acting identity comes from the access token and from nowhere else.** `X-User`, `X-Role`,
   `X-Organisation` and `X-Employee` are gone: no controller reads them, no filter checks them, and
-  a request that sends them anyway is answered as whoever its token says it is. The five tenant
-  controllers each have an `actingIn(actor)` helper over `Actor.requireTenantMembership()`, and
-  `AccountController` has the same helper as `organisationOf`; it is the only way an organisation
-  enters a request
+  a request that sends them anyway is answered as whoever its token says it is. Five of the six
+  tenant controllers each have an `actingIn(actor)` helper over `Actor.requireTenantMembership()`,
+  and `AccountController` has the same helper as `organisationOf`; it is the only way an
+  organisation enters a request
   ([ADR-011](../ADRs/ADR-011-issue-our-own-access-tokens.md), [ADR-031](../ADRs/ADR-031-take-the-organisation-from-the-account.md)).
 - **Every constraint version is stored, and any of them can be read back.** The table is keyed
   `(organisation_id, version)`, so revising never discards what came before, and
