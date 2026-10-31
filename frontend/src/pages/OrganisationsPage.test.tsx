@@ -67,9 +67,7 @@ describe('reading the platform', () => {
 
     show(A_TENANT);
 
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
-    );
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not permitted.'));
   });
 
   it('GivenTheSessionHasEnded_WhenOpened_ThenTheRefusalSaysSo', async () => {
@@ -213,9 +211,11 @@ describe('onboarding', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('That sign-in name is already in use.'),
     );
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Onboard organisation' })).toBeEnabled(),
-    );
+    await waitFor(() => {
+      const onboard = screen.getByRole('button', { name: 'Onboard organisation' });
+      expect(onboard).toBeEnabled();
+      expect(onboard).not.toHaveAttribute('aria-disabled', 'true');
+    });
   });
 
   /** A second onboarding sent meanwhile is refused for the name the first took, beside its success. */
@@ -229,11 +229,110 @@ describe('onboarding', () => {
     await userEvent.click(onboard);
     await userEvent.click(onboard);
 
-    expect(onboard).toBeDisabled();
+    expect(onboard).toHaveAttribute('aria-disabled', 'true');
     release();
     await screen.findByText('Onboarded Beta.');
     expect(writes(routed)).toHaveLength(1);
-    await waitFor(() => expect(onboard).toBeEnabled());
+    await waitFor(() => expect(onboard).not.toHaveAttribute('aria-disabled', 'true'));
+  });
+
+  /**
+   * A disabled button drops the keyboard focus to the page in a browser, and a screen reader user
+   * is left nowhere (#257, C1). While the onboarding is on its way the button says it is unavailable
+   * and keeps the focus.
+   */
+  it('GivenAnOnboardingInFlight_WhenPressed_ThenTheButtonKeepsFocusAndIsMarkedUnavailable', async () => {
+    const routed = thePlatform({ 'POST /api/organisations': { status: 201, body: BETA } });
+    const release = holdingWrites(routed);
+    show();
+    await fillIn('Beta', AN_ADMIN, A_PASSWORD);
+    const onboard = screen.getByRole('button', { name: 'Onboard organisation' });
+
+    await userEvent.click(onboard);
+
+    expect(onboard).toHaveAttribute('aria-disabled', 'true');
+    // jsdom keeps focus on a disabled button, so this, not toHaveFocus(), is what C1 rests on.
+    expect(onboard).not.toBeDisabled();
+    expect(onboard).toHaveFocus();
+    release();
+    await screen.findByText('Onboarded Beta.');
+  });
+
+  /** The form empties on success, so without a word nothing says it was onboarded (C3). */
+  it('GivenAnOnboarding_WhenItSucceeds_ThenAStatusNamesTheOrganisation', async () => {
+    thePlatform({ 'POST /api/organisations': { status: 201, body: BETA } });
+    show();
+    await fillIn('Beta', AN_ADMIN, A_PASSWORD);
+    // Captured before the write: a live region that appears along with its text is not read.
+    const statuses = screen.getAllByRole('status');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+
+    await waitFor(() =>
+      expect(statuses.map((status) => status.textContent)).toContain('Onboarded Beta.'),
+    );
+  });
+
+  /** A success left on screen while the next organisation is typed reads as that one's (C9). */
+  it('GivenAnOnboardingSucceeded_WhenTheFormIsEditedAgain_ThenTheSuccessIsNoLongerSaid', async () => {
+    thePlatform({ 'POST /api/organisations': { status: 201, body: BETA } });
+    show();
+    await fillIn('Beta', AN_ADMIN, A_PASSWORD);
+    await userEvent.click(screen.getByRole('button', { name: 'Onboard organisation' }));
+    await screen.findByText('Onboarded Beta.');
+
+    await userEvent.type(screen.getByLabelText('Name'), 'G', WITHOUT_PAUSES);
+
+    expect(screen.queryByText('Onboarded Beta.')).not.toBeInTheDocument();
+  });
+});
+
+describe('the register as a table', () => {
+  it('GivenTheOrganisations_WhenListed_ThenTheTableHasAName', async () => {
+    thePlatform();
+
+    show();
+
+    await screen.findByRole('cell', { name: 'Beta' });
+    expect(screen.getByRole('table')).toHaveAccessibleName('Organisations on the platform');
+  });
+
+  /** A table wider than the screen is scrolled from the keyboard, so its region takes focus (C8). */
+  it('GivenTheOrganisations_WhenListed_ThenTheScrollRegionCanTakeFocus', async () => {
+    thePlatform();
+    show();
+    await screen.findByRole('cell', { name: 'Beta' });
+    const region = screen.getByRole('region', { name: 'Organisations on the platform' });
+
+    region.focus();
+
+    expect(region).toHaveFocus();
+  });
+
+  /** A refused listing is no evidence that there are none, and a table of nothing would say so. */
+  it('GivenTheListingIsRefused_WhenShown_ThenNeitherATableNorNoneIsShown', async () => {
+    thePlatform({
+      '/api/organisations': {
+        status: 403,
+        body: { detail: 'Only the platform operator may do this.' },
+      },
+    });
+
+    show(A_TENANT);
+
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    expect(screen.queryByText(/no organisations/i)).not.toBeInTheDocument();
+  });
+
+  /** An empty table says nothing at all to somebody who cannot see that it is empty (C8). */
+  it('GivenNoOrganisations_WhenListed_ThenTheListSaysSo', async () => {
+    thePlatform({ '/api/organisations': { status: 200, body: [] } });
+
+    show();
+
+    expect(await screen.findByText(/no organisations/i)).toBeInTheDocument();
   });
 });
 

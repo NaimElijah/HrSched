@@ -74,3 +74,22 @@ export function holdingWrites(routed: ReturnType<typeof routeTo>): () => void {
   );
   return release;
 }
+
+/**
+ * Holds every request sent, reads included, until the returned function is called. For a test of
+ * what a screen shows and allows before anything it asked for has loaded.
+ *
+ * @param routed the stub {@link routeTo} returned, which answers each request once it is released
+ * @returns the function that lets every held request through
+ */
+export function holdingEverything(routed: ReturnType<typeof routeTo>): () => void {
+  let answer!: () => void;
+  const answering = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((path: string, init?: RequestInit) => answering.then(() => routed(path, init))),
+  );
+  return answer;
+}

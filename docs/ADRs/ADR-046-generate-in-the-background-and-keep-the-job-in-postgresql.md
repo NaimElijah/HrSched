@@ -8,6 +8,11 @@
       says `FAILED`. So `FAILED` is not only a defect logged at ERROR.
     - The lost check runs before anything is written and again once the draft is saved, inside the
       unit of work that saved it, so a save outlasting `lost_at` takes the draft back with it.
+  - **Amended 2026-10-31:** The SPA opens a finished draft only while focus is still on Generate
+    or on the page. If the user has moved on, it says the draft is ready and to open it from the
+    list, and leaves whatever board is open alone, so a solve that ends minutes later never
+    replaces a board somebody is working in ([#257](https://github.com/NaimElijah/HrSched/issues/257),
+    [ADR-059](ADR-059-keep-focus-and-announce-changes-in-the-spa.md)).
 - **Date:** 2026-10-23
 
 ## Context

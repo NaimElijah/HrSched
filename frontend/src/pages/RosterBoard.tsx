@@ -1,14 +1,16 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { ApiError } from '../api/problem';
 import { scheduling } from '../api/scheduling';
 import type { Roster, Shift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure, Violations } from '../components/Feedback';
+import { focusIsUnclaimed } from '../components/focus';
 import { dayLabel, localDate, shiftLabel, timeLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
 import { ObjectiveScores } from './ObjectiveScores';
+import { labelOf } from './rosterLabel';
 
 /** One local day of the board, and the shifts that start on it, earliest first. */
 interface Day {
@@ -52,14 +54,31 @@ function shortfallSummary(short: number): string {
  *
  * It loads its own roster by identifier, and after a change shows the roster the server returned
  * for that change, rather than deriving what it shows from the roster list around it.
+ *
+ * A refusal of a change is shown in the shift it was about, and each change stored is said in a
+ * status. It is opened from the rosters list, which moves focus to its heading and takes it back on
+ * Close.
  */
 export function RosterBoard({
+  id: region,
+  headingRef,
   roster: id,
+  period: known,
   people,
   onChanged,
+  onClose,
 }: {
+  /** The region's id, which the button that opened it names as what it controls. */
+  id: string;
+  /** The heading, focusable, for the opener to move focus to. */
+  headingRef: RefObject<HTMLHeadingElement | null>;
   /** The identity of the roster to show. */
   roster: string;
+  /**
+   * The roster's period as the list names it, so the heading focus lands on names it before the
+   * roster itself has loaded; null when the list does not hold it yet, as after a generation.
+   */
+  period: string | null;
   /** Everybody who might be assigned, and how to name them. */
   people: readonly Employee[];
   /**
@@ -68,20 +87,35 @@ export function RosterBoard({
    * rosters should read them again.
    */
   onChanged: () => void;
+  /** Called by Close; the opener removes the board and decides where focus goes next. */
+  onClose: () => void;
 }) {
   const sessionKey = useSessionKey();
   const heading = useId();
   const [changed, setChanged] = useState<Roster | null>(null);
-  const [failure, setFailure] = useState<unknown>(null);
-  // Which change a conflict refused, said by the board: the backend's detail names nobody.
-  const [conflicted, setConflicted] = useState<string | null>(null);
+  // A refused change, shown in the shift it was about.
+  const [failure, setFailure] = useState<{ shift: string; error: unknown } | null>(null);
+  // What the last change came to: stored, or refused by a conflict, which the board names because
+  // the backend's detail names nobody. Only a stored one clears once the next change is started.
+  const [said, setSaid] = useState<{ text: string; stored: boolean } | null>(null);
   // One change at a time: two racing each other could leave the board showing the older answer.
   const [changing, setChanging] = useState(false);
   const checkHeading = useId();
+  const waitingHint = useId();
 
   const loaded = useAsync(() => scheduling.findRoster(id), `${sessionKey}|${id}`);
   const roster = changed ?? loaded.value;
   const isDraft = roster?.status === 'DRAFT';
+
+  // A draft that stops being one, because somebody published it first, takes its controls with it
+  // and the focus that was on them. The heading is the nearest thing still there.
+  const wasDraft = useRef(false);
+  useEffect(() => {
+    if (wasDraft.current && !isDraft && focusIsUnclaimed(null)) {
+      headingRef.current?.focus();
+    }
+    wasDraft.current = isDraft;
+  }, [isDraft, headingRef]);
 
   // Only a draft is checked: a published roster was judged when it was published (Q9). After an
   // edit the same question is asked again, by reload, so the last answer stays until the next.
@@ -98,6 +132,7 @@ export function RosterBoard({
   );
   const qualifications = useAsync(() => workforce.findQualifications(), sessionKey);
 
+  const period = roster === null ? known : labelOf(roster);
   const qualificationNames = new Map(
     (qualifications.value ?? []).map((qualification) => [qualification.id, qualification.name]),
   );
@@ -113,31 +148,40 @@ export function RosterBoard({
       : roster.assignments.filter((assignment) => !placed.has(assignment.shift));
 
   /**
+   * @param shift the shift the change is about, where a refusal of it is shown
    * @param attempted what the change was, as "assign Grace to …", for the sentence a conflict gets
+   * @param stored what it came to, as "Assigned Grace to …", for the status once it is stored
    * @returns whether the change was stored, so a control can reset only on success
    */
-  async function change(action: () => Promise<Roster>, attempted: string): Promise<boolean> {
+  async function change(
+    shift: string,
+    action: () => Promise<Roster>,
+    attempted: string,
+    stored: string,
+  ): Promise<boolean> {
     if (changing) {
       return false;
     }
     setChanging(true);
     setFailure(null);
-    setConflicted(null);
+    setSaid(null);
     try {
       setChanged(await action());
+      setSaid({ text: `${stored}.`, stored: true });
       assessment.reload();
       onChanged();
       return true;
     } catch (error) {
-      setFailure(error);
+      setFailure({ shift, error });
       // A conflict means the roster moved on under this board, most often because somebody
       // published it first (ADR-041). Shown as it now is, so a draft's controls are not left on a
       // roster that is no longer one, and the list around it catches up too. What the check said
       // was said of the roster as it was, so it is asked again.
       if (error instanceof ApiError && error.isConflict) {
-        setConflicted(
-          `Could not ${attempted}. The board was read again, and shows the roster as it now is.`,
-        );
+        setSaid({
+          text: `Could not ${attempted}. The board was read again, and shows the roster as it now is.`,
+          stored: false,
+        });
         setChanged(null);
         loaded.reload();
         assessment.reload();
@@ -150,12 +194,21 @@ export function RosterBoard({
   }
 
   return (
-    <section className="detail" aria-labelledby={heading}>
-      <h3 id={heading}>
-        {roster === null
-          ? 'Roster'
-          : `Roster ${roster.status.toLowerCase()}: ${new Date(roster.start).toLocaleDateString()} to ${new Date(roster.end).toLocaleDateString()}`}
+    <section id={region} className="detail" aria-labelledby={heading}>
+      <h3 id={heading} ref={headingRef} tabIndex={-1}>
+        {roster !== null
+          ? `Roster ${roster.status.toLowerCase()}: ${labelOf(roster)}`
+          : period === null
+            ? 'Roster'
+            : `Roster ${period}`}
       </h3>
+      <button
+        type="button"
+        aria-label={period === null ? 'Close roster' : `Close roster ${period}`}
+        onClick={onClose}
+      >
+        Close
+      </button>
       <Failure error={loaded.error} />
       <Failure error={shifts.error} />
       <Failure error={qualifications.error} />
@@ -174,11 +227,15 @@ export function RosterBoard({
           {roster.assignments.length === 0 && shifts.value?.length === 0 ? (
             <p>No shift falls in this roster&apos;s period, so there is nothing to assign.</p>
           ) : null}
-          <Failure error={failure} nameOf={nameOf} />
           {/* Present while empty, as a live region must be for what appears in it to be read. */}
           <p className="hint" role="status">
-            {conflicted}
+            {said?.text}
           </p>
+          {changing ? (
+            <p className="hint" id={waitingHint}>
+              A change is on its way. The board waits for its answer.
+            </p>
+          ) : null}
 
           {isDraft ? (
             <section className="check" aria-labelledby={checkHeading}>
@@ -229,16 +286,25 @@ export function RosterBoard({
                     people={people}
                     nameOf={nameOf}
                     busy={changing}
+                    waitingHint={changing ? waitingHint : undefined}
+                    failure={failure?.shift === shift.id ? failure.error : null}
+                    onPick={() =>
+                      setSaid((previous) => (previous?.stored === true ? null : previous))
+                    }
                     onAssign={(employee) =>
                       change(
+                        shift.id,
                         () => scheduling.assign(roster.id, shift.id, employee),
                         `assign ${nameOf(employee)} to ${shiftLabel(shift.start, shift.end)}`,
+                        `Assigned ${nameOf(employee)} to ${shiftLabel(shift.start, shift.end)}`,
                       )
                     }
                     onRemove={(employee) =>
                       change(
+                        shift.id,
                         () => scheduling.unassign(roster.id, shift.id, employee),
                         `remove ${nameOf(employee)} from ${shiftLabel(shift.start, shift.end)}`,
+                        `Removed ${nameOf(employee)} from ${shiftLabel(shift.start, shift.end)}`,
                       )
                     }
                   />
@@ -274,6 +340,9 @@ function ShiftOnBoard({
   people,
   nameOf,
   busy,
+  waitingHint,
+  failure,
+  onPick,
   onAssign,
   onRemove,
 }: {
@@ -284,12 +353,22 @@ function ShiftOnBoard({
   requires: string;
   people: readonly Employee[];
   nameOf: (employee: string) => string;
-  /** A change is on its way somewhere on the board, so these controls wait for its answer. */
+  /**
+   * A change is on its way somewhere on the board, so these controls wait for its answer. They are
+   * aria-disabled rather than disabled, so the one pressed keeps the keyboard focus.
+   */
   busy: boolean;
+  /** The id of the hint saying why these controls wait, while they do (C5). */
+  waitingHint: string | undefined;
+  /** Why the last change to this shift was refused, if it was. */
+  failure: unknown;
+  /** Somebody else was picked, which starts the next change (C9). */
+  onPick: () => void;
   onAssign: (employee: string) => Promise<boolean>;
   onRemove: (employee: string) => Promise<boolean>;
 }) {
   const [choice, setChoice] = useState('');
+  const picker = useRef<HTMLSelectElement>(null);
   const times = `${timeLabel(shift.start)} to ${timeLabel(shift.end)}`;
   // A board repeats the same controls on every shift, so each control's name says which one it is.
   const when = shiftLabel(shift.start, shift.end);
@@ -314,9 +393,22 @@ function ShiftOnBoard({
                   {' '}
                   <button
                     type="button"
-                    disabled={busy}
+                    aria-disabled={busy}
+                    aria-describedby={waitingHint}
                     aria-label={`Remove ${nameOf(employee)} from ${when}`}
-                    onClick={() => void onRemove(employee)}
+                    onClick={(event) => {
+                      if (busy) {
+                        return;
+                      }
+                      const pressed = event.currentTarget;
+                      // Remove goes with the person it removed, so focus moves to where the next
+                      // one is chosen.
+                      void onRemove(employee).then((removed) => {
+                        if (removed && focusIsUnclaimed(pressed)) {
+                          picker.current?.focus();
+                        }
+                      });
+                    }}
                   >
                     Remove
                   </button>
@@ -331,6 +423,9 @@ function ShiftOnBoard({
           className="row"
           onSubmit={(event) => {
             event.preventDefault();
+            if (busy) {
+              return;
+            }
             void onAssign(choice).then((assigned) => {
               if (assigned) {
                 setChoice('');
@@ -339,11 +434,18 @@ function ShiftOnBoard({
           }}
         >
           <select
+            ref={picker}
             value={choice}
             required
-            disabled={busy}
+            aria-disabled={busy}
+            aria-describedby={waitingHint}
             aria-label={`Who to assign to ${when}`}
-            onChange={(event) => setChoice(event.target.value)}
+            onChange={(event) => {
+              if (!busy) {
+                setChoice(event.target.value);
+                onPick();
+              }
+            }}
           >
             <option value="">choose…</option>
             {people.map((person) => (
@@ -352,11 +454,17 @@ function ShiftOnBoard({
               </option>
             ))}
           </select>
-          <button type="submit" disabled={busy} aria-label={`Assign to ${when}`}>
+          <button
+            type="submit"
+            aria-disabled={busy}
+            aria-describedby={waitingHint}
+            aria-label={`Assign to ${when}`}
+          >
             Assign
           </button>
         </form>
       ) : null}
+      <Failure error={failure} nameOf={nameOf} />
     </li>
   );
 }

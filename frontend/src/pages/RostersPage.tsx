@@ -1,17 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { ApiError, type Violation } from '../api/problem';
 import {
   isGenerationStatus,
   scheduling,
   type Generation,
   type GenerationStatus,
+  type Roster,
 } from '../api/scheduling';
 import type { Employee } from '../api/workforce';
 import { Busy, Failure, Violations } from '../components/Feedback';
+import { focusIsUnclaimed } from '../components/focus';
 import { useAsync } from '../components/useAsync';
 import { useSessionKey } from '../auth/SessionProvider';
 import { ApprovingRules } from './ApprovingRules';
 import { RosterBoard } from './RosterBoard';
+import { labelOf } from './rosterLabel';
 
 /** How a generation stands while it is still running, typed so that a misspelling fails to compile. */
 const PENDING: GenerationStatus = 'PENDING';
@@ -25,6 +28,12 @@ const GENERATION_POLL_MS = 1000;
  * it is replaced. Anything the server refused is an answer, and asking again would get it again.
  */
 const passing = (error: unknown): boolean => !(error instanceof ApiError) || error.status >= 500;
+
+/** The rosters table's columns, which a row spanning all of them has to know. */
+const ROSTER_COLUMNS = 6;
+
+/** Said after a draft is ready that did not open, because opening it would have taken the focus. */
+const OPEN_FROM_THE_LIST = ' Open it from the list.';
 
 const pause = (milliseconds: number) =>
   new Promise<void>((resolve) => {
@@ -80,39 +89,145 @@ export function RostersPage({
 }) {
   const sessionKey = useSessionKey();
   const [failure, setFailure] = useState<unknown>(null);
+  // A publication refused, shown at the row of the roster it refused rather than above the table.
+  const [refused, setRefused] = useState<{ roster: string; error: unknown } | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   // The constraint version whose rules are open, so a published roster can be checked against the
-  // rules it actually passed rather than today's (Q9).
-  const [rulesOf, setRulesOf] = useState<number | null>(null);
+  // rules it actually passed rather than today's (Q9), and the roster whose button opened them.
+  const [rulesOf, setRulesOf] = useState<{ version: number; roster: string } | null>(null);
   // Bumped whenever the list changes a roster, so an open board is rebuilt from what is now stored.
   // A change made on the board does not bump it: the board already holds what the server returned.
   const [revision, setRevision] = useState(0);
   const [starting, setStarting] = useState(false);
-  // A second publication sent while the first is on its way would be refused as a conflict, and
-  // that refusal shown beside the first one's success.
-  const [publishing, setPublishing] = useState(false);
+  // The roster being published. A second publication sent while the first is on its way would be
+  // refused as a conflict, and that refusal shown beside the first one's success.
+  const [publishing, setPublishing] = useState<string | null>(null);
   const generating = starting || waitingFor !== null;
   // Why asking how the generation stands last failed, while it is still being asked.
   const [askingFailed, setAskingFailed] = useState<unknown>(null);
+  const [published, setPublished] = useState<string | null>(null);
+  // The draft a generation made, named by the status once the list read again includes it, and
+  // whether it opened or waits in the list for whoever was busy elsewhere.
+  const [ready, setReady] = useState<{ roster: string | null; opened: boolean } | null>(null);
+  // A new object for every request, so asking for the same heading twice still moves focus.
+  const [focusing, setFocusing] = useState<{ readonly on: 'board' | 'rules' } | null>(null);
+
+  const generateButton = useRef<HTMLButtonElement>(null);
+  const boardHeading = useRef<HTMLHeadingElement>(null);
+  const rulesHeading = useRef<HTMLHeadingElement>(null);
+  // Each row's openers and header cell, by `open:`, `rules:` or `row:` and the roster's id, for
+  // focus to return to or move to.
+  const controls = useRef(new Map<string, HTMLElement>());
+  const remember = (key: string) => (element: HTMLElement | null) => {
+    if (element === null) {
+      controls.current.delete(key);
+    } else {
+      controls.current.set(key, element);
+    }
+  };
+
+  const board = useId();
+  const rules = useId();
+  const caption = useId();
+  const publishingHint = useId();
+  const publishingStatus = useId();
 
   const rosters = useAsync(() => scheduling.findRosters(), sessionKey);
   const personById = new Map(people.map((person) => [person.id, person]));
   const nameOf = (employee: string): string | undefined => personById.get(employee)?.name;
 
-  async function publish(roster: string) {
-    if (publishing) {
+  useEffect(() => {
+    if (focusing !== null) {
+      (focusing.on === 'board' ? boardHeading : rulesHeading).current?.focus();
+    }
+  }, [focusing]);
+
+  const listed = rosters.value ?? [];
+  const readyRoster = ready === null ? undefined : listed.find(({ id }) => id === ready.roster);
+  const readyTail = ready?.opened === false ? OPEN_FROM_THE_LIST : '';
+  // Said once the list read again names the draft, rather than twice, first without its period.
+  const readySaying =
+    ready === null
+      ? null
+      : readyRoster !== undefined
+        ? `Draft ready: ${labelOf(readyRoster)}.${readyTail}`
+        : rosters.busy
+          ? null
+          : `Draft ready.${readyTail}`;
+  const selectedRoster = listed.find(({ id }) => id === selected);
+  // Only a draft still listed beside the one being published waits on another's answer.
+  const anotherWaits =
+    publishing !== null &&
+    listed.some((roster) => roster.status === 'DRAFT' && roster.id !== publishing);
+
+  /** Opens a roster's board, or closes it when it is the one open, as a disclosure does. */
+  function toggleBoard(roster: string) {
+    if (selected === roster) {
+      // The pressed Open stays, and keeps the focus.
+      setSelected(null);
+      return;
+    }
+    // A refusal of another roster says nothing about this one, so it would be read as this one's.
+    // The refused roster's own refusal stays: its board is where what it names gets fixed.
+    if (refused?.roster !== roster) {
+      setRefused(null);
+    }
+    setSelected(roster);
+    setFocusing({ on: 'board' });
+  }
+
+  /** Opens the rules a roster was approved under, or closes them when they are the ones open. */
+  function toggleRules(version: number, roster: string) {
+    if (rulesOf?.roster === roster) {
+      setRulesOf(null);
+      return;
+    }
+    setRulesOf({ version, roster });
+    setFocusing({ on: 'rules' });
+  }
+
+  /**
+   * Closes the board, handing focus back to what opened it: its row's Open, or Generate when the
+   * roster is not listed.
+   */
+  function closeBoard() {
+    const opener = selected === null ? undefined : controls.current.get(`open:${selected}`);
+    (opener ?? generateButton.current)?.focus();
+    setSelected(null);
+  }
+
+  /** Closes the rules, handing focus back to their row's Version, or Generate once that is gone. */
+  function closeRules() {
+    const opener = rulesOf === null ? undefined : controls.current.get(`rules:${rulesOf.roster}`);
+    (opener ?? generateButton.current)?.focus();
+    setRulesOf(null);
+  }
+
+  /** @param control the Publish pressed, which goes once the list shows the roster published */
+  async function publish(roster: Roster, control: HTMLElement) {
+    if (publishing !== null) {
       return;
     }
     setFailure(null);
-    setPublishing(true);
+    setRefused(null);
+    setPublished(null);
+    setReady(null);
+    setPublishing(roster.id);
     try {
-      await scheduling.publishRoster(roster);
+      await scheduling.publishRoster(roster.id);
+      setPublished(`Published ${labelOf(roster)}.`);
+      if (focusIsUnclaimed(control)) {
+        controls.current.get(`row:${roster.id}`)?.focus();
+      }
       rosters.reload();
-      setRevision((previous) => previous + 1);
+      // Only the board of the roster published shows something stale; any other is left as it is.
+      if (shown.current === roster.id) {
+        setRevision((previous) => previous + 1);
+      }
     } catch (error) {
-      setFailure(error);
+      setRefused({ roster: roster.id, error });
     } finally {
-      setPublishing(false);
+      setPublishing(null);
     }
   }
 
@@ -135,9 +250,16 @@ export function RostersPage({
     }
     if (status === 'SUCCEEDED') {
       rosters.reload();
-      setRevision((previous) => previous + 1);
-      // Waited for, often for minutes, so it opens rather than waiting to be found in the list.
-      setSelected(generation.roster);
+      // Waited for, often for minutes, so it opens rather than waiting to be found in the list, but
+      // only for whoever is still on Generate. Opening it for somebody who moved on would replace the
+      // board they are working in, and the focus inside it, so they are told where it is instead.
+      const opening = focusIsUnclaimed(generateButton.current);
+      if (opening) {
+        setSelected(generation.roster);
+        setRevision((previous) => previous + 1);
+        setFocusing({ on: 'board' });
+      }
+      setReady({ roster: generation.roster, opened: opening });
     } else if (status === 'REFUSED') {
       setFailure(new GenerationRefused(generation.violations));
     } else if (status === 'LOST') {
@@ -151,12 +273,14 @@ export function RostersPage({
     }
   }
 
-  // Read by the wait below, which outlives the render it began in.
+  // Read by the wait below and by a publication's answer, which outlive the render they began in.
   const end = useRef(ended);
   const stopWaiting = useRef(onWaitingFor);
+  const shown = useRef(selected);
   useEffect(() => {
     end.current = ended;
     stopWaiting.current = onWaitingFor;
+    shown.current = selected;
   });
 
   // Asks once a second until the generation ends, for as long as this page is open. Leaving stops
@@ -210,7 +334,13 @@ export function RostersPage({
 
   /** Starts a generation, then waits for it to end. */
   async function generate() {
+    if (generating) {
+      return;
+    }
     setFailure(null);
+    setRefused(null);
+    setPublished(null);
+    setReady(null);
     setStarting(true);
     try {
       const started = await scheduling.startGeneration(span.from, span.to);
@@ -235,7 +365,13 @@ export function RostersPage({
         it illegally.
       </p>
 
-      <button type="button" disabled={generating} onClick={() => void generate()}>
+      {/* aria-disabled rather than disabled, so focus stays on the button while a generation is out. */}
+      <button
+        ref={generateButton}
+        type="button"
+        aria-disabled={generating}
+        onClick={() => void generate()}
+      >
         Generate a draft for this span
       </button>
       <p className="busy" role="status">
@@ -245,6 +381,14 @@ export function RostersPage({
           : null}
       </p>
       {generating ? <Failure error={askingFailed} /> : null}
+      {/* Always in the page, so the pressed Publish's wait is announced, and it names it (C3). */}
+      <p className="busy" role="status" id={publishingStatus}>
+        {publishing === null ? null : 'Publishing…'}
+      </p>
+      {/* Always in the page, so an outcome is announced when it arrives rather than skipped. */}
+      <p className="done" role="status">
+        {published ?? readySaying}
+      </p>
 
       {failure instanceof GenerationRefused ? (
         <div className="failure failure--rules" role="alert">
@@ -260,71 +404,135 @@ export function RostersPage({
       )}
       <Failure error={rosters.error} />
       <Busy busy={rosters.busy} />
+      {rosters.value?.length === 0 ? <p>No rosters yet.</p> : null}
+      {anotherWaits ? (
+        <p className="hint" id={publishingHint}>
+          Another roster is being published. Publishing waits for its answer.
+        </p>
+      ) : null}
 
-      <table>
-        <thead>
-          <tr>
-            <th>Roster</th>
-            <th>Status</th>
-            <th>Assignments</th>
-            <th>Approved under</th>
-            <th>
-              <span className="visually-hidden">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {(rosters.value ?? []).map((roster) => {
-            const version = roster.validatedAgainstConstraintVersion;
-            return (
-              <tr key={roster.id}>
-                <td>
-                  {new Date(roster.start).toLocaleDateString()} to{' '}
-                  {new Date(roster.end).toLocaleDateString()}
-                  <br />
-                  <code>{roster.id}</code>
-                </td>
-                <td>{roster.status}</td>
-                <td>{roster.assignments.length}</td>
-                <td>
-                  {version === null ? (
-                    '—'
-                  ) : (
-                    <button type="button" onClick={() => setRulesOf(version)}>
-                      Version {version}
-                    </button>
-                  )}
-                </td>
-                <td>
-                  <button type="button" onClick={() => setSelected(roster.id)}>
-                    Open
-                  </button>
-                  {roster.status === 'DRAFT' ? (
-                    <button
-                      type="button"
-                      disabled={publishing}
-                      onClick={() => void publish(roster.id)}
-                    >
-                      Publish
-                    </button>
-                  ) : null}
-                </td>
+      {/* Only a list with rows gets the region: an empty one would be a stop with nothing in it. */}
+      {listed.length === 0 ? null : (
+        <div className="table-scroll" role="region" aria-labelledby={caption} tabIndex={0}>
+          <table>
+            {/* Hidden because the heading above already says it; the table still needs a name. */}
+            <caption id={caption} className="visually-hidden">
+              Rosters
+            </caption>
+            <thead>
+              <tr>
+                <th>Roster</th>
+                <th>Identifier</th>
+                <th>Status</th>
+                <th>Assignments</th>
+                <th>Approved under</th>
+                <th>
+                  <span className="visually-hidden">Actions</span>
+                </th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {listed.map((roster) => {
+                const version = roster.validatedAgainstConstraintVersion;
+                const label = labelOf(roster);
+                return (
+                  <Fragment key={roster.id}>
+                    <tr>
+                      {/* Focusable, so focus has somewhere to go when this row's Publish goes. It
+                          holds the period only: a screen reader reads it on every move along the row. */}
+                      <th scope="row" tabIndex={-1} ref={remember(`row:${roster.id}`)}>
+                        {label}
+                      </th>
+                      <td>
+                        <code>{roster.id}</code>
+                      </td>
+                      <td>{roster.status}</td>
+                      <td>{roster.assignments.length}</td>
+                      <td>
+                        {version === null ? (
+                          '—'
+                        ) : (
+                          <button
+                            ref={remember(`rules:${roster.id}`)}
+                            type="button"
+                            aria-label={`Version ${String(version)}: the rules that approved roster ${label}`}
+                            aria-expanded={rulesOf?.roster === roster.id}
+                            aria-controls={rules}
+                            onClick={() => toggleRules(version, roster.id)}
+                          >
+                            Version {version}
+                          </button>
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          ref={remember(`open:${roster.id}`)}
+                          type="button"
+                          aria-label={`Open roster ${label}`}
+                          aria-expanded={selected === roster.id}
+                          aria-controls={board}
+                          onClick={() => toggleBoard(roster.id)}
+                        >
+                          Open
+                        </button>
+                        {roster.status === 'DRAFT' ? (
+                          <button
+                            type="button"
+                            aria-label={`Publish roster ${label}`}
+                            aria-disabled={publishing !== null}
+                            aria-describedby={
+                              publishing === null
+                                ? undefined
+                                : publishing === roster.id
+                                  ? publishingStatus
+                                  : publishingHint
+                            }
+                            onClick={(event) => void publish(roster, event.currentTarget)}
+                          >
+                            Publish
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                    {refused?.roster === roster.id ? (
+                      <tr>
+                        <td colSpan={ROSTER_COLUMNS}>
+                          {/* Pinned to the visible part of the scroll region, near the button. */}
+                          <div className="row-refusal">
+                            <Failure error={refused.error} nameOf={nameOf} />
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      {rulesOf === null ? null : <ApprovingRules version={rulesOf} />}
+      {rulesOf === null ? null : (
+        <ApprovingRules
+          id={rules}
+          headingRef={rulesHeading}
+          version={rulesOf.version}
+          onClose={closeRules}
+        />
+      )}
 
       {selected === null ? null : (
         <RosterBoard
           // Rebuilt for a different acting identity as well: what one identity was shown, and the
           // roster it had changed, must not stay on screen for another that may not read it.
           key={`${sessionKey}#${selected}#${revision}`}
+          id={board}
+          headingRef={boardHeading}
           roster={selected}
+          period={selectedRoster === undefined ? null : labelOf(selectedRoster)}
           people={people}
           onChanged={rosters.reload}
+          onClose={closeBoard}
         />
       )}
     </section>

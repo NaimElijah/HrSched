@@ -40,6 +40,17 @@ export function Violations({
 }
 
 /**
+ * Whether a refusal is about the value a control sent, so that control is marked with it (#257,
+ * C6). That is a 422 the rules raised, a 409 such as the last Admin's, or a 400: the workforce
+ * context rejects invalid contract terms with a 400 "Invalid request", not a 422. A 401, 403 or
+ * 404, or a request that never arrived, says nothing about the value, and marking the control
+ * would send somebody to correct what nothing was wrong with. The refusal is shown either way.
+ */
+export function isAboutTheValue(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 400 || error.isRefused || error.isConflict);
+}
+
+/**
  * Renders whatever went wrong, distinguishing the refusals that mean different things.
  *
  * A rule breach is not an error in the usual sense: the request was well formed and the rules said
@@ -82,10 +93,23 @@ export function Failure({
       </div>
     );
   }
+  if (error instanceof ApiError && error.isPasswordChangeRequired) {
+    return (
+      <div className="failure" role="alert">
+        {/*
+          Its way on is its own, not a colleague's. The heading names the state and leaves the
+          instruction to the backend's detail, which gives it; saying it here too read it twice.
+        */}
+        <strong>Password change pending.</strong> {error.message}
+        <Reference of={error} />
+      </div>
+    );
+  }
   if (error instanceof ApiError && error.isForbidden) {
     return (
       <div className="failure" role="alert">
-        <strong>Your role may not do this.</strong> {error.message}
+        <strong>Not permitted.</strong> {error.message} If you need this done, ask a colleague whose
+        role allows it.
         <Reference of={error} />
       </div>
     );
@@ -93,8 +117,13 @@ export function Failure({
   if (error instanceof ApiError && error.isNotFound) {
     return (
       <div className="failure" role="alert">
-        <strong>Nothing here for this organisation.</strong> A cross-tenant attempt answers 404
-        rather than 403, so this may also mean it exists for somebody else.
+        {/*
+          A cross-tenant attempt answers 404 rather than 403, so a response never confirms that
+          something exists in another organisation, and "not found" cannot tell "no such thing"
+          from "not yours". The copy says what somebody can do, and nothing about which it was.
+        */}
+        <strong>Nothing here for this organisation.</strong> It may have been removed, or never
+        existed here. Go back to the list and try again.
         <Reference of={error} />
       </div>
     );

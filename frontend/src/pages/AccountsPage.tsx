@@ -1,16 +1,54 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { accounts } from '../api/access';
 import type { Account, TenantRole } from '../api/access';
+import { ApiError } from '../api/problem';
 import { workforce } from '../api/workforce';
 import type { Employee } from '../api/workforce';
 import { useSessionKey } from '../auth/SessionProvider';
-import { Busy, Failure } from '../components/Feedback';
+import { Busy, Failure, isAboutTheValue } from '../components/Feedback';
+import { RowRefusal } from '../components/RowRefusal';
+import { TableRegion } from '../components/TableRegion';
 import { useAsync } from '../components/useAsync';
 
 const ROLES: readonly TenantRole[] = ['EMPLOYEE', 'SCHEDULER', 'ADMIN'];
 
 /** The value of the employee choice that links an account to nobody. */
 const NOT_LINKED = '';
+
+/** How many columns the accounts table has, so a row's refusal can span all of them. */
+const COLUMNS = 6;
+
+/** The control in an account's row that a refusal of its change is about, if any. */
+type RowField = 'password' | 'role' | 'employee' | null;
+
+/**
+ * The control a refusal of the change sent from `field` marks: that one when the refusal is about
+ * its value, otherwise none. A password is about its value only when the policy refused it, a 422:
+ * a 409 on a reset is about the account, never the password typed.
+ *
+ * @param field the control the change was sent from, if any
+ * @param error what refused the change
+ */
+function markedBy(field: RowField, error: unknown): RowField {
+  if (field === 'password') {
+    return error instanceof ApiError && error.isRefused ? 'password' : null;
+  }
+  return isAboutTheValue(error) ? field : null;
+}
+
+/**
+ * Runs one administrative request and says how it went.
+ *
+ * @param what what to say once it has succeeded
+ * @param change the request
+ * @param refused shows a refusal where it belongs; the page's own alert unless the caller has one
+ * @returns whether the request succeeded
+ */
+type Administer = (
+  what: string,
+  change: () => Promise<void>,
+  refused?: (error: unknown) => void,
+) => Promise<boolean>;
 
 /**
  * Admin: who may act inside this organisation (requirement F15).
@@ -44,9 +82,11 @@ export function AccountsPage() {
   const listed = useAsync(() => accounts.findAccounts(), sessionKey);
   const staff = useAsync(() => workforce.findEmployees(), sessionKey);
 
-  /** Runs an administrative request, then reloads: every one of them changes what the table says. */
-  async function administer(what: string, change: () => Promise<void>) {
-    setFailure(null);
+  /**
+   * Runs one administrative request, says how it went, and then reloads the list, because every
+   * administrative request changes what the table says.
+   */
+  const administer: Administer = async (what, change, refused = setFailure) => {
     setDone(null);
     try {
       await change();
@@ -54,16 +94,19 @@ export function AccountsPage() {
       listed.reload();
       return true;
     } catch (error) {
-      setFailure(error);
+      refused(error);
       return false;
     }
-  }
+  };
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
     if (creating) {
       return;
     }
+    // Cleared here rather than by every request: a row's change leaves the form's refusal alone,
+    // since the refused account is still typed in the form.
+    setFailure(null);
     setCreating(true);
     const created = await administer(`Created ${signInName}.`, () =>
       accounts.createAccount({
@@ -94,8 +137,9 @@ export function AccountsPage() {
           browser from autofilling the Admin's saved password into a colleague's account or offering
           it as an update to the Admin's own entry; off asks it not to autofill the name. A browser
           may still offer to save what is typed, under the colleague's name: these hints do not
-          promise more (#250). */}
-      <form className="row" onSubmit={(event) => void create(event)}>
+          promise more (#250). Change events bubble, so any edit clears a success that would read as
+          the next one's. */}
+      <form className="row" onSubmit={(event) => void create(event)} onChange={() => setDone(null)}>
         <label>
           Sign-in name
           <input
@@ -131,7 +175,9 @@ export function AccountsPage() {
             <EmployeeOptions staff={staff.value ?? []} linked={null} />
           </select>
         </label>
-        <button type="submit" disabled={creating}>
+        {/* aria-disabled rather than disabled, so focus stays on the button while its request is
+            on its way. */}
+        <button type="submit" aria-disabled={creating}>
           Create account
         </button>
       </form>
@@ -144,28 +190,37 @@ export function AccountsPage() {
       <Failure error={staff.error} />
       <Busy busy={listed.busy} />
 
-      <table>
-        <thead>
-          <tr>
-            <th>Sign-in name</th>
-            <th>Role</th>
-            <th>Employee</th>
-            <th>State</th>
-            <th>Reset password</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {(listed.value ?? []).map((account) => (
-            <AccountRow
-              key={account.id}
-              account={account}
-              staff={staff.value ?? []}
-              administer={administer}
-            />
-          ))}
-        </tbody>
-      </table>
+      {/* Only an answer says who has an account: while loading, or after a refusal, there is no
+          list to show, and an empty table would read as nobody. */}
+      {listed.value === null ? null : listed.value.length === 0 ? (
+        <p>No accounts yet.</p>
+      ) : (
+        <TableRegion caption="Accounts in this organisation">
+          <thead>
+            <tr>
+              <th>Sign-in name</th>
+              <th>Role</th>
+              <th>Employee</th>
+              <th>State</th>
+              <th>Reset password</th>
+              <th>
+                <span className="visually-hidden">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {listed.value.map((account) => (
+              <AccountRow
+                key={account.id}
+                account={account}
+                staff={staff.value ?? []}
+                administer={administer}
+                onEdit={() => setDone(null)}
+              />
+            ))}
+          </tbody>
+        </TableRegion>
+      )}
     </section>
   );
 }
@@ -210,17 +265,29 @@ function EmployeeOptions({ staff, linked }: { staff: readonly Employee[]; linked
  * replaced the copy the row held when it was answered. A copy another row's read-back brings in the
  * meantime does not end the wait. A row remounted while its change is on its way, by a new session
  * or a list that no longer holds the account, forgets that it was waiting: that is not covered.
+ *
+ * A refusal of the row's change is shown in a row of its own right after it, where it says whose it
+ * is, and marks the control it is about. Both are cleared when the row next sends a change.
  */
 function AccountRow({
   account,
   staff,
   administer,
+  onEdit,
 }: {
   account: Account;
   staff: readonly Employee[];
-  administer: (what: string, change: () => Promise<void>) => Promise<boolean>;
+  administer: Administer;
+  /** Called on every edit in the row, so a success said before it is no longer read as current. */
+  onEdit: () => void;
 }) {
   const [replacement, setReplacement] = useState('');
+  const [refusal, setRefusal] = useState<{ error: unknown; field: RowField } | null>(null);
+  const refusalId = useId();
+  const headerId = useId();
+  const roleHintId = useId();
+  const employeeHintId = useId();
+  const resetHintId = useId();
   // What has been chosen and not yet stored, with the stored value it was chosen against. A choice
   // outlives a read-back that leaves that value alone, such as another row's, and is dropped once
   // the stored value changes: by this row's own change, or by somebody else's. A refused change
@@ -249,14 +316,24 @@ function AccountRow({
     held.current = account;
   });
   const waiting = sending || readingBack === account;
+  const noReplacement = replacement === '';
+  /** Whether the row's refusal is about this control, which it then marks and describes (C6). */
+  const refused = (field: RowField): boolean => field !== null && refusal?.field === field;
 
   /** Sends one change, unless this row's last one is on its way or not yet read back. */
-  async function change(what: string, request: () => Promise<void>): Promise<boolean> {
+  async function change(
+    what: string,
+    request: () => Promise<void>,
+    field: RowField = null,
+  ): Promise<boolean> {
     if (waiting) {
       return false;
     }
+    setRefusal(null);
     setSending(true);
-    const changed = await administer(what, request);
+    const changed = await administer(what, request, (error) =>
+      setRefusal({ error, field: markedBy(field, error) }),
+    );
     setSending(false);
     // A refusal reads nothing back, so there is no new copy to wait for.
     setReadingBack(changed ? held.current : null);
@@ -264,11 +341,13 @@ function AccountRow({
   }
 
   async function reset() {
-    if (replacement === '') {
+    if (noReplacement) {
       return;
     }
-    const done = await change(`Reset the password of ${account.signInName}.`, () =>
-      accounts.resetPassword(account.id, replacement),
+    const done = await change(
+      `Reset the password of ${account.signInName}.`,
+      () => accounts.resetPassword(account.id, replacement),
+      'password',
     );
     if (done) {
       setReplacement('');
@@ -276,118 +355,164 @@ function AccountRow({
   }
 
   return (
-    <tr>
-      <td>{account.signInName}</td>
-      <td>
-        <form
-          className="row"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!roleChosen) {
-              return;
-            }
-            void change(`Changed the role of ${account.signInName}.`, () =>
-              accounts.changeMembership(account.id, role, account.employee),
-            );
-          }}
-        >
-          <label>
-            <span className="visually-hidden">Role for {account.signInName}</span>
-            <select
-              value={role}
-              disabled={waiting}
-              onChange={(event) =>
-                setChosenRole({ against: account.role, role: event.target.value as TenantRole })
+    <>
+      <tr>
+        <th scope="row" id={headerId}>
+          {account.signInName}
+        </th>
+        <td>
+          <form
+            className="row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!roleChosen) {
+                return;
               }
+              void change(
+                `Changed the role of ${account.signInName}.`,
+                () => accounts.changeMembership(account.id, role, account.employee),
+                'role',
+              );
+            }}
+          >
+            <label>
+              <span className="visually-hidden">Role for {account.signInName}</span>
+              <select
+                value={role}
+                disabled={waiting}
+                aria-invalid={refused('role')}
+                aria-describedby={refused('role') ? refusalId : undefined}
+                onChange={(event) => {
+                  setChosenRole({ against: account.role, role: event.target.value as TenantRole });
+                  onEdit();
+                }}
+              >
+                {ROLES.map((candidate) => (
+                  <option key={candidate} value={candidate}>
+                    {candidate}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="submit"
+              aria-disabled={waiting || !roleChosen}
+              aria-describedby={roleChosen ? undefined : roleHintId}
+              aria-label={`Change the role of ${account.signInName}`}
             >
-              {ROLES.map((candidate) => (
-                <option key={candidate} value={candidate}>
-                  {candidate}
-                </option>
-              ))}
-            </select>
+              Change
+            </button>
+          </form>
+          {roleChosen ? null : (
+            <p id={roleHintId} className="hint">
+              Choose another role to change it.
+            </p>
+          )}
+        </td>
+        <td>
+          <form
+            className="row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!employeeChosen) {
+                return;
+              }
+              void change(
+                `Changed who ${account.signInName} is.`,
+                () => accounts.changeMembership(account.id, account.role, employee),
+                'employee',
+              );
+            }}
+          >
+            <label>
+              <span className="visually-hidden">Employee for {account.signInName}</span>
+              <select
+                value={employee ?? NOT_LINKED}
+                disabled={waiting}
+                aria-invalid={refused('employee')}
+                aria-describedby={refused('employee') ? refusalId : undefined}
+                onChange={(event) => {
+                  setChosenEmployee({
+                    against: account.employee,
+                    employee: event.target.value === NOT_LINKED ? null : event.target.value,
+                  });
+                  onEdit();
+                }}
+              >
+                <EmployeeOptions staff={staff} linked={account.employee} />
+              </select>
+            </label>
+            <button
+              type="submit"
+              aria-disabled={waiting || !employeeChosen}
+              aria-describedby={employeeChosen ? undefined : employeeHintId}
+              aria-label={`Change the employee of ${account.signInName}`}
+            >
+              Change
+            </button>
+          </form>
+          {employeeChosen ? null : (
+            <p id={employeeHintId} className="hint">
+              Choose another employee to change it.
+            </p>
+          )}
+        </td>
+        <td>
+          {account.active ? 'Active' : 'Disabled'}
+          {account.locked ? ' · Locked' : ''}
+          {account.passwordChangeRequired ? ' · Password change pending' : ''}
+        </td>
+        <td>
+          <label>
+            <span className="visually-hidden">New temporary password for {account.signInName}</span>
+            <input
+              type="password"
+              value={replacement}
+              onChange={(event) => {
+                setReplacement(event.target.value);
+                onEdit();
+              }}
+              autoComplete="new-password"
+              aria-invalid={refused('password')}
+              aria-describedby={refused('password') ? refusalId : undefined}
+            />
           </label>
           <button
-            type="submit"
-            disabled={waiting || !roleChosen}
-            aria-label={`Change the role of ${account.signInName}`}
+            type="button"
+            aria-disabled={waiting || noReplacement}
+            aria-describedby={noReplacement ? resetHintId : undefined}
+            aria-label={`Reset password for ${account.signInName}`}
+            onClick={() => void reset()}
           >
-            Change
+            Reset password
           </button>
-        </form>
-      </td>
-      <td>
-        <form
-          className="row"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!employeeChosen) {
-              return;
-            }
-            void change(`Changed who ${account.signInName} is.`, () =>
-              accounts.changeMembership(account.id, account.role, employee),
-            );
-          }}
-        >
-          <label>
-            <span className="visually-hidden">Employee for {account.signInName}</span>
-            <select
-              value={employee ?? NOT_LINKED}
-              disabled={waiting}
-              onChange={(event) =>
-                setChosenEmployee({
-                  against: account.employee,
-                  employee: event.target.value === NOT_LINKED ? null : event.target.value,
-                })
-              }
-            >
-              <EmployeeOptions staff={staff} linked={account.employee} />
-            </select>
-          </label>
+          {noReplacement ? (
+            <p id={resetHintId} className="hint">
+              Type a temporary password first.
+            </p>
+          ) : null}
+        </td>
+        <td>
           <button
-            type="submit"
-            disabled={waiting || !employeeChosen}
-            aria-label={`Change the employee of ${account.signInName}`}
+            type="button"
+            aria-disabled={waiting}
+            aria-label={`${account.active ? 'Disable' : 'Restore'} ${account.signInName}`}
+            onClick={() =>
+              void change(
+                account.active
+                  ? `Disabled ${account.signInName}.`
+                  : `Restored ${account.signInName}.`,
+                () => accounts.setAccountActive(account.id, !account.active),
+              )
+            }
           >
-            Change
+            {account.active ? 'Disable' : 'Restore'}
           </button>
-        </form>
-      </td>
-      <td>
-        {account.active ? 'Active' : 'Disabled'}
-        {account.locked ? ' · Locked' : ''}
-        {account.passwordChangeRequired ? ' · Password change pending' : ''}
-      </td>
-      <td>
-        <label>
-          <span className="visually-hidden">New temporary password for {account.signInName}</span>
-          <input
-            type="password"
-            value={replacement}
-            onChange={(event) => setReplacement(event.target.value)}
-            autoComplete="new-password"
-          />
-        </label>
-        <button type="button" disabled={waiting} onClick={() => void reset()}>
-          Reset password
-        </button>
-      </td>
-      <td>
-        <button
-          type="button"
-          disabled={waiting}
-          onClick={() =>
-            void change(
-              account.active
-                ? `Disabled ${account.signInName}.`
-                : `Restored ${account.signInName}.`,
-              () => accounts.setAccountActive(account.id, !account.active),
-            )
-          }
-        >
-          {account.active ? 'Disable' : 'Restore'}
-        </button>
-      </td>
-    </tr>
+        </td>
+      </tr>
+      {refusal === null ? null : (
+        <RowRefusal error={refusal.error} id={refusalId} headers={headerId} columns={COLUMNS} />
+      )}
+    </>
   );
 }
