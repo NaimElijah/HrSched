@@ -1,6 +1,7 @@
 package io.github.naimelijah.hrsched.configuration.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -40,6 +41,10 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * constant's name instead, which is accepted, so the refusal is the index's doing and not some
  * other fault in the body. The index sent is always that of the constant the control names, so a
  * binding that accepted it would have stored exactly what the control stores.
+ *
+ * <p>A query parameter is bound by Spring's conversion rather than by Jackson, and is pinned too:
+ * the strength naming a preference to withdraw, sent as an index, is refused as an invalid request,
+ * whose detail names the parameter and not the value (ADR-024), and nothing is withdrawn.
  *
  * <p>Every name, password and span here is invented for the test.
  *
@@ -187,6 +192,42 @@ class EnumFieldHttpTest {
         .andExpect(jsonPath("$[0].strength").value(PreferenceStrength.PREFERS_NOT.name()));
   }
 
+  // --- the strength of a preference being withdrawn, a query parameter --------------------------
+
+  @Test
+  void GivenAStrengthSentAsAnIndex_WhenWithdrawingAPreference_ThenItIsInvalidAndNothingIsWithdrawn()
+      throws Exception {
+    String organisation = anOrganisation();
+    String employee = anEmployee(organisation);
+    statePrefersNot(organisation, employee);
+
+    mockMvc
+        .perform(withdrawing(organisation, employee, PREFERS_NOT_INDEX))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.title").value("Invalid request"))
+        .andExpect(
+            jsonPath("$.detail")
+                .value(
+                    "strength could not be read as " + PreferenceStrength.class.getSimpleName()));
+
+    preferencesOf(organisation, employee)
+        .andExpect(jsonPath("$[0].strength").value(PreferenceStrength.PREFERS_NOT.name()));
+  }
+
+  @Test
+  void GivenAStrengthSentByName_WhenWithdrawingTheSamePreference_ThenItIsWithdrawn()
+      throws Exception {
+    String organisation = anOrganisation();
+    String employee = anEmployee(organisation);
+    statePrefersNot(organisation, employee);
+
+    mockMvc
+        .perform(withdrawing(organisation, employee, PreferenceStrength.PREFERS_NOT.name()))
+        .andExpect(status().isNoContent());
+
+    preferencesOf(organisation, employee).andExpect(jsonPath("$").isEmpty());
+  }
+
   // --- what every field shares ----------------------------------------------------------------
 
   /**
@@ -231,6 +272,25 @@ class EnumFieldHttpTest {
   private static String preference(String strength) {
     return "{\"start\":\"%s\",\"end\":\"%s\",\"strength\":%s}"
         .formatted(PREFERENCE_START, PREFERENCE_END, strength);
+  }
+
+  private void statePrefersNot(String organisation, String employee) throws Exception {
+    mockMvc
+        .perform(
+            asAdmin(post("/api/employees/%s/preferences".formatted(employee)), organisation)
+                .content(preference(named(PreferenceStrength.PREFERS_NOT))))
+        .andExpect(status().isNoContent());
+  }
+
+  /** The withdrawal of the preference {@link #statePrefersNot} states, its strength as given. */
+  private MockHttpServletRequestBuilder withdrawing(
+      String organisation, String employee, String strength) throws Exception {
+    return asAdmin(
+        delete("/api/employees/%s/preferences".formatted(employee))
+            .param("start", PREFERENCE_START)
+            .param("end", PREFERENCE_END)
+            .param("strength", strength),
+        organisation);
   }
 
   private static String anInventedSignInName() {
