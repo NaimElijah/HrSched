@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { scheduling } from '../api/scheduling';
 import { workforce } from '../api/workforce';
 import { Busy, Failure } from '../components/Feedback';
@@ -26,6 +26,7 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
   const [failure, setFailure] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
   const [defining, setDefining] = useState(false);
+  const captionId = useId();
 
   const shifts = useAsync(
     () => scheduling.findShifts(span.from, span.to),
@@ -93,7 +94,8 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
         obey.
       </p>
 
-      <form onSubmit={define} className="grid">
+      {/* Change events bubble, so any edit clears a success that would read as the next one's. */}
+      <form onSubmit={define} onChange={() => setDone(null)} className="grid">
         <label>
           Starts
           <input
@@ -146,7 +148,8 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
           />
           Unpopular
         </label>
-        <button type="submit" disabled={defining}>
+        {/* aria-disabled rather than disabled, so focus stays on the button while it is out. */}
+        <button type="submit" aria-disabled={defining}>
           Define shift
         </button>
       </form>
@@ -158,34 +161,43 @@ export function ShiftsPage({ span }: { span: { from: string; to: string } }) {
       <Failure error={shifts.error} />
       <Busy busy={shifts.busy} />
 
-      <table>
-        <thead>
-          <tr>
-            <th>Starts</th>
-            <th>Ends</th>
-            <th>Needs</th>
-            <th>Requires</th>
-            <th>Unpopular</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(shifts.value ?? []).map((shift) => (
-            <tr key={shift.id}>
-              <td>{new Date(shift.start).toLocaleString()}</td>
-              <td>{new Date(shift.end).toLocaleString()}</td>
-              <td>{shift.requiredHeadcount}</td>
-              <td>
-                {shift.requiredQualifications.length === 0
-                  ? '—'
-                  : shift.requiredQualifications
-                      .map((id) => qualificationNames.get(id) ?? id)
-                      .join(', ')}
-              </td>
-              <td>{shift.unpopular ? 'Unpopular' : '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {shifts.value?.length === 0 ? (
+        <p>No shifts in this span.</p>
+      ) : (
+        <div className="table-scroll" role="region" aria-labelledby={captionId} tabIndex={0}>
+          <table>
+            <caption id={captionId} className="visually-hidden">
+              Shifts in the planning span
+            </caption>
+            <thead>
+              <tr>
+                <th>Starts</th>
+                <th>Ends</th>
+                <th>Needs</th>
+                <th>Requires</th>
+                <th>Unpopular</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(shifts.value ?? []).map((shift) => (
+                <tr key={shift.id}>
+                  <td>{new Date(shift.start).toLocaleString()}</td>
+                  <td>{new Date(shift.end).toLocaleString()}</td>
+                  <td>{shift.requiredHeadcount}</td>
+                  <td>
+                    {shift.requiredQualifications.length === 0
+                      ? '—'
+                      : shift.requiredQualifications
+                          .map((id) => qualificationNames.get(id) ?? id)
+                          .join(', ')}
+                  </td>
+                  <td>{shift.unpopular ? 'Unpopular' : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }

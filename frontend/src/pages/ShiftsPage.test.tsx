@@ -292,7 +292,11 @@ describe('defining a shift', () => {
         'A shift must require at least one person.',
       ),
     );
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Define shift' })).toBeEnabled());
+    await waitFor(() => {
+      const define = screen.getByRole('button', { name: 'Define shift' });
+      expect(define).toBeEnabled();
+      expect(define).not.toHaveAttribute('aria-disabled', 'true');
+    });
   });
 
   /** Each definition is a shift of its own, so a second one sent meanwhile is staffed twice. */
@@ -308,11 +312,48 @@ describe('defining a shift', () => {
     await userEvent.click(define);
     await userEvent.click(define);
 
-    expect(define).toBeDisabled();
+    expect(define).toHaveAttribute('aria-disabled', 'true');
     release();
     await screen.findByText(/^Defined/);
     expect(writes(routed)).toHaveLength(1);
-    await waitFor(() => expect(define).toBeEnabled());
+    await waitFor(() => expect(define).not.toHaveAttribute('aria-disabled', 'true'));
+  });
+
+  /**
+   * A disabled button drops the keyboard focus to the page in a browser (#257, C1). While the
+   * definition is on its way the button says it is unavailable and keeps the focus.
+   */
+  it('GivenADefinitionInFlight_WhenPressed_ThenTheButtonKeepsFocusAndIsMarkedUnavailable', async () => {
+    const routed = theOrganisation();
+    const release = holdingWrites(routed);
+    show();
+    await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
+    const define = screen.getByRole('button', { name: 'Define shift' });
+
+    await userEvent.click(define);
+
+    expect(define).toHaveAttribute('aria-disabled', 'true');
+    expect(define).not.toBeDisabled();
+    expect(define).toHaveFocus();
+    release();
+    await screen.findByText(/^Defined/);
+  });
+
+  /** A success left on screen while the next shift is typed reads as that one's (C9). */
+  it('GivenADefinitionSucceeded_WhenTheFormIsEditedAgain_ThenTheSuccessIsNoLongerSaid', async () => {
+    theOrganisation();
+    show();
+    await waitFor(() => expect(screen.getByText('Forklift')).toBeInTheDocument());
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-05T08:00', WITHOUT_PAUSES);
+    await userEvent.type(screen.getByLabelText('Ends'), '2026-10-05T16:00', WITHOUT_PAUSES);
+    await userEvent.click(screen.getByRole('button', { name: 'Define shift' }));
+    await screen.findByText(/^Defined/);
+
+    await userEvent.type(screen.getByLabelText('Starts'), '2026-10-06T08:00', WITHOUT_PAUSES);
+
+    expect(screen.queryByText(/^Defined/)).not.toBeInTheDocument();
   });
 
   /**
@@ -356,5 +397,34 @@ describe('defining a shift', () => {
     expect(screen.getByLabelText('Starts')).toHaveValue('2026-10-05T08:00');
     expect(screen.queryByText(/^Defined/)).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Define shift' })).toBeEnabled());
+  });
+});
+
+describe('the shifts as a table', () => {
+  const A_SHIFT = {
+    id: 's-1',
+    start: '2026-10-05T08:00:00Z',
+    end: '2026-10-05T16:00:00Z',
+    zone: 'UTC',
+    requiredHeadcount: 1,
+    requiredQualifications: [],
+  };
+
+  it('GivenShiftsInTheSpan_WhenListed_ThenTheTableHasAName', async () => {
+    theOrganisation({ '/api/shifts': { status: 200, body: [A_SHIFT] } });
+
+    show();
+
+    await screen.findByRole('cell', { name: new Date(A_SHIFT.start).toLocaleString() });
+    expect(screen.getByRole('table')).toHaveAccessibleName();
+  });
+
+  /** An empty table says nothing at all to somebody who cannot see that it is empty (C8). */
+  it('GivenNoShiftsInTheSpan_WhenListed_ThenTheListSaysSo', async () => {
+    theOrganisation();
+
+    show();
+
+    expect(await screen.findByText(/no shifts/i)).toBeInTheDocument();
   });
 });
