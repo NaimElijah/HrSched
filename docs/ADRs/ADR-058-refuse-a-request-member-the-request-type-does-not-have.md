@@ -48,6 +48,15 @@ because the body never reaches a use case.
 It is global for the reason [ADR-056](ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md)
 gives for fractions: a request record added later is covered without anybody remembering it.
 
+**The refusal is recorded where it is answered.** The same handler logs one WARN line, `Refused: a
+request body carried a member its request type does not have`, carrying the acting account as
+`actor` (none for somebody signing in, who has no token yet) and the request record's simple name
+as `requestType`, and counts it as `hrsched.access.denied{kind="unknown_member"}`, beside every
+other refusal ([ADR-018](ADR-018-audit-through-a-port-not-a-queryable-trail.md)). It never records
+the member's name or its value, nor anything else sent: a member is whatever the caller wrote, and
+its value may be a person's. Only this cause is recorded; a body that is not JSON, or holds a value
+of the wrong form, is answered the same and recorded by nothing.
+
 ## Consequences
 
 **Easier.**
@@ -67,7 +76,9 @@ gives for fractions: a request record added later is covered without anybody rem
   below watches.
 - **A 400 replaces a 403 where binding precedes the role check.** The body is bound before the use
   case runs, so a caller whose role the use case would refuse, and whose body also carries an
-  unknown member, is answered as malformed, never reaching the refusal of their role.
+  unknown member, is answered as malformed, never reaching the refusal of their role. That is why
+  the refusal is recorded: it names the same actor the role refusal would have, under a kind of its
+  own (`UnknownMemberRefusalHttpTest`, and each context's `*ExceptionHandlerTest`).
 - **A client may not echo a response back as a request.** A read answers members a write does not
   take, such as a rule set's `version`, so a client that sends back what it read is refused.
 - **The detail does not say which member was wrong.** It is the same sentence every malformed body

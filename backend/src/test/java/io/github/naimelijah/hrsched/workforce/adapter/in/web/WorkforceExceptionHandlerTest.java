@@ -1,11 +1,14 @@
 package io.github.naimelijah.hrsched.workforce.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.assertj.core.api.Assertions.tuple;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.EmployeeId;
 import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
@@ -14,6 +17,7 @@ import io.github.naimelijah.hrsched.shared.domain.model.NotPermittedException;
 import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import io.github.naimelijah.hrsched.shared.domain.model.Role;
+import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
 import io.github.naimelijah.hrsched.shared.domain.model.UserId;
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidContractTermsException;
 import io.github.naimelijah.hrsched.workforce.domain.model.InvalidEmployeeNameException;
@@ -41,6 +45,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.exc.UnrecognizedPropertyException;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Specification of which workforce failure earns which status.
@@ -59,6 +67,20 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
  * identifier or a role, and every message a constant.
  */
 class WorkforceExceptionHandlerTest {
+
+  /** The refusal's constant message, so the line found is this refusal's. */
+  private static final String UNKNOWN_MEMBER_REFUSED =
+      "Refused: a request body carried a member its request type does not have";
+
+  /** Jackson as the application configures it for request bodies: refusing an unknown member. */
+  private static final JsonMapper STRICT =
+      JsonMapper.builder().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
+
+  /** Invented: a member no request to add an employee has. */
+  private static final String UNKNOWN_MEMBER = "preferredNickname";
+
+  /** Invented: what was sent in it. */
+  private static final String UNKNOWN_VALUE = "an invented nickname";
 
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private final WorkforceExceptionHandler handler = new WorkforceExceptionHandler(meters);
@@ -159,7 +181,8 @@ class WorkforceExceptionHandlerTest {
   void GivenAnUnreadableBody_WhenTranslated_ThenItIsABadRequestWithAGenericDetail() {
     ProblemDetail problem =
         handler.handleUnreadableBody(
-            new HttpMessageNotReadableException("raw parser noise", anUnreadableBody()));
+            new HttpMessageNotReadableException("raw parser noise", anUnreadableBody()),
+            anActor(UserId.newId()));
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
     assertThat(problem.getTitle()).isEqualTo("Malformed request");
@@ -325,5 +348,86 @@ class WorkforceExceptionHandlerTest {
     handler.handleUnknown(new UnknownEmployeeException(EmployeeId.newId()));
 
     assertThat(captured.list).isEmpty();
+  }
+
+  // --- a body naming a member its request type does not have (ADR-058) -------------------------
+
+  /**
+   * The body is bound before any use case runs, so a caller the use case would have refused for
+   * their role, and recorded, is answered as malformed instead. The line names who asked and the
+   * request type, never the member or anything sent, and carries no exception: Jackson's message
+   * quotes the member.
+   */
+  @Test
+  void
+      GivenABodyWithAMemberItsTypeLacks_WhenTranslated_ThenOneWarningNamesOnlyTheActorAndTheRequestType() {
+    UserId actor = UserId.newId();
+
+    ProblemDetail problem =
+        handler.handleUnreadableBody(aBodyWithAMemberItsTypeLacks(), anActor(actor));
+
+    assertThat(problem.getTitle()).isEqualTo("Malformed request");
+    ILoggingEvent event = onlyEvent();
+    assertThat(event.getLevel()).isEqualTo(Level.WARN);
+    assertThat(event.getFormattedMessage())
+        .describedAs("the message is a constant; everything variable belongs in a field")
+        .isEqualTo(UNKNOWN_MEMBER_REFUSED);
+    assertThat(event.getKeyValuePairs())
+        .extracting(pair -> pair.key, pair -> pair.value)
+        .containsExactly(tuple("actor", actor.value()), tuple("requestType", "AddEmployeeRequest"));
+    assertThat(event.getThrowableProxy()).isNull();
+  }
+
+  @Test
+  void GivenABodyWithAMemberItsTypeLacks_WhenTranslated_ThenItIsCountedOnce() {
+    handler.handleUnreadableBody(aBodyWithAMemberItsTypeLacks(), anActor(UserId.newId()));
+
+    assertThat(denied("unknown_member")).isEqualTo(1.0);
+  }
+
+  /** A principal that is not an actor: the refusal is still answered and recorded, without one. */
+  @Test
+  void GivenNoActor_WhenABodyWithAMemberItsTypeLacksIsTranslated_ThenItIsRecordedWithoutOne() {
+    handler.handleUnreadableBody(aBodyWithAMemberItsTypeLacks(), null);
+
+    assertThat(onlyEvent().getKeyValuePairs())
+        .extracting(pair -> pair.key, pair -> pair.value)
+        .containsExactly(tuple("actor", null), tuple("requestType", "AddEmployeeRequest"));
+    assertThat(denied("unknown_member")).isEqualTo(1.0);
+  }
+
+  /** Only the unknown member is a refusal worth a line; a body that is not JSON is a fault. */
+  @Test
+  void GivenABodyThatIsNotJson_WhenTranslated_ThenNothingIsLoggedOrCounted() {
+    JacksonException broken =
+        catchThrowableOfType(
+            JacksonException.class, () -> STRICT.readValue("{\"name\":", AddEmployeeRequest.class));
+
+    handler.handleUnreadableBody(
+        new HttpMessageNotReadableException(broken.getMessage(), broken, anUnreadableBody()),
+        anActor(UserId.newId()));
+
+    assertThat(captured.list).isEmpty();
+    assertThat(meters.find("hrsched.access.denied").counters()).isEmpty();
+  }
+
+  /**
+   * What Spring hands the handler for such a body: Jackson's own refusal, from reading one, wrapped
+   * as the converter wraps it, its message quoting the member.
+   */
+  private static HttpMessageNotReadableException aBodyWithAMemberItsTypeLacks() {
+    UnrecognizedPropertyException unknown =
+        catchThrowableOfType(
+            UnrecognizedPropertyException.class,
+            () ->
+                STRICT.readValue(
+                    "{\"name\":\"Ada Lovelace\",\"%s\":\"%s\"}"
+                        .formatted(UNKNOWN_MEMBER, UNKNOWN_VALUE),
+                    AddEmployeeRequest.class));
+    return new HttpMessageNotReadableException(unknown.getMessage(), unknown, anUnreadableBody());
+  }
+
+  private static Actor anActor(UserId id) {
+    return new TenantActor(id, OrganisationId.newId(), Role.EMPLOYEE);
   }
 }

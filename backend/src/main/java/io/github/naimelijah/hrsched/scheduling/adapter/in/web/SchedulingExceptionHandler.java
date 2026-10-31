@@ -28,6 +28,7 @@ import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRequiredQuali
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownRosterException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownShiftException;
 import io.github.naimelijah.hrsched.scheduling.domain.model.UnknownSwapRequestException;
+import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.CrossTenantAccessException;
 import io.github.naimelijah.hrsched.shared.domain.model.InvalidTimeRangeException;
 import io.github.naimelijah.hrsched.shared.domain.model.NotATenantMemberException;
@@ -40,9 +41,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import tools.jackson.core.exc.StreamConstraintsException;
+import tools.jackson.databind.exc.UnrecognizedPropertyException;
 
 /**
  * Translates scheduling failures into HTTP problem responses.
@@ -132,9 +135,27 @@ public class SchedulingExceptionHandler {
    * is a 413 rather than a 400 (RFC 9110 section 15.5.14). Its JSON may be perfectly well formed,
    * and calling it malformed sends a client looking for a fault that is not there. Both answers are
    * fixed sentences, because Jackson's message quotes the input it failed on.
+   *
+   * <p>A body naming a member its request type does not have is also recorded, logged at WARN and
+   * counted (ADR-058). It is bound before any use case runs, so a caller the use case would have
+   * refused for their role is answered here instead, and would otherwise leave nothing behind. The
+   * line names who asked and the request type, never the member or anything sent: a member is
+   * whatever the caller wrote, and its value may be a person's.
+   *
+   * @param actor the acting account, taken from the access token as the controllers take it. Null
+   *     if the principal is not an {@code Actor}: the refusal is then still answered and recorded,
+   *     without one, rather than lost to a 500
    */
   @ExceptionHandler(HttpMessageNotReadableException.class)
-  public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException exception) {
+  public ProblemDetail handleUnreadableBody(
+      HttpMessageNotReadableException exception, @AuthenticationPrincipal Actor actor) {
+    if (exception.getMostSpecificCause() instanceof UnrecognizedPropertyException unknown) {
+      log.atWarn()
+          .addKeyValue("actor", actor == null ? null : actor.id().value())
+          .addKeyValue("requestType", unknown.getReferringClass().getSimpleName())
+          .log("Refused: a request body carried a member its request type does not have");
+      count(DENIED, "kind", "unknown_member", "Refused attempts, by what refused them");
+    }
     if (exception.getMostSpecificCause() instanceof StreamConstraintsException) {
       ProblemDetail problem =
           ProblemDetail.forStatusAndDetail(
