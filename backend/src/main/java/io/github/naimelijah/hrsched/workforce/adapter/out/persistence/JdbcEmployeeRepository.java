@@ -32,7 +32,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * <p>The richest aggregate here: an employee owns their unavailability and their preferences, and
  * references the qualifications they hold. Owned rows are deleted and re-inserted on every save
  * rather than diffed, because {@code Employee} compares by identity alone and so gives an adapter
- * no way to tell what changed.
+ * no way to tell what changed. A save is several statements, so it is atomic only inside the use
+ * case's transaction (ADR-023).
  *
  * <p>Reading rebuilds through the aggregate's own constructor and withers rather than a back door,
  * so every invariant is re-checked on the way out of the database. If a stored name were blank,
@@ -214,9 +215,10 @@ public class JdbcEmployeeRepository implements EmployeeRepository {
       EmployeeId id, OrganisationId organisation, String name, Long contractedSeconds) {}
 
   /**
-   * Reads the nullable column as a boxed {@link Long} rather than a {@code long} plus {@code
-   * wasNull}, which reports on the last column read and would therefore be answering about the name
-   * by the time it were asked.
+   * Reads the nullable column as a boxed {@link Long}, which is {@code null} for a SQL NULL (an
+   * employee with no contracted hours). A {@code long} read would answer 0 for it, and only a
+   * {@code wasNull} call straight after that read, which reports on the last column read, could
+   * tell it from a stored 0.
    */
   private static BareEmployee toBareEmployee(ResultSet row, int rowNumber) throws SQLException {
     return new BareEmployee(

@@ -36,8 +36,8 @@ import tools.jackson.databind.exc.UnrecognizedPropertyException;
  * there is nothing here for them.
  *
  * <p>It is also where refusals are recorded, because it is the only place that sees every one of
- * them. The caller is told exactly what it was told before; only the operator gains anything. See
- * ADR-018.
+ * them. What the caller is told does not depend on the recording; only whoever reads the log sees
+ * it. See ADR-018.
  */
 @RestControllerAdvice(assignableTypes = {EmployeeController.class, QualificationController.class})
 public class WorkforceExceptionHandler {
@@ -68,6 +68,10 @@ public class WorkforceExceptionHandler {
     this.meters = meters;
   }
 
+  /**
+   * Counts a refusal. {@code kind} becomes a tag, so it stays one of a small fixed set of constants
+   * and never anything the caller sent.
+   */
   private void denied(String kind) {
     Counter.builder(DENIED)
         .description("Refused attempts, by what refused them")
@@ -76,6 +80,11 @@ public class WorkforceExceptionHandler {
         .increment();
   }
 
+  /**
+   * Input the domain or this adapter refuses is a 400 whose detail is the exception's own message.
+   * Each of these keeps what was sent out of its message (ADR-024), so the detail repeats nothing
+   * of it.
+   */
   @ExceptionHandler({
     InvalidEmployeeNameException.class,
     InvalidQualificationNameException.class,
@@ -155,6 +164,10 @@ public class WorkforceExceptionHandler {
     return problem;
   }
 
+  /**
+   * An actor whose role does not permit the act: a 403 that is logged at WARN and counted. The line
+   * names the actor and the role it held.
+   */
   @ExceptionHandler(NotPermittedException.class)
   public ProblemDetail handleNotPermitted(NotPermittedException exception) {
     log.atWarn()
@@ -188,9 +201,9 @@ public class WorkforceExceptionHandler {
   }
 
   /**
-   * The refusal the requirements call a security incident rather than a bug. It used to become a
-   * 404 and leave no trace at all, which made the incident undetectable; what the caller is told is
-   * unchanged.
+   * The refusal the requirements call a security incident rather than a bug. The caller is answered
+   * the same 404 as for something that does not exist, so it learns nothing; the incident is logged
+   * at WARN and counted, because otherwise it would leave no trace at all.
    */
   @ExceptionHandler(CrossTenantAccessException.class)
   public ProblemDetail handleCrossTenant(CrossTenantAccessException exception) {

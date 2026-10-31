@@ -4,6 +4,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.Objects;
 
 /**
+ * A request to add an employee to an organisation's records.
+ *
  * @param organisation who they will work for
  * @param name their name
  */

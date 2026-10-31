@@ -6,6 +6,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.QualificationId;
 import java.util.Objects;
 
 /**
+ * A request to record that an employee holds a qualification.
+ *
  * @param organisation whose employee and whose qualification
  * @param employee who holds it
  * @param qualification what they hold

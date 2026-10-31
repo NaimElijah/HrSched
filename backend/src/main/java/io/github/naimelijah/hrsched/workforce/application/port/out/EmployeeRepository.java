@@ -17,6 +17,8 @@ import java.util.Optional;
 public interface EmployeeRepository {
 
   /**
+   * Stores an employee whole, with every qualification, absence and preference they hold.
+   *
    * @param employee the employee to store, replacing any with the same identity
    * @throws IllegalArgumentException if their contracted hours have a part smaller than a second,
    *     which the store, holding whole seconds, would drop; refused before anything is written
@@ -25,6 +27,8 @@ public interface EmployeeRepository {
   void save(Employee employee);
 
   /**
+   * Reads an employee without holding them; see {@link #findForUpdate} for a read that does.
+   *
    * @param organisation the organisation the employee must belong to
    * @param id who to look up
    * @return the employee, or empty if that organisation has no such employee
@@ -52,6 +56,8 @@ public interface EmployeeRepository {
   Optional<Employee> findForUpdate(OrganisationId organisation, EmployeeId id);
 
   /**
+   * Lists an organisation's employees, without holding any of them.
+   *
    * @param organisation whose employees to list
    * @return every employee of that organisation, ordered by name, then by identity, so two sharing
    *     a name come back in the same order every time

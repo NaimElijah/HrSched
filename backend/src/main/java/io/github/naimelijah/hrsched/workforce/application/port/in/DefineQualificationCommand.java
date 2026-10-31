@@ -4,6 +4,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.OrganisationId;
 import java.util.Objects;
 
 /**
+ * A request to define a qualification within an organisation.
+ *
  * @param organisation who is defining it
  * @param name what the qualification is called
  */

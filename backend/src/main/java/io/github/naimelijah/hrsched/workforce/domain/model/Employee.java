@@ -46,6 +46,7 @@ public final class Employee {
    * @param id the employee's identity, never {@code null}
    * @param organisation the organisation they belong to, never {@code null}
    * @param name their name, never {@code null} and never blank
+   * @throws NullPointerException if any argument is {@code null}
    * @throws InvalidEmployeeNameException if {@code name} is blank
    */
   public Employee(EmployeeId id, OrganisationId organisation, String name) {
@@ -74,6 +75,8 @@ public final class Employee {
   }
 
   /**
+   * Adds a qualification to those this employee holds.
+   *
    * @param qualification a qualification this employee holds
    * @return an employee holding it; holding it already is not an error
    */
@@ -103,8 +106,13 @@ public final class Employee {
   }
 
   /**
+   * Records a soft preference about when this employee would rather work.
+   *
+   * <p>Never refused: preferences may repeat one another, and may overlap unavailability or each
+   * other, because none of them blocks anything.
+   *
    * @param preference a soft signal about when they would rather work
-   * @return an employee carrying that preference
+   * @return an employee carrying that preference, after any they already stated
    */
   public Employee preferring(ShiftPreference preference) {
     Objects.requireNonNull(preference, "preference must not be null");
@@ -156,6 +164,8 @@ public final class Employee {
   }
 
   /**
+   * Sets what this employee is contracted to work.
+   *
    * @param terms what this employee is contracted to work
    * @return an employee on those terms, replacing any previous ones
    */
@@ -176,14 +186,25 @@ public final class Employee {
     return name;
   }
 
+  /**
+   * @return the qualifications held, as an unmodifiable set with no order
+   */
   public Set<QualificationId> qualifications() {
     return qualifications;
   }
 
+  /**
+   * @return the spans declared unavailable, unmodifiable and in the order they were declared; none
+   *     overlaps another (R7)
+   */
   public List<TimeRange> unavailability() {
     return unavailability;
   }
 
+  /**
+   * @return the preferences stated, unmodifiable and in the order they were stated; the same one
+   *     may appear more than once
+   */
   public List<ShiftPreference> preferences() {
     return preferences;
   }
@@ -205,6 +226,8 @@ public final class Employee {
     return id.hashCode();
   }
 
+  // The name is left out on purpose: it is personal data, and a toString travels into logs and
+  // exception messages. Identities only.
   @Override
   public String toString() {
     return "Employee[id=%s, organisation=%s]".formatted(id, organisation);

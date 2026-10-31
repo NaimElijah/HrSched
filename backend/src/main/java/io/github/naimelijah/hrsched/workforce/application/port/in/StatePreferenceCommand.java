@@ -7,6 +7,8 @@ import io.github.naimelijah.hrsched.workforce.domain.model.PreferenceStrength;
 import java.util.Objects;
 
 /**
+ * A request to record a soft preference about when an employee would rather work.
+ *
  * @param organisation whose employee
  * @param employee whose preference
  * @param period the span it is about

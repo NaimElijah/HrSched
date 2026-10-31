@@ -6,6 +6,8 @@ import io.github.naimelijah.hrsched.shared.domain.model.TimeRange;
 import java.util.Objects;
 
 /**
+ * A request to record a span an employee cannot work.
+ *
  * @param organisation whose employee
  * @param employee who is unavailable
  * @param period when they cannot work

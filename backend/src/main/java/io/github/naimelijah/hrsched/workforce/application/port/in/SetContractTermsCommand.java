@@ -6,6 +6,8 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
+ * A request to set what an employee is contracted to work, replacing any previous terms.
+ *
  * @param organisation whose employee
  * @param employee whose terms these are
  * @param weeklyContractedHours what they are contracted to work each week, strictly positive

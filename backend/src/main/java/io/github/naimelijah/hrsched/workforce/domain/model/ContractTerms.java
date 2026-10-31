@@ -14,6 +14,12 @@ import java.util.Objects;
  */
 public record ContractTerms(Duration weeklyContractedHours) {
 
+  /**
+   * Checks the hours on construction, so a zero or negative figure cannot be held.
+   *
+   * @throws NullPointerException if {@code weeklyContractedHours} is {@code null}
+   * @throws InvalidContractTermsException if it is zero or negative
+   */
   public ContractTerms {
     Objects.requireNonNull(weeklyContractedHours, "weeklyContractedHours must not be null");
     if (weeklyContractedHours.isNegative() || weeklyContractedHours.isZero()) {

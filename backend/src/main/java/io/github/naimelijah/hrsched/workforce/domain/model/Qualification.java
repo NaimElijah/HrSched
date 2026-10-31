@@ -18,6 +18,16 @@ public final class Qualification {
   private final OrganisationId organisation;
   private final String name;
 
+  /**
+   * Creates a qualification.
+   *
+   * @param id its identity
+   * @param organisation the organisation that defines it
+   * @param name what it is called; not blank, but not required to be unique within the
+   *     organisation, as the schema also allows two to share one
+   * @throws NullPointerException if any argument is {@code null}
+   * @throws InvalidQualificationNameException if {@code name} is blank
+   */
   public Qualification(QualificationId id, OrganisationId organisation, String name) {
     this.id = Objects.requireNonNull(id, "id must not be null");
     this.organisation = Objects.requireNonNull(organisation, "organisation must not be null");
