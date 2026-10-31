@@ -73,6 +73,8 @@ export function RosterBoard({
   const heading = useId();
   const [changed, setChanged] = useState<Roster | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
+  // Which change a conflict refused, said by the board: the backend's detail names nobody.
+  const [conflicted, setConflicted] = useState<string | null>(null);
   // One change at a time: two racing each other could leave the board showing the older answer.
   const [changing, setChanging] = useState(false);
   const checkHeading = useId();
@@ -110,13 +112,17 @@ export function RosterBoard({
       ? []
       : roster.assignments.filter((assignment) => !placed.has(assignment.shift));
 
-  /** @returns whether the change was stored, so a control can reset only on success */
-  async function change(action: () => Promise<Roster>): Promise<boolean> {
+  /**
+   * @param attempted what the change was, as "assign Grace to …", for the sentence a conflict gets
+   * @returns whether the change was stored, so a control can reset only on success
+   */
+  async function change(action: () => Promise<Roster>, attempted: string): Promise<boolean> {
     if (changing) {
       return false;
     }
     setChanging(true);
     setFailure(null);
+    setConflicted(null);
     try {
       setChanged(await action());
       assessment.reload();
@@ -126,10 +132,15 @@ export function RosterBoard({
       setFailure(error);
       // A conflict means the roster moved on under this board, most often because somebody
       // published it first (ADR-041). Shown as it now is, so a draft's controls are not left on a
-      // roster that is no longer one, and the list around it catches up too.
+      // roster that is no longer one, and the list around it catches up too. What the check said
+      // was said of the roster as it was, so it is asked again.
       if (error instanceof ApiError && error.isConflict) {
+        setConflicted(
+          `Could not ${attempted}. The board was read again, and shows the roster as it now is.`,
+        );
         setChanged(null);
         loaded.reload();
+        assessment.reload();
         onChanged();
       }
       return false;
@@ -164,6 +175,10 @@ export function RosterBoard({
             <p>No shift falls in this roster&apos;s period, so there is nothing to assign.</p>
           ) : null}
           <Failure error={failure} nameOf={nameOf} />
+          {/* Present while empty, as a live region must be for what appears in it to be read. */}
+          <p className="hint" role="status">
+            {conflicted}
+          </p>
 
           {isDraft ? (
             <section className="check" aria-labelledby={checkHeading}>
@@ -215,10 +230,16 @@ export function RosterBoard({
                     nameOf={nameOf}
                     busy={changing}
                     onAssign={(employee) =>
-                      change(() => scheduling.assign(roster.id, shift.id, employee))
+                      change(
+                        () => scheduling.assign(roster.id, shift.id, employee),
+                        `assign ${nameOf(employee)} to ${shiftLabel(shift.start, shift.end)}`,
+                      )
                     }
                     onRemove={(employee) =>
-                      change(() => scheduling.unassign(roster.id, shift.id, employee))
+                      change(
+                        () => scheduling.unassign(roster.id, shift.id, employee),
+                        `remove ${nameOf(employee)} from ${shiftLabel(shift.start, shift.end)}`,
+                      )
                     }
                   />
                 ))}

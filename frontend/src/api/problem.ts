@@ -100,8 +100,9 @@ export class ApiError extends Error {
 
   /**
    * True when the request clashes with something already settled: a swap somebody else decided, one
-   * that lapsed with its roster, a shift that already has a swap waiting, or a roster whose status
-   * forbids the change — most often a draft somebody published first.
+   * that lapsed with its roster, a shift that already has a swap waiting, a roster whose status
+   * forbids the change — most often a draft somebody published first — an assignment the roster
+   * already holds, or unavailability overlapping a span already declared.
    */
   get isConflict(): boolean {
     return this.status === 409;
