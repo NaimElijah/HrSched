@@ -25,6 +25,8 @@ const WORDING: Record<NotificationKind, string> = {
   SWAP_LAPSED: 'A swap you are part of lapsed: its roster was replaced before anybody decided it.',
 };
 
+// An own-property test, not `kind in WORDING`: a kind the server sent as `constructor` or
+// `toString` is inherited from Object.prototype, and would be taken for one with words of its own.
 function isKnownKind(kind: string): kind is NotificationKind {
   return Object.prototype.hasOwnProperty.call(WORDING, kind);
 }

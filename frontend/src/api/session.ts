@@ -10,19 +10,27 @@
 
 /** Who is signed in, mirroring the backend's session response. */
 export interface Session {
+  /** The account signed in. */
   readonly userId: string;
+  /** Whether the account belongs to an organisation or to the platform. */
   readonly kind: 'TENANT' | 'OPERATOR';
+  /** The organisation it belongs to; null for the operator. */
   readonly organisation: string | null;
+  /** What it may do in that organisation; null for the operator. */
   readonly role: 'EMPLOYEE' | 'SCHEDULER' | 'ADMIN' | null;
+  /** The personnel record it is; null when it is nobody's. */
   readonly employee: string | null;
   readonly signInName: string;
+  /** Whether the password must be changed before anything else is allowed. */
   readonly passwordChangeRequired: boolean;
 }
 
 /** What the backend answers a sign-in, a refresh and a password change with. */
 export interface SignedIn {
   readonly accessToken: string;
+  /** Always `Bearer`, as RFC 6750 names it. */
   readonly tokenType: string;
+  /** Seconds until the access token expires, counted from the answer. */
   readonly expiresIn: number;
   readonly session: Session;
 }
@@ -70,6 +78,8 @@ otherTabs?.addEventListener('message', (event: MessageEvent<unknown>) => {
 });
 
 /**
+ * Reads the access token held in memory.
+ *
  * @returns the token to present, or null when nobody is signed in
  */
 export function currentAccessToken(): string | null {
@@ -77,6 +87,8 @@ export function currentAccessToken(): string | null {
 }
 
 /**
+ * Reads who this tab is signed in as.
+ *
  * @returns who is signed in, or null
  */
 export function currentSession(): Session | null {
@@ -145,6 +157,9 @@ function forget(how: SessionEnding): void {
 }
 
 /**
+ * Listens for the session ending here: through this tab's own sign-out or refused renewal, or
+ * because another tab said it ended.
+ *
  * @param listener called whenever a session ends, with how it ended
  * @returns a function that stops listening
  */
@@ -154,6 +169,8 @@ export function onSessionEnded(listener: (how: SessionEnding) => void): () => vo
 }
 
 /**
+ * Listens for a session being held in this tab. Another tab holding one is not heard.
+ *
  * @param listener called whenever a session is held — begun, renewed or begun again by a password
  *     change — with the session as the backend answered it
  * @returns a function that stops listening

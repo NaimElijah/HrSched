@@ -37,6 +37,12 @@ export interface StatedPreference extends Period {
   readonly strength: PreferenceStrength;
 }
 
+/**
+ * The workforce context's endpoints: employees, qualifications, unavailability and preferences.
+ *
+ * Every call rejects with an `ApiError` for a refusal, as {@link api} does. The organisation is
+ * never a parameter, as the backend takes it from the token (ADR-031).
+ */
 export const workforce = {
   findEmployees: (): Promise<Employee[]> => api.get<Employee[]>('/api/employees'),
 

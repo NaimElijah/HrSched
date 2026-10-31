@@ -55,6 +55,13 @@ export function isAboutTheValue(error: unknown): boolean {
  *
  * A rule breach is not an error in the usual sense: the request was well formed and the rules said
  * no. It gets the violation list, because a scheduler told only "rejected" cannot act on it.
+ *
+ * Renders nothing for a null or undefined `error`, and an `alert` for anything else, so a caller
+ * may place it unconditionally.
+ *
+ * @param error whatever went wrong: an `ApiError`, any other `Error`, or a thrown value
+ * @param nameOf resolves an employee id to a name for the violations listed; without it they are
+ *     shown by identifier
  */
 export function Failure({
   error,

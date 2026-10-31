@@ -181,9 +181,11 @@ export function MePage({
   /**
    * Both availability actions share one period, so it is validated once, here.
    *
-   * The `required` attributes on the inputs do nothing on their own: neither control submits the
-   * form, so the browser never runs constraint validation and an empty field would reach
-   * `new Date('')` and surface as a bare "Invalid time value".
+   * The inputs carry no `required`, and neither button submits the form, so the browser never runs
+   * constraint validation: an empty field would reach `new Date('')` and surface as a bare
+   * "Invalid time value".
+   *
+   * @returns the period as ISO instants, or null after saying what is wrong with it
    */
   function enteredPeriod(): { start: string; end: string } | null {
     const from = new Date(start);

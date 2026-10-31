@@ -63,9 +63,9 @@ type Administer = (
  * screen does not pre-empt any of them, because a form that looked like it enforced a rule would
  * be no evidence the rule holds.
  *
- * A password is typed here and never comes back. Nothing is defaulted, every field is masked, and
- * each is cleared once the request it was typed for has succeeded — kept on failure, so that a
- * refused attempt is retyped only when there is something to change.
+ * A password is typed here and never comes back. Nothing is defaulted, every password field is
+ * masked, and each is cleared once the request it was typed for has succeeded — kept on failure,
+ * so that a refused attempt is retyped only when there is something to change.
  */
 export function AccountsPage() {
   const sessionKey = useSessionKey();

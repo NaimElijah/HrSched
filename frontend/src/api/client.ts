@@ -73,11 +73,22 @@ const REFRESH_LOCK = 'hrsched.refresh';
 let refreshing: Promise<SignedIn | null> | null = null;
 
 /**
- * The only module in the app that calls fetch, and the only one that knows a header exists.
+ * Sends one request and returns its decoded body, renewing the access token once if it is refused.
  *
- * Keeping that in one place is what made the identity headers deletable in a single edit, and what
- * stops a page quietly inventing its own idea of who is acting. The bearer token is now the whole
- * of what says who that is.
+ * This module is the only one in the app that calls `fetch` or names a header (ADR-013, and lint
+ * refuses `fetch` anywhere else). Keeping that in one place stops a page inventing its own idea of
+ * who is acting: the bearer token is the whole of what says who that is.
+ *
+ * A 401 on a request credentialed by the access token is answered with one renewal and one retry.
+ * The paths in {@link NOT_RENEWED} are answered as they are, and so is a request sent while nobody
+ * was signed in.
+ *
+ * @param path the API path, built with the exported `path` tag when it carries an identifier
+ * @param init the `fetch` options; a `body` is sent as JSON
+ * @returns the parsed body, or `undefined` for a 204 or an empty body
+ * @throws ApiError when the backend refused the request, or answered 200 with a body that is not
+ *     JSON
+ * @throws TypeError, as `fetch` rejects, when the backend could not be reached at all
  */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   // Noted before sending, because by the time a 401 comes back the session may have ended — through
@@ -107,12 +118,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return interpret<T>(path, retried);
 }
 
+/** A response read to the end, so it can be interpreted later without reading its body again. */
 interface Answered {
   readonly status: number;
   readonly ok: boolean;
   readonly text: string;
   /** The media type the body was sent as, without its parameters, or null when none was named. */
   readonly mediaType: string | null;
+  /** The trace id the backend put on the response, or null when it sent none. */
   readonly reference: string | null;
 }
 
@@ -183,9 +196,10 @@ function interpret<T>(path: string, answered: Answered): T {
  * or the server was down (#139). The renewal carries no access token, so the 401 cannot be the
  * backend refusing a stale one instead of the cookie (#179).
  *
- * A renewal that answers with an account other than the expected one ends the session too, rather
- * than changing who this tab is acting as. Each caller judges the shared answer against its own
- * expectation, so two requests sent as one account share one renewal and are refused together.
+ * A renewal that answers with an account other than the expected one ends the session in this tab
+ * alone, rather than changing who this tab is acting as. Each caller judges the shared answer
+ * against its own expectation, so two requests sent as one account share one renewal and are
+ * refused together.
  *
  * @param expected the account the caller's request was sent as, or null for a restore, which asks
  *     whose the cookie is and accepts any answer
@@ -287,6 +301,17 @@ export function path(segments: TemplateStringsArray, ...identifiers: readonly st
   );
 }
 
+/**
+ * The verbs the other `src/api` modules build their calls from.
+ *
+ * Every call carries the access token, sends a body as JSON, and renews an expired token once
+ * before giving up (ADR-028). Each resolves to the parsed body, or to `undefined` when the backend
+ * answered with no content, so a caller that expects no body types it `void`. Each rejects with an
+ * `ApiError` for a refusal, and with the `fetch` rejection itself when the backend could not be
+ * reached.
+ *
+ * `T` is the caller's claim about the body's shape and is not checked here.
+ */
 export const api = {
   get: <T>(path: string): Promise<T> => request<T>(path),
 
@@ -315,9 +340,13 @@ export const api = {
  */
 export const auth = {
   /**
+   * Signs in with a name and password, and holds the session the backend answers with.
+   *
    * @param signInName the name submitted
    * @param password the password submitted
    * @returns who is now signed in
+   * @throws ApiError when the backend refused the credentials, always as a 401 whatever the reason
+   *     (see `SignInPage`), and the fetch rejection itself when it was not reached
    */
   signIn: async (signInName: string, password: string): Promise<SignedIn> => {
     const signedIn = await request<SignedIn>('/api/auth/sign-in', {
@@ -360,14 +389,22 @@ export const auth = {
   },
 
   /**
+   * Reads the caller's own session from the backend. Holds nothing: the session in memory is
+   * replaced only by a sign-in, a renewal or a password change.
+   *
    * @returns the caller's own session, read fresh from the backend
+   * @throws ApiError when the backend refused the read, as a 401 once a renewal has not helped
    */
   readSession: (): Promise<SignedIn['session']> => api.get('/api/auth/session'),
 
   /**
+   * Changes the caller's own password, and holds the new session the backend answers with.
+   *
    * @param currentPassword the password in use
    * @param newPassword the password wanted instead
    * @returns the new session the change begins
+   * @throws ApiError as a 403 when the current password was not accepted, and as a 422 when the
+   *     new one does not satisfy the backend's policy
    */
   changePassword: async (currentPassword: string, newPassword: string): Promise<SignedIn> => {
     const signedIn = await request<SignedIn>('/api/auth/password', {

@@ -25,6 +25,10 @@ interface AsyncState<T> {
  *
  * @param load fetches the value; re-read on every render, so it may close over fresh props
  * @param key changes exactly when the answer would change — the whole identity of the request
+ * @returns `value`, the last answer for this key, or null before the first, after a failure, and
+ *     while a different key loads; `error`, the failure of the current request, or null while it
+ *     is in flight; `busy`, whether the current request is in flight; and `reload`, which asks the
+ *     same question again
  */
 export function useAsync<T>(load: () => Promise<T>, key: string): AsyncState<T> {
   const [attempt, setAttempt] = useState(0);

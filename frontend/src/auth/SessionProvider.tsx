@@ -60,13 +60,18 @@ const NO_SIGN_OUT: SignOutProgress = { pending: false, failures: 0, failure: nul
 
 interface SessionContextValue {
   readonly state: SessionState;
+  /** Who is signed in, also while a password change is pending; null otherwise. */
   readonly session: Session | null;
   /** Why the restore failed while the state is `restore-failed`, and null otherwise. */
   readonly restoreFailure: unknown;
   /** Runs the whole restore again, from the refresh onwards. */
   readonly retryRestore: () => void;
-  /** Changes whenever who is signed in, or their role, changes, so loaded answers are asked again. */
+  /**
+   * Changes whenever who is signed in, their role, or whether a password change is pending
+   * changes, so loaded answers are asked again. Empty when nobody is signed in.
+   */
   readonly key: string;
+  /** Signs in and holds the session; rejects with the backend's refusal, an `ApiError`. */
   readonly signIn: (signInName: string, password: string) => Promise<void>;
   /**
    * Signs out, and is also the retry while the state is `sign-out-unconfirmed`. The state is that
@@ -80,6 +85,7 @@ interface SessionContextValue {
    * ended since anybody last signed in. False on a first load, where there is nothing to explain.
    */
   readonly sessionEnded: boolean;
+  /** Changes the caller's own password and holds the new session; rejects with an `ApiError`. */
   readonly changePassword: (current: string, replacement: string) => Promise<void>;
 }
 
@@ -111,7 +117,8 @@ function stateOf(session: Session | null): SessionState {
 }
 
 /**
- * Owns the session for the whole app.
+ * Owns the session for the whole app, and tries the refresh cookie once on mount (and again on
+ * `retryRestore`) to find out whether somebody is already signed in.
  *
  * It holds no token: the client does, in memory, and this only holds who that token belongs to so
  * that the shell can be drawn. Handing the token to React state would put it somewhere a component
@@ -273,6 +280,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
+/**
+ * Reads the session the nearest {@link SessionProvider} holds.
+ *
+ * @returns the session state and the actions on it
+ * @throws Error when called outside a `SessionProvider`
+ */
 export function useSession(): SessionContextValue {
   const value = useContext(SessionContext);
   if (value === null) {
@@ -282,7 +295,7 @@ export function useSession(): SessionContextValue {
 }
 
 /**
- * The reload key pages hand {@code useAsync}.
+ * The reload key pages hand `useAsync`.
  *
  * Every answer on screen belongs to whoever asked for it, so a change of session invalidates all of
  * them.

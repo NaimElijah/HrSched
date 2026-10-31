@@ -37,7 +37,12 @@ export function routeTo(handlers: Readonly<Record<string, Answer>>) {
   return stub;
 }
 
-/** The calls a routed stub received with this method at exactly this path. */
+/**
+ * The calls a routed stub received with this method at exactly this path.
+ *
+ * Unlike the routing, the path is compared as it was sent, so a call carrying a query string
+ * matches only when `path` includes it.
+ */
 export function callsTo(stub: ReturnType<typeof routeTo>, method: string, path: string) {
   return stub.mock.calls.filter(
     ([called, init]) => (init?.method ?? 'GET') === method && called === path,

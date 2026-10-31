@@ -161,6 +161,7 @@ export interface RequestSwap {
   readonly counterparty: string;
 }
 
+/** What it takes to define a shift, as ISO instants. Mirrors DefineShiftRequest. */
 export interface DefineShiftRequest {
   readonly start: string;
   readonly end: string;
@@ -192,7 +193,16 @@ export interface ObjectiveWeightsRequest {
   readonly disruption?: number | undefined;
 }
 
+/**
+ * The scheduling context's endpoints: shifts, rosters and their generation, constraints, objective
+ * weights and swap requests.
+ *
+ * Every call rejects with an `ApiError` for a refusal, as {@link api} does. `from`, `to` and the
+ * other instants are ISO instants; the organisation is never a parameter, as the backend takes it
+ * from the token (ADR-031).
+ */
 export const scheduling = {
+  /** The organisation's shifts overlapping the span `from` to `to`. */
   findShifts: (from: string, to: string): Promise<Shift[]> =>
     api.get<Shift[]>(`/api/shifts?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
 
@@ -234,7 +244,10 @@ export const scheduling = {
   unassign: (roster: string, shift: string, employee: string): Promise<Roster> =>
     api.delete<Roster>(path`/api/rosters/${roster}/assignments/${shift}/${employee}`),
 
-  /** The work naming the caller's own employee link, from published rosters only (F5). */
+  /**
+   * The work naming the caller's own employee link, from published rosters only (F5), overlapping
+   * the span `from` to `to`.
+   */
   findOwnSchedule: (from: string, to: string): Promise<RosteredShift[]> =>
     api.get<RosteredShift[]>(
       `/api/me/schedule?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
