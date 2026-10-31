@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useRef, useState, type RefObject } from 'react';
 import { scheduling } from '../api/scheduling';
 import type { RosteredShift } from '../api/scheduling';
 import { workforce } from '../api/workforce';
@@ -8,6 +8,33 @@ import { shiftLabel, spanLabel } from '../components/localDates';
 import { useAsync } from '../components/useAsync';
 import { useSession, useSessionKey } from '../auth/SessionProvider';
 import { Inbox } from './Inbox';
+
+/** A field of the period both availability actions share. */
+type PeriodField = 'from' | 'to';
+
+/** Why the period entered cannot be sent, and which of its fields that is about. */
+interface PeriodProblem {
+  readonly message: string;
+  readonly fields: readonly PeriodField[];
+}
+
+/** The action a success status is about, so that editing its form again clears it (C9). */
+type Outcome = 'period' | 'withdrawal' | 'handOver';
+
+/** A success to announce, and the action it came from. */
+interface Done {
+  readonly text: string;
+  readonly of: Outcome;
+}
+
+/**
+ * Whether focus can be moved without taking it from anybody: it is still on the control that
+ * acted, or it was dropped to the body when that control went.
+ */
+function focusIsUnclaimed(control: Element | null): boolean {
+  const active = document.activeElement;
+  return active === null || active === document.body || active === control;
+}
 
 /**
  * Employee self-service: who I am, the work that names me, and when I cannot work.
@@ -29,6 +56,10 @@ import { Inbox } from './Inbox';
  * Acting on your own record requires the signed-in account to carry an employee link (ADR-012).
  * An Admin sets that link when they create the account; an account without one can sign in and do
  * its job, but has no record of its own to show.
+ *
+ * Whatever refuses an action is shown where the action was taken: the period's own checks and the
+ * backend's refusal of it in the "When I cannot work" section, a refused hand-over in its shift, and
+ * a refused withdrawal in its entry.
  */
 export function MePage({
   span,
@@ -45,9 +76,19 @@ export function MePage({
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [strength, setStrength] = useState<PreferenceStrength>('PREFERS');
-  const [failure, setFailure] = useState<unknown>(null);
-  const [done, setDone] = useState<string | null>(null);
+  const [periodProblem, setPeriodProblem] = useState<PeriodProblem | null>(null);
+  // The backend's refusal of declaring or stating, shown beside the form that asked.
+  const [declarationRefused, setDeclarationRefused] = useState<unknown>(null);
+  // The backend's refusal of a withdrawal, shown in the entry it was about.
+  const [withdrawalRefused, setWithdrawalRefused] = useState<{
+    entry: string;
+    error: unknown;
+  } | null>(null);
+  const [done, setDone] = useState<Done | null>(null);
   const [writing, setWriting] = useState(false);
+  const periodMessage = useId();
+  const absencesHeading = useRef<HTMLHeadingElement>(null);
+  const preferencesHeading = useRef<HTMLHeadingElement>(null);
 
   // The employee link comes from the session the backend established, never from anything typed:
   // a user is not an employee, and the two are linked by the account rather than by matching ids.
@@ -69,6 +110,12 @@ export function MePage({
     `${sessionKey}|${employee ?? ''}`,
   );
 
+  /** A success stays only until its form is edited again, when it no longer describes the form. */
+  const editedAgain = (outcome: Outcome) =>
+    setDone((previous) => (previous?.of === outcome ? null : previous));
+
+  const isInvalid = (field: PeriodField): boolean => periodProblem?.fields.includes(field) ?? false;
+
   /**
    * Both availability actions share one period, so it is validated once, here.
    *
@@ -79,16 +126,24 @@ export function MePage({
   function enteredPeriod(): { start: string; end: string } | null {
     const from = new Date(start);
     const to = new Date(end);
-    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    const missing: PeriodField[] = [];
+    if (Number.isNaN(from.getTime())) {
+      missing.push('from');
+    }
+    if (Number.isNaN(to.getTime())) {
+      missing.push('to');
+    }
+    if (missing.length > 0) {
       setDone(null);
-      setFailure(new Error('Give both a start and an end.'));
+      setPeriodProblem({ message: 'Give both a start and an end.', fields: missing });
       return null;
     }
     if (to <= from) {
       setDone(null);
-      setFailure(new Error('The end has to come after the start.'));
+      setPeriodProblem({ message: 'The end has to come after the start.', fields: ['to'] });
       return null;
     }
+    setPeriodProblem(null);
     return { start: from.toISOString(), end: to.toISOString() };
   }
 
@@ -98,11 +153,20 @@ export function MePage({
     message: string,
     declared: { reload: () => void },
   ) {
+    if (writing) {
+      return;
+    }
+    setDeclarationRefused(null);
     const when = enteredPeriod();
     if (when === null) {
       return;
     }
-    await write(() => action(when), message, declared);
+    await write(
+      () => action(when),
+      { text: message, of: 'period' },
+      declared,
+      setDeclarationRefused,
+    );
   }
 
   /**
@@ -114,55 +178,78 @@ export function MePage({
    * The list is read again whatever the answer: a refusal can mean the list on screen is stale, an
    * entry withdrawn already by an Admin on the person's behalf or in another tab.
    *
+   * @param stored what to announce once it is stored
    * @param declared the list the write changes, read again once the backend has answered
+   * @param refused shows a refusal where the action was taken
+   * @returns whether the write was stored
    */
   async function write(
     action: () => Promise<unknown>,
-    message: string,
+    stored: Done,
     declared: { reload: () => void },
-  ) {
+    refused: (error: unknown) => void,
+  ): Promise<boolean> {
     if (writing) {
-      return;
+      return false;
     }
     setWriting(true);
-    setFailure(null);
+    setDeclarationRefused(null);
+    setWithdrawalRefused(null);
     setDone(null);
     try {
       await action();
-      setDone(message);
+      setDone(stored);
+      return true;
     } catch (error) {
-      setFailure(error);
+      refused(error);
+      return false;
     } finally {
       setWriting(false);
       declared.reload();
     }
   }
 
-  /** @returns whether the request was stored, so the form clears only when it was */
-  async function handOver(
-    requester: string,
-    work: RosteredShift,
-    colleague: string,
-  ): Promise<boolean> {
+  /**
+   * Withdraws one entry. The entry leaves its list once the list is read again, and its button with
+   * it, so focus moves to the list's heading.
+   *
+   * @param entry names the entry, so a refusal is shown in it
+   * @param control the Withdraw pressed
+   * @param declared the list the entry is in, whose entries wait while it is read again
+   * @param heading that list's heading
+   */
+  async function withdraw(
+    entry: string,
+    control: HTMLElement,
+    action: () => Promise<unknown>,
+    message: string,
+    declared: { reload: () => void; busy: boolean },
+    heading: RefObject<HTMLHeadingElement | null>,
+  ) {
+    if (writing || declared.busy) {
+      return;
+    }
+    const withdrawn = await write(action, { text: message, of: 'withdrawal' }, declared, (error) =>
+      setWithdrawalRefused({ entry, error }),
+    );
+    if (withdrawn && focusIsUnclaimed(control)) {
+      heading.current?.focus();
+    }
+  }
+
+  /** @throws whatever the backend refused the request with, for the shift to show */
+  async function handOver(requester: string, work: RosteredShift, colleague: string) {
     setDone(null);
-    if (colleague.trim() === '') {
-      setFailure(new Error('Give the identifier of the colleague who would take it.'));
-      return false;
-    }
-    setFailure(null);
-    try {
-      await scheduling.requestSwap({
-        roster: work.roster,
-        shift: work.shift,
-        requester,
-        counterparty: colleague.trim(),
-      });
-      setDone('Asked. A Scheduler decides, and your colleague has been told you asked.');
-      return true;
-    } catch (error) {
-      setFailure(error);
-      return false;
-    }
+    await scheduling.requestSwap({
+      roster: work.roster,
+      shift: work.shift,
+      requester,
+      counterparty: colleague,
+    });
+    setDone({
+      text: 'Asked. A Scheduler decides, and your colleague has been told you asked.',
+      of: 'handOver',
+    });
   }
 
   if (employee === null) {
@@ -187,10 +274,9 @@ export function MePage({
         cannot work.
       </p>
 
-      <Failure error={failure} />
       {/* Always in the page, so an outcome is announced when it arrives rather than skipped. */}
       <p className="done" role="status">
-        {done}
+        {done?.text}
       </p>
 
       <h3>My work</h3>
@@ -207,6 +293,7 @@ export function MePage({
             key={`${work.roster}|${work.shift}`}
             work={work}
             onHandOver={(colleague) => handOver(employee, work, colleague)}
+            onEdit={() => editedAgain('handOver')}
           />
         ))}
       </ul>
@@ -226,7 +313,14 @@ export function MePage({
           <input
             type="datetime-local"
             value={start}
-            onChange={(event) => setStart(event.target.value)}
+            aria-invalid={isInvalid('from')}
+            aria-describedby={isInvalid('from') ? periodMessage : undefined}
+            onChange={(event) => {
+              setStart(event.target.value);
+              setPeriodProblem(null);
+              setDeclarationRefused(null);
+              editedAgain('period');
+            }}
           />
         </label>
         <label>
@@ -234,22 +328,34 @@ export function MePage({
           <input
             type="datetime-local"
             value={end}
-            onChange={(event) => setEnd(event.target.value)}
+            aria-invalid={isInvalid('to')}
+            aria-describedby={isInvalid('to') ? periodMessage : undefined}
+            onChange={(event) => {
+              setEnd(event.target.value);
+              setPeriodProblem(null);
+              setDeclarationRefused(null);
+              editedAgain('period');
+            }}
           />
         </label>
         <label>
           Preference
           <select
             value={strength}
-            onChange={(event) => setStrength(event.target.value as PreferenceStrength)}
+            onChange={(event) => {
+              setStrength(event.target.value as PreferenceStrength);
+              setDeclarationRefused(null);
+              editedAgain('period');
+            }}
           >
             <option value="PREFERS">Would like to work this</option>
             <option value="PREFERS_NOT">Would rather not</option>
           </select>
         </label>
+        {/* aria-disabled rather than disabled, so focus stays on the button while a write is out. */}
         <button
           type="button"
-          disabled={writing}
+          aria-disabled={writing}
           onClick={() =>
             void act(
               (when) => workforce.declareUnavailability(employee, when.start, when.end),
@@ -262,7 +368,7 @@ export function MePage({
         </button>
         <button
           type="button"
-          disabled={writing}
+          aria-disabled={writing}
           onClick={() =>
             void act(
               (when) => workforce.statePreference(employee, when.start, when.end, strength),
@@ -274,9 +380,17 @@ export function MePage({
           State a preference
         </button>
       </form>
+      {periodProblem === null ? null : (
+        <p id={periodMessage} className="failure" role="alert">
+          {periodProblem.message}
+        </p>
+      )}
+      <Failure error={declarationRefused} />
 
       <h3>What I declared</h3>
-      <h4>Times I cannot work</h4>
+      <h4 ref={absencesHeading} tabIndex={-1}>
+        Times I cannot work
+      </h4>
       <Failure error={unavailability.error} />
       <Busy busy={unavailability.busy} />
       {unavailability.value?.length === 0 ? (
@@ -285,46 +399,58 @@ export function MePage({
       <ul className="spans">
         {(unavailability.value ?? []).map((period) => {
           const label = spanLabel(period.start, period.end);
+          // Unique: two declared absences may not overlap (R7), so no two share a span.
+          const entry = `absence|${period.start}|${period.end}`;
           return (
-            // Unique: two declared absences may not overlap (R7), so no two share a span.
-            <li key={`${period.start}|${period.end}`}>
+            <li key={entry}>
               <span>{label}</span>{' '}
               <button
                 type="button"
-                disabled={writing || unavailability.busy}
+                aria-disabled={writing || unavailability.busy}
                 aria-label={`Withdraw absence: ${label}`}
-                onClick={() =>
-                  void write(
+                onClick={(event) =>
+                  void withdraw(
+                    entry,
+                    event.currentTarget,
                     () => workforce.withdrawUnavailability(employee, period.start, period.end),
                     'Withdrawn: that absence no longer keeps you off a roster.',
                     unavailability,
+                    absencesHeading,
                   )
                 }
               >
                 Withdraw
               </button>
+              {withdrawalRefused?.entry === entry ? (
+                <Failure error={withdrawalRefused.error} />
+              ) : null}
             </li>
           );
         })}
       </ul>
 
-      <h4>Preferences</h4>
+      <h4 ref={preferencesHeading} tabIndex={-1}>
+        Preferences
+      </h4>
       <Failure error={preferences.error} />
       <Busy busy={preferences.busy} />
       {preferences.value?.length === 0 ? <p>You have stated no preferences.</p> : null}
       <ul className="spans">
         {(preferences.value ?? []).map((preference, index) => {
           const label = `${spanLabel(preference.start, preference.end)}: ${FEELING[preference.strength]}`;
+          // Indexed: preferences may repeat one another exactly (R26), so a span alone is no key.
+          const entry = `preference|${index}|${preference.start}|${preference.end}|${preference.strength}`;
           return (
-            // Indexed: preferences may repeat one another exactly (R26), so a span alone is no key.
-            <li key={`${index}|${preference.start}|${preference.end}|${preference.strength}`}>
+            <li key={entry}>
               <span>{label}</span>{' '}
               <button
                 type="button"
-                disabled={writing || preferences.busy}
+                aria-disabled={writing || preferences.busy}
                 aria-label={`Withdraw preference: ${label}`}
-                onClick={() =>
-                  void write(
+                onClick={(event) =>
+                  void withdraw(
+                    entry,
+                    event.currentTarget,
                     () =>
                       workforce.withdrawPreference(
                         employee,
@@ -334,11 +460,15 @@ export function MePage({
                       ),
                     'Withdrawn: that preference no longer stands.',
                     preferences,
+                    preferencesHeading,
                   )
                 }
               >
                 Withdraw
               </button>
+              {withdrawalRefused?.entry === entry ? (
+                <Failure error={withdrawalRefused.error} />
+              ) : null}
             </li>
           );
         })}
@@ -352,16 +482,25 @@ const FEELING: Readonly<Record<PreferenceStrength, string>> = {
   PREFERS_NOT: 'would rather not work this',
 };
 
+const NO_COLLEAGUE = 'Give the identifier of the colleague who would take it.';
+
 function OwnShift({
   work,
   onHandOver,
+  onEdit,
 }: {
   work: RosteredShift;
-  onHandOver: (colleague: string) => Promise<boolean>;
+  /** Asks for the shift to go to this colleague; rejects with the backend's refusal. */
+  onHandOver: (colleague: string) => Promise<void>;
+  /** The identifier is being edited again, which starts the next request. */
+  onEdit: () => void;
 }) {
   const [colleague, setColleague] = useState('');
   // Each request is stored, so a second one sent while the first is on its way would be a duplicate.
   const [asking, setAsking] = useState(false);
+  const [blank, setBlank] = useState(false);
+  const [refused, setRefused] = useState<unknown>(null);
+  const message = useId();
   const when = shiftLabel(work.start, work.end);
 
   return (
@@ -376,13 +515,20 @@ function OwnShift({
           if (asking) {
             return;
           }
+          setRefused(null);
+          const counterparty = colleague.trim();
+          if (counterparty === '') {
+            setBlank(true);
+            return;
+          }
+          setBlank(false);
           setAsking(true);
-          void onHandOver(colleague).then((asked) => {
-            setAsking(false);
-            if (asked) {
-              setColleague('');
-            }
-          });
+          void onHandOver(counterparty)
+            .then(
+              () => setColleague(''),
+              (error: unknown) => setRefused(error),
+            )
+            .finally(() => setAsking(false));
         }}
       >
         {/* Each name starts with the visible label and then says which shift, since one repeats per shift. */}
@@ -390,15 +536,29 @@ function OwnShift({
           Colleague&apos;s employee identifier
           <input
             value={colleague}
-            onChange={(event) => setColleague(event.target.value)}
+            onChange={(event) => {
+              setColleague(event.target.value);
+              setBlank(false);
+              setRefused(null);
+              onEdit();
+            }}
             spellCheck={false}
             aria-label={`Colleague's employee identifier, to take ${when}`}
+            aria-invalid={blank}
+            aria-describedby={blank ? message : undefined}
           />
         </label>
-        <button type="submit" disabled={asking} aria-label={`Ask to hand it over: ${when}`}>
+        {/* aria-disabled rather than disabled, so focus stays on the button while asking. */}
+        <button type="submit" aria-disabled={asking} aria-label={`Ask to hand it over: ${when}`}>
           Ask to hand it over
         </button>
       </form>
+      {blank ? (
+        <p id={message} className="failure" role="alert">
+          {NO_COLLEAGUE}
+        </p>
+      ) : null}
+      <Failure error={refused} />
     </li>
   );
 }
