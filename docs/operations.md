@@ -1,9 +1,9 @@
 # Operations
 
-What a person running HrSched needs beyond the quick start: the application settings that are
-not deployment variables, and the meters the application records. HrSched is not deployed
-anywhere yet, so this describes what the code does, not a production environment. The
-deployment variables are in the [README](../README.md#configuration).
+What a person running HrSched needs beyond the quick start: the application settings that are not
+deployment variables, and the meters the application records. HrSched is not deployed anywhere yet,
+so this describes what the code does, not a production environment. The deployment variables are in
+the [README](../README.md#configuration).
 
 ## Settings
 

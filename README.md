@@ -26,18 +26,28 @@ flowchart LR
     api -->|"hand-written SQL, Flyway migrations"| db
 ```
 
-**Contents:** [What and why](#what-and-why) · [Features](#features) · [Architecture](#architecture)
-· [Tech stack](#tech-stack) · [Quick start](#quick-start) · [Configuration](#configuration) ·
-[Usage](#usage) · [Development](#development) · [Testing](#testing) ·
-[Operations](#deployment-and-operations) · [Structure](#project-structure) ·
-[Decisions](#design-decisions) · [Status](#status-and-limitations)
+## Contents
+
+- [What and why](#what-and-why)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Tech stack](#tech-stack)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Development](#development)
+- [Testing](#testing)
+- [Operations](#deployment-and-operations)
+- [Structure](#project-structure)
+- [Decisions](#design-decisions)
+- [Status](#status-and-limitations)
 
 ## What and why
 
 Rostering shift work by hand collapses under its own constraints. A scheduler balancing
-availability, qualifications, rest periods and contracted hours across a few dozen people produces
-a roster that looks finished and quietly breaks a rule, and the mistake surfaces on the shop floor
-at 04:00 rather than in the spreadsheet. HrSched generates a roster from the shifts that need covering
+availability, qualifications, rest periods and contracted hours across a few dozen people produces a
+roster that looks finished and quietly breaks a rule, and the mistake surfaces on the shop floor at
+04:00 rather than in the spreadsheet. HrSched generates a roster from the shifts that need covering
 and the people who can cover them, refuses to publish any roster that breaks a rule, and keeps the
 published one correct as swaps arrive. One deployment serves many organisations, and every record
 belongs to exactly one of them.
@@ -49,10 +59,11 @@ owner has chosen to leave open for now ([Q15](docs/requirements/requirements.md#
 ## Features
 
 - **Run many organisations on one deployment.** An Operator onboards each with its first Admin.
-- **Provision accounts from the top down.** Admin, Scheduler or Employee; nobody signs themselves up.
+- **Provision accounts from the top down.** Admin, Scheduler or Employee; nobody signs themselves
+  up.
 - **Describe your people.** Qualifications, absences, preferences and weekly contracted hours.
-- **Configure the working-time rules.** Every limit is optional, none has a default, and any
-  version can be read back.
+- **Configure the working-time rules.** Every limit is optional, none has a default, and any version
+  can be read back.
 - **Define shifts in their own time zone.** A headcount, required qualifications, and days counted
   across daylight saving changes.
 - **Generate, adjust and publish a roster.** The CP-SAT solver
@@ -68,12 +79,12 @@ The rules behind each capability, and what is decided but not yet built, are in
 
 ## Architecture
 
-The backend is one Spring Boot process, organised by bounded context, and each context is a
-complete hexagon: the domain imports the JDK and HrSched's own `domain` packages, its context's and
-the kernel's, and nothing else; the application layer knows nothing about adapters or Spring; and
-every dependency points inward. A small shared kernel holds the identities
-and value types that cross contexts. A context may use another only through that context's
-`application.port.in` package, and the three adapters on the diagram are the only places that do
+The backend is one Spring Boot process, organised by bounded context, and each context is a complete
+hexagon: the domain imports the JDK and HrSched's own `domain` packages, its context's and the
+kernel's, and nothing else; the application layer knows nothing about adapters or Spring; and every
+dependency points inward. A small shared kernel holds the identities and value types that cross
+contexts. A context may use another only through that context's `application.port.in` package, and
+the three adapters on the diagram are the only places that do
 ([ADR-008](docs/ADRs/ADR-008-context-integration.md)).
 
 ```mermaid
@@ -102,8 +113,8 @@ constraint as the backstop. The answer is `200`, a `422` listing every violation
 overlapping roster was published at the same moment.
 
 [`HexagonalArchitectureTest`](backend/src/test/java/io/github/naimelijah/hrsched/architecture/HexagonalArchitectureTest.java)
-runs twenty ArchUnit rules on every build, and a broken one fails it.
-Components, the authentication sequence and the data flow are in
+runs twenty ArchUnit rules on every build, and a broken one fails it. Components, the authentication
+sequence and the data flow are in
 [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
 
 ## Tech stack
@@ -131,10 +142,9 @@ Components, the authentication sequence and the data flow are in
 > every build tests against a throwaway one through Testcontainers. There is no in-memory fallback,
 > because a check that quietly does not run still reports green.
 
-You need JDK 21, Node 22 or later (CI uses 24), and Docker with Compose v2. Maven is not needed:
-the committed wrapper downloads its own pinned version. The first run downloads Maven's
-dependencies, the PostgreSQL image and the OR-Tools native libraries (about 95 MB), so it takes
-several minutes.
+You need JDK 21, Node 22 or later (CI uses 24), and Docker with Compose v2. Maven is not needed: the
+committed wrapper downloads its own pinned version. The first run downloads Maven's dependencies,
+the PostgreSQL image and the OR-Tools native libraries (about 95 MB), so it takes several minutes.
 
 ```bash
 git clone https://github.com/NaimElijah/HrSched.git && cd HrSched
@@ -148,8 +158,7 @@ choose a password of at least 15 characters before the account can do anything. 
 
 The operator only onboards organisations. In the Organisations tab, onboard one together with its
 first Admin, then sign out and sign in as that Admin. There is no seed data; the
-[Walkthrough in `docs/api.md`](docs/api.md#walkthrough) scripts the whole path to a published
-roster.
+[Walkthrough in `docs/api.md`](docs/api.md#walkthrough) scripts the whole path to a published roster.
 
 > [!CAUTION]
 > The database keeps its rows between runs, so after the first sign-in only your new password
@@ -175,15 +184,15 @@ Every other setting, from `application.properties`, with why it has the value it
 
 ## Usage
 
-Every call carries a bearer token, and the organisation comes from the account it names, never
-from the request ([ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md)). These
+Every call carries a bearer token, and the organisation comes from the account it names, never from
+the request ([ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md)). These
 responses are real ones from a local run; [`docs/api.md`](docs/api.md) has every endpoint, sign-in,
 and the whole walkthrough from an empty database. In the first example, `$SCHEDULER` is a
 Scheduler's access token and `$ROSTER` the id of a generated draft; both are set by the
 [Walkthrough](docs/api.md#walkthrough), which you run first.
 
-**Publish a roster.** Only a Scheduler may. The roster records the rule version that approved it,
-so a later change to the rules does not change what it was approved against.
+**Publish a roster.** Only a Scheduler may. The roster records the rule version that approved it, so
+a later change to the rules does not change what it was approved against.
 
 ```bash
 curl -s -X POST "localhost:8080/api/rosters/$ROSTER/publication" \
@@ -245,8 +254,8 @@ On Windows without a POSIX shell, use `mvnw.cmd` for `./mvnw`. It needs PowerShe
 its exit code is unreliable: it has exited 0 and 1 when Maven never started. A run has passed only
 when its log shows `Tests run:` and `BUILD SUCCESS`.
 
-Spring Boot 4 renamed some things that tutorials still call by their 3.x names; check `pom.xml`
-and [`backend/CLAUDE.md`](backend/CLAUDE.md), not older answers.
+Spring Boot 4 renamed some things that tutorials still call by their 3.x names; check `pom.xml` and
+[`backend/CLAUDE.md`](backend/CLAUDE.md), not older answers.
 
 **Adding a use case:**
 1. **Choose its context.** If it fits none, that is a new context and a new ADR.
@@ -290,18 +299,17 @@ by mistake is skipped silently and still reports green. The audit fails on any k
 `backend/pom.xml`'s resolved tree or `frontend/package-lock.json`, whatever its severity, and fails
 too when it cannot resolve either file. The only way past an advisory is an entry in
 [`osv-scanner.toml`](osv-scanner.toml) with an expiry and a reason, which CI requires
-([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Coverage is
-reported but never enforced
-([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)). `./mvnw verify` writes
-`backend/target/site/jacoco/index.html`, and `npm run test:coverage` writes
+([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Coverage is reported
+but never enforced ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)).
+`./mvnw verify` writes `backend/target/site/jacoco/index.html`, and `npm run test:coverage` writes
 `frontend/coverage/index.html`.
 
 ## Deployment and operations
 
 HrSched is not deployed anywhere; the planned AWS target is under
 [Status and limitations](#status-and-limitations). `./mvnw verify` builds the executable jar
-`backend/target/hrsched-0.0.1-SNAPSHOT.jar`, and Flyway migrates the database at startup, before
-the application reports ready.
+`backend/target/hrsched-0.0.1-SNAPSHOT.jar`, and Flyway migrates the database at startup, before the
+application reports ready.
 
 | Concern | Where |
 | :--- | :--- |
@@ -320,20 +328,15 @@ meters the application records, and what each one answers, are in
 
 ```text
 HrSched/
-├── backend/                    Spring Boot API; guidance in backend/CLAUDE.md
-│   ├── src/main/java/…/hrsched/
-│   │   ├── access/             organisations, accounts, sessions, tokens
-│   │   ├── workforce/          employees, qualifications, availability, contracts
-│   │   ├── scheduling/         shifts, rules, rosters, swaps, generation
-│   │   ├── notifications/      each person's inbox
-│   │   ├── shared/             the kernel; knows no context
-│   │   └── configuration/      wiring, the security chain, transactions
-│   ├── src/main/resources/db/migration/   Flyway SQL, never edited once applied
-│   └── compose.yaml            local PostgreSQL for spring-boot:run
-├── frontend/src/               React SPA: api/ · auth/ · components/ · pages/ · test-support/
-├── docs/                       requirements/ (what) · architecture/ (how) · ADRs/ (why) · security/ · api.md
-├── scripts/run.mjs             root task runner for dev and verify (ADR-014)
-└── .github/                    CI and Dependabot
+├── backend/       Spring Boot API; guidance in backend/CLAUDE.md
+│   ├── src/       a package per context (access, workforce, scheduling, notifications),
+│   │              the shared kernel and the wiring; Flyway SQL in resources/db/migration
+│   └── compose.yaml   local PostgreSQL for spring-boot:run
+├── frontend/      React SPA
+│   └── src/       api/ · auth/ · components/ · pages/ · test-support/
+├── docs/          requirements/ (what) · architecture/ (how) · ADRs/ (why) · security/ · api.md
+├── scripts/       run.mjs, the root task runner for dev and verify (ADR-014)
+└── .github/       CI and Dependabot
 ```
 
 ## Design decisions
@@ -341,9 +344,9 @@ HrSched/
 **One hexagon per bounded context, enforced by the build**
 ([ADR-003](docs/ADRs/ADR-003-hexagonal-architecture-with-ddd.md),
 [ADR-006](docs/ADRs/ADR-006-organise-packages-by-bounded-context.md)). A rostering rule should be
-readable and testable without Spring or a database, and a convention nobody enforces rots. Multi-module
-Maven was disproportionate for one developer. Cost: more classes per use case, and the enforcement
-is a test rather than the compiler.
+readable and testable without Spring or a database, and a convention nobody enforces rots.
+Multi-module Maven was disproportionate for one developer. Cost: more classes per use case, and the
+enforcement is a test rather than the compiler.
 
 **PostgreSQL, hand-written SQL, and a real database in every test**
 ([ADR-004](docs/ADRs/ADR-004-postgresql-behind-the-driven-ports.md)). Real transactions, and check
@@ -367,23 +370,23 @@ queue.
 
 **Generation with CP-SAT behind a port**
 ([ADR-044](docs/ADRs/ADR-044-generate-rosters-with-or-tools-cp-sat.md),
-[ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)). The rules are hard
-and the objectives soft, which an exact solver models directly. Timefold lost because its search
-must drive a broken rule's penalty to zero and proves no bound; a MIP solver lost too. Cost: about
-95 MB of native libraries, no determinism under a time limit, and OR-Tools held at 9.12 for the
-Visual C++ runtime that JDK 21 bundles on Windows.
+[ADR-045](docs/ADRs/ADR-045-generate-outside-the-use-cases-transaction.md)). The rules are hard and
+the objectives soft, which an exact solver models directly. Timefold lost because its search must
+drive a broken rule's penalty to zero and proves no bound; a MIP solver lost too. Cost: about 95 MB
+of native libraries, no determinism under a time limit, and OR-Tools held at 9.12 for the Visual C++
+runtime that JDK 21 bundles on Windows.
 
 Every decision, and every one still waiting to be recorded, is in the
 [ADR index](docs/ADRs/README.md).
 
 ## Status and limitations
 
-**Alpha.** It works end to end on a developer's machine, has never been deployed, and has no
-release or tag yet.
+**Alpha.** It works end to end on a developer's machine, has never been deployed, and has no release
+or tag yet.
 
-**Shipped:** everything under [Features](#features), running locally against a PostgreSQL in
-Docker. The [requirements](docs/requirements/requirements.md) mark each row that is decided but
-`not yet` built.
+**Shipped:** everything under [Features](#features), running locally against a PostgreSQL in Docker.
+The [requirements](docs/requirements/requirements.md) mark each row that is decided but `not yet`
+built.
 
 **Planned**, tracked by the [milestones](https://github.com/NaimElijah/HrSched/milestones):
 
@@ -395,13 +398,14 @@ Docker. The [requirements](docs/requirements/requirements.md) mark each row that
 - M5, machine learning that proposes and never decides.
 
 **Known limitations:**
-- **No jurisdiction preset exists yet.** HrSched ships no statute's numbers, so every limit is
-  typed in by the organisation ([#105](https://github.com/NaimElijah/HrSched/issues/105)).
+- **No jurisdiction preset exists yet.** HrSched ships no statute's numbers, so every limit is typed
+  in by the organisation ([#105](https://github.com/NaimElijah/HrSched/issues/105)).
 - **Generation takes minutes at the largest size.** It runs in the background and the Rosters page
-  waits for it ([ADR-046](docs/ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). Each of the solver's two searches stops at
-  `hrsched.generation.time-limit-per-phase` with the best roster it has found, which at the largest
-  stated size may not be the best there is. Two generations of one week can differ, each keeping
-  every configured rule.
+  waits for it
+  ([ADR-046](docs/ADRs/ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md)). Each
+  of the solver's two searches stops at `hrsched.generation.time-limit-per-phase` with the best
+  roster it has found, which at the largest stated size may not be the best there is. Two
+  generations of one week can differ, each keeping every configured rule.
 - **A shift's zone is the Scheduler's browser zone.** The Shifts page sends the zone its times were
   typed in, and no page shows a shift's zone yet
   ([#136](https://github.com/NaimElijah/HrSched/issues/136)).
@@ -411,8 +415,8 @@ Docker. The [requirements](docs/requirements/requirements.md) mark each row that
 - **The audit trail is a log stream.** An Admin cannot read it. A record written in a transaction
   that fails to commit outlives the change it describes. A durable trail is decided
   ([#31](https://github.com/NaimElijah/HrSched/issues/31)).
-- **Notifications are pull-only.** A colleague learns of a change when they next open the app; any other channel is an
-  [open question](docs/requirements/requirements.md#open-questions).
+- **Notifications are pull-only.** A colleague learns of a change when they next open the app; any
+  other channel is an [open question](docs/requirements/requirements.md#open-questions).
 - **Nothing proves the UI and the API agree.** The client is written by hand, and there is no
   contract or browser test ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)).
 - **Nothing blocks a merge on a red build or a vulnerable dependency.** CI runs both gates and a
