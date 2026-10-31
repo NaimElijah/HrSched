@@ -1,8 +1,10 @@
 # Requirements — HrSched
 
 **Status: specified, partially built.** Every question that blocked modelling is answered. The
-domain is modelled, and a React user interface offers every capability below — for the three roles
-within an organisation and for the platform Operator — over a PostgreSQL that survives a restart.
+domain is modelled, and a React user interface offers the capabilities already built — for the
+three roles within an organisation and for the platform Operator — over a PostgreSQL that survives
+a restart. A member's read of their own organisation's record (F13) has no screen and is reached
+through the API alone.
 People sign in, and every request is authenticated by a token HrSched signed and authorised
 against the account it names. Generation fills every place the rules allow, then weighs the
 objectives.
