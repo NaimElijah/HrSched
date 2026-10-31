@@ -479,9 +479,10 @@ are not audited. Nothing at runtime depends on any of it.
   the branch is exercised outside a unit test
   ([ADR-019](../ADRs/ADR-019-an-application-layer-for-the-access-context.md)).
 - **A `Location` header names an address that answers.** A created employee, qualification, shift,
-  roster, swap request or organisation can be read back with `GET` at the address its 201 gave,
-  authorised exactly as the listing it belongs to — reading one person takes an Admin or Scheduler
-  because listing people does — so following a link never meets a looser or stricter rule than the
+  roster, swap request, account or organisation can be read back with `GET` at the address its 201
+  gave, authorised exactly as the listing it belongs to — reading one person takes an Admin or
+  Scheduler because listing people does, and reading one account takes an Admin because only an
+  Admin can list them — so following a link never meets a looser or stricter rule than the
   list it came from. A swap request somebody is not party to is absent from their listing, so
   reading it directly answers them 404, as though it did not exist; one predicate in `SwapService`
   decides both.
