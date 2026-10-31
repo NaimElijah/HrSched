@@ -5,7 +5,7 @@ import type { Session } from '../api/session';
 import type { Employee } from '../api/workforce';
 import { dayLabel, timeLabel } from '../components/localDates';
 import { A_TENANT, SignedIn } from '../test-support/session';
-import { callsTo, routeTo, type Answer } from '../test-support/routeTo';
+import { callsTo, holdingWrites, routeTo, type Answer } from '../test-support/routeTo';
 import { SwapsPage } from './SwapsPage';
 
 /**
@@ -70,6 +70,18 @@ async function rowOfTheShift(): Promise<HTMLElement> {
     throw new Error('the shift is not in a table row');
   }
   return row;
+}
+
+/**
+ * C1: a control waiting for a request is marked so, and is not `disabled`, which would drop the
+ * keyboard focus to the body. jsdom does not drop it either way, so the attribute is the proof.
+ */
+function expectWaiting(control: HTMLElement) {
+  expect(control, 'aria-disabled while the request is in flight').toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  expect(control, 'not disabled, which would drop the keyboard focus').toBeEnabled();
 }
 
 afterEach(() => {
@@ -237,8 +249,9 @@ describe('deciding', () => {
     await userEvent.click(approve);
     await userEvent.click(approve);
 
-    expect(approve).toBeDisabled();
-    expect(screen.getByRole('button', { name: /^Decline/ })).toBeDisabled();
+    expectWaiting(approve);
+    expect(approve, 'the pressed Approve keeps the keyboard focus').toHaveFocus();
+    expectWaiting(screen.getByRole('button', { name: /^Decline/ }));
     release();
     await screen.findByText(/^Approved\./);
     expect(callsTo(routed, 'POST', '/api/swaps/swap-1/approval')).toHaveLength(1);
@@ -329,5 +342,130 @@ describe('deciding', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^Approve/ }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Your role may not do this.');
+  });
+});
+
+// --- #257 (WCAG 2.2 AA): the queue as a keyboard and screen-reader user meets it --------------
+
+describe('deciding, for a keyboard and screen-reader user', () => {
+  it('GivenADeclineInFlight_WhenDeclineIsPressed_ThenBothAreAriaDisabledAndDeclineKeepsFocus', async () => {
+    const release = holdingWrites(
+      aQueue({ 'POST /api/swaps/swap-1/rejection': { status: 204, body: null } }),
+    );
+    show();
+    const decline = await screen.findByRole('button', { name: /^Decline/ });
+
+    await userEvent.click(decline);
+
+    expectWaiting(decline);
+    expect(decline, 'the pressed Decline keeps the keyboard focus').toHaveFocus();
+    expectWaiting(screen.getByRole('button', { name: /^Approve/ }));
+    release();
+    await screen.findByText(/^Declined\./);
+  });
+
+  /**
+   * C2: a decided swap offers nothing to decide, so its buttons go and focus moves to the header
+   * cell of its row. The queue the server holds changes with the decision, as it really does.
+   */
+  it.each<[string, string, Answer, string]>([
+    [
+      'Approve',
+      'approval',
+      { status: 200, body: { id: 'roster-2', status: 'PUBLISHED' } },
+      'APPROVED',
+    ],
+    ['Decline', 'rejection', { status: 204, body: null }, 'REJECTED'],
+  ])(
+    'GivenASwapDecided_WhenItsButtonsGo_ThenFocusIsOnThatRowsHeader (%s)',
+    async (button, endpoint, answer, decided) => {
+      const stub = routeTo({
+        [`POST /api/swaps/swap-1/${endpoint}`]: answer,
+        // A getter, so the queue is worked out on each request from the decisions received so far.
+        get '/api/swaps'(): Answer {
+          const answered = callsTo(stub, 'POST', `/api/swaps/swap-1/${endpoint}`).length > 0;
+          return { status: 200, body: [answered ? { ...PENDING, status: decided } : PENDING] };
+        },
+        '/api/shifts/shift-1': { status: 200, body: SHIFT },
+      });
+      show();
+      const row = await rowOfTheShift();
+
+      await userEvent.click(within(row).getByRole('button', { name: new RegExp(`^${button}`) }));
+
+      await waitFor(() =>
+        expect(within(row).queryByRole('button', { name: /^Approve/ })).not.toBeInTheDocument(),
+      );
+      await waitFor(() => expect(within(row).getByRole('rowheader')).toHaveFocus());
+    },
+  );
+
+  /** C6: the refusal is of one row's decision, so it is shown at that row, not above the table. */
+  it('GivenAnApprovalRefused_WhenShown_ThenTheRefusalIsInsideTheSwapsTable', async () => {
+    aQueue({
+      'POST /api/swaps/swap-1/approval': {
+        status: 409,
+        body: { detail: 'That swap request has already been decided.' },
+      },
+    });
+    show();
+    await rowOfTheShift();
+    const table = screen.getByRole('table');
+
+    await userEvent.click(screen.getByRole('button', { name: /^Approve/ }));
+
+    expect(await within(table).findByRole('alert')).toHaveTextContent(
+      'That swap request has already been decided.',
+    );
+    for (const alert of screen.getAllByRole('alert')) {
+      expect(table, 'no copy of the refusal above the table').toContainElement(alert);
+    }
+  });
+
+  /**
+   * C2: somebody else decided the swap first, so the queue read again after the refusal offers
+   * nothing to decide. The buttons go even though nothing here succeeded, so focus moves to the
+   * row's header cell, and the refusal stays in the row after it.
+   */
+  it('GivenADecisionRefusedAsDecidedFirst_WhenTheReloadTakesItsButtons_ThenFocusIsOnThatRowsHeader', async () => {
+    const stub = routeTo({
+      'POST /api/swaps/swap-1/approval': {
+        status: 409,
+        body: { detail: 'That swap request has already been decided.' },
+      },
+      // A getter: once the approval has been refused, the server holds the swap decided.
+      get '/api/swaps'(): Answer {
+        const refused = callsTo(stub, 'POST', '/api/swaps/swap-1/approval').length > 0;
+        return { status: 200, body: [refused ? { ...PENDING, status: 'REJECTED' } : PENDING] };
+      },
+      '/api/shifts/shift-1': { status: 200, body: SHIFT },
+    });
+    show();
+    const row = await rowOfTheShift();
+
+    await userEvent.click(within(row).getByRole('button', { name: /^Approve/ }));
+
+    await waitFor(() =>
+      expect(within(row).queryByRole('button', { name: /^Approve/ })).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(within(row).getByRole('rowheader')).toHaveFocus());
+    const after = row.nextElementSibling;
+    if (!(after instanceof HTMLElement)) {
+      throw new Error('no row follows the refused request');
+    }
+    expect(within(after).getByRole('alert')).toHaveTextContent(
+      'That swap request has already been decided.',
+    );
+  });
+});
+
+describe('the swaps table, for a screen-reader user', () => {
+  it('GivenTheSwapsTable_WhenRendered_ThenItHasAnAccessibleName', async () => {
+    aQueue();
+    show();
+
+    await rowOfTheShift();
+
+    expect(screen.getByRole('table')).toHaveAccessibleName();
   });
 });
