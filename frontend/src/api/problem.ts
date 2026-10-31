@@ -22,6 +22,12 @@ const ABOUT_BLANK = 'about:blank';
 const PROBLEM_JSON = 'application/problem+json';
 
 /**
+ * The problem type of the 403 an account with a temporary password is answered for anything but
+ * reading its session and changing its password (ADR-057).
+ */
+const PASSWORD_CHANGE_REQUIRED = 'urn:hrsched:problem:password-change-required';
+
+/**
  * A request the backend refused.
  *
  * Carries the status so callers can distinguish the cases that mean different things: a 422 listing
@@ -36,7 +42,7 @@ export class ApiError extends Error {
   /**
    * The problem's type URI, one per kind of refusal (ADR-057), or `about:blank` when the body
    * named none, as RFC 9457 section 3.1.1 reads an absent type, or was not a problem detail at all.
-   * Kept, not yet branched on.
+   * {@link isPasswordChangeRequired} reads one; nothing else does yet.
    */
   readonly type: string;
   /**
@@ -92,6 +98,15 @@ export class ApiError extends Error {
 
   get isForbidden(): boolean {
     return this.status === 403;
+  }
+
+  /**
+   * True when the account still holds a temporary password, and is refused everything but reading
+   * its session and changing that password until it changes it. A 403 of its own type, so it is
+   * told apart from a role that may not do this (ADR-057).
+   */
+  get isPasswordChangeRequired(): boolean {
+    return this.status === 403 && this.type === PASSWORD_CHANGE_REQUIRED;
   }
 
   get isNotFound(): boolean {

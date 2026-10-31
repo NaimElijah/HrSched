@@ -67,9 +67,7 @@ describe('reading the platform', () => {
 
     show(A_TENANT);
 
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Your role may not do this.'),
-    );
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Not permitted.'));
   });
 
   it('GivenTheSessionHasEnded_WhenOpened_ThenTheRefusalSaysSo', async () => {

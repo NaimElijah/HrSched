@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -98,5 +98,51 @@ describe('recovering', () => {
 
     expect(screen.getByText('recovered')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The fallback replaces the whole application, its landmarks with it, so it is the main content
+ * itself. Pressing "Try again" removes the button that had focus, so focus moves to the first
+ * heading of what came back, never to the page (#257, C2 and C4).
+ */
+describe('what the fallback offers a screen-reader user', () => {
+  it('GivenAChildThatThrows_WhenRendered_ThenTheFailureIsInTheMainLandmark', () => {
+    render(
+      <ErrorBoundary>
+        <Throws />
+      </ErrorBoundary>,
+    );
+
+    expect(screen.getByRole('main'), 'the main landmark').toContainElement(
+      screen.getByRole('alert'),
+    );
+  });
+
+  it('GivenACaughtFailure_WhenTryAgainRendersTheChildren_ThenFocusIsOnTheirFirstHeading', async () => {
+    let broken = true;
+    function SometimesThrows() {
+      if (broken) {
+        throw new Error('the render broke');
+      }
+      return (
+        <section>
+          <p>before any heading</p>
+          <h1>The application</h1>
+          <h2>A view in it</h2>
+        </section>
+      );
+    }
+    render(
+      <ErrorBoundary>
+        <SometimesThrows />
+      </ErrorBoundary>,
+    );
+
+    broken = false;
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    const heading = screen.getByRole('heading', { name: 'The application' });
+    await waitFor(() => expect(heading, 'focus on the first heading').toHaveFocus());
   });
 });

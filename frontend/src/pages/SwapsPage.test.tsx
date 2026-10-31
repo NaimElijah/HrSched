@@ -365,7 +365,7 @@ describe('deciding', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /^Approve/ }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Your role may not do this.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not permitted.');
   });
 });
 
