@@ -16,6 +16,9 @@ import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,8 +42,24 @@ class JdbcSessionRepositoryTest {
   /** Invented, and hashes nothing. */
   private static final PasswordHash HASH = new PasswordHash("{bcrypt}$2a$04$invented.test.value");
 
+  /** The smallest step {@code timestamptz} stores. */
+  private static final Duration ONE_MICROSECOND = Duration.ofNanos(1_000);
+
   /** PostgreSQL's {@code foreign_key_violation}. */
   private static final String FOREIGN_KEY_VIOLATION = "23503";
+
+  /** PostgreSQL's {@code check_violation}: a {@code CHECK} constraint refused the row. */
+  private static final String CHECK_VIOLATION = "23514";
+
+  /**
+   * Invented: less than half the store's precision, so the store rounds an instant this far before
+   * a whole microsecond up to it, as the driver's rounding to the nearest does.
+   */
+  private static final Duration UNDER_HALF_A_MICROSECOND = Duration.ofNanos(400);
+
+  /** The constraint {@code V16} gives a token's lifetime. */
+  private static final String TOKEN_DOES_NOT_EXPIRE_BEFORE_ISSUE =
+      "refresh_token_does_not_expire_before_it_is_issued";
 
   private final JdbcAccountRepository accounts =
       new JdbcAccountRepository(PostgresDatabase.jdbcClient());
@@ -182,6 +201,106 @@ class JdbcSessionRepositoryTest {
     assertThat(storedSessionRevocation(theirs.id())).isNull();
   }
 
+  /**
+   * Revoking every session stamps every one not yet revoked, an expired one included. Which have
+   * expired is a question for a clock, and the revoking instance's clock is not the one that later
+   * judges a session live: skipping what it calls expired would leave a session a slower instance
+   * still serves. How many an act ended early is read from the rows, by revoked_at before
+   * expires_at.
+   */
+  @Test
+  void GivenAnExpiredAndALiveSession_WhenEverySessionOfTheAccountIsRevoked_ThenBothAreStamped() {
+    Account account = anAccount();
+    SignInSession expired =
+        new SignInSession(
+            SignInSessionId.newId(),
+            account.id(),
+            NOW.minus(Duration.ofHours(13)),
+            NOW.minus(Duration.ofHours(1)));
+    SignInSession live = sessionFor(account);
+    repository.start(expired, digest("expired"), NOW.minus(Duration.ofHours(12)));
+    repository.start(live, digest("live"), NOW.plus(Duration.ofHours(1)));
+
+    repository.revokeEverySessionOf(account.id(), SessionRevocation.ACCOUNT_DISABLED, NOW);
+
+    assertThat(storedSessionRevocation(expired.id()))
+        .describedAs("no clock decides which sessions are ended, so an expired one is stamped too")
+        .isEqualTo("ACCOUNT_DISABLED");
+    assertThat(storedSessionRevocation(live.id())).isEqualTo("ACCOUNT_DISABLED");
+  }
+
+  /**
+   * Both sides of the instant of revocation: a session ending at that very instant, and one ending
+   * a microsecond, the store's precision, after it. Neither is told apart from the other, because
+   * the revocation compares no expiry with its own clock.
+   */
+  @Test
+  void
+      GivenSessionsEndingAtAndJustAfterTheRevocation_WhenEverySessionIsRevoked_ThenBothAreStamped() {
+    Account account = anAccount();
+    SignInSession endingNow =
+        new SignInSession(
+            SignInSessionId.newId(), account.id(), NOW.minus(Duration.ofHours(12)), NOW);
+    SignInSession endingJustAfter =
+        new SignInSession(
+            SignInSessionId.newId(),
+            account.id(),
+            NOW.minus(Duration.ofHours(12)),
+            NOW.plus(ONE_MICROSECOND));
+    repository.start(endingNow, digest("ending-now"), NOW);
+    repository.start(endingJustAfter, digest("ending-just-after"), NOW.plus(ONE_MICROSECOND));
+
+    repository.revokeEverySessionOf(account.id(), SessionRevocation.PASSWORD_RESET, NOW);
+
+    assertThat(storedSessionRevocation(endingNow.id())).isEqualTo("PASSWORD_RESET");
+    assertThat(storedSessionRevocation(endingJustAfter.id())).isEqualTo("PASSWORD_RESET");
+  }
+
+  /**
+   * A token is good for a span that starts when it is issued, and the service always gives it one.
+   * The schema refuses, for a writer that skipped the service, a token that expires before it is
+   * issued.
+   */
+  @Test
+  void GivenATokenExpiringBeforeItIsIssued_WhenIssued_ThenTheSchemaRefusesIt() {
+    SignInSession session = sessionFor(anAccount());
+    repository.start(session, digest("first"), NOW.plus(Duration.ofHours(1)));
+    Instant issuedAt = NOW.plusSeconds(60);
+
+    assertThatThrownBy(
+            () ->
+                repository.issueSuccessor(
+                    session.id(), digest("second"), issuedAt, issuedAt.minus(ONE_MICROSECOND)))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .rootCause()
+        .isInstanceOfSatisfying(
+            SQLException.class,
+            refused -> {
+              assertThat(refused.getSQLState()).isEqualTo(CHECK_VIOLATION);
+              assertThat(refused.getMessage()).contains(TOKEN_DOES_NOT_EXPIRE_BEFORE_ISSUE);
+            });
+  }
+
+  /**
+   * A renewal moments before its session ends is one the service makes: it reads its clock in
+   * nanoseconds, while the store keeps microseconds and rounds to the nearest. Issued less than
+   * half a microsecond before the session's end, which caps the token's expiry, the token is stored
+   * issued at the instant it expires, and must still be stored rather than refused with a 500.
+   */
+  @Test
+  void GivenATokenIssuedWithinHalfAMicrosecondOfItsExpiry_WhenIssued_ThenItIsStoredAtThatInstant() {
+    SignInSession session = sessionFor(anAccount());
+    repository.start(session, digest("first"), NOW.plus(Duration.ofHours(1)));
+    Instant expiresAt = NOW.plus(Duration.ofHours(1));
+
+    repository.issueSuccessor(
+        session.id(), digest("second"), expiresAt.minus(UNDER_HALF_A_MICROSECOND), expiresAt);
+
+    assertThat(storedIssueAndExpiryOf(digest("second")))
+        .describedAs("the store rounded the issue up to the expiry, and kept the token")
+        .containsExactly(expiresAt, expiresAt);
+  }
+
   @Test
   void GivenNoSuchToken_WhenFindingIt_ThenNothingIsReturned() {
     assertThat(repository.findRefreshToken(digest("a-token-nobody-issued"))).isEmpty();
@@ -237,13 +356,31 @@ class JdbcSessionRepositoryTest {
         .single();
   }
 
+  /**
+   * The stored revocation, or {@code null} for a session nothing has ended. A session with no row
+   * fails the read rather than reading as not revoked, so a test of what was stamped cannot pass
+   * over a session that was never stored.
+   */
   private static String storedSessionRevocation(SignInSessionId session) {
     return PostgresDatabase.jdbcClient()
         .sql("SELECT revocation FROM sign_in_session WHERE id = :id")
         .param("id", session.value())
-        .query(String.class)
-        .optional()
+        .query((row, rowNumber) -> Optional.ofNullable(row.getString("revocation")))
+        .single()
         .orElse(null);
+  }
+
+  /** A token's issue and expiry, as the store holds them. */
+  private static List<Instant> storedIssueAndExpiryOf(byte[] digest) {
+    return PostgresDatabase.jdbcClient()
+        .sql("SELECT issued_at, expires_at FROM refresh_token WHERE digest = :digest")
+        .param("digest", digest)
+        .query(
+            (row, rowNumber) ->
+                List.of(
+                    row.getObject("issued_at", OffsetDateTime.class).toInstant(),
+                    row.getObject("expires_at", OffsetDateTime.class).toInstant()))
+        .single();
   }
 
   private static UUID sessionOfRefreshToken(byte[] digest) {

@@ -409,7 +409,19 @@ are not audited. Nothing at runtime depends on any of it.
   the operator's, row. A notification's guard also holds its recipient, kind, subject and moment,
   so a save never moves one to another inbox or rewrites what somebody was told; the upsert only
   ever sets `read`, never clears it. The register of organisations is the exception, having no
-  owner to compare.
+  owner to compare: its save is a plain insert, so an identity already stored is refused by the
+  primary key rather than renaming the tenant that holds it. `JdbcOrganisationRepository` matches
+  `organisation_pkey` by name and throws an `IllegalStateException` naming the identity, never the
+  name, as a fault rather than a refusal any caller could act on.
+- **An organisation stored breaking a rule is this system's defect, not the Operator's mistake.**
+  `JdbcOrganisationRepository` rebuilds every organisation it reads through its own constructor,
+  so the name's rule is checked again on the way out of the store. A name the schema's `btrim`
+  lets through, as it trims spaces only, but the domain calls blank (R2), is refused there, and the
+  refusal is replaced by an `IllegalStateException` naming the identity and the rule, never the
+  name. No access handler takes it, so reading or listing the register answers a server error
+  rather than the 400 the same refusal earns a caller onboarding a blank name. The refusal travels
+  suppressed rather than as the cause, because Spring resolves a handler by an exception's causes
+  too.
 - **In scheduling, a reference to a roster carries its organisation.** `roster` is unique on
   `(organisation_id, id)` as well as on `id`, and `roster_generation` and `swap_request` name a
   roster through both columns, so neither can store a reference to another organisation's roster,

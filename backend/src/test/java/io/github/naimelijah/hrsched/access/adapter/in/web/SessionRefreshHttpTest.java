@@ -469,12 +469,26 @@ class SessionRefreshHttpTest {
   }
 
   /**
-   * Moves the expiry of a session's refresh tokens into the past and leaves the session itself
-   * alone, so the token is idle while its session is live.
+   * Moves a session's refresh tokens wholly into the past while the session stays live, so the
+   * token has gone idle within a live session. Both ends, for the reason {@link #endSessionAt}
+   * gives: the schema refuses a token that would expire before it was issued. The session's start
+   * moves back with the issue, so that no token is issued before the session it renews began; its
+   * end is left alone.
    */
   private static void expireRefreshTokensOf(UUID session, Instant when) {
+    OffsetDateTime issued = OffsetDateTime.ofInstant(when.minusSeconds(3600), ZoneOffset.UTC);
     PostgresDatabase.jdbcClient()
-        .sql("UPDATE refresh_token SET expires_at = :expired WHERE session_id = :session")
+        .sql("UPDATE sign_in_session SET started_at = :started WHERE id = :id")
+        .param("started", issued)
+        .param("id", session)
+        .update();
+    PostgresDatabase.jdbcClient()
+        .sql(
+            """
+            UPDATE refresh_token SET issued_at = :issued, expires_at = :expired
+            WHERE session_id = :session
+            """)
+        .param("issued", issued)
         .param("expired", OffsetDateTime.ofInstant(when, ZoneOffset.UTC))
         .param("session", session)
         .update();
