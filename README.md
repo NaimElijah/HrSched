@@ -176,8 +176,8 @@ Every other setting, from `application.properties`, with why it has the value it
 Every call carries a bearer token, and the organisation comes from the account it names, never from
 the request ([ADR-031](docs/ADRs/ADR-031-take-the-organisation-from-the-account.md)). These
 responses are real ones from a local run. [`docs/api.md`](docs/api.md) has every endpoint and
-sign-in, and its [Walkthrough](docs/api.md#walkthrough), run first, sets `$SCHEDULER` (a
-Scheduler's access token) and `$ROSTER` (a generated draft's id).
+sign-in; its [Walkthrough](docs/api.md#walkthrough) sets `$SCHEDULER` (a Scheduler's access token)
+and `$ROSTER` (a generated draft's id), and ends with this first call.
 
 **Publish a roster.** Only a Scheduler may. The roster records the rule version that approved it, so
 a later change to the rules does not change what it was approved against.
