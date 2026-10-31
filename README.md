@@ -358,8 +358,7 @@ Every decision, and every one still waiting to be recorded, is in the
 **Alpha.** It works end to end on a developer's machine, has never been deployed, and is unreleased.
 
 **Shipped:** everything under [Features](#features), running locally against a PostgreSQL in
-Docker. The [requirements](docs/requirements/requirements.md) mark each row decided but `not yet`
-built.
+Docker. The [requirements](docs/requirements/requirements.md) mark what is decided but not built.
 
 **Planned**, tracked by the [milestones](https://github.com/NaimElijah/HrSched/milestones): M0, the
 full-system scans of the code and the docs; M1, v1 feature-complete; M2, the engineering baseline;
