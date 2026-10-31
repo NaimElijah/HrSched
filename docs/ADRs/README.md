@@ -63,6 +63,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-054](ADR-054-run-a-use-case-read-only-when-its-name-starts-with-find.md) | Run a use case read-only when its name starts with `find` | Accepted, amended | 2026-10-30 |
 | [ADR-055](ADR-055-read-an-account-or-session-without-an-organisation-where-none-is-known.md) | Read an account or a session without an organisation where none is known | Accepted | 2026-10-30 |
 | [ADR-056](ADR-056-refuse-a-fraction-where-a-whole-number-is-bound.md) | Refuse a fraction where a whole number is bound | Accepted, amended | 2026-10-30 |
+| [ADR-058](ADR-058-refuse-a-request-member-the-request-type-does-not-have.md) | Refuse a request member the request type does not have | Accepted | 2026-10-31 |
 
 ## Decisions waiting to be recorded
 

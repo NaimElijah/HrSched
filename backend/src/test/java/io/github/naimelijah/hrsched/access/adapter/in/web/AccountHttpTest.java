@@ -365,9 +365,9 @@ class AccountHttpTest {
 
   /**
    * An organisation named in the body is not believed either: a body carrying a member its request
-   * type does not have is malformed, so the request is refused whole and no account is created in
-   * either organisation. It used to be created in the Admin's own, the member dropped unread; the
-   * refusal is stricter and proves the same thing, that the body cannot choose the organisation.
+   * type does not have is malformed (ADR-058), so the request is refused whole and no account is
+   * created in either organisation. The body cannot choose the organisation, and an attempt to is
+   * refused rather than answered as a success.
    */
   @Test
   void

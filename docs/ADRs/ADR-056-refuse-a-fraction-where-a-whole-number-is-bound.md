@@ -12,19 +12,6 @@
     decision below is: an enum field added later is covered without anybody remembering it. A
     query parameter, such as the strength of a withdrawn preference, goes through Spring's
     conversion, which already takes only a name. The decision stands.
-  - **Amended 2026-10-31:** And now a member the request type does not have. Boot turns Jackson's
-    `DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES` off, so an unknown member was dropped
-    unread: `PUT /api/constraints` with `maximumConsecutiveDay` answered 200 and stored a set with
-    that rule switched off, because a value left out means the rule does not apply, and a
-    misspelt objective weight stopped that objective being weighed
-    ([#256](https://github.com/NaimElijah/HrSched/issues/256)).
-    `spring.jackson.deserialization.fail-on-unknown-properties=true` turns the refusal back on for
-    every request body: the same 400 `Malformed request`, whose detail does not repeat the
-    member's name, with nothing stored: `UnknownMemberHttpTest`. A body naming an organisation is
-    therefore refused rather than read without it, which still keeps the organisation the
-    account's (ADR-031): `AccountHttpTest`. The cost is the strict reading's again: a client may
-    not send a member the server does not know, so a field is added to a request in the server
-    before any client sends it. The decision stands.
 - **Date:** 2026-10-30
 
 ## Context
