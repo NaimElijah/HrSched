@@ -28,19 +28,11 @@ flowchart LR
 
 ## Contents
 
-- [What and why](#what-and-why)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Tech stack](#tech-stack)
-- [Quick start](#quick-start)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Development](#development)
-- [Testing](#testing)
-- [Operations](#deployment-and-operations)
-- [Structure](#project-structure)
-- [Decisions](#design-decisions)
-- [Status](#status-and-limitations)
+[What and why](#what-and-why) · [Features](#features) · [Architecture](#architecture) ·
+[Tech stack](#tech-stack) · [Quick start](#quick-start) · [Configuration](#configuration) ·
+[Usage](#usage) · [Development](#development) · [Testing](#testing) ·
+[Operations](#deployment-and-operations) · [Structure](#project-structure) ·
+[Decisions](#design-decisions) · [Status](#status-and-limitations)
 
 ## What and why
 
@@ -258,16 +250,11 @@ when its log shows `Tests run:` and `BUILD SUCCESS`.
 Spring Boot 4 renamed some things that tutorials still call by their 3.x names; check `pom.xml` and
 [`backend/CLAUDE.md`](backend/CLAUDE.md), not older answers.
 
-**Adding a use case:**
-1. **Choose its context.** If it fits none, that is a new context and a new ADR.
-2. **Model the concept** in `domain/model`, with its invariants in the constructor.
-3. **Declare its ports** in `application/port/in` (driving) and `application/port/out` (driven).
-4. **Implement it** in `application/service`, with no annotations.
-5. **Register it** in `configuration/UseCaseConfiguration`.
-6. **Add its adapters:** `adapter/in/web` for HTTP, and `adapter/out/<kind>` for each driven port.
-7. **Open the route** in `SecurityConfiguration`, unless an existing family already admits it.
-8. **List the controller** in its context's `@RestControllerAdvice`, or its errors go untranslated.
-9. **Test** the domain and the service without Spring, then the route over HTTP.
+**Adding a use case** goes from the inside out: its context (one that fits none is a new context and
+a new ADR), the domain model, its ports, the service with no annotations, its registration in
+`UseCaseConfiguration`, the adapters, the route in `SecurityConfiguration`, its controller in the
+context's `@RestControllerAdvice`, and tests; the steps are in
+[`backend/CLAUDE.md`](backend/CLAUDE.md#adding-a-use-case).
 
 **Conventions:**
 - **Migrations:** Flyway SQL named `V<n>__<rule_in_snake_case>.sql`. An applied migration is never
