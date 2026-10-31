@@ -48,6 +48,11 @@ label {
   gap: 0.2rem;
   font-size: 0.82rem;
   color: #5f5a52;
+  /*
+   * Never wider than its container. Its field is stretched to its width, so this is the rule that
+   * keeps a long select from pushing a 320 px page sideways (1.4.10).
+   */
+  max-width: 100%;
 }
 
 input,
@@ -57,8 +62,13 @@ select {
   border: 1px solid var(--control-line);
   border-radius: 4px;
   background: #fff;
-  /* Never wider than its container, so a field does not push a 320 px page sideways (1.4.10). */
+  /*
+   * The minimum gives way to a narrow container. The maximum is a backstop for a field no label
+   * stretches. Held to its container, a select shows only what fits of a long option: the closed
+   * select cuts it off, and a multiple select cuts off every option it lists (#175).
+   */
   min-width: min(12rem, 100%);
+  max-width: 100%;
 }
 
 input[type='checkbox'] {
@@ -202,6 +212,12 @@ table {
 .table-scroll {
   overflow-x: auto;
   container-type: inline-size;
+  /*
+   * A containing block, so an absolutely positioned descendant, such as a visually hidden caption
+   * or "Actions" header, scrolls and is clipped with the table. Otherwise it stays at its column's
+   * unscrolled position and widens the page at 320 px.
+   */
+  position: relative;
 }
 
 .table-scroll:focus-visible {
@@ -209,11 +225,16 @@ table {
   outline-offset: 2px;
 }
 
-/* A refusal inside a row stays in view, at the region's left edge, however far it is scrolled. */
+/*
+ * A refusal inside a row stays in view, at the region's left edge, however far it is scrolled. A
+ * sticky box cannot leave its cell's content box, which is the cell's two 0.6rem paddings narrower
+ * than the region, so it is that much narrower too; at the region's width it was pushed 10 px out
+ * of view, with its alarm border, at either end of the scroll.
+ */
 .row-refusal {
   position: sticky;
   left: 0;
-  max-inline-size: 100cqi;
+  max-inline-size: calc(100cqi - 1.2rem);
 }
 
 th,
