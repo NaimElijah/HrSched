@@ -922,4 +922,5 @@ are not audited. Nothing at runtime depends on any of it.
   ([#34](https://github.com/NaimElijah/HrSched/issues/34)).
 - **An audit entry cannot be rolled back.** The trail is a log stream (ADR-018) and a transaction
   that fails after a service has recorded a change leaves a record of something that did not
-  happen. This follows from every use case being one transaction, and it is Q20's problem to solve.
+  happen. This follows from a use case being one transaction (ADR-023), and it is Q20's problem
+  to solve.
