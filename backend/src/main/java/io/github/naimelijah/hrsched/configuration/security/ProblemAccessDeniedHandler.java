@@ -31,6 +31,9 @@ import tools.jackson.databind.ObjectMapper;
  * <p>Everything else is the same 403 with the same sentence. Which rule refused a caller is a fact
  * about how this API is arranged, and there is no reason to hand it out.
  *
+ * <p>Titled "Not permitted", as every context's handler titles the same refusal, so a 403 reads the
+ * same whether the chain or a use case made it.
+ *
  * <p>Runs in a filter, before any controller is chosen, so the exception handlers never see it.
  */
 @Component
@@ -71,7 +74,7 @@ public class ProblemAccessDeniedHandler implements AccessDeniedHandler {
         .increment();
 
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
-    problem.setTitle("Forbidden");
+    problem.setTitle("Not permitted");
     problem.setDetail(
         pendingChange
             ? "Change your temporary password first."

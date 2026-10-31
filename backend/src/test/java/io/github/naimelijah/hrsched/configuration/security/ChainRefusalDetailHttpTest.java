@@ -24,7 +24,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * an account whose temporary password is still pending is told to change it, because a message
  * about its role would send it looking for an administrator instead of a password field (ADR-029).
  * Every other caller the chain refuses hears the same sentence about its role, whichever rule
- * refused it.
+ * refused it. Both are titled as every context's handler titles a 403 of the same kind, so a
+ * refusal reads the same whether the chain or a use case made it.
  *
  * <p>Annotated identically to the other HTTP tests so they all share one Spring context. Every name
  * here is invented for the test.
@@ -37,6 +38,9 @@ class ChainRefusalDetailHttpTest {
   private static final String CHANGE_YOUR_PASSWORD_FIRST = "Change your temporary password first.";
 
   private static final String YOUR_ROLE_DOES_NOT_PERMIT_THIS = "Your role does not permit this.";
+
+  /** The title every 403 of this kind carries, whether the chain or a use case refused it. */
+  private static final String NOT_PERMITTED = "Not permitted";
 
   @Autowired private MockMvc mockMvc;
 
@@ -53,6 +57,7 @@ class ChainRefusalDetailHttpTest {
     mockMvc
         .perform(TestTenants.with(get("/api/qualifications"), token))
         .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.title").value(NOT_PERMITTED))
         .andExpect(jsonPath("$.detail").value(CHANGE_YOUR_PASSWORD_FIRST));
   }
 
@@ -63,6 +68,7 @@ class ChainRefusalDetailHttpTest {
     mockMvc
         .perform(TestTenants.with(get("/api/accounts"), TestTenants.operatorToken(mockMvc)))
         .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.title").value(NOT_PERMITTED))
         .andExpect(jsonPath("$.detail").value(YOUR_ROLE_DOES_NOT_PERMIT_THIS));
   }
 

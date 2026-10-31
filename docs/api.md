@@ -46,7 +46,8 @@ A sign-in returns a short-lived access token and sets a rotating refresh cookie:
 `Secure`, `SameSite=Strict`, scoped to `/api/auth`
 ([ADR-028](ADRs/ADR-028-keep-the-session-in-memory-and-a-rotating-refresh-cookie.md)). An account
 whose password somebody else chose gets a token that can do one thing, change that password; every
-other route answers `403` until it does. The new password must be at least 15 characters. Changing
+other route answers `403` titled `Not permitted`, whose detail says to change it first, until it
+does. The new password must be at least 15 characters. Changing
 it revokes every earlier session, so only the token in that response works. A first sign-in answers
 like this, with the token shortened and every identifier invented. An Employee account is always
 linked to an employee (R34), so `employee` is null only for the other roles:
