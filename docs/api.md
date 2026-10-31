@@ -3,8 +3,8 @@
 Every route HrSched serves, who may call it, and a walkthrough from an empty database to a published
 roster. The README shows the responses that matter most; this page is the rest.
 
-Every call except sign-in carries a bearer token HrSched signed itself. The organisation is never
-part of a request: it comes from the account the token names
+Every call except sign-in, refresh and sign-out carries a bearer token HrSched signed itself. The
+organisation is never part of a request: it comes from the account the token names
 ([ADR-031](ADRs/ADR-031-take-the-organisation-from-the-account.md)). A refusal is an RFC 9457
 problem detail, `application/problem+json`, bar the few [listed below](#what-is-not-a-problem-detail),
 and every response carries its trace id as `X-Trace-Id`. Every
@@ -22,7 +22,7 @@ asked for.
 
 | Area | Endpoints | Who |
 | :--- | :--- | :--- |
-| Session | `POST /api/auth/sign-in`, `/refresh`, `/sign-out` | Anyone; refresh and sign-out need the cookie and `X-Requested-With` |
+| Session | `POST /api/auth/sign-in`, `/refresh`, `/sign-out` | Anyone; refresh needs the cookie, and refresh and sign-out need `X-Requested-With` |
 | Own account | `GET /api/auth/session`, `POST /api/auth/password` | Any signed-in account, even before its password is changed |
 | Tenants | `POST`, `GET /api/organisations`; `GET /api/organisations/{id}` | Operator; a tenant may read only its own |
 | Accounts | `POST`, `GET /api/accounts`; `GET /{id}`; `PUT /{id}/membership`, `/{id}/activation`; `POST /{id}/password` | Admin |
@@ -288,7 +288,7 @@ refuses the route rather than a state.
 | Type | Status | Title | When |
 | :--- | :--- | :--- | :--- |
 | `urn:hrsched:problem:invalid-request` | `400` | `Invalid request` | A value is missing or out of range: a required member, parameter or header, an identifier that cannot be read, a name, span, headcount or limit the domain refuses. |
-| `urn:hrsched:problem:malformed-request` | `400` | `Malformed request` | The body is not valid JSON, carries a member the route does not take, or holds a value of the wrong form: a fraction for a whole number, a number for a name. |
+| `urn:hrsched:problem:malformed-request` | `400` | `Malformed request` | The body is not valid JSON, lacks a required whole-number member, carries a member the route does not take, or holds a value of the wrong form: a fraction for a whole number, a number for a name. |
 | `urn:hrsched:problem:sign-in-refused` | `401` | `Sign-in refused` | A sign-in or a renewal fails. Every reason answers alike: an unknown name, a wrong password, a disabled or locked account, a cookie that is missing, reused or expired. |
 | `urn:hrsched:problem:unauthenticated` | `401` | `Unauthenticated` | No token on a route that needs one, or any token that is not accepted. |
 | `urn:hrsched:problem:not-permitted` | `403` | `Not permitted` | The role does not permit the route; or the Operator reaches inside an organisation; or an account linked to no employee asks for its schedule or notifications. |
@@ -314,7 +314,7 @@ refuses the route rather than a state.
 | `urn:hrsched:problem:employee-account-not-linked` | `422` | `Employee account not linked` | An Employee account would be linked to nobody: created, changed, or restored so. |
 | `urn:hrsched:problem:password-not-accepted` | `422` | `Password not accepted` | A new or temporary password the policy refuses; `reason` says which rule. |
 | `urn:hrsched:problem:roster-breaks-the-rules` | `422` | `Roster breaks the rules` | Publishing a draft, or approving a swap, that breaks a rule; `violations` lists every breach. |
-| `urn:hrsched:problem:roster-cannot-be-checked-against-the-rules` | `422` | `Roster cannot be checked against the rules` | A shift a roster names cannot be resolved: when publishing, checking, assigning or reading one's own schedule. |
+| `urn:hrsched:problem:roster-cannot-be-checked-against-the-rules` | `422` | `Roster cannot be checked against the rules` | A shift a roster names cannot be resolved: when publishing, checking, assigning, approving a swap or reading one's own schedule. |
 | `urn:hrsched:problem:unknown-employee` | `422` | `Unknown employee` | Creating an account, or changing its membership, naming an employee the organisation does not employ. |
 | `urn:hrsched:problem:generation-is-busy` | `503` | `Generation is busy` | The instance is already solving `hrsched.generation.concurrent-runs` generations. |
 | `urn:hrsched:problem:generation-is-unavailable` | `503` | `Generation is unavailable` | The instance asked is shutting down. |
@@ -350,16 +350,18 @@ Everything above is. These are not, and carry no `type`:
 - **Credentials that are not accepted.** A sign-in, or a renewal at `POST /api/auth/refresh`, that
   fails for any reason answers `401` titled `Sign-in refused`, with the challenge `Bearer` and the
   same body however it failed: an unknown name, a wrong password, a disabled or locked account, a
-  refresh cookie that is missing, reused, expired, of an ended session or of a disabled account. A renewal also clears the
-  cookie. This is not `Unauthenticated`, which refuses a token presented to another route. A sign-in
-  that leaves out the name or the password is refused this way, as if it were empty.
+  refresh cookie that is missing, reused, expired, of an ended session or of a disabled account. A
+  renewal also clears the cookie. This is not `Unauthenticated`, which refuses a token presented to
+  another route. A sign-in that leaves out the name or the password is refused this way, as if it
+  were empty.
 - **A parameter, header or member that is missing.** A required query parameter or header left out
   (`from`, `start`, `strength`, `X-Requested-With` on `/refresh` and `/sign-out`), or an identifier
   that cannot be read as the type it is, answers `400` titled `Invalid request`. The detail names
   the parameter, such as `from is required` or `id could not be read as UUID`, and never repeats
   the value sent. A body member a request checks for itself, such as `shift` or `signInName`, left
-  out is refused the same way. A whole-number member, such as `weeklyContractedMinutes`, left out
-  answers `400` titled `Malformed request`.
+  out is refused the same way. A whole-number member that is not optional, such as
+  `requiredHeadcount` or `weeklyContractedMinutes`, left out answers `400` titled `Malformed request`.
+  A limit in `PUT /api/constraints` or a weight in `PUT /api/objectives` left out is simply not set.
 - **A JSON body that is too large.** One over `hrsched.web.max-json-document-bytes` (1048576 bytes
   by default) answers `413` titled `Request too large`, before any use case runs. Its detail repeats
   nothing that was sent.
@@ -505,9 +507,7 @@ Everything above is. These are not, and carry no `type`:
 
 ## Conventions for new fields
 
-The fields already shipped are not uniform, and the API review recorded that without renaming
-anything ([#256](https://github.com/NaimElijah/HrSched/issues/256)). A span is `start` and `end`
+The fields already shipped are not uniform, and nothing has been renamed. A span is `start` and `end`
 in a body and in the two `DELETE` queries that name a span as it was declared, but `from` and
 `to` in the `GET` queries (`/api/shifts`, `/api/me/schedule`). An identity is `id` in a response,
-but `userId` in the session. A new field follows one rule each: `from` and `to` for a span in a
-new query parameter, and `id` for an identity.
+but `userId` in the session. Which of these a new field follows is not decided yet.
