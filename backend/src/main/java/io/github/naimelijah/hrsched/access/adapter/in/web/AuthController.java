@@ -1,5 +1,7 @@
 package io.github.naimelijah.hrsched.access.adapter.in.web;
 
+import io.github.naimelijah.hrsched.access.adapter.in.token.ActorAuthentication;
+import io.github.naimelijah.hrsched.access.adapter.in.token.ActorAuthenticationConverter;
 import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordCommand;
 import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordOutcome;
 import io.github.naimelijah.hrsched.access.application.port.in.ChangePasswordUseCase;
@@ -28,6 +30,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -192,24 +195,35 @@ public class AuthController {
    * token and try again", which is exactly what a client would do — and it would then try the same
    * wrong password for ever.
    *
-   * @param actor whoever is changing their own password
+   * @param caller whoever is changing their own password, and the session they are asking from
    * @param request the current and new passwords
    * @return 200 with a new session, 403 if the current password was wrong, the account is locked or
    *     it was disabled since the request was authenticated (answered alike), or 422 naming the
    *     rule a new password broke
+   * @throws InvalidBearerTokenException if the caller's session ended since the request was
+   *     authenticated; the security chain answers it 401, as it answers any token of an ended
+   *     session
    */
   @PostMapping(path = "/password", consumes = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<?> changePassword(
-      @AuthenticationPrincipal Actor actor, @RequestBody ChangePasswordRequest request) {
+      ActorAuthentication caller, @RequestBody ChangePasswordRequest request) {
+    Actor actor = caller.getPrincipal();
     ChangePasswordOutcome outcome =
         changePassword.changePassword(
-            actor, new ChangePasswordCommand(request.submittedCurrent(), request.submittedNew()));
+            actor,
+            caller.session(),
+            new ChangePasswordCommand(request.submittedCurrent(), request.submittedNew()));
     return switch (outcome) {
       case ChangePasswordOutcome.Changed changed -> accepted(changed.session());
       case ChangePasswordOutcome.CurrentPasswordRejected rejected ->
           currentPasswordRejected(actor, rejected.reason());
       case ChangePasswordOutcome.NewPasswordRejected rejected ->
           newPasswordRejected(rejected.reason());
+      // Thrown rather than composed, so the entry point answers it: one answer in one place, and a
+      // session ended a moment after authentication reads the same as one ended a moment before.
+      // The refresh cookie stays: it may belong to a newer session by now.
+      case ChangePasswordOutcome.SessionEnded ended ->
+          throw new InvalidBearerTokenException(ActorAuthenticationConverter.NOT_ACCEPTED);
     };
   }
 

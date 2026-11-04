@@ -284,10 +284,16 @@ public class SessionService
    * locked account is refused here as at sign-in, whatever password it is given, and nothing is
    * counted (R29). So is an account disabled after the request was authenticated, as its held copy
    * shows (R17).
+   *
+   * <p>A change that passes all of that goes ahead only if it is what ends the calling session.
+   * Finding that session already ended, it changes nothing and returns {@code SessionEnded}, so a
+   * sign-out cannot be undone by a change still in flight (#352).
    */
   @Override
-  public ChangePasswordOutcome changePassword(Actor actor, ChangePasswordCommand command) {
+  public ChangePasswordOutcome changePassword(
+      Actor actor, SignInSessionId callingSession, ChangePasswordCommand command) {
     Objects.requireNonNull(actor, "actor must not be null");
+    Objects.requireNonNull(callingSession, "callingSession must not be null");
     Objects.requireNonNull(command, "command must not be null");
     Instant now = clock.instant();
     // Authenticated moments ago, so an account that is not there is a fault rather than a refusal,
@@ -335,10 +341,17 @@ public class SessionService
     }
     Account changed =
         account.withPassword(passwords.hash(command.newPassword()), false).recordSuccessfulSignIn();
+    // The conditional update is what decides the race with a sign-out: it waits on one in flight,
+    // then sees its result. A read earlier in this method would leave three password hashes' worth
+    // of gap, and would make the disabled branch unreachable, as a disable revokes in its own
+    // transaction. Nothing has been written yet, so a refusal here leaves everything as it was.
+    if (!sessions.revoke(callingSession, SessionRevocation.PASSWORD_CHANGED, now)) {
+      return new ChangePasswordOutcome.SessionEnded();
+    }
     accounts.save(changed);
-    // Every session, including the one that asked: a password change has to end anything opened
-    // under the old one, and the caller is handed a new session rather than being signed out of
-    // their own password change.
+    // The account's other sessions, the one that asked having ended above: a password change has to
+    // end anything opened under the old one, and the caller is handed a new session rather than
+    // being signed out of their own password change.
     sessions.revokeEverySessionOf(changed.id(), SessionRevocation.PASSWORD_CHANGED, now);
     // Begun before the change is recorded: the new session's writes can still fail and take the
     // change back with them, and a line recorded first would outlive that rollback (#133).

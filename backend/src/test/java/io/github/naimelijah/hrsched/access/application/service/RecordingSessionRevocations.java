@@ -61,7 +61,7 @@ final class RecordingSessionRevocations implements SessionRepository {
   }
 
   @Override
-  public void revoke(SignInSessionId session, SessionRevocation reason, Instant now) {
+  public boolean revoke(SignInSessionId session, SessionRevocation reason, Instant now) {
     throw notAboutSessions();
   }
 

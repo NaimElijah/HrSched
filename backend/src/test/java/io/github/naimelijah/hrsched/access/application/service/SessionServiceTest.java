@@ -43,10 +43,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -587,6 +589,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
+            sessions.aLiveSession(),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
@@ -606,6 +609,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
+            sessions.aLiveSession(),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome)
@@ -618,6 +622,34 @@ class SessionServiceTest {
     assertThat(after.failedSignIns()).isEqualTo(disabled.failedSignIns());
     assertThat(sessions.started()).isEmpty();
     assertThat(sessions.everySessionEndedFor(disabled.id())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The session ended after the request was authenticated, by a sign-out for one, and the change
+   * reaches its first write with everything else in order (#352). Going on would begin a new
+   * session for somebody who has signed out, so it stops there, with nothing written.
+   */
+  @Test
+  void
+      GivenTheCallingSessionAlreadyEnded_WhenChangingThePassword_ThenItIsRefusedAndNothingChanges() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+    SignInSessionId signedOut = sessions.aLiveSession();
+    sessions.revoke(signedOut, SessionRevocation.SIGNED_OUT, NOW);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            signedOut,
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.SessionEnded.class);
+    Account after = accounts.find(ACME, account.id()).orElseThrow();
+    assertThat(after.passwordHash()).isEqualTo(account.passwordHash());
+    assertThat(accounts.saved()).isEmpty();
+    assertThat(sessions.started()).isEmpty();
+    assertThat(sessions.everySessionEndedFor(account.id())).isEmpty();
     assertThat(audit.changes()).isEmpty();
   }
 
@@ -641,6 +673,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
+            sessions.aLiveSession(),
             new ChangePasswordCommand(WRONG_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome)
@@ -668,6 +701,7 @@ class SessionServiceTest {
             () ->
                 service.changePassword(
                     themself,
+                    sessions.aLiveSession(),
                     new ChangePasswordCommand(
                         RIGHT_PASSWORD, "another invented password for a test")))
         .isInstanceOf(StubSessionRepository.SessionNotStored.class);
@@ -687,6 +721,7 @@ class SessionServiceTest {
 
     service.changePassword(
         themself,
+        sessions.aLiveSession(),
         new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(audit.changes())
@@ -708,6 +743,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             new Operator(account.id()),
+            sessions.aLiveSession(),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
@@ -732,6 +768,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
+            sessions.aLiveSession(),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(passwords.comparisons())
@@ -764,6 +801,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
+            sessions.aLiveSession(),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
@@ -785,6 +823,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
+            sessions.aLiveSession(),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
@@ -931,6 +970,10 @@ class SessionServiceTest {
    * expires; and lets a test say that the conditional update found nothing to change, or that a
    * session cannot be stored.
    *
+   * <p>A session is revocable only if this was told of it and nothing has revoked it, as the real
+   * adapter's conditional update allows: never live by default, or a test could not tell a change
+   * that ended its own session from one that found it gone.
+   *
    * <p>The first of those is the only way to reach the race the real adapter guards against: two
    * refreshes holding one token, where the database awards the exchange to one of them. Here the
    * test simply says the exchange was already taken.
@@ -945,6 +988,7 @@ class SessionServiceTest {
     }
 
     private final List<SignInSession> started = new ArrayList<>();
+    private final Set<SignInSessionId> unrevoked = new HashSet<>();
     private final Map<SignInSessionId, SessionRevocation> revocations = new LinkedHashMap<>();
     private final Map<String, StoredRefreshToken> tokens = new LinkedHashMap<>();
     private final Map<UserId, SessionRevocation> accountsWhoseSessionsEnded = new LinkedHashMap<>();
@@ -981,6 +1025,18 @@ class SessionServiceTest {
 
     void given(String tokenValue, StoredRefreshToken token) {
       tokens.put(tokenValue, token);
+      if (token.session().revocation().isEmpty()) {
+        unrevoked.add(token.session().id());
+      }
+    }
+
+    /**
+     * @return a session begun before the test, which {@link #started()} does not count
+     */
+    SignInSessionId aLiveSession() {
+      SignInSessionId session = SignInSessionId.newId();
+      unrevoked.add(session);
+      return session;
     }
 
     @Override
@@ -989,6 +1045,7 @@ class SessionServiceTest {
         throw new SessionNotStored();
       }
       started.add(session);
+      unrevoked.add(session.id());
     }
 
     @Override
@@ -1012,8 +1069,12 @@ class SessionServiceTest {
     }
 
     @Override
-    public void revoke(SignInSessionId session, SessionRevocation reason, Instant now) {
-      revocations.putIfAbsent(session, reason);
+    public boolean revoke(SignInSessionId session, SessionRevocation reason, Instant now) {
+      if (!unrevoked.remove(session)) {
+        return false;
+      }
+      revocations.put(session, reason);
+      return true;
     }
 
     @Override

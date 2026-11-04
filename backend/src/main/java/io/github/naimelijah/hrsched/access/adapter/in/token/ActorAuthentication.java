@@ -1,5 +1,6 @@
 package io.github.naimelijah.hrsched.access.adapter.in.token;
 
+import io.github.naimelijah.hrsched.access.domain.model.SignInSessionId;
 import io.github.naimelijah.hrsched.shared.domain.model.Actor;
 import io.github.naimelijah.hrsched.shared.domain.model.Operator;
 import io.github.naimelijah.hrsched.shared.domain.model.TenantActor;
@@ -15,9 +16,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
  * A verified caller, as Spring Security holds one.
  *
  * <p>The principal is the kernel {@link Actor} itself, so a controller can take the identity the
- * domain understands straight off the request rather than reassembling one from claims. That is the
- * whole reason this class exists: without it, every controller would be turning a token back into
- * an actor, and each of them could do it slightly differently.
+ * domain understands straight off the request rather than reassembling one from claims. Without it,
+ * every controller would be turning a token back into an actor, and each of them could do it
+ * slightly differently. The session the token names is held beside it, for the same reason.
  *
  * <p>Authorities come from the account as it is <em>now</em>, never from the token. A role carried
  * in a token would keep working until the token expired, which is exactly what demoting somebody is
@@ -43,16 +44,20 @@ public final class ActorAuthentication extends AbstractAuthenticationToken {
   public static final String PASSWORD_CHANGE_REQUIRED = "PASSWORD_CHANGE_REQUIRED";
 
   private final Actor actor;
+  private final SignInSessionId session;
   private final Jwt token;
 
   /**
    * @param actor who the caller is, never {@code null}
+   * @param session the session their token belongs to, never {@code null}
    * @param token the verified token they presented, never {@code null}
    * @param passwordChangeRequired whether they must change their password before anything else
    */
-  public ActorAuthentication(Actor actor, Jwt token, boolean passwordChangeRequired) {
+  public ActorAuthentication(
+      Actor actor, SignInSessionId session, Jwt token, boolean passwordChangeRequired) {
     super(authoritiesFor(actor, passwordChangeRequired));
     this.actor = Objects.requireNonNull(actor, "actor must not be null");
+    this.session = Objects.requireNonNull(session, "session must not be null");
     this.token = Objects.requireNonNull(token, "token must not be null");
     setAuthenticated(true);
   }
@@ -60,6 +65,15 @@ public final class ActorAuthentication extends AbstractAuthenticationToken {
   @Override
   public Actor getPrincipal() {
     return actor;
+  }
+
+  /**
+   * The session the caller's token belongs to, which was live when the request was authenticated.
+   *
+   * @return its identifier, never {@code null}
+   */
+  public SignInSessionId session() {
+    return session;
   }
 
   @Override

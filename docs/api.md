@@ -71,7 +71,7 @@ everything the caller may see, unpaged ([#337](https://github.com/NaimElijah/HrS
 | `POST /api/auth/refresh` | `200`, as a sign-in, cookie rotated | `401 Sign-in refused`, cookie cleared; `400 Invalid request` without `X-Requested-With` |
 | `POST /api/auth/sign-out` | `204`, cookie cleared, whatever it held | `400 Invalid request` without `X-Requested-With` |
 | `GET /api/auth/session` | `200`, the session | a bare `404` ([below](#what-is-not-a-problem-detail)) |
-| `POST /api/auth/password` | `200`, a new session and cookie | `403 Password not changed`; `422 Password not accepted` |
+| `POST /api/auth/password` | `200`, a new session and cookie | `403 Password not changed`; `422 Password not accepted`; `401 Unauthenticated` if the session ended meanwhile ([below](#other-refusals)) |
 | `POST /api/organisations` | `201`, `Location`, `id` and `name` | `400 Invalid request`; `409 Sign-in name taken`; `422 Password not accepted` |
 | `GET /api/organisations` | `200`, every organisation | none |
 | `GET /api/organisations/{id}` | `200` | none |
@@ -290,7 +290,7 @@ refuses the route rather than a state.
 | `urn:hrsched:problem:invalid-request` | `400` | `Invalid request` | A value is missing or out of range: a required member, parameter or header, an identifier that cannot be read, a name, span, headcount or limit the domain refuses. |
 | `urn:hrsched:problem:malformed-request` | `400` | `Malformed request` | The body is not valid JSON, lacks a required whole-number member, carries a member the route does not take, or holds a value of the wrong form: a fraction for a whole number, a number for a name. |
 | `urn:hrsched:problem:sign-in-refused` | `401` | `Sign-in refused` | A sign-in or a renewal fails. Every reason answers alike: an unknown name, a wrong password, a disabled or locked account, a cookie that is missing, reused or expired. |
-| `urn:hrsched:problem:unauthenticated` | `401` | `Unauthenticated` | No token on a route that needs one, or any token that is not accepted. |
+| `urn:hrsched:problem:unauthenticated` | `401` | `Unauthenticated` | No token on a route that needs one, or any token that is not accepted, including one whose session ended while `POST /api/auth/password` was running. |
 | `urn:hrsched:problem:not-permitted` | `403` | `Not permitted` | The role does not permit the route; or the Operator reaches inside an organisation; or an account linked to no employee asks for its schedule or notifications. |
 | `urn:hrsched:problem:password-change-required` | `403` | `Password change required` | A token whose password somebody else chose reaches any route but `GET /api/auth/session` and `POST /api/auth/password`. |
 | `urn:hrsched:problem:password-not-changed` | `403` | `Password not changed` | `POST /api/auth/password` with a current password that is wrong, or for an account that is locked or has been disabled. All three answer alike. |
@@ -347,6 +347,10 @@ Everything above is. These are not, and carry no `type`:
   does not exist), it is the same sentence, so the response never says which check failed:
   `Bearer error="invalid_token", error_description="The access token was not accepted",
   error_uri="https://tools.ietf.org/html/rfc6750#section-3.1"`. The body is the same in both.
+  `POST /api/auth/password` answers it too when the caller's session ended after the request was
+  authenticated, such as a sign-out landing first. It sets no cookie, stores no password and begins
+  no session. A wrong current password, a locked account and a disabled one are refused first, with
+  the `403` below.
 - **Credentials that are not accepted.** A sign-in, or a renewal at `POST /api/auth/refresh`, that
   fails for any reason answers `401` titled `Sign-in refused`, with the challenge `Bearer` and the
   same body however it failed: an unknown name, a wrong password, a disabled or locked account, a
@@ -480,7 +484,8 @@ Everything above is. These are not, and carry no `type`:
   password is wrong, and the same when the account is locked or has been disabled, so the answer
   never says which. It is a `403` rather than a `401` because a `401` tells a client to renew its
   token and try again, which would send the same wrong password for ever. The current password is
-  judged before the new one, and a wrong one counts towards the lock.
+  judged before the new one, and a wrong one counts towards the lock. A change whose session ended
+  meanwhile is a `401 Unauthenticated` instead, [described above](#other-refusals).
 - **An Employee account linked to nobody.** Creating one, taking the link away from one, giving
   the Employee role to an account linked to nobody, or restoring one stored unlinked before R34
   answers `422` titled `Employee account not linked`.

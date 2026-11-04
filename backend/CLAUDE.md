@@ -80,8 +80,10 @@ types table, and a `$.type` assertion in the test that provokes it (ADR-057).
 
 - **Who is acting is an argument, never an ambient read.** `SecurityContextHolder` is forbidden
   outside `configuration.security`, where one Spring callback has no parameter to take the caller
-  from. A use case takes an `Actor`; a controller gets one through `@AuthenticationPrincipal` and
-  the organisation from it through `actingIn` (`organisationOf` in `AccountController`).
+  from. A use case takes an `Actor`; a controller gets one through `@AuthenticationPrincipal`, or
+  through `ActorAuthentication` where it needs the calling session too
+  (`AuthController.changePassword`), and the organisation from it through `actingIn`
+  (`organisationOf` in `AccountController`).
   `GET /api/organisations/{id}` names what to read, not who acts; a tenant naming another gets a
   404. Nothing reads `X-User`, `X-Role`, `X-Organisation` or `X-Employee`; never bring them back.
 - **Tenancy is in every signature.** Repository methods but a save take an `OrganisationId`; there
