@@ -181,27 +181,38 @@ jobs:
             exit 1
           fi
 
-      # gitleaks exits 0 having scanned nothing when git refuses the repository, so its exit code is
-      # not enough: this also checks it read what is there. It counts each commit that adds a line
-      # of text, the least the scan must have read, since it reads added lines and may count a commit
-      # that adds none. Not a docker:// step: the runner sets HOME for those, and the image's
-      # safe.directory setting would go unread. No network and a read-only mount, as all it does is
-      # read what it is given.
+      # gitleaks' own default log leaves out what a merge commit adds, as a conflict resolution can,
+      # so -m reads merges against each parent. Without T in the filter a file that was a symlink
+      # goes unread. * diff outranks .gitattributes, where one line could otherwise hide a file's
+      # whole history from both reads below. The floor counts each commit that adds a line of text,
+      # the least the scan must have read, which catches a scan that stopped early. Not a docker://
+      # step: the runner sets HOME for those, and the image's safe.directory setting would go unread.
       - name: Scan
+        env:
+          LOG_OPTS: --all --full-history -m --diff-filter=uxdb
         run: |
           set -o pipefail
           if [ "$(git rev-parse --is-shallow-repository)" != "false" ]; then
             echo "::error::the clone is shallow, so the scan would not see the whole history (ADR-060)"
             exit 1
           fi
+          printf '* diff\n' >> .git/info/attributes
           log=$(mktemp)
           docker run --rm --network none -v "$PWD:/repo:ro" "$IMAGE" \
-            git /repo --config /repo/.gitleaks.toml --ignore-gitleaks-allow --redact --no-banner 2>&1 | tee "$log"
-          expected=$(git log --all --no-merges --numstat --format='commit %H' \
-            | awk '/^commit /{ if (added > 0) commits++; added = 0; next } $1 ~ /^[0-9]+$/ { added += $1 } END { if (added > 0) commits++; print commits + 0 }')
-          scanned=$(grep -oE '[0-9]+ commits scanned' "$log" | grep -oE '^[0-9]+' || true)
-          echo "Scanned ${scanned:-no} commits; at least $expected add a line of text."
-          if [ -z "$scanned" ] || [ "$expected" -eq 0 ] || [ "$scanned" -lt "$expected" ]; then
-            echo "::error::the scan read ${scanned:-no} commits, fewer than the $expected that add text (ADR-060)"
+            git /repo --config /repo/.gitleaks.toml --log-opts="$LOG_OPTS" \
+            --ignore-gitleaks-allow --redact --no-banner 2>&1 | tee "$log"
+          if grep -q 'ERR' "$log"; then
+            echo "::error::git or gitleaks reported an error, so the scan may be incomplete (ADR-060)"
             exit 1
           fi
+          floor=$(git log --all -m --numstat --format='commit %H' \
+            | awk '/^commit /{ commit = $2; next } $1 ~ /^[0-9]+$/ && $1 > 0 { added[commit] = 1 } END { n = 0; for (c in added) n++; print n }')
+          scanned=$(grep -oE '[0-9]+ commits scanned' "$log" | grep -oE '^[0-9]+' || true)
+          echo "Scanned ${scanned:-no} commits; at least $floor add a line of text."
+          # Written this way round because [ answers 2 to a value that is not a number, which an
+          # if reads as false: a comparison that cannot be made has to end in the refusal.
+          if [ -n "$scanned" ] && [ "$floor" -gt 0 ] && [ "$scanned" -ge "$floor" ]; then
+            exit 0
+          fi
+          echo "::error::the scan read ${scanned:-no} commits, fewer than the $floor that add text (ADR-060)"
+          exit 1
