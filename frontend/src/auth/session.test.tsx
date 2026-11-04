@@ -1489,6 +1489,50 @@ describe('a password change still out when the session ends', () => {
     );
   });
 
+  /**
+   * The first sign-out's confirmation says the session ended, but it may have cleared the cookie
+   * before the change's new one landed. So if the second sign-out then fails, this browser may still
+   * be signed in, and the sign-in form would say it was not.
+   */
+  it('GivenASecondSignOutThatFails_WhenTheFirstWasConfirmedWhileItWasOut_ThenTheWarningStays', async () => {
+    const { stub, answer } = answeredByHand();
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign-out not confirmed' });
+    await settling(() => {
+      answer(
+        CHANGE,
+        0,
+        responseOf(200, () => Promise.resolve(JSON.stringify(signedInBody()))),
+      );
+    });
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(2),
+    );
+
+    await settling(() => {
+      answer(
+        SIGN_OUT,
+        0,
+        responseOf(204, () => Promise.resolve('')),
+      );
+    });
+    await settling(() => {
+      answer(
+        SIGN_OUT,
+        1,
+        responseOf(503, () => Promise.resolve('')),
+      );
+    });
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sign-out not confirmed' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).toBeNull();
+  });
+
   /** The same for a body that arrives and is not what a success is: it says nothing of a cookie. */
   it('GivenAnAcceptedChangeWhoseBodyIsNotJson_WhenItsSessionEndedMeanwhile_ThenASecondSignOutIsSent', async () => {
     const { stub, answer } = answeredByHand();

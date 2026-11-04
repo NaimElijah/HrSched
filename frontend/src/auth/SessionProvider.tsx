@@ -246,7 +246,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch (failure) {
       // Every caller fires this and forgets it, so a rejection here would be one nobody hears. It
       // is handled by being shown: the session already ended as `sign-out-unconfirmed` before the
-      // request was sent, and that screen reports this failure and its reference (#250).
+      // request was sent, and that screen reports this failure and its reference (#250). Said again
+      // here because another sign-out's confirmation may have cleared that state while this one was
+      // out, and its cookie may be the one still live (#352).
+      setSignOutUnconfirmed(true);
       setSignOutProgress((progress) => ({
         pending: false,
         failures: progress.failures + 1,
