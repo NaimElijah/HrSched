@@ -71,7 +71,7 @@ everything the caller may see, unpaged ([#337](https://github.com/NaimElijah/HrS
 | `POST /api/auth/refresh` | `200`, as a sign-in, cookie rotated | `401 Sign-in refused`, cookie cleared; `400 Invalid request` without `X-Requested-With` |
 | `POST /api/auth/sign-out` | `204`, cookie cleared, whatever it held | `400 Invalid request` without `X-Requested-With` |
 | `GET /api/auth/session` | `200`, the session | a bare `404` ([below](#what-is-not-a-problem-detail)) |
-| `POST /api/auth/password` | `200`, a new session and cookie | `403 Password not changed`; `422 Password not accepted`; `401 Unauthenticated` if the session ended meanwhile ([below](#other-refusals)) |
+| `POST /api/auth/password` | `200`, a new session and cookie | `403 Password not changed`; `422 Password not accepted`; the same `401 Unauthenticated` every route gives, if the session ended meanwhile ([below](#other-refusals)) |
 | `POST /api/organisations` | `201`, `Location`, `id` and `name` | `400 Invalid request`; `409 Sign-in name taken`; `422 Password not accepted` |
 | `GET /api/organisations` | `200`, every organisation | none |
 | `GET /api/organisations/{id}` | `200` | none |
