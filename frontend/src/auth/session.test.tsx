@@ -1461,6 +1461,30 @@ describe('a password change still out when the session ends', () => {
   });
 
   /**
+   * A sign-in as the same account puts back a session that reads the same, so only the count can
+   * tell it from the one the change was sent from. The answer's cookie has by now replaced that
+   * sign-in's, so it is signed out too: the safe direction (#371).
+   */
+  it('GivenASignInAfterASignOutWhileAPasswordChangeIsOut_WhenTheChangeIsAccepted_ThenTheAnswerIsNotKeptAndASignOutIsSent', async () => {
+    const { stub, release } = forcedChangeHolding([CHANGE]);
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await signInAs(MUST_CHANGE.signInName);
+    await screen.findByRole('button', { name: 'People' });
+
+    await settling(() => {
+      release(CHANGE);
+    });
+
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(2),
+    );
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+  });
+
+  /**
    * Another tab's sign-out ends the session here too, and this tab never pressed anything. The
    * answer it is still waiting for carries a cookie all the same, so it owes the sign-out itself.
    */
