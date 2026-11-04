@@ -370,8 +370,11 @@ public class SessionService
         .filter(session -> session.isLiveAt(now))
         .ifPresent(
             session -> {
-              sessions.revoke(session.id(), SessionRevocation.SIGNED_OUT, now);
-              recordAbout(session, AccessChange.SIGNED_OUT);
+              // Read as live, but something else may have ended it since. Recording a sign-out that
+              // ended nothing would show the account left signed out when it may not be (#352).
+              if (sessions.revoke(session.id(), SessionRevocation.SIGNED_OUT, now)) {
+                recordAbout(session, AccessChange.SIGNED_OUT);
+              }
             });
   }
 

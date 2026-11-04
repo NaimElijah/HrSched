@@ -446,6 +446,28 @@ class SessionServiceTest {
                 Optional.of(ACME), account.id(), AccessChange.SIGNED_OUT, session.id().value()));
   }
 
+  /**
+   * The sign-out read the session as live, then lost its row to a password change. A sign-out that
+   * ended nothing recording that it did would show the account left signed out, while the row says
+   * the change ended it and the session the change began is still live (#352).
+   */
+  @Test
+  void GivenASessionEndedAsTheSignOutReachedIt_WhenSigningOut_ThenNoSignOutIsRecorded() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    SignInSession session =
+        new SignInSession(
+            SignInSessionId.newId(), account.id(), NOW, NOW.plus(Duration.ofHours(12)));
+    sessions.given(
+        "a-token-read-as-live",
+        new StoredRefreshToken(session, NOW.plus(Duration.ofHours(1)), Optional.empty()));
+    sessions.revoke(session.id(), SessionRevocation.PASSWORD_CHANGED, NOW);
+
+    service.signOut("a-token-read-as-live");
+
+    assertThat(audit.changes()).isEmpty();
+    assertThat(sessions.revocationOf(session.id())).contains(SessionRevocation.PASSWORD_CHANGED);
+  }
+
   // --- the idle limit: a refresh token that sat unused too long, and the successor's expiry -----
 
   @Test
