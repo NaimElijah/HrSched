@@ -1337,7 +1337,7 @@ describe('a password change still out when the session ends', () => {
     return new Headers(last?.[1]?.headers).get('Authorization');
   }
 
-  it('GivenASignOutAnsweredBeforeAPasswordChange_WhenTheChangeIsAnswered_ThenTheSignInScreenStaysAndASecondSignOutIsSent', async () => {
+  it('GivenASignOutAnsweredBeforeAPasswordChange_WhenTheChangeIsAnswered_ThenNothingIsKeptAndASecondSignOutIsSent', async () => {
     const { stub, release } = forcedChangeHolding([CHANGE]);
     show();
     await screen.findByRole('heading', { name: 'Change your password' });
