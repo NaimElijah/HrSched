@@ -275,10 +275,10 @@ layer. Spotless checks formatting before any test, so `spotless:apply` comes fir
 
 CI runs both gates, a dependency audit and a secret scan on every push and pull request into `main`
 or `dev` ([`ci.yml`](.github/workflows/ci.yml)), with no path filters. The audit fails on any known
-advisory, the scan on a secret anywhere in the history; the only way past either is a reasoned entry
-in `osv-scanner.toml` ([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)) or
-`.gitleaks.toml` ([ADR-060](docs/ADRs/ADR-060-scan-the-whole-history-for-committed-secrets.md)). Coverage is reported
-but never enforced ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)):
+advisory unless `osv-scanner.toml` excuses it
+([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)), the scan on a private key
+anywhere in the history ([ADR-060](docs/ADRs/ADR-060-scan-the-whole-history-for-committed-secrets.md)).
+Coverage is reported but never enforced ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)):
 `./mvnw verify` writes `backend/target/site/jacoco/index.html`, and `npm run test:coverage` writes
 `frontend/coverage/index.html`.
 
