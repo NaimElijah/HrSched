@@ -107,7 +107,8 @@ its row moves to the index.
   bullet: `Amended YYYY-MM-DD: <what changed>`, naming the later record where there is one. The
   body is not rewritten. A note gives no count or version that will move again; it says where the
   current one lives. In the index, the Status column reads `Accepted, amended by ADR-NNN`, naming
-  each later record, or `Accepted, amended` where the change has no record of its own.
+  each later record, or `Accepted, amended` where the change has no record of its own. A record
+  amended both ways reads `Accepted, amended by ADR-NNN, amended`.
 - **Erratum** — the same bullet for a reference that was wrong when written, such as a wrong
   question number: `Erratum YYYY-MM-DD: <the wrong reference> should read <the right one>`. It
   changes no decision, so the index does not mark it.
