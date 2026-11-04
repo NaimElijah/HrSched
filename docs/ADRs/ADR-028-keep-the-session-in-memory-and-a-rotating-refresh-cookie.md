@@ -5,7 +5,8 @@
     record: one browser's tabs share one session over a channel that carries two words. The split
     between an in-memory access token and a refresh cookie stands, and is ADR-048's premise.
   - **Amended 2026-11-04:** a password change whose session has ended no longer begins a new one,
-    and the client signs out again if its session ended while a change was out (#352).
+    and the client signs out again if its session ended while a change was out (#352). The window
+    this leaves open is in the threat model's residual risks, owned by #371.
 - **Date:** 2026-09-16
 
 ## Context
