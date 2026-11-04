@@ -6,6 +6,7 @@ import {
   endSession,
   forgetSessionHere,
   holdSession,
+  sessionEndings,
 } from './session';
 import type { Session, SignedIn } from './session';
 
@@ -82,8 +83,8 @@ let refreshing: Promise<SignedIn | null> | null = null;
  * A 401 on a request credentialed by the access token is answered with a renewal and one retry. The
  * request is never sent a third time, but a retry refused as well asks the cookie once more, and
  * that second renewal can end the session, in every tab, as any refused renewal does. The paths in
- * {@link NOT_RENEWED} are answered as they are, and so is a request sent while nobody was signed
- * in.
+ * {@link NOT_RENEWED} are answered as they are, and so are a request sent while nobody was signed
+ * in and a request whose session has ended since it was sent.
  *
  * @param path the API path, built with the exported `path` tag when it carries an identifier
  * @param init the `fetch` options; a `body` is sent as JSON
@@ -98,9 +99,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   // Noted before sending, because by the time a 401 comes back the session may have ended — through
   // another request's renewal, or another tab — and nothing held would read as a restore, which
   // adopts whoever the cookie belongs to (#250). A request sent as nobody has no session to renew.
+  // Its endings are noted too, because a sign-in as the same account puts back a session that reads
+  // the same. Renewing then would send a refused password change again under that sign-in, and a
+  // refused refresh would clear the cookie that sign-in has just been given (#352).
   const sentAs = currentSession();
+  const endingsWhenSent = sessionEndings();
   const first = await send(path, init);
-  if (first.status !== 401 || NOT_RENEWED.has(path) || sentAs === null) {
+  if (
+    first.status !== 401 ||
+    NOT_RENEWED.has(path) ||
+    sentAs === null ||
+    sessionEndings() !== endingsWhenSent
+  ) {
     return interpret<T>(path, first);
   }
   // One renewal, then one retry, and never more: retrying past a second 401 would be a loop that
@@ -404,20 +414,35 @@ export const auth = {
   readSession: (): Promise<SignedIn['session']> => api.get('/api/auth/session'),
 
   /**
-   * Changes the caller's own password, and holds the new session the backend answers with.
+   * Changes the caller's own password, and holds the new session the backend answers with, unless
+   * the session it was sent from has ended since.
    *
    * @param currentPassword the password in use
    * @param newPassword the password wanted instead
-   * @returns the new session the change begins
-   * @throws ApiError as a 403 when the current password was not accepted, and as a 422 when the
-   *     new one does not satisfy the backend's policy; the fetch rejection itself when the backend
-   *     was not reached
+   * @returns the new session the change begins; or null, holding nothing, when the session ended
+   *     while the change was out, in which case the caller owes a sign-out for the cookie the
+   *     answer carried
+   * @throws ApiError as a 401 when the session ended, or the token was refused, once a renewal has
+   *     not helped; as a 403 when the current password was not accepted; and as a 422 when the new
+   *     one does not satisfy the backend's policy; the fetch rejection itself when the backend was
+   *     not reached
    */
-  changePassword: async (currentPassword: string, newPassword: string): Promise<SignedIn> => {
+  changePassword: async (
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<SignedIn | null> => {
+    const endingsWhenSent = sessionEndings();
     const signedIn = await request<SignedIn>('/api/auth/password', {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
     });
+    // The answer carries a new refresh cookie, so the browser may be signed in again by the time
+    // this runs, and whoever signed out must stay signed out (#352). The count rather than the
+    // token or the session, because a renewal during the change is the same session and keeps the
+    // answer.
+    if (sessionEndings() !== endingsWhenSent) {
+      return null;
+    }
     holdSession(signedIn);
     return signedIn;
   },
