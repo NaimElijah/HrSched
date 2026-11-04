@@ -386,9 +386,9 @@ CDK app, are reserved); and M5, machine learning that proposes and never decides
   other channel is an [open question](docs/requirements/requirements.md#open-questions).
 - **Nothing proves the UI and the API agree.** The client is written by hand, and there is no
   contract or browser test ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)).
-- **Nothing blocks a merge on a red build or a vulnerable dependency.** CI runs on every push and
-  every pull request into `main` or `dev`, but none of its jobs is a required check yet
-  ([#217](https://github.com/NaimElijah/HrSched/issues/217)), so a red one blocks nothing. The audit
+- **Nothing blocks a merge on a red build, a vulnerable dependency or a committed secret.** CI runs
+  on every push and every pull request into `main` or `dev`, but none of its jobs is a required check
+  yet ([#217](https://github.com/NaimElijah/HrSched/issues/217)), so a red one blocks nothing. The audit
   has no severity threshold, and does not audit Maven build plugins such as Spotless and JaCoCo.
 
 ## Contributing and licence
