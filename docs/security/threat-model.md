@@ -22,8 +22,8 @@ restated here.
 ## Scope and how to use it
 
 **In scope:** the Spring Boot process and everything it loads, including the native CP-SAT library;
-`frontend/src`; `.github/workflows/ci.yml`, `.github/dependabot.yml`, `osv-scanner.toml` and
-`backend/compose.yaml`; the dependencies of both projects.
+`frontend/src`; `.github/workflows/ci.yml`, `.github/dependabot.yml`, `osv-scanner.toml`,
+`.gitleaks.toml` and `backend/compose.yaml`; the dependencies of both projects.
 
 **Out of scope:** CloudFront, WAF, TLS termination, the load balancer, RDS, Secrets Manager and the
 deploy path ([#171](https://github.com/NaimElijah/HrSched/issues/171)); the organisations' own
@@ -49,7 +49,8 @@ devices and networks; the people who administer a future deployment.
 [047](../ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md),
 [048](../ADRs/ADR-048-keep-a-browsers-tabs-on-one-session.md),
 [049](../ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md),
-[050](../ADRs/ADR-050-reject-the-protected-resource-metadata-endpoint.md).
+[050](../ADRs/ADR-050-reject-the-protected-resource-metadata-endpoint.md),
+[060](../ADRs/ADR-060-scan-the-whole-history-for-committed-secrets.md).
 
 **Reading it.** Each control names the class or test that enforces it, so you can check it rather
 than trust it, as `requirements.md` does. `convention`
@@ -240,10 +241,10 @@ token already allowed.
 | | Threat | Control | Enforced by |
 | --- | --- | --- | --- |
 | T | A dependency with a published advisory is merged | A job fails on any advisory in `backend/pom.xml`, Maven's transitive tree included, or `frontend/package-lock.json`; ignores need a date and a reason (ADR-047). It finds known advisories only | `dependency-audit` in `.github/workflows/ci.yml`, `osv-scanner.toml` |
-| T | An action or the Maven distribution is replaced after it was trusted | Every action is pinned by commit SHA, Dependabot keeps the pins current, and Maven is checked against `distributionSha256Sum` after the cached copy is removed | `.github/workflows/ci.yml`, `backend/.mvn/wrapper/maven-wrapper.properties`: *none* |
+| T | An action, a container image or the Maven distribution is replaced after it was trusted | Every action is pinned by commit SHA and each container image by digest, bumped by hand (ADR-047, ADR-060), Dependabot keeps the action pins current, and Maven is checked against `distributionSha256Sum` after the cached copy is removed | `.github/workflows/ci.yml`, `backend/.mvn/wrapper/maven-wrapper.properties`: *none* |
 | E | A build step reads a credential | Jobs run with `contents: read`, the checkout keeps no token, the workflow runs on `push` and `pull_request` and never `pull_request_target`, and it uses no secrets | `.github/workflows/ci.yml`: *none* |
-| T | A red job does not stop a merge | None: none of the three CI jobs, `backend`, `frontend` and `dependency-audit`, is a required check | none: [#217](https://github.com/NaimElijah/HrSched/issues/217) |
-| I | A key or password is committed | `.env` is ignored and `.env.example` holds no values; nothing scans for a secret | none: [#150](https://github.com/NaimElijah/HrSched/issues/150) |
+| T | A red job does not stop a merge | None: none of the four CI jobs, `backend`, `frontend`, `dependency-audit` and `secret-scan`, is a required check | none: [#217](https://github.com/NaimElijah/HrSched/issues/217) |
+| I | A key or password is committed | `.env` is ignored and `.env.example` holds no values. A job scans the history of every branch, merges included, with gitleaks' default rules and fails on a finding, having shown itself a key first; a false positive takes a reasoned entry in `.gitleaks.toml` (ADR-060). It detects after the push and does not prevent it. It is reliable for a PEM private key in the ordinary case and partial for passwords, and gitleaks' own default allowlist drops some matches ([#376](https://github.com/NaimElijah/HrSched/issues/376)) | `secret-scan` in `.github/workflows/ci.yml`, `.gitleaks.toml`; the push itself is unguarded ([#375](https://github.com/NaimElijah/HrSched/issues/375)) |
 | E | A compromised runtime dependency, the native solver included | It runs with the process's privileges: the signing key, the database credential and every organisation's data in memory. Nothing isolates it | none beyond the audit above |
 
 ---
@@ -272,8 +273,8 @@ that owns the decision or the fix.
 | [#31](https://github.com/NaimElijah/HrSched/issues/31), ADR-018 | The audit trail is a log stream. Where stdout is not collected it is lost, an Admin cannot read it, and a line survives the rollback of a change that did not happen | Lines carry identifiers only and the trace id; a use case refuses before it records, so a recorded change that did not happen needs a failure after the save (`backend/CLAUDE.md`) |
 | [#159](https://github.com/NaimElijah/HrSched/issues/159) | The database server's own log quotes a refused row under default settings, so names and hours reach wherever that log is exported | The driver's setting (B5). A deployment must also set terse error verbosity |
 | [#162](https://github.com/NaimElijah/HrSched/issues/162), [#171](https://github.com/NaimElijah/HrSched/issues/171) | The edge does not exist: no TLS, no transport-security header, no policy for the SPA's page, no web application firewall. Anyone on the path to a deployment that lacks them reads tokens and credentials | Nothing is deployed. The API sets its own CSP and Referrer-Policy; the `__Secure-` cookie prefix makes a browser refuse the cookie over plain HTTP |
-| [#150](https://github.com/NaimElijah/HrSched/issues/150) | A committed signing key, database credential or bootstrap password goes unnoticed | Review; `.env` ignored |
-| [#217](https://github.com/NaimElijah/HrSched/issues/217) | A change with a red build, test or audit can be merged, since none of the three CI jobs is a required check | The ruleset requires a pull request, and the owner merges it |
+| [#375](https://github.com/NaimElijah/HrSched/issues/375), [#376](https://github.com/NaimElijah/HrSched/issues/376) | A committed signing key, database credential or bootstrap password is published the moment it is pushed, and is reported only afterwards. A password in many common forms is not reported at all, and neither is a key whose body holds a word gitleaks' defaults drop. After a real leak the job stays red until the secret is rotated and an entry records it, and nothing yet says how to rotate the signing key | `secret-scan` turns CI red (ADR-060), but is not a required check ([#217](https://github.com/NaimElijah/HrSched/issues/217)); `.env` ignored |
+| [#217](https://github.com/NaimElijah/HrSched/issues/217) | A change with a red build, test, audit or secret scan can be merged, since none of the four CI jobs is a required check | The ruleset requires a pull request, and the owner merges it |
 | [#78](https://github.com/NaimElijah/HrSched/issues/78), ADR-049 | The metrics are refused to everyone until a scrape path is decided, so nothing outside the process can read saturation or error rate, and alerting built on them cannot exist yet. Reopening them must not bring back the signal that a sign-in name is real | The refusal itself; `MetricsHttpTest` |
 | [#160](https://github.com/NaimElijah/HrSched/issues/160) | A compromise of the request path could change the schema of every organisation, not only its data, because the serving database role also runs the migrations | Nothing is deployed; the SQL is parameterised by convention (B5) |
 | [#109](https://github.com/NaimElijah/HrSched/issues/109), R39 | Operators and Admins sign in with a password alone, so whoever obtains an Admin's password acts as that organisation's Admin, and an Operator's as the register's | Lockout; a temporary password must be changed at first sign-in; session lifetimes. R39 is `not yet` |

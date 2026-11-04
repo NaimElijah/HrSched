@@ -121,16 +121,17 @@ database keeps its data between runs, so from then on only the changed password 
 ## Layout
 
 Repository root: `backend/`, `frontend/`, `docs/`, `scripts/`, `package.json`, `LICENSE`,
-`README.md`, `osv-scanner.toml` (the dependency audit's ignores, ADR-047). The two projects build
-independently (ADR-007); `scripts/run.mjs` only orchestrates and must never accumulate build logic
-(ADR-014).
+`README.md`, `osv-scanner.toml` (the dependency audit's ignores, ADR-047), `.gitleaks.toml` (the
+secret scan's allowlist, ADR-060). The two projects build independently (ADR-007);
+`scripts/run.mjs` only orchestrates and must never accumulate build logic (ADR-014).
 
 Outside `backend/`:
 
 - `docs/requirements/`, `docs/architecture/`, `docs/ADRs/` — what, how, and why.
-- `.github/workflows/ci.yml` — three jobs: backend and frontend, each running that project's own
-  verify command, and a dependency audit of both (ADR-047). **No path filters:** a wrongly
-  filtered check is skipped silently and still reports green.
+- `.github/workflows/ci.yml` — four jobs: backend and frontend, each running that project's own
+  verify command, a dependency audit of both (ADR-047), and a scan of the whole history for
+  committed secrets (ADR-060). **No path filters:** a wrongly filtered check is skipped silently
+  and still reports green.
 
 Guidance for each project lives beside it, and loads the first time a file beneath it is read or
 edited: `backend/CLAUDE.md` (the hexagon, persistence, testing, Spring Boot 4) and

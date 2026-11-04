@@ -66,6 +66,7 @@ what it costs, and what was turned down. For *what the system must do* see
 | [ADR-057](ADR-057-name-every-kind-of-problem-with-a-urn.md) | Name every kind of problem with its own URN | Accepted | 2026-10-31 |
 | [ADR-058](ADR-058-refuse-a-request-member-the-request-type-does-not-have.md) | Refuse a request member the request type does not have | Accepted | 2026-10-31 |
 | [ADR-059](ADR-059-keep-focus-and-announce-changes-in-the-spa.md) | Keep focus and announce changes in the SPA | Accepted | 2026-10-31 |
+| [ADR-060](ADR-060-scan-the-whole-history-for-committed-secrets.md) | Scan the whole history for committed secrets | Accepted | 2026-11-04 |
 
 ## Decisions waiting to be recorded
 
