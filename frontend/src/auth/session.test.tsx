@@ -1575,6 +1575,52 @@ describe('a password change still out when the session ends', () => {
   });
 
   /**
+   * This sign-out is the only one that can end the session the change began, so its failure has to
+   * reach the warning screen with its reason. Rejected into the change's form instead, it would be
+   * caught by a form that has already gone.
+   */
+  it('GivenASecondSignOutThatFails_WhenThePasswordChangeHasBeenAnswered_ThenTheWarningReportsTheFailure', async () => {
+    const REFUSAL = 'An invented failure of the second sign-out.';
+    const { stub, answer } = answeredByHand();
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign-out not confirmed' });
+    await settling(() => {
+      answer(
+        SIGN_OUT,
+        0,
+        responseOf(204, () => Promise.resolve('')),
+      );
+    });
+    await screen.findByRole('heading', { name: 'Sign in' });
+    await settling(() => {
+      answer(
+        CHANGE,
+        0,
+        responseOf(200, () => Promise.resolve(JSON.stringify(signedInBody()))),
+      );
+    });
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(2),
+    );
+
+    await settling(() => {
+      answer(
+        SIGN_OUT,
+        1,
+        responseOf(500, () => Promise.resolve(JSON.stringify({ detail: REFUSAL }))),
+      );
+    });
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sign-out not confirmed' }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(REFUSAL)).toBeInTheDocument();
+  });
+
+  /**
    * The first sign-out's confirmation says the session ended, but it may have cleared the cookie
    * before the change's new one landed. So if the second sign-out then fails, this browser may still
    * be signed in, and the sign-in form would say it was not.
