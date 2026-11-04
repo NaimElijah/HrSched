@@ -351,7 +351,10 @@ Everything above is. These are not, and carry no `type`:
   authenticated, such as a sign-out landing first. It sets no cookie, stores no password and begins
   no session. This applies only to a change that passed every other check: a wrong current
   password, a locked account and a disabled one are refused first with the `403` below, and a new
-  password the policy refuses with its `422`.
+  password the policy refuses with its `422`. A renewal cannot bring that session back: its cookie
+  answers `401 Sign-in refused`. If a later sign-in has replaced the cookie, the renewal answers for
+  that session instead, so a client that knows its session ended must neither renew nor send the
+  change again.
 - **Credentials that are not accepted.** A sign-in, or a renewal at `POST /api/auth/refresh`, that
   fails for any reason answers `401` titled `Sign-in refused`, with the challenge `Bearer` and the
   same body however it failed: an unknown name, a wrong password, a disabled or locked account, a
