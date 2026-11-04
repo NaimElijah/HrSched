@@ -644,12 +644,33 @@ class SessionServiceTest {
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.SessionEnded.class);
+    assertThat(sessions.revocationOf(signedOut))
+        .describedAs("whatever ended it first is what ended it")
+        .contains(SessionRevocation.SIGNED_OUT);
     Account after = accounts.find(ACME, account.id()).orElseThrow();
     assertThat(after.passwordHash()).isEqualTo(account.passwordHash());
     assertThat(accounts.saved()).isEmpty();
     assertThat(sessions.started()).isEmpty();
     assertThat(sessions.everySessionEndedFor(account.id())).isEmpty();
     assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The reasons are not interchangeable: a session stored as signed out when a password change
+   * ended it would falsify the one record that tells the two apart.
+   */
+  @Test
+  void GivenTheRightCurrentPassword_WhenChangingIt_ThenTheCallingSessionIsEndedAsAPasswordChange() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+    SignInSessionId calling = sessions.aLiveSessionOf(account.id());
+
+    service.changePassword(
+        themself,
+        calling,
+        new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(sessions.revocationOf(calling)).contains(SessionRevocation.PASSWORD_CHANGED);
   }
 
   /**
