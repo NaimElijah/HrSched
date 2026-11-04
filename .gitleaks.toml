@@ -25,7 +25,7 @@ targetRules = ["private-key"]
 condition = "AND"
 regexTarget = "match"
 paths = ['''^backend/src/main/java/io/github/naimelijah/hrsched/access/adapter/out/token/AccessTokenKey\.java$''']
-regexes = ['''PEM_FOOTER''']
+regexes = ['''^-----BEGIN PRIVATE KEY-----";\s+private static final String PEM_FOOTER = "-----END PRIVATE KEY-----$''']
 
 [[allowlists]]
 description = "A test value labelled invented in AccessTokenPropertiesTest: shaped like a PKCS#8 PEM, and decodes to nothing."
@@ -33,4 +33,4 @@ targetRules = ["private-key"]
 condition = "AND"
 regexTarget = "match"
 paths = ['''^backend/src/test/java/io/github/naimelijah/hrsched/access/adapter/out/token/AccessTokenPropertiesTest\.java$''']
-regexes = ['''MIIEvQInvented''']
+regexes = ['''^-----BEGIN PRIVATE KEY-----\\n"\s+\+ "MIIEvQInventedQzX9kLmWpTr7NvBcYhJd2fGs\\n"\s+\+ "Rq8Wn3EtUaVyKoZxPi5HbMjDlCe6SgFtQwNr4u\\n"\s+\+ "-----END PRIVATE KEY-----$''']
