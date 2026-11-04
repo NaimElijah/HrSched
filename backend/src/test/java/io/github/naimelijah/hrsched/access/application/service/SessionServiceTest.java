@@ -653,6 +653,41 @@ class SessionServiceTest {
   }
 
   /**
+   * A refusal is returned rather than thrown, so its transaction commits whatever it wrote. Ending
+   * the session before this refusal would sign somebody out for a typo.
+   */
+  @Test
+  void GivenAWrongCurrentPassword_WhenChangingThePassword_ThenTheCallingSessionStaysLive() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+    SignInSessionId calling = sessions.aLiveSessionOf(account.id());
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            calling,
+            new ChangePasswordCommand(WRONG_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.CurrentPasswordRejected.class);
+    assertThat(sessions.revocationOf(calling)).isEmpty();
+  }
+
+  /** The same for a new password the policy refuses: choosing a bad one ends nothing. */
+  @Test
+  void GivenANewPasswordThePolicyRefuses_WhenChangingThePassword_ThenTheCallingSessionStaysLive() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+    SignInSessionId calling = sessions.aLiveSessionOf(account.id());
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself, calling, new ChangePasswordCommand(RIGHT_PASSWORD, "too short"));
+
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.NewPasswordRejected.class);
+    assertThat(sessions.revocationOf(calling)).isEmpty();
+  }
+
+  /**
    * A disable that a password change finds once held refuses before a wrong password is counted.
    * Counted, the failure would be saved over the Admin's disable, and here, one short of the lock,
    * would lock an account the Admin had just switched off and record that it was.
