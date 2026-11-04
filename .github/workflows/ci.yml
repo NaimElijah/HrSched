@@ -200,7 +200,7 @@ jobs:
           log=$(mktemp)
           docker run --rm --network none -v "$PWD:/repo:ro" "$IMAGE" \
             git /repo --config /repo/.gitleaks.toml --log-opts="$LOG_OPTS" \
-            --ignore-gitleaks-allow --redact --no-banner 2>&1 | tee "$log"
+            --ignore-gitleaks-allow --redact --verbose --no-banner 2>&1 | tee "$log"
           if grep -q 'ERR' "$log"; then
             echo "::error::git or gitleaks reported an error, so the scan may be incomplete (ADR-060)"
             exit 1
