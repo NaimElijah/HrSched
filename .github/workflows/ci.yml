@@ -17,10 +17,10 @@ concurrency:
 # wrong silently skips checks, and a check that is skipped still reports green — which is worse
 # than one that is merely slow.
 #
-# Every action is pinned to a full commit SHA, and the one container image by its digest, each
-# with its version in a trailing comment. A tag can be moved to different code after it was
-# trusted; a SHA or a digest cannot. Dependabot's github-actions entry keeps the action pins
-# current; the image digest is bumped by hand (ADR-047).
+# Every action is pinned to a full commit SHA, and each container image by its digest, each with
+# its version in a trailing comment. A tag can be moved to different code after it was trusted; a
+# SHA or a digest cannot. Dependabot's github-actions entry keeps the action pins current; the image
+# digests are bumped by hand (ADR-047, ADR-060).
 jobs:
   backend:
     name: Build, test, format check
@@ -118,3 +118,63 @@ jobs:
         uses: docker://ghcr.io/google/osv-scanner-action@sha256:d54770fe0b09493894e76a02aaed9f51a0513fa57c5186452a755d257b0068a6 # v2.7.0
         with:
           args: --config=./osv-scanner.toml --lockfile=./backend/pom.xml --lockfile=./frontend/package-lock.json
+
+  # A committed secret, anywhere in the history of any branch (ADR-060). A secret removed in a later
+  # commit is still published, so scanning only the tree would miss what matters most.
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Everything: a shallow clone would scan its tip and report the rest of the history clean.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # A .gitleaksignore silences a finding with no reason, and leaving out useDefault would run no
+      # rules and report every commit clean. Neither is allowed (ADR-060), and nothing else enforces
+      # it. Allowing a false positive is a committed change that says why, in .gitleaks.toml.
+      - name: Check the allowlist
+        run: |
+          if [ -e .gitleaksignore ]; then
+            echo "::error file=.gitleaksignore::a .gitleaksignore silences a finding with no reason (ADR-060)"
+            exit 1
+          fi
+          if ! grep -Eq '^[[:space:]]*useDefault[[:space:]]*=[[:space:]]*true' .gitleaks.toml; then
+            echo "::error file=.gitleaks.toml::without useDefault = true the scan runs no rules (ADR-060)"
+            exit 1
+          fi
+          entries=$(grep -Ec '^[[:space:]]*\[\[allowlists\]\]' .gitleaks.toml || true)
+          described=$(grep -Ec '^[[:space:]]*description[[:space:]]*=' .gitleaks.toml || true)
+          targeted=$(grep -Ec '^[[:space:]]*targetRules[[:space:]]*=' .gitleaks.toml || true)
+          if [ "$entries" -ne "$described" ] || [ "$entries" -ne "$targeted" ]; then
+            echo "::error file=.gitleaks.toml::every [[allowlists]] needs description and targetRules (ADR-060)"
+            exit 1
+          fi
+
+      # gitleaks exits 0 having scanned nothing when git refuses the repository, so its exit code is
+      # not enough: this also checks it read what is there. It counts each commit that adds a line
+      # of text, the least the scan must have read, since it reads added lines and may count a commit
+      # that adds none. Not a docker:// step: the runner sets HOME for those, and the image's
+      # safe.directory setting would go unread. No network and a read-only mount, as all it does is
+      # read what it is given.
+      - name: Scan
+        env:
+          IMAGE: ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f # v8.30.1
+        run: |
+          set -o pipefail
+          if [ "$(git rev-parse --is-shallow-repository)" != "false" ]; then
+            echo "::error::the clone is shallow, so the scan would not see the whole history (ADR-060)"
+            exit 1
+          fi
+          log=$(mktemp)
+          docker run --rm --network none -v "$PWD:/repo:ro" "$IMAGE" \
+            git /repo --config /repo/.gitleaks.toml --ignore-gitleaks-allow --redact --no-banner 2>&1 | tee "$log"
+          expected=$(git log --all --no-merges --numstat --format='commit %H' \
+            | awk '/^commit /{ if (added > 0) commits++; added = 0; next } $1 ~ /^[0-9]+$/ { added += $1 } END { if (added > 0) commits++; print commits + 0 }')
+          scanned=$(grep -oE '[0-9]+ commits scanned' "$log" | grep -oE '^[0-9]+' || true)
+          echo "Scanned ${scanned:-no} commits; at least $expected add a line of text."
+          if [ -z "$scanned" ] || [ "$expected" -eq 0 ] || [ "$scanned" -lt "$expected" ]; then
+            echo "::error::the scan read ${scanned:-no} commits, fewer than the $expected that add text (ADR-060)"
+            exit 1
+          fi

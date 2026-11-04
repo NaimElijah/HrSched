@@ -273,11 +273,11 @@ layer. Spotless checks formatting before any test, so `spotless:apply` comes fir
 | Architecture | The twenty architecture rules, and the ones with our own logic run against classes built to break them | `./mvnw spotless:apply test -Dtest='HexagonalArchitecture*Test'` |
 | Frontend | The one module that calls `fetch`, error-body validation, session renewal, and one test file per screen | `npm test` (from `frontend/`) |
 
-CI runs both gates, and a dependency audit, on every push and on every pull request into `main` or
-`dev` ([`ci.yml`](.github/workflows/ci.yml)), with no path filters, because a check filtered out by
-mistake is skipped silently and still reports green. The audit fails on any known advisory, and the
-only way past one is an entry in [`osv-scanner.toml`](osv-scanner.toml) with an expiry and a reason
-([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Coverage is reported
+CI runs both gates, a dependency audit and a secret scan on every push and pull request into `main`
+or `dev` ([`ci.yml`](.github/workflows/ci.yml)), with no path filters. The audit fails on any known
+advisory, the scan on a secret anywhere in the history; the only way past either is a reasoned entry
+in `osv-scanner.toml` ([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)) or
+`.gitleaks.toml` ([ADR-060](docs/ADRs/ADR-060-scan-the-whole-history-for-committed-secrets.md)). Coverage is reported
 but never enforced ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)):
 `./mvnw verify` writes `backend/target/site/jacoco/index.html`, and `npm run test:coverage` writes
 `frontend/coverage/index.html`.

@@ -1,0 +1,36 @@
+# What the secret scan in .github/workflows/ci.yml looks for, and the false positives it lets past
+# (ADR-060).
+#
+# The default rules stay on: without the [extend] below the scan would run no rules at all and
+# report every commit clean. The first step of the job fails the build if it goes.
+#
+# An [[allowlists]] entry here is the only way past a finding, so silencing one is a change that is
+# reviewed like any other. Every entry needs all of:
+#
+# - description: why this is not a secret, naming what it actually is.
+# - targetRules: only the rule it is about, so nothing else in the file is let past.
+# - paths, and regexes with condition = "AND": the file and the text of this one false positive,
+#   so that a real key pasted into the same file is still found.
+#
+# The job counts description and targetRules against the entries. It also fails on a .gitleaksignore,
+# which silences a finding with no reason, and ignores gitleaks:allow comments, which would let a
+# commit silence itself. A finding that is a real secret is never added here: it is rotated.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "The PEM header and footer constants AccessTokenKey parses a key with. No key lies between them: the rule spans the two constants and the declaration that separates them."
+targetRules = ["private-key"]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^backend/src/main/java/io/github/naimelijah/hrsched/access/adapter/out/token/AccessTokenKey\.java$''']
+regexes = ['''PEM_FOOTER''']
+
+[[allowlists]]
+description = "A test value labelled invented in AccessTokenPropertiesTest: shaped like a PKCS#8 PEM, and decodes to nothing."
+targetRules = ["private-key"]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^backend/src/test/java/io/github/naimelijah/hrsched/access/adapter/out/token/AccessTokenPropertiesTest\.java$''']
+regexes = ['''MIIEvQInvented''']

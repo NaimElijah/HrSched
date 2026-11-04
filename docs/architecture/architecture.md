@@ -383,16 +383,24 @@ the same commit. The reasons nobody wrote down, the constraints that bind the ve
 licence of the whole tree are in
 [ADR-051](../ADRs/ADR-051-record-why-each-frontend-dependency-is-there.md).
 
-**In CI, one more integration point.** `.github/workflows/ci.yml` runs three jobs on every push and
+**In CI, one more integration point.** `.github/workflows/ci.yml` runs four jobs on every push and
 on pull requests into `main` and `dev`: `backend` and `frontend`, each running its own project's
-verify command, and `dependency-audit`. The last runs Google's OSV-Scanner image, pinned by digest,
-over the two named manifests `backend/pom.xml` and `frontend/package-lock.json`. It resolves
-Maven's transitive tree, Boot-managed versions included, through deps.dev, and compares every
-version against advisory data fetched live from osv.dev. Any advisory fails the job, and so does
-any scan error, unless `osv-scanner.toml` ignores the advisory with an expiry and a reason. The
-job's first step enforces that and rejects `[[PackageOverrides]]`
+verify command, `dependency-audit` and `secret-scan`. `dependency-audit` runs Google's OSV-Scanner
+image, pinned by digest, over the two named manifests `backend/pom.xml` and
+`frontend/package-lock.json`. It resolves Maven's transitive tree, Boot-managed versions included,
+through deps.dev, and compares every version against advisory data fetched live from osv.dev. Any
+advisory fails the job, and so does any scan error, unless `osv-scanner.toml` ignores the advisory
+with an expiry and a reason. The job's first step enforces that and rejects `[[PackageOverrides]]`
 ([ADR-047](../ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Maven build plugins
-are not audited. Nothing at runtime depends on any of it.
+are not audited.
+
+`secret-scan` runs gitleaks, as an image pinned by digest with no network and a read-only mount,
+over the whole history of every branch from a full clone. A finding fails the job, and so does a
+scan that read fewer commits than git says add text, a shallow clone, a `.gitleaksignore`, or a
+`.gitleaks.toml` without its default rules. A false positive is allowed only by an `[[allowlists]]`
+entry in `.gitleaks.toml` with a description, one rule, one file and the text of that finding
+([ADR-060](../ADRs/ADR-060-scan-the-whole-history-for-committed-secrets.md)). It detects a secret
+after the push and does not prevent it. Nothing at runtime depends on either job.
 
 ## Structural decisions not visible from the file layout
 
