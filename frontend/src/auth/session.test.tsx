@@ -1458,6 +1458,37 @@ describe('a password change still out when the session ends', () => {
     expect(callsTo(stub, 'POST', '/api/auth/refresh'), 'the refreshes sent').toHaveLength(
       refreshesBefore,
     );
+    expect(
+      screen.getByRole('button', { name: 'People' }),
+      'the later sign-in, which a refusal carrying no cookie leaves alone',
+    ).toBeInTheDocument();
+    expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(1);
+  });
+
+  /**
+   * The server's half of the race: a change that lost it is refused with no cookie, so there is
+   * nothing to sign out of. A second sign-out here would be one sent for nothing, and a renewal
+   * would clear a cookie the next person's sign-in may have just been given.
+   */
+  it('GivenASignOutAnsweredBeforeAPasswordChange_WhenTheChangeIsAnswered401_ThenNoRenewalAndNoSecondSignOutIsSent', async () => {
+    const { stub, release } = forcedChangeHolding([CHANGE], NO_COOKIE);
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    const appWasShown = watchingForTheApp();
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign in' });
+    const refreshesBefore = callsTo(stub, 'POST', '/api/auth/refresh').length;
+
+    await settling(() => {
+      release(CHANGE);
+    });
+
+    await expectSignedOutAgain(stub, appWasShown, 1);
+    expect(callsTo(stub, 'POST', '/api/auth/password'), 'the changes sent').toHaveLength(1);
+    expect(callsTo(stub, 'POST', '/api/auth/refresh'), 'the refreshes sent').toHaveLength(
+      refreshesBefore,
+    );
   });
 
   /**
