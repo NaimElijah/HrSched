@@ -222,8 +222,17 @@ public class AuthController {
       // Thrown rather than composed, so the entry point answers it: one answer in one place, and a
       // session ended a moment after authentication reads the same as one ended a moment before.
       // The refresh cookie stays: it may belong to a newer session by now.
-      case ChangePasswordOutcome.SessionEnded ended ->
-          throw new InvalidBearerTokenException(ActorAuthenticationConverter.NOT_ACCEPTED);
+      case ChangePasswordOutcome.SessionEnded ended -> {
+        // Unlike the entry point's own line, this names who: the token here was verified and the
+        // right current password given, on a session ended a moment earlier. That can be a thief
+        // who
+        // also knows the password, and it is the only evidence of how often this race happens.
+        log.atWarn()
+            .addKeyValue("actor", actor.id().value())
+            .addKeyValue("session", caller.session().value())
+            .log("Refused: a password change came from a session that has ended");
+        throw new InvalidBearerTokenException(ActorAuthenticationConverter.NOT_ACCEPTED);
+      }
     };
   }
 

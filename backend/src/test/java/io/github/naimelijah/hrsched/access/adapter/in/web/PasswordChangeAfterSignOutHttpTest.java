@@ -5,7 +5,13 @@ import static io.github.naimelijah.hrsched.shared.testsupport.RacingTransactions
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.jayway.jsonpath.JsonPath;
+import io.github.naimelijah.hrsched.access.LoggedText;
 import io.github.naimelijah.hrsched.access.application.port.out.AccountRepository;
 import io.github.naimelijah.hrsched.access.application.port.out.PasswordHasher;
 import io.github.naimelijah.hrsched.access.domain.model.Account;
@@ -16,6 +22,7 @@ import io.github.naimelijah.hrsched.shared.testsupport.PostgresBackedApplication
 import jakarta.servlet.http.Cookie;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -24,8 +31,12 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.slf4j.LoggerFactory;
+import org.slf4j.event.KeyValuePair;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -76,6 +87,22 @@ class PasswordChangeAfterSignOutHttpTest {
   @Autowired private PlatformTransactionManager transactions;
   @Autowired private JdbcClient jdbc;
 
+  private Logger root;
+  private ListAppender<ILoggingEvent> captured;
+
+  @BeforeEach
+  void captureTheLog() {
+    root = ((LoggerContext) LoggerFactory.getILoggerFactory()).getLogger(Logger.ROOT_LOGGER_NAME);
+    captured = LoggedText.capturing();
+    captured.start();
+    root.addAppender(captured);
+  }
+
+  @AfterEach
+  void releaseTheLog() {
+    root.detachAppender(captured);
+  }
+
   /**
    * The account's row is held so the change waits at {@code findForUpdate}, having already passed
    * the filter. The sign-out runs on a thread of its own: MockMvc runs on its caller's thread and a
@@ -91,6 +118,7 @@ class PasswordChangeAfterSignOutHttpTest {
     MockHttpServletResponse signedIn = signIn(account, PASSWORD);
     String bearer = bearerOf(signedIn);
     String refreshToken = refreshTokenOf(signedIn);
+    UUID session = sessionOf(signedIn);
     int sessionsBefore = sessionsOf(account);
 
     ExecutorService changing = Executors.newSingleThreadExecutor();
@@ -123,7 +151,7 @@ class PasswordChangeAfterSignOutHttpTest {
       signingOut.shutdownNow();
     }
 
-    assertRefusedHavingChangedNothing(answered, account, sessionsBefore);
+    assertRefusedHavingChangedNothing(answered, account, session, sessionsBefore);
   }
 
   /**
@@ -140,7 +168,7 @@ class PasswordChangeAfterSignOutHttpTest {
     Account account = anOperator();
     MockHttpServletResponse signedIn = signIn(account, PASSWORD);
     String bearer = bearerOf(signedIn);
-    UUID session = UUID.fromString(decoder.decode(accessTokenOf(signedIn)).getClaimAsString("sid"));
+    UUID session = sessionOf(signedIn);
     int sessionsBefore = sessionsOf(account);
 
     ExecutorService changing = Executors.newSingleThreadExecutor();
@@ -172,7 +200,7 @@ class PasswordChangeAfterSignOutHttpTest {
       changing.shutdownNow();
     }
 
-    assertRefusedHavingChangedNothing(answered, account, sessionsBefore);
+    assertRefusedHavingChangedNothing(answered, account, session, sessionsBefore);
   }
 
   /**
@@ -182,7 +210,8 @@ class PasswordChangeAfterSignOutHttpTest {
    * other.
    */
   private void assertRefusedHavingChangedNothing(
-      MockHttpServletResponse answered, Account account, int sessionsBefore) throws Exception {
+      MockHttpServletResponse answered, Account account, UUID session, int sessionsBefore)
+      throws Exception {
     assertThat(answered.getStatus())
         .describedAs("a change whose session has ended is refused, as any request of that session")
         .isEqualTo(401);
@@ -199,6 +228,16 @@ class PasswordChangeAfterSignOutHttpTest {
     assertThat(answered.getHeader(HttpHeaders.SET_COOKIE))
         .describedAs("no refresh cookie for a browser that has signed out")
         .isNull();
+    assertThat(captured.list)
+        .describedAs(
+            "a WARN line carrying the actor %s and the session %s, among: %s",
+            account.id().value(), session, LoggedText.of(captured.list))
+        .anySatisfy(
+            event -> {
+              assertThat(event.getLevel()).isEqualTo(Level.WARN);
+              assertThat(valuesOf(event))
+                  .contains(account.id().value().toString(), session.toString());
+            });
     assertThat(sessionsOf(account))
         .describedAs("no session began from the change")
         .isEqualTo(sessionsBefore);
@@ -208,6 +247,17 @@ class PasswordChangeAfterSignOutHttpTest {
     assertThat(signIn(account, REPLACEMENT).getStatus())
         .describedAs("the replacement was never stored")
         .isEqualTo(401);
+  }
+
+  private static List<String> valuesOf(ILoggingEvent event) {
+    List<KeyValuePair> pairs = event.getKeyValuePairs();
+    return pairs == null
+        ? List.of()
+        : pairs.stream().map(pair -> String.valueOf(pair.value)).toList();
+  }
+
+  private UUID sessionOf(MockHttpServletResponse signedIn) throws Exception {
+    return UUID.fromString(decoder.decode(accessTokenOf(signedIn)).getClaimAsString("sid"));
   }
 
   private int sessionsOf(Account account) {
