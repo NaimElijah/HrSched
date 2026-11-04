@@ -71,9 +71,9 @@ public sealed interface ChangePasswordOutcome {
   }
 
   /**
-   * The caller's session ended after the request was authenticated, so nothing changed and nothing
-   * was counted beyond what a wrong password counts: that refusal comes first, and is counted
-   * whatever became of the session. It is answered as the same token would be a moment later.
+   * The caller's session ended after the request was authenticated, so nothing was written. Every
+   * other refusal comes first: a wrong current password is refused and counted whatever became of
+   * the session. It is answered as the same token would be a moment later.
    */
   record SessionEnded() implements ChangePasswordOutcome {}
 }
