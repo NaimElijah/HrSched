@@ -1283,9 +1283,12 @@ describe('a password change still out when the session ends', () => {
   async function expectSignedOutAgain(
     stub: ReturnType<typeof routeTo>,
     appWasShown: () => boolean,
+    signOuts = 2,
   ) {
     await waitFor(() =>
-      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(2),
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(
+        signOuts,
+      ),
     );
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
     expect(appWasShown(), 'the signed-in app, shown after Sign out was pressed').toBe(false);
@@ -1455,6 +1458,64 @@ describe('a password change still out when the session ends', () => {
     expect(callsTo(stub, 'POST', '/api/auth/refresh'), 'the refreshes sent').toHaveLength(
       refreshesBefore,
     );
+  });
+
+  /**
+   * Another tab's sign-out ends the session here too, and this tab never pressed anything. The
+   * answer it is still waiting for carries a cookie all the same, so it owes the sign-out itself.
+   */
+  it('GivenAPasswordChangeOutHere_WhenAnotherTabSaysTheSessionEnded_ThenTheAnswerIsNotKeptAndASignOutIsSent', async () => {
+    const { stub, release } = forcedChangeHolding([CHANGE]);
+    const anotherTab = new BroadcastChannel('hrsched.session');
+    onTestFinished(() => {
+      anotherTab.close();
+    });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    const appWasShown = watchingForTheApp();
+
+    anotherTab.postMessage('ended');
+    await screen.findByRole('heading', { name: 'Sign in' });
+    await settling(() => {
+      release(CHANGE);
+    });
+
+    await expectSignedOutAgain(stub, appWasShown, 1);
+  });
+
+  /** A renewal refused while the change is out ends the session as surely as a sign-out does. */
+  it('GivenARefusedRenewalWhileAPasswordChangeIsOut_WhenTheChangeIsAnswered_ThenTheAnswerIsNotKeptAndASignOutIsSent', async () => {
+    const READ = '/api/employees';
+    const { stub, server, release } = holding(
+      {
+        'POST /api/auth/refresh': { status: 200, body: signedInBody() },
+        '/api/auth/session': { status: 200, body: A_TENANT },
+        [SIGN_OUT]: { status: 204, body: null },
+        [CHANGE]: ACCEPTED,
+      },
+      [`GET ${READ}`, CHANGE],
+    );
+    show();
+    await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub, within(screen.getByRole('main')));
+    server[READ] = NO_COOKIE;
+    server['POST /api/auth/refresh'] = NO_COOKIE;
+
+    await settling(() => {
+      release(`GET ${READ}`);
+    });
+    await screen.findByRole('heading', { name: 'Sign in' });
+    await settling(() => {
+      release(CHANGE);
+    });
+
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(1),
+    );
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'People' })).toBeNull();
   });
 
   /**
