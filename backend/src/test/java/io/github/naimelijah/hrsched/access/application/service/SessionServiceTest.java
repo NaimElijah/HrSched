@@ -653,6 +653,57 @@ class SessionServiceTest {
   }
 
   /**
+   * A disable ends every session in its own transaction, so a change that finds the account
+   * disabled has usually lost its session too. The disable is the answer: somebody an Admin has
+   * just switched off is told their password was not accepted, as R17 has it, and not invited to
+   * renew a token.
+   */
+  @Test
+  void GivenTheAccountDisabledAndTheCallingSessionEnded_WhenChanging_ThenItIsRefusedAsDisabled() {
+    Account disabled = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()).disabled());
+    TenantActor themself = new TenantActor(disabled.id(), ACME, Role.SCHEDULER);
+    SignInSessionId ended = sessions.aLiveSessionOf(disabled.id());
+    sessions.revokeEverySessionOf(disabled.id(), SessionRevocation.ACCOUNT_DISABLED, NOW);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            ended,
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            ChangePasswordOutcome.CurrentPasswordRejected.class,
+            rejected -> assertThat(rejected.reason()).isEqualTo(CurrentPasswordRefusal.DISABLED));
+  }
+
+  /**
+   * The session ending decides only a change that would otherwise go ahead. A wrong password is
+   * refused first, and counted: the guess was made, and a token whose session has just ended must
+   * not be a way to guess for free.
+   */
+  @Test
+  void GivenTheCallingSessionEndedAndAWrongCurrentPassword_WhenChanging_ThenTheFailureIsCounted() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+    SignInSessionId signedOut = sessions.aLiveSessionOf(account.id());
+    sessions.revoke(signedOut, SessionRevocation.SIGNED_OUT, NOW);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            signedOut,
+            new ChangePasswordCommand(WRONG_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            ChangePasswordOutcome.CurrentPasswordRejected.class,
+            rejected ->
+                assertThat(rejected.reason()).isEqualTo(CurrentPasswordRefusal.WRONG_PASSWORD));
+    assertThat(accounts.find(ACME, account.id()).orElseThrow().failedSignIns()).isEqualTo(1);
+  }
+
+  /**
    * A refusal is returned rather than thrown, so its transaction commits whatever it wrote. Ending
    * the session before this refusal would sign somebody out for a typo.
    */
