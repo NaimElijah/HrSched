@@ -1291,6 +1291,43 @@ describe('a password change still out when the session ends', () => {
     expect(appWasShown(), 'the signed-in app, shown after Sign out was pressed').toBe(false);
   }
 
+  /** A response as `fetch` resolves it, read through `text` so a test can make the read fail. */
+  function responseOf(status: number, text: () => Promise<string>) {
+    return { ok: status < 400, status, headers: new Headers(), text };
+  }
+
+  /**
+   * Routes as {@link forcedChangeHolding} does, but hands each password change and sign-out to the
+   * test to answer one by one, in any order and with any response, which holding them by `METHOD
+   * path` cannot do for two sign-outs.
+   *
+   * @returns `stub`, recording every request as it is sent; and `answer`, which answers the request
+   *     sent at that `METHOD path`, counted from zero in the order they were sent
+   */
+  function answeredByHand() {
+    const { stub } = forcedChangeHolding([]);
+    const waiting = new Map<string, ((response: unknown) => void)[]>([
+      [CHANGE, []],
+      [SIGN_OUT, []],
+    ]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) => {
+        const queue = waiting.get(`${init?.method ?? 'GET'} ${path}`);
+        const routed = stub(path, init);
+        return queue === undefined
+          ? routed
+          : new Promise((resolve) => {
+              queue.push(resolve);
+            });
+      }),
+    );
+    const answer = (key: string, index: number, response: unknown) => {
+      waiting.get(key)?.at(index)?.(response);
+    };
+    return { stub, answer };
+  }
+
   /** The token the latest read of this path carried. */
   function bearerOfTheLastRead(stub: ReturnType<typeof routeTo>, path: string) {
     const last = callsTo(stub, 'GET', path).at(-1);
@@ -1417,6 +1454,67 @@ describe('a password change still out when the session ends', () => {
     expect(callsTo(stub, 'POST', '/api/auth/password'), 'the changes sent').toHaveLength(1);
     expect(callsTo(stub, 'POST', '/api/auth/refresh'), 'the refreshes sent').toHaveLength(
       refreshesBefore,
+    );
+  });
+
+  /**
+   * `Set-Cookie` arrives with the headers, so a change whose body never arrives may still have
+   * signed this browser in again. What failed was the reading of an answer, not the change.
+   */
+  it('GivenAnAcceptedChangeWhoseBodyIsLost_WhenItsSessionEndedMeanwhile_ThenASecondSignOutIsSent', async () => {
+    const { stub, answer } = answeredByHand();
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign-out not confirmed' });
+    await settling(() => {
+      answer(
+        SIGN_OUT,
+        0,
+        responseOf(204, () => Promise.resolve('')),
+      );
+    });
+
+    await settling(() => {
+      answer(
+        CHANGE,
+        0,
+        responseOf(200, () => Promise.reject(new TypeError('Invented: the body was lost'))),
+      );
+    });
+
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(2),
+    );
+  });
+
+  /** The same for a body that arrives and is not what a success is: it says nothing of a cookie. */
+  it('GivenAnAcceptedChangeWhoseBodyIsNotJson_WhenItsSessionEndedMeanwhile_ThenASecondSignOutIsSent', async () => {
+    const { stub, answer } = answeredByHand();
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign-out not confirmed' });
+    await settling(() => {
+      answer(
+        SIGN_OUT,
+        0,
+        responseOf(204, () => Promise.resolve('')),
+      );
+    });
+
+    await settling(() => {
+      answer(
+        CHANGE,
+        0,
+        responseOf(200, () => Promise.resolve('<html>invented</html>')),
+      );
+    });
+
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(2),
     );
   });
 });

@@ -58,6 +58,9 @@ const COOKIE_CREDENTIALED: ReadonlySet<string> = new Set([
  */
 const NOT_RENEWED: ReadonlySet<string> = new Set(['/api/auth/sign-in', ...COOKIE_CREDENTIALED]);
 
+/** The lowest HTTP status that means the backend refused or failed a request. */
+const FIRST_REFUSAL_STATUS = 400;
+
 /**
  * Serialises refreshes across tabs.
  *
@@ -420,22 +423,34 @@ export const auth = {
    * @param currentPassword the password in use
    * @param newPassword the password wanted instead
    * @returns the new session the change begins; or null, holding nothing, when the session ended
-   *     while the change was out, in which case the caller owes a sign-out for the cookie the
-   *     answer carried
+   *     while the change was out and the backend did not refuse it, in which case the caller owes a
+   *     sign-out for the cookie the answer may have carried
    * @throws ApiError as a 401 when the session ended, or the token was refused, once a renewal has
    *     not helped; as a 403 when the current password was not accepted; and as a 422 when the new
    *     one does not satisfy the backend's policy; the fetch rejection itself when the backend was
-   *     not reached
+   *     not reached, or anything else that went wrong while the session was still the one held
    */
   changePassword: async (
     currentPassword: string,
     newPassword: string,
   ): Promise<SignedIn | null> => {
     const endingsWhenSent = sessionEndings();
-    const signedIn = await request<SignedIn>('/api/auth/password', {
-      method: 'POST',
-      body: JSON.stringify({ currentPassword, newPassword }),
-    });
+    let signedIn: SignedIn;
+    try {
+      signedIn = await request<SignedIn>('/api/auth/password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+    } catch (failure) {
+      // A refusal carried no cookie. Anything else may be an accepted change whose answer was lost
+      // after its headers, and they are what the cookie comes in. A sign-out sent for nothing costs
+      // far less than leaving a session behind for whoever sits down next (#352).
+      const refused = failure instanceof ApiError && failure.status >= FIRST_REFUSAL_STATUS;
+      if (sessionEndings() !== endingsWhenSent && !refused) {
+        return null;
+      }
+      throw failure;
+    }
     // The answer carries a new refresh cookie, so the browser may be signed in again by the time
     // this runs, and whoever signed out must stay signed out (#352). The count rather than the
     // token or the session, because a renewal during the change is the same session and keeps the
