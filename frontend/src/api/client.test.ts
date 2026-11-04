@@ -502,6 +502,32 @@ describe('renewing a session', () => {
   });
 
   /** Signing out is carried by the cookie, so its 401 says nothing a renewal could change. */
+  /**
+   * Whatever a request is for, a 401 arriving after its session ended is about a session nobody
+   * holds. Renewing would ask the cookie of a later sign-in, and a refused renewal would clear the
+   * cookie that sign-in was just given (#352).
+   */
+  it('GivenASignInAfterASignOutWhileAReadIsOut_WhenTheReadIsAnswered401_ThenNoRenewalIsSent', async () => {
+    signedIn();
+    let answerTheRead!: (response: unknown) => void;
+    const stub = vi.fn((path: string) =>
+      path === '/api/shifts'
+        ? new Promise((resolve) => {
+            answerTheRead = resolve;
+          })
+        : Promise.resolve(answered(204, {})),
+    );
+    vi.stubGlobal('fetch', stub);
+    const read = api.get('/api/shifts');
+    await auth.signOut();
+    signedIn();
+
+    answerTheRead(answered(401, {}));
+
+    await expect(read).rejects.toBeInstanceOf(ApiError);
+    expect(stub.mock.calls.filter(([called]) => called === '/api/auth/refresh')).toHaveLength(0);
+  });
+
   it('GivenASignOutAnswering401_WhenRequesting_ThenNoRefreshIsAttempted', async () => {
     signedIn();
     const stub = respondWith(401, {});

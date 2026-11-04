@@ -40,6 +40,7 @@ export interface SignedIn {
 
 let accessToken: string | null = null;
 let session: Session | null = null;
+let endings = 0;
 
 /**
  * How a session ended, which decides what the shell says next.
@@ -91,6 +92,20 @@ export function currentAccessToken(): string | null {
  */
 export function currentSession(): Session | null {
   return session;
+}
+
+/**
+ * How many times this tab's session has ended since the tab loaded, however it ended.
+ *
+ * Only an ending moves it, so a renewal or a password change holding a new token does not. A
+ * request compares it across its own wait to tell a session that ended while it was out from one
+ * merely renewed, which neither the token nor the session held can: a renewal replaces the token,
+ * and a sign-in as the same account puts back an equal session.
+ *
+ * @returns the count so far, meaningful only compared with an earlier reading
+ */
+export function sessionEndings(): number {
+  return endings;
 }
 
 /**
@@ -147,6 +162,7 @@ export function beginSignOut(): void {
 }
 
 function forget(how: SessionEnding): void {
+  endings += 1;
   accessToken = null;
   session = null;
   for (const listener of [...listeners]) {

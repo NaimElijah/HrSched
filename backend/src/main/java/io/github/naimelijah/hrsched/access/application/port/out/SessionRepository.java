@@ -91,11 +91,16 @@ public interface SessionRepository {
    * leaving. Revoking a session that is already revoked changes nothing, so the first reason
    * stands.
    *
+   * <p>Conditional on purpose, like {@link #markReplaced}: a call racing another revocation of the
+   * same session waits for it, and is then told it ended nothing.
+   *
    * @param session which session to end, never {@code null}
    * @param reason why it is ending, never {@code null}
    * @param now when it ended, never {@code null}
+   * @return whether this call ended the session; false means it was already revoked or does not
+   *     exist
    */
-  void revoke(SignInSessionId session, SessionRevocation reason, Instant now);
+  boolean revoke(SignInSessionId session, SessionRevocation reason, Instant now);
 
   /**
    * Ends every session of one account that nothing has ended yet.

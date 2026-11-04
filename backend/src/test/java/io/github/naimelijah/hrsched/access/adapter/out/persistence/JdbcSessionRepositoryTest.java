@@ -165,6 +165,32 @@ class JdbcSessionRepositoryTest {
   }
 
   /**
+   * Whichever call changes the row ended the session, and the other is told it changed nothing:
+   * that answer is how a password change learns a sign-out got there first.
+   */
+  @Test
+  void GivenALiveSession_WhenRevokedTwice_ThenOnlyTheFirstSaysItEndedIt() {
+    SignInSession session = sessionFor(anAccount());
+    repository.start(session, digest("a-refresh-token"), NOW.plus(Duration.ofHours(1)));
+
+    assertThat(repository.revoke(session.id(), SessionRevocation.SIGNED_OUT, NOW.plusSeconds(60)))
+        .describedAs("the first revocation ends it")
+        .isTrue();
+
+    assertThat(
+            repository.revoke(
+                session.id(), SessionRevocation.PASSWORD_CHANGED, NOW.plusSeconds(120)))
+        .describedAs("the second finds nothing left to end")
+        .isFalse();
+  }
+
+  @Test
+  void GivenNoSuchSession_WhenRevoked_ThenItSaysItEndedNothing() {
+    assertThat(repository.revoke(SignInSessionId.newId(), SessionRevocation.SIGNED_OUT, NOW))
+        .isFalse();
+  }
+
+  /**
    * The authenticated read asks for the account and the session together, so a token pairing one
    * account with another's session finds nothing, while each with its own is found.
    */

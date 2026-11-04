@@ -43,6 +43,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -445,6 +446,28 @@ class SessionServiceTest {
                 Optional.of(ACME), account.id(), AccessChange.SIGNED_OUT, session.id().value()));
   }
 
+  /**
+   * The sign-out read the session as live, then lost its row to a password change. A sign-out that
+   * ended nothing recording that it did would show the account left signed out, while the row says
+   * the change ended it and the session the change began is still live (#352).
+   */
+  @Test
+  void GivenASessionEndedAsTheSignOutReachedIt_WhenSigningOut_ThenNoSignOutIsRecorded() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    SignInSession session =
+        new SignInSession(
+            SignInSessionId.newId(), account.id(), NOW, NOW.plus(Duration.ofHours(12)));
+    sessions.given(
+        "a-token-read-as-live",
+        new StoredRefreshToken(session, NOW.plus(Duration.ofHours(1)), Optional.empty()));
+    sessions.revoke(session.id(), SessionRevocation.PASSWORD_CHANGED, NOW);
+
+    service.signOut("a-token-read-as-live");
+
+    assertThat(audit.changes()).isEmpty();
+    assertThat(sessions.revocationOf(session.id())).contains(SessionRevocation.PASSWORD_CHANGED);
+  }
+
   // --- the idle limit: a refresh token that sat unused too long, and the successor's expiry -----
 
   @Test
@@ -587,6 +610,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
+            sessions.aLiveSessionOf(themself.id()),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
@@ -606,6 +630,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
+            sessions.aLiveSessionOf(themself.id()),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome)
@@ -619,6 +644,141 @@ class SessionServiceTest {
     assertThat(sessions.started()).isEmpty();
     assertThat(sessions.everySessionEndedFor(disabled.id())).isEmpty();
     assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The session ended after the request was authenticated, by a sign-out for one, and the change
+   * reaches its first write with everything else in order (#352). Going on would begin a new
+   * session for somebody who has signed out, so it stops there, with nothing written.
+   */
+  @Test
+  void
+      GivenTheCallingSessionAlreadyEnded_WhenChangingThePassword_ThenItIsRefusedAndNothingChanges() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+    SignInSessionId signedOut = sessions.aLiveSessionOf(account.id());
+    sessions.revoke(signedOut, SessionRevocation.SIGNED_OUT, NOW);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            signedOut,
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.SessionEnded.class);
+    assertThat(sessions.revocationOf(signedOut))
+        .describedAs("whatever ended it first is what ended it")
+        .contains(SessionRevocation.SIGNED_OUT);
+    Account after = accounts.find(ACME, account.id()).orElseThrow();
+    assertThat(after.passwordHash()).isEqualTo(account.passwordHash());
+    assertThat(accounts.saved()).isEmpty();
+    assertThat(sessions.started()).isEmpty();
+    assertThat(sessions.everySessionEndedFor(account.id())).isEmpty();
+    assertThat(audit.changes()).isEmpty();
+  }
+
+  /**
+   * The reasons are not interchangeable: a session stored as signed out when a password change
+   * ended it would falsify the one record that tells the two apart.
+   */
+  @Test
+  void GivenTheRightCurrentPassword_WhenChangingIt_ThenTheCallingSessionIsEndedAsAPasswordChange() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+    SignInSessionId calling = sessions.aLiveSessionOf(account.id());
+
+    service.changePassword(
+        themself,
+        calling,
+        new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(sessions.revocationOf(calling)).contains(SessionRevocation.PASSWORD_CHANGED);
+  }
+
+  /**
+   * A disable ends every session in its own transaction, so a change that finds the account
+   * disabled has usually lost its session too. The disable is the answer: somebody an Admin has
+   * just switched off is told their password was not accepted, as R17 has it, and not invited to
+   * renew a token.
+   */
+  @Test
+  void GivenTheAccountDisabledAndTheCallingSessionEnded_WhenChanging_ThenItIsRefusedAsDisabled() {
+    Account disabled = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()).disabled());
+    TenantActor themself = new TenantActor(disabled.id(), ACME, Role.SCHEDULER);
+    SignInSessionId ended = sessions.aLiveSessionOf(disabled.id());
+    sessions.revokeEverySessionOf(disabled.id(), SessionRevocation.ACCOUNT_DISABLED, NOW);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            ended,
+            new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            ChangePasswordOutcome.CurrentPasswordRejected.class,
+            rejected -> assertThat(rejected.reason()).isEqualTo(CurrentPasswordRefusal.DISABLED));
+  }
+
+  /**
+   * The session ending decides only a change that would otherwise go ahead. A wrong password is
+   * refused first, and counted: the guess was made, and a token whose session has just ended must
+   * not be a way to guess for free.
+   */
+  @Test
+  void GivenTheCallingSessionEndedAndAWrongCurrentPassword_WhenChanging_ThenTheFailureIsCounted() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+    SignInSessionId signedOut = sessions.aLiveSessionOf(account.id());
+    sessions.revoke(signedOut, SessionRevocation.SIGNED_OUT, NOW);
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            signedOut,
+            new ChangePasswordCommand(WRONG_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            ChangePasswordOutcome.CurrentPasswordRejected.class,
+            rejected ->
+                assertThat(rejected.reason()).isEqualTo(CurrentPasswordRefusal.WRONG_PASSWORD));
+    assertThat(accounts.find(ACME, account.id()).orElseThrow().failedSignIns()).isEqualTo(1);
+  }
+
+  /**
+   * A refusal is returned rather than thrown, so its transaction commits whatever it wrote. Ending
+   * the session before this refusal would sign somebody out for a typo.
+   */
+  @Test
+  void GivenAWrongCurrentPassword_WhenChangingThePassword_ThenTheCallingSessionStaysLive() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+    SignInSessionId calling = sessions.aLiveSessionOf(account.id());
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself,
+            calling,
+            new ChangePasswordCommand(WRONG_PASSWORD, "another invented password for a test"));
+
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.CurrentPasswordRejected.class);
+    assertThat(sessions.revocationOf(calling)).isEmpty();
+  }
+
+  /** The same for a new password the policy refuses: choosing a bad one ends nothing. */
+  @Test
+  void GivenANewPasswordThePolicyRefuses_WhenChangingThePassword_ThenTheCallingSessionStaysLive() {
+    Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
+    TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
+    SignInSessionId calling = sessions.aLiveSessionOf(account.id());
+
+    ChangePasswordOutcome outcome =
+        service.changePassword(
+            themself, calling, new ChangePasswordCommand(RIGHT_PASSWORD, "too short"));
+
+    assertThat(outcome).isInstanceOf(ChangePasswordOutcome.NewPasswordRejected.class);
+    assertThat(sessions.revocationOf(calling)).isEmpty();
   }
 
   /**
@@ -641,6 +801,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
+            sessions.aLiveSessionOf(themself.id()),
             new ChangePasswordCommand(WRONG_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome)
@@ -668,6 +829,7 @@ class SessionServiceTest {
             () ->
                 service.changePassword(
                     themself,
+                    sessions.aLiveSessionOf(themself.id()),
                     new ChangePasswordCommand(
                         RIGHT_PASSWORD, "another invented password for a test")))
         .isInstanceOf(StubSessionRepository.SessionNotStored.class);
@@ -687,6 +849,7 @@ class SessionServiceTest {
 
     service.changePassword(
         themself,
+        sessions.aLiveSessionOf(themself.id()),
         new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(audit.changes())
@@ -708,6 +871,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             new Operator(account.id()),
+            sessions.aLiveSessionOf(account.id()),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
@@ -732,6 +896,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
+            sessions.aLiveSessionOf(themself.id()),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(passwords.comparisons())
@@ -764,6 +929,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
+            sessions.aLiveSessionOf(themself.id()),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
@@ -785,6 +951,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
+            sessions.aLiveSessionOf(themself.id()),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
@@ -931,6 +1098,10 @@ class SessionServiceTest {
    * expires; and lets a test say that the conditional update found nothing to change, or that a
    * session cannot be stored.
    *
+   * <p>A session is revocable only if this was told of it and nothing has revoked it, as the real
+   * adapter's conditional update allows: never live by default, or a test could not tell a change
+   * that ended its own session from one that found it gone.
+   *
    * <p>The first of those is the only way to reach the race the real adapter guards against: two
    * refreshes holding one token, where the database awards the exchange to one of them. Here the
    * test simply says the exchange was already taken.
@@ -945,6 +1116,7 @@ class SessionServiceTest {
     }
 
     private final List<SignInSession> started = new ArrayList<>();
+    private final Map<SignInSessionId, UserId> unrevoked = new HashMap<>();
     private final Map<SignInSessionId, SessionRevocation> revocations = new LinkedHashMap<>();
     private final Map<String, StoredRefreshToken> tokens = new LinkedHashMap<>();
     private final Map<UserId, SessionRevocation> accountsWhoseSessionsEnded = new LinkedHashMap<>();
@@ -981,6 +1153,19 @@ class SessionServiceTest {
 
     void given(String tokenValue, StoredRefreshToken token) {
       tokens.put(tokenValue, token);
+      if (token.session().revocation().isEmpty()) {
+        unrevoked.put(token.session().id(), token.session().account());
+      }
+    }
+
+    /**
+     * @param account whose session it is
+     * @return a session begun before the test, which {@link #started()} does not count
+     */
+    SignInSessionId aLiveSessionOf(UserId account) {
+      SignInSessionId session = SignInSessionId.newId();
+      unrevoked.put(session, account);
+      return session;
     }
 
     @Override
@@ -989,6 +1174,7 @@ class SessionServiceTest {
         throw new SessionNotStored();
       }
       started.add(session);
+      unrevoked.put(session.id(), session.account());
     }
 
     @Override
@@ -1012,8 +1198,12 @@ class SessionServiceTest {
     }
 
     @Override
-    public void revoke(SignInSessionId session, SessionRevocation reason, Instant now) {
-      revocations.putIfAbsent(session, reason);
+    public boolean revoke(SignInSessionId session, SessionRevocation reason, Instant now) {
+      if (unrevoked.remove(session) == null) {
+        return false;
+      }
+      revocations.put(session, reason);
+      return true;
     }
 
     @Override
@@ -1024,6 +1214,16 @@ class SessionServiceTest {
 
     @Override
     public void revokeEverySessionOf(UserId account, SessionRevocation reason, Instant now) {
+      unrevoked
+          .entrySet()
+          .removeIf(
+              session -> {
+                boolean theirs = session.getValue().equals(account);
+                if (theirs) {
+                  revocations.put(session.getKey(), reason);
+                }
+                return theirs;
+              });
       accountsWhoseSessionsEnded.put(account, reason);
     }
   }

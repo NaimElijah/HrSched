@@ -31,6 +31,7 @@ final class StubAccountRepository implements AccountRepository {
   private final List<Account> stored = new ArrayList<>();
   private final List<OrganisationId> locked = new ArrayList<>();
   private final List<UserId> heldForUpdate = new ArrayList<>();
+  private final List<Account> saved = new ArrayList<>();
   private Optional<Account> readBeforeAChange = Optional.empty();
 
   /**
@@ -78,6 +79,14 @@ final class StubAccountRepository implements AccountRepository {
             });
     stored.removeIf(existing -> existing.id().equals(account.id()));
     stored.add(account);
+    saved.add(account);
+  }
+
+  /**
+   * @return every account saved so far, in order, leaving out those arranged through {@link #given}
+   */
+  List<Account> saved() {
+    return List.copyOf(saved);
   }
 
   /**

@@ -52,9 +52,12 @@ import tools.jackson.databind.ObjectMapper;
  * every client hits this on the way to renewing — so WARN would drown the refusals that matter, and
  * a field naming the caller would be recording an identity nobody has proved.
  *
- * <p>This runs in a filter, before any controller is chosen, so no {@code @RestControllerAdvice}
- * ever sees it. That is why the body, the counter and the log line are written here rather than
- * inherited from the exception handlers.
+ * <p>This usually runs in a filter, before any controller is chosen, so no
+ * {@code @RestControllerAdvice} sees it. That is why the body, the counter and the log line are
+ * written here rather than inherited from the exception handlers. {@code
+ * AuthController.changePassword} throws into it as well, when a session ends after its request was
+ * authenticated, and it relies on no advice handling that exception: one that did would take this
+ * answer from this class.
  */
 @Component
 public class ProblemAuthenticationEntryPoint implements AuthenticationEntryPoint {

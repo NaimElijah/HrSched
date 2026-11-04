@@ -505,8 +505,9 @@ class HexagonalArchitectureTest {
    * Spring callback whose signature offers no {@code Authentication}, and it asks a different
    * question anyway: not "who is acting" but "who was just refused", which it needs in order to say
    * whether the refusal was a pending password change. Everywhere a parameter exists, the parameter
-   * is used — a controller receives the caller through {@code @AuthenticationPrincipal}, and the
-   * class that turns a verified token into an {@code Actor} is handed the token.
+   * is used — a controller receives the caller through {@code @AuthenticationPrincipal}, or as the
+   * {@code ActorAuthentication} itself where it needs the session too, and the class that turns a
+   * verified token into an {@code Actor} is handed the token.
    *
    * <p>Watched failing twice: once on the pre-existing read in {@code ProblemAccessDeniedHandler},
    * which is why that exemption is written down rather than assumed, and once on a deliberate

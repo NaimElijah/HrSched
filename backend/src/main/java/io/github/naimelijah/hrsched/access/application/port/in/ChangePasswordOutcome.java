@@ -10,10 +10,11 @@ import java.util.Objects;
  * password counts as a failed attempt, and a thrown refusal would roll that count back (ADR-023).
  * Without it, this endpoint would be a way to guess at a password with no lockout at all.
  *
- * <p>The two refusals are deliberately different kinds of thing, and answer differently. A current
- * password not accepted says nothing about the new one and is nobody's business but the caller's; a
- * rejected new password names the rule it broke, because somebody choosing a password has to be
- * told what would satisfy it.
+ * <p>The three refusals are deliberately different kinds of thing, and answer differently. A
+ * current password not accepted says nothing about the new one and is nobody's business but the
+ * caller's; a rejected new password names the rule it broke, because somebody choosing a password
+ * has to be told what would satisfy it; and a session that has ended says nothing about either
+ * password, because its token no longer speaks for anybody.
  */
 public sealed interface ChangePasswordOutcome {
 
@@ -68,4 +69,11 @@ public sealed interface ChangePasswordOutcome {
       Objects.requireNonNull(reason, "reason must not be null");
     }
   }
+
+  /**
+   * The caller's session ended after the request was authenticated, so nothing was written. Every
+   * other refusal comes first: a wrong current password is refused and counted whatever became of
+   * the session. It is answered as the same token would be a moment later.
+   */
+  record SessionEnded() implements ChangePasswordOutcome {}
 }
