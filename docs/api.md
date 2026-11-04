@@ -349,8 +349,9 @@ Everything above is. These are not, and carry no `type`:
   error_uri="https://tools.ietf.org/html/rfc6750#section-3.1"`. The body is the same in both.
   `POST /api/auth/password` answers it too when the caller's session ended after the request was
   authenticated, such as a sign-out landing first. It sets no cookie, stores no password and begins
-  no session. A wrong current password, a locked account and a disabled one are refused first, with
-  the `403` below.
+  no session. This applies only to a change that passed every other check: a wrong current
+  password, a locked account and a disabled one are refused first with the `403` below, and a new
+  password the policy refuses with its `422`.
 - **Credentials that are not accepted.** A sign-in, or a renewal at `POST /api/auth/refresh`, that
   fails for any reason answers `401` titled `Sign-in refused`, with the challenge `Bearer` and the
   same body however it failed: an unknown name, a wrong password, a disabled or locked account, a
@@ -484,8 +485,9 @@ Everything above is. These are not, and carry no `type`:
   password is wrong, and the same when the account is locked or has been disabled, so the answer
   never says which. It is a `403` rather than a `401` because a `401` tells a client to renew its
   token and try again, which would send the same wrong password for ever. The current password is
-  judged before the new one, and a wrong one counts towards the lock. A change whose session ended
-  meanwhile is a `401 Unauthenticated` instead, [described above](#other-refusals).
+  judged before the new one, and a wrong one counts towards the lock. A change that passes these
+  checks but whose session ended meanwhile is a `401 Unauthenticated`,
+  [described above](#other-refusals).
 - **An Employee account linked to nobody.** Creating one, taking the link away from one, giving
   the Employee role to an account linked to nobody, or restoring one stored unlinked before R34
   answers `422` titled `Employee account not linked`.
