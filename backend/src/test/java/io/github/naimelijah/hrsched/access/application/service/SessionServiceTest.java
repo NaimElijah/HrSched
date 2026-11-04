@@ -43,12 +43,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -589,7 +588,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
-            sessions.aLiveSession(),
+            sessions.aLiveSessionOf(themself.id()),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
@@ -609,7 +608,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
-            sessions.aLiveSession(),
+            sessions.aLiveSessionOf(themself.id()),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome)
@@ -635,7 +634,7 @@ class SessionServiceTest {
       GivenTheCallingSessionAlreadyEnded_WhenChangingThePassword_ThenItIsRefusedAndNothingChanges() {
     Account account = accounts.given(tenant(ADA, Role.SCHEDULER, Optional.empty()));
     TenantActor themself = new TenantActor(account.id(), ACME, Role.SCHEDULER);
-    SignInSessionId signedOut = sessions.aLiveSession();
+    SignInSessionId signedOut = sessions.aLiveSessionOf(account.id());
     sessions.revoke(signedOut, SessionRevocation.SIGNED_OUT, NOW);
 
     ChangePasswordOutcome outcome =
@@ -673,7 +672,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
-            sessions.aLiveSession(),
+            sessions.aLiveSessionOf(themself.id()),
             new ChangePasswordCommand(WRONG_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome)
@@ -701,7 +700,7 @@ class SessionServiceTest {
             () ->
                 service.changePassword(
                     themself,
-                    sessions.aLiveSession(),
+                    sessions.aLiveSessionOf(themself.id()),
                     new ChangePasswordCommand(
                         RIGHT_PASSWORD, "another invented password for a test")))
         .isInstanceOf(StubSessionRepository.SessionNotStored.class);
@@ -721,7 +720,7 @@ class SessionServiceTest {
 
     service.changePassword(
         themself,
-        sessions.aLiveSession(),
+        sessions.aLiveSessionOf(themself.id()),
         new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(audit.changes())
@@ -743,7 +742,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             new Operator(account.id()),
-            sessions.aLiveSession(),
+            sessions.aLiveSessionOf(account.id()),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
@@ -768,7 +767,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
-            sessions.aLiveSession(),
+            sessions.aLiveSessionOf(themself.id()),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(passwords.comparisons())
@@ -801,7 +800,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
-            sessions.aLiveSession(),
+            sessions.aLiveSessionOf(themself.id()),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
@@ -823,7 +822,7 @@ class SessionServiceTest {
     ChangePasswordOutcome outcome =
         service.changePassword(
             themself,
-            sessions.aLiveSession(),
+            sessions.aLiveSessionOf(themself.id()),
             new ChangePasswordCommand(RIGHT_PASSWORD, "another invented password for a test"));
 
     assertThat(outcome).isInstanceOf(ChangePasswordOutcome.Changed.class);
@@ -988,7 +987,7 @@ class SessionServiceTest {
     }
 
     private final List<SignInSession> started = new ArrayList<>();
-    private final Set<SignInSessionId> unrevoked = new HashSet<>();
+    private final Map<SignInSessionId, UserId> unrevoked = new HashMap<>();
     private final Map<SignInSessionId, SessionRevocation> revocations = new LinkedHashMap<>();
     private final Map<String, StoredRefreshToken> tokens = new LinkedHashMap<>();
     private final Map<UserId, SessionRevocation> accountsWhoseSessionsEnded = new LinkedHashMap<>();
@@ -1026,16 +1025,17 @@ class SessionServiceTest {
     void given(String tokenValue, StoredRefreshToken token) {
       tokens.put(tokenValue, token);
       if (token.session().revocation().isEmpty()) {
-        unrevoked.add(token.session().id());
+        unrevoked.put(token.session().id(), token.session().account());
       }
     }
 
     /**
+     * @param account whose session it is
      * @return a session begun before the test, which {@link #started()} does not count
      */
-    SignInSessionId aLiveSession() {
+    SignInSessionId aLiveSessionOf(UserId account) {
       SignInSessionId session = SignInSessionId.newId();
-      unrevoked.add(session);
+      unrevoked.put(session, account);
       return session;
     }
 
@@ -1045,7 +1045,7 @@ class SessionServiceTest {
         throw new SessionNotStored();
       }
       started.add(session);
-      unrevoked.add(session.id());
+      unrevoked.put(session.id(), session.account());
     }
 
     @Override
@@ -1070,7 +1070,7 @@ class SessionServiceTest {
 
     @Override
     public boolean revoke(SignInSessionId session, SessionRevocation reason, Instant now) {
-      if (!unrevoked.remove(session)) {
+      if (unrevoked.remove(session) == null) {
         return false;
       }
       revocations.put(session, reason);
@@ -1085,6 +1085,16 @@ class SessionServiceTest {
 
     @Override
     public void revokeEverySessionOf(UserId account, SessionRevocation reason, Instant now) {
+      unrevoked
+          .entrySet()
+          .removeIf(
+              session -> {
+                boolean theirs = session.getValue().equals(account);
+                if (theirs) {
+                  revocations.put(session.getKey(), reason);
+                }
+                return theirs;
+              });
       accountsWhoseSessionsEnded.put(account, reason);
     }
   }
