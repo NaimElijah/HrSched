@@ -139,21 +139,22 @@ public class JdbcSessionRepository implements SessionRepository {
   }
 
   @Override
-  public void revoke(SignInSessionId session, SessionRevocation reason, Instant now) {
+  public boolean revoke(SignInSessionId session, SessionRevocation reason, Instant now) {
     Objects.requireNonNull(session, "session must not be null");
     Objects.requireNonNull(reason, "reason must not be null");
     Objects.requireNonNull(now, "now must not be null");
     // Only a session that is not already revoked: whatever ended it first is what ended it, and a
     // later sign-out must not overwrite the record of a reuse.
-    jdbc.sql(
-            """
+    return jdbc.sql(
+                """
             UPDATE sign_in_session SET revoked_at = :now, revocation = :reason
             WHERE id = :id AND revoked_at IS NULL
             """)
-        .param("now", now.atOffset(ZoneOffset.UTC))
-        .param("reason", reason.name())
-        .param("id", session.value())
-        .update();
+            .param("now", now.atOffset(ZoneOffset.UTC))
+            .param("reason", reason.name())
+            .param("id", session.value())
+            .update()
+        == 1;
   }
 
   @Override

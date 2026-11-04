@@ -17,10 +17,10 @@ concurrency:
 # wrong silently skips checks, and a check that is skipped still reports green — which is worse
 # than one that is merely slow.
 #
-# Every action is pinned to a full commit SHA, and the one container image by its digest, each
-# with its version in a trailing comment. A tag can be moved to different code after it was
-# trusted; a SHA or a digest cannot. Dependabot's github-actions entry keeps the action pins
-# current; the image digest is bumped by hand (ADR-047).
+# Every action is pinned to a full commit SHA, and each container image by its digest, each with
+# its version in a trailing comment. A tag can be moved to different code after it was trusted; a
+# SHA or a digest cannot. Dependabot's github-actions entry keeps the action pins current; the image
+# digests are bumped by hand (ADR-047, ADR-060).
 jobs:
   backend:
     name: Build, test, format check
@@ -118,3 +118,101 @@ jobs:
         uses: docker://ghcr.io/google/osv-scanner-action@sha256:d54770fe0b09493894e76a02aaed9f51a0513fa57c5186452a755d257b0068a6 # v2.7.0
         with:
           args: --config=./osv-scanner.toml --lockfile=./backend/pom.xml --lockfile=./frontend/package-lock.json
+
+  # A committed secret, anywhere in the history of any branch (ADR-060). A secret removed in a later
+  # commit is still published, so scanning only the tree would miss what matters most.
+  #
+  # gitleaks fails open: it exits 0 and reports no leaks when git refuses the repository, and when
+  # its config has no rules. So its exit code is not trusted alone. Each guard below was watched
+  # failing, and ADR-060 says what they leave to review. Anyone who can edit this file can switch
+  # the scan off, so they are there to catch an accident, and a diff here deserves a careful read.
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f # v8.30.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Everything: a shallow clone would scan its tip and report the rest of the history clean.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Allowing a false positive is a committed change that says why, in .gitleaks.toml, scoped to
+      # one rule, one file and that finding's text. Refused: a .gitleaksignore, which silences a
+      # finding with no reason; disabledRules and a redefined rule, which switch off rules the next
+      # step does not exercise; and an entry missing what scopes it.
+      - name: Check the allowlist
+        run: |
+          if [ -e .gitleaksignore ]; then
+            echo "::error file=.gitleaksignore::a .gitleaksignore silences a finding with no reason (ADR-060)"
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*(disabledRules[[:space:]]*=|\[+[[:space:]]*rules)' .gitleaks.toml; then
+            echo "::error file=.gitleaks.toml::disabledRules and [[rules]] switch off what the scan looks for (ADR-060)"
+            exit 1
+          fi
+          entries=$(grep -Ec '^[[:space:]]*\[+[[:space:]]*allowlists?[[:space:]]*\]+' .gitleaks.toml || true)
+          described=$(grep -Ec '^[[:space:]]*description[[:space:]]*=' .gitleaks.toml || true)
+          targeted=$(grep -Ec '^[[:space:]]*targetRules[[:space:]]*=[[:space:]]*\[[[:space:]]*"' .gitleaks.toml || true)
+          bounded=$(grep -Ec '^[[:space:]]*condition[[:space:]]*=[[:space:]]*"AND"' .gitleaks.toml || true)
+          if [ "$entries" -ne "$described" ] || [ "$entries" -ne "$targeted" ] || [ "$entries" -ne "$bounded" ]; then
+            echo "::error file=.gitleaks.toml::every allowlist needs a description, a targetRules and condition = \"AND\" (ADR-060)"
+            exit 1
+          fi
+
+      # A scan that cannot find anything reads exactly like a clean one, so this one is shown a key
+      # first: filler, built here so that this file does not hold one. With the same image and config
+      # it must be found, and a config that has lost its rules, or allows too much, turns this red.
+      - name: Prove the scan can find a key
+        run: |
+          canary=$(mktemp -d)
+          dashes=-----
+          {
+            printf '%sBEGIN PRIVATE KEY%s\n' "$dashes" "$dashes"
+            printf 'NOTAKEYfillerNOTAKEYfillerNOTAKEYfillerNOTAKEYfillerNOTAKEY%02d\n' 1 2 3
+            printf '%sEND PRIVATE KEY%s\n' "$dashes" "$dashes"
+          } > "$canary/canary.txt"
+          found=0
+          docker run --rm --network none -v "$PWD:/repo:ro" -v "$canary:/canary:ro" "$IMAGE" \
+            dir /canary --config /repo/.gitleaks.toml --redact --no-banner --exit-code 3 || found=$?
+          if [ "$found" -ne 3 ]; then
+            echo "::error file=.gitleaks.toml::the scan did not find a key it was shown (ADR-060)"
+            exit 1
+          fi
+
+      # gitleaks' own default log leaves out what a merge commit adds, as a conflict resolution can,
+      # so -m reads merges against each parent. Without T in the filter a file that was a symlink
+      # goes unread. * diff outranks .gitattributes, where one line could otherwise hide a file's
+      # whole history from both reads below. The floor counts each commit that adds a line of text,
+      # the least the scan must have read, which catches a scan that stopped early. Not a docker://
+      # step: the runner sets HOME for those, and the image's safe.directory setting would go unread.
+      - name: Scan
+        env:
+          LOG_OPTS: --all --full-history -m --diff-filter=uxdb
+        run: |
+          set -o pipefail
+          if [ "$(git rev-parse --is-shallow-repository)" != "false" ]; then
+            echo "::error::the clone is shallow, so the scan would not see the whole history (ADR-060)"
+            exit 1
+          fi
+          printf '* diff\n' >> .git/info/attributes
+          log=$(mktemp)
+          docker run --rm --network none -v "$PWD:/repo:ro" "$IMAGE" \
+            git /repo --config /repo/.gitleaks.toml --log-opts="$LOG_OPTS" \
+            --ignore-gitleaks-allow --redact --verbose --no-banner 2>&1 | tee "$log"
+          if grep -q 'ERR' "$log"; then
+            echo "::error::git or gitleaks reported an error, so the scan may be incomplete (ADR-060)"
+            exit 1
+          fi
+          floor=$(git log --all -m --numstat --format='commit %H' \
+            | awk '/^commit /{ commit = $2; next } $1 ~ /^[0-9]+$/ && $1 > 0 { added[commit] = 1 } END { n = 0; for (c in added) n++; print n }')
+          scanned=$(grep -oE '[0-9]+ commits scanned' "$log" | grep -oE '^[0-9]+' || true)
+          echo "Scanned ${scanned:-no} commits; at least $floor add a line of text."
+          # Written this way round because [ answers 2 to a value that is not a number, which an
+          # if reads as false: a comparison that cannot be made has to end in the refusal.
+          if [ -n "$scanned" ] && [ "$floor" -gt 0 ] && [ "$scanned" -ge "$floor" ]; then
+            exit 0
+          fi
+          echo "::error::the scan read ${scanned:-no} commits, fewer than the $floor that add text (ADR-060)"
+          exit 1

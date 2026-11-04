@@ -273,12 +273,12 @@ layer. Spotless checks formatting before any test, so `spotless:apply` comes fir
 | Architecture | The twenty architecture rules, and the ones with our own logic run against classes built to break them | `./mvnw spotless:apply test -Dtest='HexagonalArchitecture*Test'` |
 | Frontend | The one module that calls `fetch`, error-body validation, session renewal, and one test file per screen | `npm test` (from `frontend/`) |
 
-CI runs both gates, and a dependency audit, on every push and on every pull request into `main` or
-`dev` ([`ci.yml`](.github/workflows/ci.yml)), with no path filters, because a check filtered out by
-mistake is skipped silently and still reports green. The audit fails on any known advisory, and the
-only way past one is an entry in [`osv-scanner.toml`](osv-scanner.toml) with an expiry and a reason
-([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)). Coverage is reported
-but never enforced ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)):
+CI runs both gates, a dependency audit and a secret scan on every push and pull request into `main`
+or `dev` ([`ci.yml`](.github/workflows/ci.yml)), with no path filters. The audit fails on any known
+advisory unless `osv-scanner.toml` excuses it
+([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)), the scan on a private key
+anywhere in the history ([ADR-060](docs/ADRs/ADR-060-scan-the-whole-history-for-committed-secrets.md)).
+Coverage is reported but never enforced ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)):
 `./mvnw verify` writes `backend/target/site/jacoco/index.html`, and `npm run test:coverage` writes
 `frontend/coverage/index.html`.
 
@@ -386,9 +386,9 @@ CDK app, are reserved); and M5, machine learning that proposes and never decides
   other channel is an [open question](docs/requirements/requirements.md#open-questions).
 - **Nothing proves the UI and the API agree.** The client is written by hand, and there is no
   contract or browser test ([ADR-013](docs/ADRs/ADR-013-react-typescript-vite-frontend.md)).
-- **Nothing blocks a merge on a red build or a vulnerable dependency.** CI runs on every push and
-  every pull request into `main` or `dev`, but none of its jobs is a required check yet
-  ([#217](https://github.com/NaimElijah/HrSched/issues/217)), so a red one blocks nothing. The audit
+- **Nothing blocks a merge on a red build, a vulnerable dependency or a committed secret.** CI runs
+  on every push and every pull request into `main` or `dev`, but none of its jobs is a required check
+  yet ([#217](https://github.com/NaimElijah/HrSched/issues/217)), so a red one blocks nothing. The audit
   has no severity threshold, and does not audit Maven build plugins such as Spotless and JaCoCo.
 
 ## Contributing and licence

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { App } from '../App';
 import { currentAccessToken, endSession, holdSession } from '../api/session';
 import type { Session } from '../api/session';
@@ -531,31 +531,47 @@ function readsOf(stub: ReturnType<typeof routeTo>, path: string): number {
 }
 
 /**
- * Routes as {@link serving} does, but holds one request until the returned `release` is called,
- * and records each time that request was sent. Only the one named is held: the refresh every load
- * begins with is a write too, so holding every write would hold the app in `restoring`.
+ * Routes as {@link serving} does, but holds the requests named until they are released, and records
+ * each time one was sent. Only the ones named are held: the refresh every load begins with is a
+ * write too, so holding every write would hold the app in `restoring`.
  *
- * @param answers what the server answers, the held request included
- * @param held the `METHOD path` to hold
+ * @param answers what the server answers, the held requests included
+ * @param held the `METHOD path` to hold, or several, each released on its own
+ * @returns `stub`, recording every request as it is sent rather than once it is released; `sent`,
+ *     the body of each held request sent; `server`, the answers as they are looked up, for a test
+ *     to change; and `release`, which lets through what is held at the `METHOD path` it is given
+ *     and anything sent there afterwards, or at all of them when it is given none
  */
-function holding(answers: Readonly<Record<string, Answer>>, held: string) {
-  const routed = serving(answers);
+function holding(answers: Readonly<Record<string, Answer>>, held: string | readonly string[]) {
+  const server: Record<string, Answer> = { ...THE_SHELL, ...answers };
+  const routed = routeTo(server);
   const sent: unknown[] = [];
-  let release!: () => void;
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((path: string, init?: RequestInit) => {
-      if (`${init?.method ?? 'GET'} ${path}` !== held) {
-        return routed(path, init);
-      }
-      sent.push(init?.body);
-      return released.then(() => routed(path, init));
+  const gates = new Map(
+    (typeof held === 'string' ? [held] : held).map((key) => {
+      let open!: () => void;
+      const opened = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      return [key, { opened, open }] as const;
     }),
   );
-  return { sent, release };
+  const stub = vi.fn((path: string, init?: RequestInit) => {
+    const gate = gates.get(`${init?.method ?? 'GET'} ${path}`);
+    if (gate === undefined) {
+      return routed(path, init);
+    }
+    sent.push(init?.body);
+    return gate.opened.then(() => routed(path, init));
+  });
+  vi.stubGlobal('fetch', stub);
+  const release = (only?: string) => {
+    for (const [key, gate] of gates) {
+      if (only === undefined || only === key) {
+        gate.open();
+      }
+    }
+  };
+  return { stub, sent, server, release };
 }
 
 const MUST_CHANGE: Session = { ...A_TENANT, passwordChangeRequired: true };
@@ -1198,5 +1214,513 @@ describe('a renewal while somebody types', () => {
 
     expect(current, 'focus on "Current password"').toHaveFocus();
     expect(current).toHaveValue(PASSWORD);
+  });
+});
+
+/**
+ * The sign-out revokes the session and clears the refresh cookie, but a password change sent before
+ * it still commits, and its answer carries a new cookie. So whichever is answered first, a session
+ * that ended while the change was out keeps nothing from the answer and is signed out again, which
+ * revokes and clears that cookie. A session merely renewed meanwhile has not ended (#352).
+ */
+describe('a password change still out when the session ends', () => {
+  const CHANGE = 'POST /api/auth/password';
+  const SIGN_OUT = 'POST /api/auth/sign-out';
+  const ACCEPTED: Answer = { status: 200, body: signedInBody() };
+
+  /** The forced change, restored, with a sign-out and a later sign-in as this account answered. */
+  function forcedChangeHolding(held: readonly string[], change: Answer = ACCEPTED) {
+    return holding(
+      {
+        'POST /api/auth/refresh': { status: 200, body: signedInBody(MUST_CHANGE) },
+        '/api/auth/session': { status: 200, body: MUST_CHANGE },
+        'POST /api/auth/sign-in': { status: 200, body: signedInBody() },
+        [SIGN_OUT]: { status: 204, body: null },
+        [CHANGE]: change,
+      },
+      held,
+    );
+  }
+
+  async function sendTheChange(
+    stub: ReturnType<typeof routeTo>,
+    scope: Pick<typeof screen, 'getByLabelText' | 'getByRole'> = screen,
+  ) {
+    await fillChangePassword(scope);
+    await userEvent.click(scope.getByRole('button', { name: 'Change password' }));
+    expect(callsTo(stub, 'POST', '/api/auth/password'), 'the changes sent').toHaveLength(1);
+  }
+
+  /**
+   * Lets a held request through and returns once everything it sets off has happened. The routed
+   * answers settle in promises alone, and `act`'s async scope waits a task turn, which outlasts
+   * them, so what is asserted afterwards, an absence included, is what the answer led to.
+   */
+  async function settling(release: () => void) {
+    await act(() => {
+      release();
+      return Promise.resolve();
+    });
+  }
+
+  /**
+   * Whether the signed-in app has been on screen at any moment since this was called. Looking at
+   * the screen afterwards would miss an app that came and went.
+   */
+  function watchingForTheApp() {
+    const isShown = () => screen.queryByRole('button', { name: 'People' }) !== null;
+    let shown = isShown();
+    const watcher = new MutationObserver(() => {
+      shown ||= isShown();
+    });
+    watcher.observe(document.body, { childList: true, subtree: true });
+    onTestFinished(() => {
+      watcher.disconnect();
+    });
+    return () => shown;
+  }
+
+  async function expectSignedOutAgain(
+    stub: ReturnType<typeof routeTo>,
+    appWasShown: () => boolean,
+    signOuts = 2,
+  ) {
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(
+        signOuts,
+      ),
+    );
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+    expect(appWasShown(), 'the signed-in app, shown after Sign out was pressed').toBe(false);
+  }
+
+  /** A response as `fetch` resolves it, read through `text` so a test can make the read fail. */
+  function responseOf(status: number, text: () => Promise<string>) {
+    return { ok: status < 400, status, headers: new Headers(), text };
+  }
+
+  /**
+   * Routes as {@link forcedChangeHolding} does, but hands each password change and sign-out to the
+   * test to answer one by one, in any order and with any response, which holding them by `METHOD
+   * path` cannot do for two sign-outs.
+   *
+   * @returns `stub`, recording every request as it is sent; and `answer`, which answers the request
+   *     sent at that `METHOD path`, counted from zero in the order they were sent
+   */
+  function answeredByHand() {
+    const { stub } = forcedChangeHolding([]);
+    const waiting = new Map<string, ((response: unknown) => void)[]>([
+      [CHANGE, []],
+      [SIGN_OUT, []],
+    ]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) => {
+        const queue = waiting.get(`${init?.method ?? 'GET'} ${path}`);
+        const routed = stub(path, init);
+        return queue === undefined
+          ? routed
+          : new Promise((resolve) => {
+              queue.push(resolve);
+            });
+      }),
+    );
+    const answer = (key: string, index: number, response: unknown) => {
+      waiting.get(key)?.at(index)?.(response);
+    };
+    return { stub, answer };
+  }
+
+  /** The token the latest read of this path carried. */
+  function bearerOfTheLastRead(stub: ReturnType<typeof routeTo>, path: string) {
+    const last = callsTo(stub, 'GET', path).at(-1);
+    return new Headers(last?.[1]?.headers).get('Authorization');
+  }
+
+  it('GivenASignOutAnsweredBeforeAPasswordChange_WhenTheChangeIsAnswered_ThenNothingIsKeptAndASecondSignOutIsSent', async () => {
+    const { stub, release } = forcedChangeHolding([CHANGE]);
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    const appWasShown = watchingForTheApp();
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign in' });
+
+    await settling(() => {
+      release(CHANGE);
+    });
+
+    // Soft, so that an answer which puts the app back is reported beside the missing sign-out.
+    expect.soft(appWasShown(), 'the signed-in app, shown once the change was answered').toBe(false);
+    await expectSignedOutAgain(stub, appWasShown);
+  });
+
+  it('GivenAPasswordChangeAnsweredBeforeASignOut_WhenBothAreAnswered_ThenTheAppIsNeverShownAndASecondSignOutIsSent', async () => {
+    const { stub, release } = forcedChangeHolding([CHANGE, SIGN_OUT]);
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    const appWasShown = watchingForTheApp();
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign-out not confirmed' });
+
+    await settling(() => {
+      release(CHANGE);
+    });
+    await settling(() => {
+      release(SIGN_OUT);
+    });
+
+    await expectSignedOutAgain(stub, appWasShown);
+  });
+
+  /**
+   * The Password tab reads nothing, so what sets the renewal off is a read sent before somebody
+   * moved to it, refused once as one sent with an expired token is. The renewal carries a token of
+   * its own, so a change judged by whether the token moved would be judged a session ended.
+   */
+  it('GivenARenewalWhileAPasswordChangeIsOut_WhenTheChangeIsAnswered_ThenItsSessionIsKeptAndNoSignOutIsSent', async () => {
+    const READ = '/api/employees';
+    const answered: Session = { ...A_TENANT, signInName: 'ada.as.answered@example.com' };
+    const { stub, server, release } = holding(
+      {
+        'POST /api/auth/refresh': { status: 200, body: signedInBody() },
+        '/api/auth/session': { status: 200, body: A_TENANT },
+        [SIGN_OUT]: { status: 204, body: null },
+        [CHANGE]: {
+          status: 200,
+          body: { ...signedInBody(answered), accessToken: 'token-as-answered' },
+        },
+      },
+      [`GET ${READ}`, CHANGE],
+    );
+    show();
+    await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub, within(screen.getByRole('main')));
+
+    server[READ] = NO_COOKIE;
+    server['POST /api/auth/refresh'] = {
+      status: 200,
+      body: { ...signedInBody(), accessToken: 'token-renewed' },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path: string, init?: RequestInit) => {
+        if (path === '/api/auth/refresh') {
+          server[READ] = { status: 200, body: [] };
+        }
+        return stub(path, init);
+      }),
+    );
+    await settling(() => {
+      release(`GET ${READ}`);
+    });
+    await waitFor(() =>
+      expect(bearerOfTheLastRead(stub, READ), 'the retried read, after the renewal').toBe(
+        'Bearer token-renewed',
+      ),
+    );
+
+    await settling(() => {
+      release(CHANGE);
+    });
+
+    expect(await screen.findByText('Your password has been changed.')).toHaveAttribute(
+      'role',
+      'status',
+    );
+    expect(screen.getByText(answered.signInName)).toBeInTheDocument();
+    expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(0);
+    await userEvent.click(screen.getByRole('button', { name: 'Qualifications' }));
+    await waitFor(() =>
+      expect(bearerOfTheLastRead(stub, '/api/qualifications'), 'the next read sent').toBe(
+        'Bearer token-as-answered',
+      ),
+    );
+  });
+
+  it('GivenASignInAfterASignOutWhileAPasswordChangeIsOut_WhenTheChangeIsAnswered401_ThenItIsNeitherRenewedNorSentAgain', async () => {
+    const { stub, release } = forcedChangeHolding([CHANGE], NO_COOKIE);
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await signInAs(MUST_CHANGE.signInName);
+    await screen.findByRole('button', { name: 'People' });
+    const refreshesBefore = callsTo(stub, 'POST', '/api/auth/refresh').length;
+
+    await settling(() => {
+      release(CHANGE);
+    });
+
+    expect(callsTo(stub, 'POST', '/api/auth/password'), 'the changes sent').toHaveLength(1);
+    expect(callsTo(stub, 'POST', '/api/auth/refresh'), 'the refreshes sent').toHaveLength(
+      refreshesBefore,
+    );
+    expect(
+      screen.getByRole('button', { name: 'People' }),
+      'the later sign-in, which a refusal carrying no cookie leaves alone',
+    ).toBeInTheDocument();
+    expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(1);
+  });
+
+  /**
+   * The server's half of the race: a change that lost it is refused with no cookie, so there is
+   * nothing to sign out of. A second sign-out here would be one sent for nothing, and a renewal
+   * would clear a cookie the next person's sign-in may have just been given.
+   */
+  it('GivenASignOutAnsweredBeforeAPasswordChange_WhenTheChangeIsAnswered401_ThenNoRenewalAndNoSecondSignOutIsSent', async () => {
+    const { stub, release } = forcedChangeHolding([CHANGE], NO_COOKIE);
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    const appWasShown = watchingForTheApp();
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign in' });
+    const refreshesBefore = callsTo(stub, 'POST', '/api/auth/refresh').length;
+
+    await settling(() => {
+      release(CHANGE);
+    });
+
+    await expectSignedOutAgain(stub, appWasShown, 1);
+    expect(callsTo(stub, 'POST', '/api/auth/password'), 'the changes sent').toHaveLength(1);
+    expect(callsTo(stub, 'POST', '/api/auth/refresh'), 'the refreshes sent').toHaveLength(
+      refreshesBefore,
+    );
+  });
+
+  /**
+   * A sign-in as the same account puts back a session that reads the same, so only the count can
+   * tell it from the one the change was sent from. The answer's cookie has by now replaced that
+   * sign-in's, so it is signed out too: the safe direction (#371).
+   */
+  it('GivenASignInAfterASignOutWhileAPasswordChangeIsOut_WhenTheChangeIsAccepted_ThenTheAnswerIsNotKeptAndASignOutIsSent', async () => {
+    const { stub, release } = forcedChangeHolding([CHANGE]);
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await signInAs(MUST_CHANGE.signInName);
+    await screen.findByRole('button', { name: 'People' });
+
+    await settling(() => {
+      release(CHANGE);
+    });
+
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(2),
+    );
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+  });
+
+  /**
+   * Another tab's sign-out ends the session here too, and this tab never pressed anything. The
+   * answer it is still waiting for carries a cookie all the same, so it owes the sign-out itself.
+   */
+  it('GivenAPasswordChangeOutHere_WhenAnotherTabSaysTheSessionEnded_ThenTheAnswerIsNotKeptAndASignOutIsSent', async () => {
+    const { stub, release } = forcedChangeHolding([CHANGE]);
+    const anotherTab = new BroadcastChannel('hrsched.session');
+    onTestFinished(() => {
+      anotherTab.close();
+    });
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    const appWasShown = watchingForTheApp();
+
+    anotherTab.postMessage('ended');
+    await screen.findByRole('heading', { name: 'Sign in' });
+    await settling(() => {
+      release(CHANGE);
+    });
+
+    await expectSignedOutAgain(stub, appWasShown, 1);
+  });
+
+  /** A renewal refused while the change is out ends the session as surely as a sign-out does. */
+  it('GivenARefusedRenewalWhileAPasswordChangeIsOut_WhenTheChangeIsAnswered_ThenTheAnswerIsNotKeptAndASignOutIsSent', async () => {
+    const READ = '/api/employees';
+    const { stub, server, release } = holding(
+      {
+        'POST /api/auth/refresh': { status: 200, body: signedInBody() },
+        '/api/auth/session': { status: 200, body: A_TENANT },
+        [SIGN_OUT]: { status: 204, body: null },
+        [CHANGE]: ACCEPTED,
+      },
+      [`GET ${READ}`, CHANGE],
+    );
+    show();
+    await userEvent.click(await screen.findByRole('button', { name: 'Password' }));
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub, within(screen.getByRole('main')));
+    server[READ] = NO_COOKIE;
+    server['POST /api/auth/refresh'] = NO_COOKIE;
+
+    await settling(() => {
+      release(`GET ${READ}`);
+    });
+    await screen.findByRole('heading', { name: 'Sign in' });
+    await settling(() => {
+      release(CHANGE);
+    });
+
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(1),
+    );
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'People' })).toBeNull();
+  });
+
+  /**
+   * `Set-Cookie` arrives with the headers, so a change whose body never arrives may still have
+   * signed this browser in again. What failed was the reading of an answer, not the change.
+   */
+  it('GivenAnAcceptedChangeWhoseBodyIsLost_WhenItsSessionEndedMeanwhile_ThenASecondSignOutIsSent', async () => {
+    const { stub, answer } = answeredByHand();
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign-out not confirmed' });
+    await settling(() => {
+      answer(
+        SIGN_OUT,
+        0,
+        responseOf(204, () => Promise.resolve('')),
+      );
+    });
+
+    await settling(() => {
+      answer(
+        CHANGE,
+        0,
+        responseOf(200, () => Promise.reject(new TypeError('Invented: the body was lost'))),
+      );
+    });
+
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(2),
+    );
+  });
+
+  /**
+   * This sign-out is the only one that can end the session the change began, so its failure has to
+   * reach the warning screen with its reason. Rejected into the change's form instead, it would be
+   * caught by a form that has already gone.
+   */
+  it('GivenASecondSignOutThatFails_WhenThePasswordChangeHasBeenAnswered_ThenTheWarningReportsTheFailure', async () => {
+    const REFUSAL = 'An invented failure of the second sign-out.';
+    const { stub, answer } = answeredByHand();
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign-out not confirmed' });
+    await settling(() => {
+      answer(
+        SIGN_OUT,
+        0,
+        responseOf(204, () => Promise.resolve('')),
+      );
+    });
+    await screen.findByRole('heading', { name: 'Sign in' });
+    await settling(() => {
+      answer(
+        CHANGE,
+        0,
+        responseOf(200, () => Promise.resolve(JSON.stringify(signedInBody()))),
+      );
+    });
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(2),
+    );
+
+    await settling(() => {
+      answer(
+        SIGN_OUT,
+        1,
+        responseOf(500, () => Promise.resolve(JSON.stringify({ detail: REFUSAL }))),
+      );
+    });
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sign-out not confirmed' }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(REFUSAL)).toBeInTheDocument();
+  });
+
+  /**
+   * The first sign-out's confirmation says the session ended, but it may have cleared the cookie
+   * before the change's new one landed. So if the second sign-out then fails, this browser may still
+   * be signed in, and the sign-in form would say it was not.
+   */
+  it('GivenASecondSignOutThatFails_WhenTheFirstWasConfirmedWhileItWasOut_ThenTheWarningStays', async () => {
+    const { stub, answer } = answeredByHand();
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign-out not confirmed' });
+    await settling(() => {
+      answer(
+        CHANGE,
+        0,
+        responseOf(200, () => Promise.resolve(JSON.stringify(signedInBody()))),
+      );
+    });
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(2),
+    );
+
+    await settling(() => {
+      answer(
+        SIGN_OUT,
+        0,
+        responseOf(204, () => Promise.resolve('')),
+      );
+    });
+    await settling(() => {
+      answer(
+        SIGN_OUT,
+        1,
+        responseOf(503, () => Promise.resolve('')),
+      );
+    });
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sign-out not confirmed' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).toBeNull();
+  });
+
+  /** The same for a body that arrives and is not what a success is: it says nothing of a cookie. */
+  it('GivenAnAcceptedChangeWhoseBodyIsNotJson_WhenItsSessionEndedMeanwhile_ThenASecondSignOutIsSent', async () => {
+    const { stub, answer } = answeredByHand();
+    show();
+    await screen.findByRole('heading', { name: 'Change your password' });
+    await sendTheChange(stub);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign-out not confirmed' });
+    await settling(() => {
+      answer(
+        SIGN_OUT,
+        0,
+        responseOf(204, () => Promise.resolve('')),
+      );
+    });
+
+    await settling(() => {
+      answer(
+        CHANGE,
+        0,
+        responseOf(200, () => Promise.resolve('<html>invented</html>')),
+      );
+    });
+
+    await waitFor(() =>
+      expect(callsTo(stub, 'POST', '/api/auth/sign-out'), 'the sign-outs sent').toHaveLength(2),
+    );
   });
 });

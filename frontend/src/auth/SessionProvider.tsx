@@ -101,6 +101,9 @@ interface SessionContextValue {
   /**
    * Changes the caller's own password and holds the new session. Rejects with an `ApiError` when
    * the backend refuses the change, and with `fetch`'s own error when the backend is not reached.
+   * A change answered after its session ended holds nothing and signs out again, because its answer
+   * carried a new refresh cookie: it resolves with nobody signed in, and a second sign-out that
+   * fails shows on the `sign-out-unconfirmed` screen rather than rejecting here (#352).
    */
   readonly changePassword: (current: string, replacement: string) => Promise<void>;
 }
@@ -243,7 +246,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch (failure) {
       // Every caller fires this and forgets it, so a rejection here would be one nobody hears. It
       // is handled by being shown: the session already ended as `sign-out-unconfirmed` before the
-      // request was sent, and that screen reports this failure and its reference (#250).
+      // request was sent, and that screen reports this failure and its reference (#250). Said again
+      // here because another sign-out's confirmation may have cleared that state while this one was
+      // out, and its cookie may be the one still live (#352).
+      setSignOutUnconfirmed(true);
       setSignOutProgress((progress) => ({
         pending: false,
         failures: progress.failures + 1,
@@ -252,9 +258,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const changePassword = useCallback(async (current: string, replacement: string) => {
-    setSession((await auth.changePassword(current, replacement)).session);
-  }, []);
+  const changePassword = useCallback(
+    async (current: string, replacement: string) => {
+      const signedIn = await auth.changePassword(current, replacement);
+      if (signedIn === null) {
+        await signOut();
+        return;
+      }
+      setSession(signedIn.session);
+    },
+    [signOut],
+  );
 
   const value = useMemo<SessionContextValue>(
     () => ({

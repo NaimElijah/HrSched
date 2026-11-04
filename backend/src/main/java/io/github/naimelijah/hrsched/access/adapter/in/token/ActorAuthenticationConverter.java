@@ -39,7 +39,7 @@ public class ActorAuthenticationConverter implements Converter<Jwt, AbstractAuth
   private static final String SESSION_CLAIM = "sid";
 
   /** One sentence for every way this can fail, so that none of them can be told from another. */
-  private static final String NOT_ACCEPTED = "The access token was not accepted";
+  public static final String NOT_ACCEPTED = "The access token was not accepted";
 
   private final AuthenticatedActorsUseCase actors;
 
@@ -66,7 +66,7 @@ public class ActorAuthenticationConverter implements Converter<Jwt, AbstractAuth
             .findActor(account, session)
             .orElseThrow(() -> new InvalidBearerTokenException(NOT_ACCEPTED));
     return new ActorAuthentication(
-        authenticated.actor(), token, authenticated.passwordChangeRequired());
+        authenticated.actor(), session, token, authenticated.passwordChangeRequired());
   }
 
   /**
