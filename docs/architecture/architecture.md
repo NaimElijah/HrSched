@@ -395,12 +395,14 @@ with an expiry and a reason. The job's first step enforces that and rejects `[[P
 are not audited.
 
 `secret-scan` runs gitleaks, as an image pinned by digest with no network and a read-only mount,
-over the whole history of every branch from a full clone. A finding fails the job, and so does a
-scan that read fewer commits than git says add text, a shallow clone, a `.gitleaksignore`, or a
-`.gitleaks.toml` without its default rules. A false positive is allowed only by an `[[allowlists]]`
-entry in `.gitleaks.toml` with a description, one rule, one file and the text of that finding
-([ADR-060](../ADRs/ADR-060-scan-the-whole-history-for-committed-secrets.md)). It detects a secret
-after the push and does not prevent it. Nothing at runtime depends on either job.
+over the history of every branch from a full clone, merge commits included. It first shows the scan
+a filler key, which it must find, so a config that has lost its rules turns it red. A finding fails
+the job, and so does an error in its log, a scan that read fewer commits than git says add text, a
+shallow clone, or a `.gitleaksignore`. A false positive takes an `[[allowlists]]` entry in
+`.gitleaks.toml` with a description, one rule, one file and the whole text of that finding. The job
+detects a secret after the push and does not prevent it, and what it does not cover is in
+[ADR-060](../ADRs/ADR-060-scan-the-whole-history-for-committed-secrets.md). Nothing at runtime depends
+on either job.
 
 ## Structural decisions not visible from the file layout
 
