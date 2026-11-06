@@ -128,10 +128,10 @@ secret scan's allowlist, ADR-060). The two projects build independently (ADR-007
 Outside `backend/`:
 
 - `docs/requirements/`, `docs/architecture/`, `docs/ADRs/` — what, how, and why.
-- `.github/workflows/ci.yml` — four jobs: backend and frontend, each running that project's own
-  verify command, a dependency audit of both (ADR-047), and a scan of the whole history for
-  committed secrets (ADR-060). **No path filters:** a wrongly filtered check is skipped silently
-  and still reports green.
+- `.github/workflows/ci.yml` — five jobs: backend and frontend, each running that project's own
+  verify command, a dependency audit of both (ADR-047), a scan of the whole history for committed
+  secrets (ADR-060), and the backend image's smoke test (ADR-061). **No path filters:** a wrongly
+  filtered check is skipped silently and still reports green.
 
 Guidance for each project lives beside it, and loads the first time a file beneath it is read or
 edited: `backend/CLAUDE.md` (the hexagon, persistence, testing, Spring Boot 4) and

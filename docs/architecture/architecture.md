@@ -389,9 +389,9 @@ the same commit. The reasons nobody wrote down, the constraints that bind the ve
 licence of the whole tree are in
 [ADR-051](../ADRs/ADR-051-record-why-each-frontend-dependency-is-there.md).
 
-**In CI, one more integration point.** `.github/workflows/ci.yml` runs four jobs on every push and
+**In CI, one more integration point.** `.github/workflows/ci.yml` runs five jobs on every push and
 on pull requests into `main` and `dev`: `backend` and `frontend`, each running its own project's
-verify command, `dependency-audit` and `secret-scan`. `dependency-audit` runs Google's OSV-Scanner
+verify command, `dependency-audit`, `secret-scan` and `backend-image`. `dependency-audit` runs Google's OSV-Scanner
 image, pinned by digest, over the two named manifests `backend/pom.xml` and
 `frontend/package-lock.json`. It resolves Maven's transitive tree, Boot-managed versions included,
 through deps.dev, and compares every version against advisory data fetched live from osv.dev. Any
@@ -409,6 +409,14 @@ shallow clone, or a `.gitleaksignore`. A false positive takes an `[[allowlists]]
 detects a secret after the push and does not prevent it, and what it does not cover is in
 [ADR-060](../ADRs/ADR-060-scan-the-whole-history-for-committed-secrets.md). Nothing at runtime depends
 on either job.
+
+`backend-image` runs `backend/smoke-test-image.sh`, the command a developer runs. It builds the
+image from `backend/Dockerfile` and starts it against a throwaway PostgreSQL on a network of its
+own, read-only and given only the variables in `.env.example`. It fails unless readiness and health
+answer `UP`, `/actuator/info` names the version and the commit, the process is not root and can read
+the RDS bundle, and the same image with a `noexec` `/tmp` stops at startup
+([ADR-061](../ADRs/ADR-061-package-the-backend-as-a-container-image-on-a-pinned-temurin-jre.md)). It
+pushes nothing: no registry exists yet ([#163](https://github.com/NaimElijah/HrSched/issues/163)).
 
 ## Structural decisions not visible from the file layout
 

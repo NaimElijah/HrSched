@@ -216,3 +216,20 @@ jobs:
           fi
           echo "::error::the scan read ${scanned:-no} commits, fewer than the $floor that add text (ADR-060)"
           exit 1
+
+  # The backend's container image (ADR-061), built from backend/Dockerfile as a deploy would build
+  # it, then started against a throwaway PostgreSQL by the script a developer runs. A broken
+  # Dockerfile, a missing system library, an entrypoint that does not start, or a solver that cannot
+  # load (#378) turns this red rather than a deploy.
+  backend-image:
+    name: Backend image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The script reads the commit from git: the pushed commit on a push, and on a pull request the
+      # merge commit the checkout made. Both are github.sha.
+      - name: Build and smoke-test the image
+        run: sh backend/smoke-test-image.sh
