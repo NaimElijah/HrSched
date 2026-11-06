@@ -1,6 +1,8 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.generation;
 
 import com.google.ortools.Loader;
+import com.google.ortools.sat.CpModel;
+import com.google.ortools.sat.CpSatHelper;
 import com.google.ortools.sat.CpSolver;
 import com.google.ortools.sat.CpSolverStatus;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
@@ -52,6 +54,7 @@ public class CpSatRosterGenerator implements RosterGenerator {
    * Loads the solver's native libraries, so a platform they cannot load on fails at startup rather
    * than on a Scheduler's first draft.
    *
+   * @throws UnsatisfiedLinkError if the native libraries did not load
    * @param meters where coverage is recorded, one observation per generation
    * @param properties how long each of the solver's searches may run
    * @param policy how long a generation may stay pending before it reads as lost
@@ -67,6 +70,7 @@ public class CpSatRosterGenerator implements RosterGenerator {
               .formatted(policy.lostAfter(), searching));
     }
     Loader.loadNativeLibraries();
+    requireTheNativeLibrariesLoaded();
     this.timeLimit = properties.timeLimitPerPhase();
     this.required =
         DistributionSummary.builder("hrsched.shifts.required")
@@ -78,6 +82,17 @@ public class CpSatRosterGenerator implements RosterGenerator {
             .description("Places one generation could not fill without breaking a rule")
             .baseUnit("places")
             .register(meters);
+  }
+
+  /**
+   * Proves the native libraries loaded, because {@link Loader#loadNativeLibraries()} does not. On
+   * every platform but Windows, OR-Tools 9.12's loader catches the {@link UnsatisfiedLinkError} of
+   * a failed load and returns, so a noexec {@code java.io.tmpdir} left the application ready with
+   * no solver (#378). Validating an empty model is the cheapest call that crosses into native code,
+   * and it throws that error when the libraries are missing.
+   */
+  private static void requireTheNativeLibrariesLoaded() {
+    CpSatHelper.validateModel(new CpModel().model());
   }
 
   /**
