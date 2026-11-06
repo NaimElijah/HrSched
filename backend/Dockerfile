@@ -25,37 +25,27 @@ COPY . .
 
 # Tests and the format check are skipped here because the backend job's `./mvnw verify` is the gate
 # for both, on every push. Here the tests would lack the Docker they need, and Spotless would lack
-# the git attributes it reads line endings from.
-RUN --mount=type=cache,target=/root/.m2 \
+# the git attributes it reads line endings from. Only the local repository is cached between builds:
+# the Maven distribution is downloaded each time, so the wrapper checks it against its checksum.
+RUN --mount=type=cache,target=/root/.m2/repository \
     ./mvnw --batch-mode -Dmaven.test.skip=true -Dspotless.check.skip=true package \
     && cp target/*.jar /build/hrsched.jar
 
-# A Temurin JRE, the vendor CI tests on, over Ubuntu 24.04, the release CI's runners use. The
-# OR-Tools natives need glibc and libstdc++ (ADR-044), so not Alpine.
+# A Temurin JRE, the vendor CI tests on, over Ubuntu 24.04, the release CI's ubuntu-latest runners
+# use as this is written. The OR-Tools natives need glibc and libstdc++ (ADR-044), so not Alpine.
 FROM eclipse-temurin:21.0.13_9-jre-noble@sha256:0eda5830ed7b669abc246a8dc520ea8a23cab06f9a8d4b6964109e2f2394e46f
-
-# The commit the image is built from. It is required: without it the image could name its version
-# but not its commit.
-ARG REVISION
 
 # The account the process runs as, numeric so that a platform can check it is not root without
 # reading /etc/passwd. It is not the base image's `ubuntu` (UID 1000), which belongs to the sudo and
 # adm groups.
 ARG APP_UID=10001
 
-# Spring's git info contributor reads git.properties, so /actuator/info names the commit beside the
-# version build-info gives it. The file is written here, where the commit is known, rather than into
-# the jar, which a local build would have to fill with a placeholder.
-#
 # The base image's setuid and setgid programs (su, passwd, mount and others) lose those bits: the
-# process needs none of them, and each would be a route to root for code running as the user below.
-RUN test -n "$REVISION" || { echo 'Pass --build-arg REVISION="$(git rev-parse HEAD)"' >&2; exit 1; } \
-    && groupadd --system --gid "$APP_UID" hrsched \
-    && useradd --system --uid "$APP_UID" --gid hrsched --no-create-home --shell /usr/sbin/nologin hrsched \
+# process needs none of them, and each would be a route to root for code running as the user.
+RUN groupadd --gid "$APP_UID" hrsched \
+    && useradd --uid "$APP_UID" --gid hrsched --no-create-home --shell /usr/sbin/nologin hrsched \
     && mkdir /app /etc/hrsched \
-    && printf 'git.commit.id=%s\n' "$REVISION" > /app/git.properties \
     && find / -xdev -perm /6000 -type f -exec chmod a-s {} +
-ENV SPRING_INFO_GIT_LOCATION=file:/app/git.properties
 
 # AWS's certificate authorities for RDS, so that the database connection can verify the server it
 # reaches (sslmode=verify-full, #159). Pinned by checksum, so when AWS republishes the bundle the
@@ -67,9 +57,24 @@ ADD --checksum=sha256:90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34e
 
 COPY --from=build /build/hrsched.jar /app/hrsched.jar
 
+# The commit the image is built from, required: without it the image could name its version but not
+# its commit. Declared this late because every layer after it is rebuilt for each new commit.
+#
+# Spring's git info contributor reads git.properties, so /actuator/info names the commit beside the
+# version build-info gives it. The file is written here, where the commit is known, rather than into
+# the jar, which a local build would have to fill with a placeholder.
+ARG REVISION
+RUN test -n "$REVISION" || { echo 'Pass --build-arg REVISION="$(git rev-parse HEAD)"' >&2; exit 1; } \
+    && printf 'git.commit.id=%s\n' "$REVISION" > /app/git.properties
+ENV SPRING_INFO_GIT_LOCATION=file:/app/git.properties
+
+# The version label is emptied because the base image's would otherwise show through, naming
+# Ubuntu's release as this image's. The application's own version is in /actuator/info until
+# versions are taken from release tags (#149).
 LABEL org.opencontainers.image.title="HrSched backend" \
       org.opencontainers.image.source="https://github.com/NaimElijah/HrSched" \
-      org.opencontainers.image.revision="$REVISION"
+      org.opencontainers.image.revision="$REVISION" \
+      org.opencontainers.image.version=""
 
 USER $APP_UID:$APP_UID
 EXPOSE 8080

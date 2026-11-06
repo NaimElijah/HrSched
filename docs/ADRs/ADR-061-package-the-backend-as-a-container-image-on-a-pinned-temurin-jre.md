@@ -38,8 +38,9 @@ We build the backend into an image with a multi-stage `backend/Dockerfile`. The 
 jar with the Maven wrapper. It installs `unzip`, because without it the wrapper fetches Maven's
 `.tar.gz` and checks it against the `.zip` checksum, which fails. Tests and Spotless are skipped:
 the backend job's `./mvnw verify` gates both on every push, and here the tests would lack Docker
-and Spotless the git attributes it reads line endings from. The stage is thrown away, so its
-unpinned apt package never ships.
+and Spotless the git attributes it reads line endings from. Only the local Maven repository is
+cached between builds, so the wrapper downloads Maven each time and checks it against its checksum.
+The stage is thrown away, so its unpinned apt package never ships.
 
 **Runtime stage.** `eclipse-temurin:21.0.13_9-jre-noble`, pinned by its index digest:
 
@@ -62,7 +63,10 @@ On top of it:
   that is not JSON.
 - **The commit, required as a build argument.** It goes into an OCI label and into
   `/app/git.properties`, which Spring's git contributor reads, so `/actuator/info` names the commit
-  beside the version `build-info` gives it. A build without it fails.
+  beside the version `build-info` gives it. A build without it fails. It is declared after the
+  layers that do not depend on it, so a new commit rebuilds only what it changed. The image's
+  version label is emptied, since the base image's would name Ubuntu's release, until versions come
+  from release tags ([#149](https://github.com/NaimElijah/HrSched/issues/149)).
 - **The RDS certificate bundle.** AWS's global bundle sits at `/etc/hrsched/rds-global-bundle.pem`
   for `sslmode=verify-full` ([#159](https://github.com/NaimElijah/HrSched/issues/159)). It is
   fetched with `ADD --checksum`, so the build fails when AWS republishes it, until someone reads
