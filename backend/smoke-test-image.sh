@@ -3,7 +3,8 @@
 #
 #   - readiness answers UP, and so does health, which includes the database check;
 #   - /actuator/info names the version and the commit;
-#   - the process is not root, and runs on a read-only root filesystem;
+#   - the process is not root, and runs on a read-only root filesystem with every capability
+#     dropped and no way to gain privileges; no program in the image is setuid or setgid;
 #   - the RDS certificate bundle is readable by it;
 #   - where the solver's native libraries cannot load, the application stops at startup rather
 #     than reporting ready without a solver (#378).
@@ -109,12 +110,13 @@ until docker exec "$database" pg_isready --quiet --host 127.0.0.1 --username hrs
     sleep 1
 done
 
-# Starts the image read-only, with the given /tmp mount, against the throwaway database. The port is
-# published on loopback only, on whatever port Docker picks, so it cannot clash with anything
-# already running.
+# Starts the image read-only, with the given /tmp mount, against the throwaway database, holding no
+# capability and unable to gain one: what the application needs, and no more. The port is published
+# on loopback only, on whatever port Docker picks, so it cannot clash with anything already running.
 start_application() {
     docker run --detach --name "$1" --network "$network" \
-        --read-only --tmpfs "$2" --publish 127.0.0.1::8080 \
+        --read-only --tmpfs "$2" --cap-drop ALL --security-opt no-new-privileges \
+        --publish 127.0.0.1::8080 \
         --env SPRING_DATASOURCE_URL --env SPRING_DATASOURCE_USERNAME --env SPRING_DATASOURCE_PASSWORD \
         --env HRSCHED_SECURITY_TOKEN_PRIVATEKEY \
         --env HRSCHED_BOOTSTRAP_OPERATOR_SIGNINNAME --env HRSCHED_BOOTSTRAP_OPERATOR_PASSWORD \
@@ -149,6 +151,11 @@ expect "info names the commit" "$info" "\"commit\":{\"id\":\"$short_revision\""
 uid=$(docker exec "$application" id -u)
 [ "$uid" != 0 ] || fail "the process runs as root"
 echo "ok: the process runs as uid $uid, not root"
+
+# Searched as root, so no directory the application cannot read hides a program from the search.
+privileged=$(docker run --rm --user 0 --entrypoint find "$image" / -xdev -perm /6000 -type f)
+[ -z "$privileged" ] || fail "programs in the image are setuid or setgid: $privileged"
+echo "ok: no program in the image is setuid or setgid"
 
 docker exec "$application" test -r "$RDS_BUNDLE" || fail "$RDS_BUNDLE is not readable by the process"
 echo "ok: the RDS certificate bundle is readable"

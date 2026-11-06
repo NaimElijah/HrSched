@@ -46,11 +46,15 @@ ARG APP_UID=10001
 # Spring's git info contributor reads git.properties, so /actuator/info names the commit beside the
 # version build-info gives it. The file is written here, where the commit is known, rather than into
 # the jar, which a local build would have to fill with a placeholder.
+#
+# The base image's setuid and setgid programs (su, passwd, mount and others) lose those bits: the
+# process needs none of them, and each would be a route to root for code running as the user below.
 RUN test -n "$REVISION" || { echo 'Pass --build-arg REVISION="$(git rev-parse HEAD)"' >&2; exit 1; } \
     && groupadd --system --gid "$APP_UID" hrsched \
     && useradd --system --uid "$APP_UID" --gid hrsched --no-create-home --shell /usr/sbin/nologin hrsched \
     && mkdir /app /etc/hrsched \
-    && printf 'git.commit.id=%s\n' "$REVISION" > /app/git.properties
+    && printf 'git.commit.id=%s\n' "$REVISION" > /app/git.properties \
+    && find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 ENV SPRING_INFO_GIT_LOCATION=file:/app/git.properties
 
 # AWS's certificate authorities for RDS, so that the database connection can verify the server it

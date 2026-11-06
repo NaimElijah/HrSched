@@ -51,6 +51,10 @@ On top of it:
 
 - **A user of its own,** UID and GID 10001, set numerically so a platform can tell it is not root.
   It is not the base image's `ubuntu` (UID 1000), which belongs to the `sudo` and `adm` groups.
+- **No setuid or setgid program.** The base image ships twelve, `su`, `passwd` and `mount` among
+  them; their bits are stripped, so code running as the user has no ready route to root. The image
+  needs no Linux capability, and the smoke test runs it with all of them dropped and
+  `no-new-privileges`.
 - **JVM flags in the entrypoint:** `-XX:MaxRAMPercentage=50`, which leaves half the container to
   the solver's native memory until [#170](https://github.com/NaimElijah/HrSched/issues/170)
   measures it, and `-XX:+ExitOnOutOfMemoryError`, so a process out of heap stops and is replaced.

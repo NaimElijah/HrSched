@@ -412,9 +412,10 @@ on either job.
 
 `backend-image` runs `backend/smoke-test-image.sh`, the command a developer runs. It builds the
 image from `backend/Dockerfile` and starts it against a throwaway PostgreSQL on a network of its
-own, read-only and given only the variables in `.env.example`. It fails unless readiness and health
-answer `UP`, `/actuator/info` names the version and the commit, the process is not root and can read
-the RDS bundle, and the same image with a `noexec` `/tmp` stops at startup
+own, read-only, with every capability dropped and given only the variables in `.env.example`. It
+fails unless readiness and health answer `UP`, `/actuator/info` names the version and the commit, the
+process is not root and can read the RDS bundle, no program in the image is setuid or setgid, and the
+same image with a `noexec` `/tmp` stops at startup
 ([ADR-061](../ADRs/ADR-061-package-the-backend-as-a-container-image-on-a-pinned-temurin-jre.md)). It
 pushes nothing: no registry exists yet ([#163](https://github.com/NaimElijah/HrSched/issues/163)).
 

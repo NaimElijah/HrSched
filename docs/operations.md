@@ -17,8 +17,8 @@ sh backend/smoke-test-image.sh
 
 The script builds `hrsched-backend:smoke` and starts it against a throwaway PostgreSQL. It checks
 that readiness and health answer `UP`, that `/actuator/info` names the version and the commit, that
-the process is not root and can read the certificate bundle, and that a `/tmp` the solver cannot
-load from stops it at startup. `READY_TIMEOUT_SECONDS` (default 120) bounds each wait for the
+the process is not root, holds no capability and can read the certificate bundle, that no program in
+the image is setuid or setgid, and that a `/tmp` the solver cannot load from stops it at startup. `READY_TIMEOUT_SECONDS` (default 120) bounds each wait for the
 application. CI runs the same script. To build the image alone:
 
 ```sh
@@ -30,6 +30,7 @@ docker build --build-arg REVISION="$(git rev-parse HEAD)" --tag hrsched-backend 
 | Configuration | The variables in [`.env.example`](../.env.example), from the environment | The image holds no credentials and no deployment-specific setting |
 | Port | `8080`, for the API and Actuator alike | [ADR-017](ADRs/ADR-017-expose-metrics-to-be-scraped.md) |
 | User | UID and GID `10001` | Not root, and not the base image's `ubuntu`, which belongs to the `sudo` group |
+| Privileges | None: every capability may be dropped, with `no-new-privileges` | No program in the image is setuid or setgid, and the smoke test runs it with `--cap-drop ALL --security-opt no-new-privileges` |
 | Root filesystem | May be read-only | The smoke test runs it read-only |
 | `/tmp` | Writable, and allowing code to run from it | OR-Tools extracts its native libraries there and loads them. From a `noexec` mount they do not load, and startup fails ([#378](https://github.com/NaimElijah/HrSched/issues/378)). Docker's plain `--tmpfs /tmp` is `noexec`; `--tmpfs /tmp:exec` is not |
 | JVM flags | `-XX:MaxRAMPercentage=50`, `-XX:+ExitOnOutOfMemoryError` | Half the container for the heap, half for the solver's native memory, until [#170](https://github.com/NaimElijah/HrSched/issues/170) measures it. A process out of heap stops, so the platform replaces it. Override them by replacing the entrypoint, not with `JAVA_TOOL_OPTIONS`, which prints a line that is not JSON |
