@@ -48,6 +48,26 @@ updates:
       - dependency-name: 'typescript'
         update-types: ['version-update:semver-major']
 
+  # The backend image's base images (ADR-061). The JDK and the JRE are one group, so the two stages
+  # move together, and Java majors are ignored, so the image stays on 21 until the pom moves. The
+  # postgres image Dependabot also finds in compose.yaml is ignored until #62 gives the PostgreSQL
+  # version one home: a bump there alone would leave the tests' PostgresDatabase behind it.
+  - package-ecosystem: docker
+    directory: /backend
+    target-branch: dev
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: 'chore(deps)'
+    groups:
+      temurin:
+        patterns:
+          - 'eclipse-temurin'
+    ignore:
+      - dependency-name: 'eclipse-temurin'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'postgres'
+
   - package-ecosystem: github-actions
     directory: /
     target-branch: dev
