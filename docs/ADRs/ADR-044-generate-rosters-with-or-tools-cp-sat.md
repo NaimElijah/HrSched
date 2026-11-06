@@ -10,6 +10,10 @@
     ([#378](https://github.com/NaimElijah/HrSched/issues/378)). "Must be writable", under
     Consequences, is short of the requirement: the directory must also allow code to run from it.
     From a `noexec` mount the libraries do not load.
+  - **Amended 2026-11-07:**
+    [ADR-061](ADR-061-package-the-backend-as-a-container-image-on-a-pinned-temurin-jre.md) keeps
+    every platform in the image, which settles "Trimming the platforms the deployed image does not
+    need", under Consequences.
 - **Date:** 2026-10-22
 
 ## Context

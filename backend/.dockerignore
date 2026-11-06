@@ -1,0 +1,8 @@
+# An allowlist: the image is built from the wrapper, the pom and the main sources, and nothing else
+# reaches the build context. A local .env, the tests, target/ and editor files all stay out of it,
+# and so out of every layer.
+*
+!pom.xml
+!mvnw
+!.mvn/wrapper/maven-wrapper.properties
+!src/main/

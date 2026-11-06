@@ -285,9 +285,9 @@ Coverage is reported but never enforced ([ADR-015](docs/ADRs/ADR-015-report-cove
 ## Deployment and operations
 
 HrSched is not deployed anywhere; the planned AWS target is under
-[Status and limitations](#status-and-limitations). `./mvnw verify` builds the executable jar
-`backend/target/hrsched-0.0.1-SNAPSHOT.jar`, and Flyway migrates the database at startup, before the
-application reports ready.
+[Status and limitations](#status-and-limitations). It ships as the image `backend/Dockerfile`
+builds ([how to build and run it](docs/operations.md#the-image)), and Flyway migrates the database
+at startup, before the application reports ready.
 
 | Concern | Where |
 | :--- | :--- |

@@ -1,9 +1,45 @@
 # Operations
 
-What a person running HrSched needs beyond the quick start: the application settings that are not
-deployment variables, and the meters the application records. HrSched is not deployed anywhere yet,
-so this describes what the code does, not a production environment. The deployment variables are in
-the [README](../README.md#configuration).
+What a person running HrSched needs beyond the quick start: the container image, the application
+settings that are not deployment variables, and the meters the application records. HrSched is not
+deployed anywhere yet, so this describes what the code does, not a production environment. The
+deployment variables are in the [README](../README.md#configuration).
+
+## The image
+
+`backend/Dockerfile` builds the backend into an image
+([ADR-061](ADRs/ADR-061-package-the-backend-as-a-container-image-on-a-pinned-temurin-jre.md)). To
+build it and check it in one step, with Docker running, from anywhere in a checkout:
+
+```sh
+sh backend/smoke-test-image.sh
+```
+
+The script builds `hrsched-backend:smoke` and starts it against a throwaway PostgreSQL. It checks
+that readiness and health answer `UP`, that `/actuator/info` names the version and the commit, that
+the process is not root and can read the certificate bundle, and that a `/tmp` the solver cannot
+load from stops it at startup. `READY_TIMEOUT_SECONDS` (default 120) bounds each wait for the
+application. CI runs the same script. To build the image alone:
+
+```sh
+docker build --build-arg REVISION="$(git rev-parse HEAD)" --tag hrsched-backend backend
+```
+
+| What | Value | Why |
+| :--- | :--- | :--- |
+| Configuration | The variables in [`.env.example`](../.env.example), from the environment | The image holds no credentials and no deployment-specific setting |
+| Port | `8080`, for the API and Actuator alike | [ADR-017](ADRs/ADR-017-expose-metrics-to-be-scraped.md) |
+| User | UID and GID `10001` | Not root, and not the base image's `ubuntu`, which belongs to the `sudo` group |
+| Root filesystem | May be read-only | The smoke test runs it read-only |
+| `/tmp` | Writable, and allowing code to run from it | OR-Tools extracts its native libraries there and loads them. From a `noexec` mount they do not load, and startup fails ([#378](https://github.com/NaimElijah/HrSched/issues/378)). Docker's plain `--tmpfs /tmp` is `noexec`; `--tmpfs /tmp:exec` is not |
+| JVM flags | `-XX:MaxRAMPercentage=50`, `-XX:+ExitOnOutOfMemoryError` | Half the container for the heap, half for the solver's native memory, until [#170](https://github.com/NaimElijah/HrSched/issues/170) measures it. A process out of heap stops, so the platform replaces it. Override them by replacing the entrypoint, not with `JAVA_TOOL_OPTIONS`, which prints a line that is not JSON |
+| Commit | `--build-arg REVISION`, required | The `org.opencontainers.image.revision` label, and `git.commit.id` in `/actuator/info` |
+| RDS certificate bundle | `/etc/hrsched/rds-global-bundle.pem` | For `sslmode=verify-full` ([#159](https://github.com/NaimElijah/HrSched/issues/159)); nothing uses it yet |
+
+**When the bundle's checksum stops matching**, the build fails at its `ADD`. AWS republishes the
+bundle at the same address when it adds or retires a certificate authority. Download it, list what
+changed with `openssl storeutl -noout -text -certs global-bundle.pem`, pin the new `sha256sum` in
+`backend/Dockerfile`, and say in the commit which authorities were added or removed.
 
 ## Settings
 

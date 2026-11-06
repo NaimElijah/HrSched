@@ -28,7 +28,11 @@ exists anywhere in this repository**.
 
 The backend is a single Spring Boot process serving HTTP on 8080. Its code is organised **by
 bounded context**, each context a top-level package holding its own complete **hexagon**
-([ADR-006](../ADRs/ADR-006-organise-packages-by-bounded-context.md)).
+([ADR-006](../ADRs/ADR-006-organise-packages-by-bounded-context.md)). It ships as a container
+image that `backend/Dockerfile` builds, on a digest-pinned Temurin 21 JRE over Ubuntu 24.04, run
+as an unprivileged user and configured entirely by its environment
+([ADR-061](../ADRs/ADR-061-package-the-backend-as-a-container-image-on-a-pinned-temurin-jre.md)).
+Nothing runs it anywhere yet ([#161](https://github.com/NaimElijah/HrSched/issues/161)).
 
 ```mermaid
 flowchart TB
@@ -344,7 +348,9 @@ scheduling entry behind. A durable trail is [#31](https://github.com/NaimElijah/
 **At runtime: PostgreSQL, and nothing else.** No broker and no third-party API. The schema is
 created and changed only by the Flyway migrations in `backend/src/main/resources/db/migration`,
 applied on startup. Locally `backend/compose.yaml` supplies the database and Boot starts it; a
-deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
+deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`. The image carries AWS's
+RDS certificate bundle for a connection that verifies the server
+([#159](https://github.com/NaimElijah/HrSched/issues/159)), but no connection uses it yet.
 
 | Dependency | Used for | Justification |
 | --- | --- | --- |
