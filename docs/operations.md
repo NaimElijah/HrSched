@@ -31,8 +31,8 @@ docker build --build-arg REVISION="$(git rev-parse HEAD)" --tag hrsched-backend 
 | Configuration | The variables in [`.env.example`](../.env.example), from the environment | The image holds no credentials and no deployment-specific setting |
 | Port | `8080`, for the API and Actuator alike | [ADR-017](ADRs/ADR-017-expose-metrics-to-be-scraped.md) |
 | User | UID and GID `10001` | Not root, and not the base image's `ubuntu`, which belongs to the `sudo` group |
-| Privileges | None: every capability may be dropped, with `no-new-privileges` | No program in the image is setuid or setgid, and the smoke test runs it with `--cap-drop ALL --security-opt no-new-privileges` |
-| Root filesystem | May be read-only | The smoke test runs it read-only |
+| Privileges | None: every capability may be dropped, with `no-new-privileges` | No program in the image is setuid or setgid. The smoke test runs it with `--cap-drop ALL --security-opt no-new-privileges` and reads both from the process; the deployment applies them ([#161](https://github.com/NaimElijah/HrSched/issues/161)) |
+| Root filesystem | May be read-only | The smoke test runs it read-only and checks that even root's write is refused |
 | `/tmp` | Writable, and allowing code to run from it | OR-Tools extracts its native libraries there and loads them. From a `noexec` mount they do not load, and startup fails ([#378](https://github.com/NaimElijah/HrSched/issues/378)). Docker's plain `--tmpfs /tmp` is `noexec`; `--tmpfs /tmp:exec` is not |
 | JVM flags | `-XX:MaxRAMPercentage=50`, `-XX:+ExitOnOutOfMemoryError` | Half the container for the heap, half for the solver's native memory, until [#170](https://github.com/NaimElijah/HrSched/issues/170) measures it. A process out of heap stops, so the platform replaces it. Override them by replacing the entrypoint, not with `JAVA_TOOL_OPTIONS`, which prints a line that is not JSON |
 | Commit | `--build-arg REVISION`, required | The `org.opencontainers.image.revision` label, and `git.commit.id` in `/actuator/info` |

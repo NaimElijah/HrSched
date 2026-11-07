@@ -178,6 +178,18 @@ uid=$(docker exec "$application" stat -c %u /proc/1)
 [ "$uid" != 0 ] || fail "the process runs as root"
 echo "ok: the process runs as uid $uid, not root"
 
+# The capability drop, no-new-privileges and the read-only root are the deployment's to apply
+# (#161). These checks prove the image runs under them, read from the kernel's view of the serving
+# process rather than trusted from the flags above. The bounding set is read, not the effective set,
+# which is empty for any process that is not root whatever was dropped. The write is tried as root,
+# so that only a read-only filesystem, not a file's permissions, can refuse it.
+process_status=$(docker exec "$application" cat /proc/1/status)
+expect "the process can hold no capability" "$process_status" "$(printf 'CapBnd:\t0000000000000000')"
+expect "the process cannot gain privileges" "$process_status" "$(printf 'NoNewPrivs:\t1')"
+refused=$(docker exec --user 0 "$application" sh -c ': > /app/written' 2>&1) &&
+    fail "the root filesystem accepted a write"
+expect "the root filesystem refuses a write, even root's" "$refused" 'Read-only file system'
+
 # The flags in the entrypoint, read from the running JVM's command line, so an entrypoint that lost
 # them, or passed them where the JVM ignores them, fails here.
 command_line=$(docker exec "$application" cat /proc/1/cmdline | tr '\000' ' ')
