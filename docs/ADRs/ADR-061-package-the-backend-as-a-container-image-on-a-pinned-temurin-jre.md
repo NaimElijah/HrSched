@@ -64,8 +64,9 @@ On top of it:
   that is not JSON.
 - **The commit, required as a build argument.** It goes into an OCI label and into
   `/app/git.properties`, which Spring's git contributor reads, so `/actuator/info` names the commit
-  beside the version `build-info` gives it. A build without it fails. It is declared after the
-  layers that do not depend on it, so a new commit rebuilds only what it changed. The image's
+  beside the version `build-info` gives it. A stage of its own checks it, so a build without it
+  fails at once rather than after the Maven build. The file is copied in after the layers that do
+  not depend on it, so a new commit rebuilds only what it changed. The image's
   version label is emptied, since the base image's would name Ubuntu's release, until versions come
   from release tags ([#149](https://github.com/NaimElijah/HrSched/issues/149)).
 - **The RDS certificate bundle.** AWS's global bundle sits at `/etc/hrsched/rds-global-bundle.pem`

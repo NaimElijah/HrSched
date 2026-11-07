@@ -31,6 +31,15 @@ RUN --mount=type=cache,target=/root/.m2/repository \
     ./mvnw --batch-mode -Dmaven.test.skip=true -Dspotless.check.skip=true package \
     && cp target/*.jar /build/hrsched.jar
 
+# The commit the image is built from, required: without it the image could name its version but not
+# its commit. It is checked in a stage of its own, which BuildKit runs beside the build stage, so a
+# build that forgot it fails at once rather than after the Maven build. The same pinned JRE as below,
+# so no further image is pulled.
+FROM eclipse-temurin:21.0.13_9-jre-noble@sha256:0eda5830ed7b669abc246a8dc520ea8a23cab06f9a8d4b6964109e2f2394e46f AS revision
+ARG REVISION
+RUN test -n "$REVISION" || { echo 'Pass --build-arg REVISION="$(git rev-parse HEAD)"' >&2; exit 1; } \
+    && printf 'git.commit.id=%s\n' "$REVISION" > /git.properties
+
 # A Temurin JRE, the vendor CI tests on, over Ubuntu 24.04, the release CI's ubuntu-latest runners
 # use as this is written. The OR-Tools natives need glibc and libstdc++ (ADR-044), so not Alpine.
 FROM eclipse-temurin:21.0.13_9-jre-noble@sha256:0eda5830ed7b669abc246a8dc520ea8a23cab06f9a8d4b6964109e2f2394e46f
@@ -57,20 +66,17 @@ ADD --checksum=sha256:90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34e
 
 COPY --from=build /build/hrsched.jar /app/hrsched.jar
 
-# The commit the image is built from, required: without it the image could name its version but not
-# its commit. Declared this late because every layer after it is rebuilt for each new commit.
-#
 # Spring's git info contributor reads git.properties, so /actuator/info names the commit beside the
-# version build-info gives it. The file is written here, where the commit is known, rather than into
-# the jar, which a local build would have to fill with a placeholder.
-ARG REVISION
-RUN test -n "$REVISION" || { echo 'Pass --build-arg REVISION="$(git rev-parse HEAD)"' >&2; exit 1; } \
-    && printf 'git.commit.id=%s\n' "$REVISION" > /app/git.properties
+# version build-info gives it. It comes from the revision stage, where the commit is known, rather
+# than from the jar, which a local build would have to fill with a placeholder. Copied this late
+# because it changes with every commit, and every layer after it is rebuilt when it does.
+COPY --from=revision /git.properties /app/git.properties
 ENV SPRING_INFO_GIT_LOCATION=file:/app/git.properties
 
 # The version label is emptied because the base image's would otherwise show through, naming
 # Ubuntu's release as this image's. The application's own version is in /actuator/info until
 # versions are taken from release tags (#149).
+ARG REVISION
 LABEL org.opencontainers.image.title="HrSched backend" \
       org.opencontainers.image.source="https://github.com/NaimElijah/HrSched" \
       org.opencontainers.image.revision="$REVISION" \
