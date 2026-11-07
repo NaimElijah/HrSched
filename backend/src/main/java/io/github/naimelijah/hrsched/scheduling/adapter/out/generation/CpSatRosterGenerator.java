@@ -54,12 +54,12 @@ public class CpSatRosterGenerator implements RosterGenerator {
    * Loads the solver's native libraries, so a platform they cannot load on fails at startup rather
    * than on a Scheduler's first draft.
    *
-   * @throws UnsatisfiedLinkError if the native libraries did not load
    * @param meters where coverage is recorded, one observation per generation
    * @param properties how long each of the solver's searches may run
    * @param policy how long a generation may stay pending before it reads as lost
    * @throws IllegalArgumentException if the policy's lost-after does not exceed the time both
    *     searches may take, so that a solve still searching would be reported lost (ADR-046)
+   * @throws UnsatisfiedLinkError if the native libraries did not load
    */
   public CpSatRosterGenerator(
       MeterRegistry meters, GenerationProperties properties, GenerationPolicy policy) {

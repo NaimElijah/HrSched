@@ -17,10 +17,13 @@ concurrency:
 # wrong silently skips checks, and a check that is skipped still reports green — which is worse
 # than one that is merely slow.
 #
-# Every action is pinned to a full commit SHA, and each container image by its digest, each with
-# its version in a trailing comment. A tag can be moved to different code after it was trusted; a
-# SHA or a digest cannot. Dependabot's github-actions entry keeps the action pins current; the image
-# digests are bumped by hand (ADR-047, ADR-060).
+# Every action is pinned to a full commit SHA, and each container image this file names by its
+# digest, each with its version in a trailing comment. A tag can be moved to different code after it
+# was trusted; a SHA or a digest cannot. Dependabot's github-actions entry keeps the action pins
+# current; the image digests here are bumped by hand (ADR-047, ADR-060), and those in
+# backend/Dockerfile by Dependabot's docker entry (ADR-061). One image is run by tag: the backend
+# image's smoke test takes PostgreSQL from backend/compose.yaml, as the tests do, until #62 gives
+# that version one pinned home.
 jobs:
   backend:
     name: Build, test, format check

@@ -391,8 +391,8 @@ licence of the whole tree are in
 
 **In CI, one more integration point.** `.github/workflows/ci.yml` runs five jobs on every push and
 on pull requests into `main` and `dev`: `backend` and `frontend`, each running its own project's
-verify command, `dependency-audit`, `secret-scan` and `backend-image`. `dependency-audit` runs Google's OSV-Scanner
-image, pinned by digest, over the two named manifests `backend/pom.xml` and
+verify command, `dependency-audit`, `secret-scan` and `backend-image`. `dependency-audit` runs
+Google's OSV-Scanner image, pinned by digest, over the two named manifests `backend/pom.xml` and
 `frontend/package-lock.json`. It resolves Maven's transitive tree, Boot-managed versions included,
 through deps.dev, and compares every version against advisory data fetched live from osv.dev. Any
 advisory fails the job, and so does any scan error, unless `osv-scanner.toml` ignores the advisory

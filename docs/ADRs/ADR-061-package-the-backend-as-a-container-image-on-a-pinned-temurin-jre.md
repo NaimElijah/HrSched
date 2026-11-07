@@ -27,7 +27,8 @@ Forces:
 - **Logs are ECS JSON on stdout** (ADR-016), so nothing may print a line that is not JSON.
 - **CI pins every input by digest or SHA** (ADR-047, ADR-060), because a tag can be moved to other
   content after it was trusted.
-- **CI's tests run on Temurin 21** (`actions/setup-java`), on GitHub's Ubuntu 24.04 runners.
+- **CI's tests run on Temurin 21** (`actions/setup-java`), on GitHub's `ubuntu-latest` runners,
+  which were Ubuntu 24.04 when this was written.
 
 ## Decision
 
@@ -45,7 +46,7 @@ The stage is thrown away, so its unpinned apt package never ships.
 **Runtime stage.** `eclipse-temurin:21.0.13_9-jre-noble`, pinned by its index digest:
 
 - Temurin, the vendor CI tests on;
-- Ubuntu 24.04, the release CI's runners use;
+- Ubuntu 24.04, the release CI's `ubuntu-latest` runners used when this was written;
 - glibc and libstdc++, which the solver needs.
 
 On top of it:
@@ -71,7 +72,8 @@ On top of it:
   for `sslmode=verify-full` ([#159](https://github.com/NaimElijah/HrSched/issues/159)). It is
   fetched with `ADD --checksum`, so the build fails when AWS republishes it, until someone reads
   what changed and pins the new sum.
-- **No `HEALTHCHECK`, and no curl.** The load balancer probes readiness (#161).
+- **No `HEALTHCHECK`, and nothing added for one.** The load balancer probes readiness (#161). The
+  base image's own `curl` remains.
 - **No `# syntax=` line,** which would pull a Dockerfile frontend image by tag. BuildKit's built-in
   frontend reads `ADD --checksum` and `RUN --mount`.
 
@@ -124,6 +126,9 @@ CI's fifth job runs exactly that script on every push.
 
 **Harder**
 
+- **The base image's `curl` remains.** Code running as the user can fetch with it, though the JVM
+  it runs in can fetch anyway. Removing it would make the image differ from the published base in
+  one more place; revisit if the public threat model (#171) asks for it.
 - **The image is large.** The Ubuntu base, the JRE and a 141 MB jar holding natives for five
   platforms add up.
 - **The commit is public.** `/actuator/info` names it to anybody who can reach the port, recorded
@@ -144,11 +149,11 @@ CI's fifth job runs exactly that script on every push.
 | **`gcr.io/distroless/java21-debian12`** | No shell, so a smaller attack surface. Its JVM is Debian's OpenJDK package, not the Temurin CI tests on, and it follows Debian's update cadence. Revisit if the image's vulnerability count becomes a gate, or the public threat model (#171) asks for a shell-less runtime. |
 | **Alpine or another musl image** | OR-Tools' natives need glibc (ADR-044). |
 | **`amazoncorretto:21`** | Well maintained and glibc-based, but a different vendor from CI, with no offsetting gain. Revisit if an AWS-specific JVM feature is ever needed. |
-| **Ubuntu 26.04 (`-resolute`)** | Published the same day with the same Temurin build, but its base was days old, and CI's runners use 24.04, so the image would ship on a libc CI does not test on. Revisit when the runners move to 26.04. |
+| **Ubuntu 26.04 (`-resolute`)** | Published the same day with the same Temurin build, but its base was days old, and CI's `ubuntu-latest` runners used 24.04, so the image would ship on a libc CI does not test on. Revisit when those runners move to 26.04. |
 | **`spring-boot:build-image` (buildpacks)** | Its builder and run images are pulled by tag, and the JVM flags and base are the builder's to choose. |
 | **Jib** | A new build plugin, and the image would be defined in the pom with no Dockerfile to read or smoke-test locally. |
 | **Copying the jar the backend job built** | It ties the image to CI's workspace, and `docker build` alone would no longer work from a clean clone. |
-| **Trimming OR-Tools to the Linux platform(s)** | One jar serves every operating system. Excluding platforms in the repackage would break `java -jar` for developers on Windows and macOS, or need a second, image-only jar. The saving is about 60 MB. Revisit when #161 or #170 measures image pull time as a cost. |
+| **Trimming OR-Tools to the Linux platform(s)** | One jar serves every operating system. Excluding platforms in the repackage would break `java -jar` for developers on Windows and macOS, or need a second, image-only jar. The three non-Linux platforms are about 48 MB of the jar, about 68 MB with arm64's too. Revisit when #161 or #170 measures image pull time as a cost. |
 | **Building for arm64 too** | The arm64 natives are already in the jar, so it is a `--platform` flag away. Which architecture Fargate runs is #161's decision. |
 | **A scheduled rebuild** | With every base pinned by digest, a rebuild reproduces the same image. JDK and time zone updates arrive as Dependabot's digest bumps. Revisit once images are pushed (#163), if Dependabot's bumps prove too slow. |
 | **An extracted or layered jar** | It starts faster and pushes smaller layers, but nothing is pushed yet. Revisit with #163. |
@@ -160,4 +165,4 @@ CI's fifth job runs exactly that script on every push.
 - a critical vulnerability in the base image is not fixed within a week;
 - #170 measures the heap or native memory and the 50 % is wrong;
 - #161 chooses arm64, or a read-only task cannot mount an executable `/tmp`;
-- CI's runners move to Ubuntu 26.04.
+- CI's `ubuntu-latest` runners move to Ubuntu 26.04.

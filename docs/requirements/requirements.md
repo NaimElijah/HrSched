@@ -323,7 +323,7 @@ filled every place it can, it keeps at least that many filled and minimises the 
   there is no production deployment ([#38](https://github.com/NaimElijah/HrSched/issues/38)).*
 - **Deployment** — containerised with externalised configuration; the provider is deliberately
   deferred to its own ADR so the choice does not leak into the design. *The image is built by
-  `backend/Dockerfile` and holds no configuration: `backend/smoke-test-image.sh`, which CI runs,
+  `backend/Dockerfile` and holds no credentials and no deployment-specific setting: `backend/smoke-test-image.sh`, which CI runs,
   starts it from the variables in `.env.example` alone
   ([ADR-061](../ADRs/ADR-061-package-the-backend-as-a-container-image-on-a-pinned-temurin-jre.md)).*
 - **Observability** — every request is traced, and the trace id appears in every log line it

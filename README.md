@@ -285,9 +285,9 @@ Coverage is reported but never enforced ([ADR-015](docs/ADRs/ADR-015-report-cove
 ## Deployment and operations
 
 HrSched is not deployed anywhere; the planned AWS target is under
-[Status and limitations](#status-and-limitations). It ships as the image `backend/Dockerfile`
-builds ([how to build and run it](docs/operations.md#the-image)), and Flyway migrates the database
-at startup, before the application reports ready.
+[Status and limitations](#status-and-limitations). It is packaged as the image `backend/Dockerfile`
+builds, which nothing runs yet ([how to build and run it](docs/operations.md#the-image)); Flyway
+migrates the database at startup, before the application reports ready.
 
 | Concern | Where |
 | :--- | :--- |
@@ -311,7 +311,7 @@ HrSched/
 ├── frontend/      React SPA
 │   └── src/       api/ · auth/ · components/ · pages/ · test-support/
 ├── docs/          requirements/ (what) · architecture/ (how) · ADRs/ (why) · security/ · images/
-│                  api.md · operations.md (settings, meters)
+│                  api.md · operations.md (the image, settings, meters)
 ├── scripts/       run.mjs, the root task runner for dev and verify (ADR-014)
 └── .github/       CI and Dependabot
 ```
