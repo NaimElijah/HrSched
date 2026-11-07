@@ -14,9 +14,11 @@ import io.github.naimelijah.hrsched.shared.testsupport.TestTenants;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -62,9 +64,19 @@ class MetricsHttpTest {
   /** The Prometheus endpoint's id, as above. */
   private static final String PROMETHEUS_ENDPOINT = "prometheus";
 
+  /** The Maven artifact id, which the build information names. */
+  private static final String ARTIFACT_ID = "hrsched";
+
+  /** The member of {@code /actuator/info} that build-info contributes. */
+  private static final String BUILD_INFO_MEMBER = "build";
+
   @Autowired private MockMvc mockMvc;
   @Autowired private MeterRegistry meters;
   @Autowired private PrometheusMeterRegistry prometheus;
+
+  /** The version every log line carries, filtered in from the pom at build time. */
+  @Value("${logging.structured.ecs.service.version}")
+  private String loggedServiceVersion;
 
   @Test
   void GivenTheProbesAreEnabled_WhenAsked_ThenLivenessAndReadinessBothAnswer() throws Exception {
@@ -80,6 +92,56 @@ class MetricsHttpTest {
   @Test
   void GivenNoToken_WhenAskingForInfo_ThenItAnswers() throws Exception {
     mockMvc.perform(get("/actuator/info")).andExpect(status().isOk());
+  }
+
+  /**
+   * Which build is running, answered the same way by the logs and by {@code /actuator/info}. Every
+   * log line names the Maven version as {@code service.version}; the info endpoint must name the
+   * same one, or "which version is running?" has two answers (#149, #157).
+   */
+  @Test
+  void GivenABuiltApplication_WhenInfoIsRead_ThenItNamesTheBuildVersionTheLogsName()
+      throws Exception {
+    String body =
+        mockMvc
+            .perform(get("/actuator/info"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertSoftly(
+        softly -> {
+          softly
+              .assertThat(JsonPath.<Object>read(body, "$.build.artifact"))
+              .describedAs("build.artifact in %s", body)
+              .isEqualTo(ARTIFACT_ID);
+          softly
+              .assertThat(JsonPath.<Object>read(body, "$.build.version"))
+              .describedAs("build.version in %s", body)
+              .isEqualTo(loggedServiceVersion);
+        });
+  }
+
+  /**
+   * Anybody may read {@code /actuator/info}, so it names the build and nothing else. Only Boot's
+   * defaults keep the environment, the JVM, the operating system and the process out of it; a
+   * setting that turned one of them on would otherwise leave every check here green. The commit
+   * joins the build only in the image, which its smoke test pins.
+   */
+  @Test
+  void GivenABuiltApplication_WhenInfoIsRead_ThenItNamesNothingButTheBuild() throws Exception {
+    String body =
+        mockMvc
+            .perform(get("/actuator/info"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(JsonPath.<Map<String, Object>>read(body, "$").keySet())
+        .describedAs("the top-level members of %s", body)
+        .containsExactly(BUILD_INFO_MEMBER);
   }
 
   @Test

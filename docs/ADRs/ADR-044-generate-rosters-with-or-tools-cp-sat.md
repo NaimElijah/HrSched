@@ -4,6 +4,16 @@
   - **Amended 2026-10-31:**
     [ADR-046](ADR-046-generate-in-the-background-and-keep-the-job-in-postgresql.md) runs the solve
     as a background job, so "A request waits for the solve", under Consequences, no longer holds.
+  - **Amended 2026-11-07:** loading the natives at startup did not make a failed load fail
+    startup on Linux. OR-Tools 9.12's loader catches the `UnsatisfiedLinkError` and returns on
+    every platform but Windows, so the generator now proves the load with a call into native code
+    ([#378](https://github.com/NaimElijah/HrSched/issues/378)). "Must be writable", under
+    Consequences, is short of the requirement: the directory must also allow code to run from it.
+    From a `noexec` mount the libraries do not load.
+  - **Amended 2026-11-07:**
+    [ADR-061](ADR-061-package-the-backend-as-a-container-image-on-a-pinned-temurin-jre.md) keeps
+    every platform in the image, which settles "Trimming the platforms the deployed image does not
+    need", under Consequences.
 - **Date:** 2026-10-22
 
 ## Context

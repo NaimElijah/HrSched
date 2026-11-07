@@ -1,9 +1,47 @@
 # Operations
 
-What a person running HrSched needs beyond the quick start: the application settings that are not
-deployment variables, and the meters the application records. HrSched is not deployed anywhere yet,
-so this describes what the code does, not a production environment. The deployment variables are in
-the [README](../README.md#configuration).
+What a person running HrSched needs beyond the quick start: the container image, the application
+settings that are not deployment variables, and the meters the application records. HrSched is not
+deployed anywhere yet, so this describes what the code does, not a production environment. The
+deployment variables are in the [README](../README.md#configuration).
+
+## The image
+
+`backend/Dockerfile` builds the backend into an image
+([ADR-061](ADRs/ADR-061-package-the-backend-as-a-container-image-on-a-pinned-temurin-jre.md)). To
+build it and check it in one step, with Docker running, from anywhere in a checkout:
+
+```sh
+sh backend/smoke-test-image.sh
+```
+
+The script builds the image under a tag of its own run and starts it against a throwaway PostgreSQL,
+removing both when it ends. It checks
+that readiness and health answer `UP`, that `/actuator/info` names the version and the commit, that
+the process is not root, holds no capability and can read the certificate bundle, that no program in
+the image is setuid or setgid, and that a `/tmp` the solver cannot load from stops it at startup. `READY_TIMEOUT_SECONDS` (default 120) bounds each wait for the
+application. CI runs the same script. To build the image alone:
+
+```sh
+docker build --build-arg REVISION="$(git rev-parse HEAD)" --tag hrsched-backend backend
+```
+
+| What | Value | Why |
+| :--- | :--- | :--- |
+| Configuration | The variables in [`.env.example`](../.env.example), from the environment | The image holds no credentials and no deployment-specific setting |
+| Port | `8080`, for the API and Actuator alike | [ADR-017](ADRs/ADR-017-expose-metrics-to-be-scraped.md) |
+| User | UID and GID `10001` | Not root, and not the base image's `ubuntu`, which belongs to the `sudo` group |
+| Privileges | None: every capability may be dropped, with `no-new-privileges` | No program in the image is setuid or setgid. The smoke test runs it with `--cap-drop ALL --security-opt no-new-privileges` and reads both from the process; the deployment applies them ([#161](https://github.com/NaimElijah/HrSched/issues/161)) |
+| Root filesystem | May be read-only | The smoke test runs it read-only and checks that even root's write is refused |
+| `/tmp` | Writable, and allowing code to run from it | OR-Tools extracts its native libraries there and loads them. From a `noexec` mount they do not load, and startup fails ([#378](https://github.com/NaimElijah/HrSched/issues/378)). Docker's plain `--tmpfs /tmp` is `noexec`; `--tmpfs /tmp:exec` is not |
+| JVM flags | `-XX:MaxRAMPercentage=50`, `-XX:+ExitOnOutOfMemoryError` | Half the container for the heap, half for the solver's native memory, until [#170](https://github.com/NaimElijah/HrSched/issues/170) measures it. A process out of heap stops, so the platform replaces it. Override them by replacing the entrypoint, not with `JAVA_TOOL_OPTIONS`, which prints a line that is not JSON |
+| Commit | `--build-arg REVISION`, required | The `org.opencontainers.image.revision` label, and `git.commit.id` in `/actuator/info` |
+| RDS certificate bundle | `/etc/hrsched/rds-global-bundle.pem` | For `sslmode=verify-full` ([#159](https://github.com/NaimElijah/HrSched/issues/159)); nothing uses it yet |
+
+**When the bundle's checksum stops matching**, the build fails at its `ADD`. AWS republishes the
+bundle at the same address when it adds or retires a certificate authority. Download it, list what
+changed with `openssl storeutl -noout -text -certs global-bundle.pem`, pin the new `sha256sum` in
+`backend/Dockerfile`, and say in the commit which authorities were added or removed.
 
 ## Settings
 
@@ -29,7 +67,7 @@ Every setting below is set in `backend/src/main/resources/application.properties
 | `spring.servlet.multipart.enabled` | `false` | No route takes a file, so a multipart request is refused with a `415` and never parsed |
 | `spring.mvc.formcontent.filter.enabled` | `false` | No route takes form content, so no filter reads a form body ahead of the security chain |
 | `server.tomcat.max-http-form-post-size` | `${hrsched.web.max-json-document-bytes}` | A form posted to a route that takes JSON is parsed before it is refused as the wrong type; held to the JSON limit, a larger one is refused with a `413` |
-| `management.endpoints.web.exposure.include` | `health,info,metrics,prometheus` | An allow list: `health` and `info` need no token, `metrics` and `prometheus` are refused to everyone, and `env`, `loggers` and `heapdump` stay shut ([ADR-049](ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md), [#78](https://github.com/NaimElijah/HrSched/issues/78)) |
+| `management.endpoints.web.exposure.include` | `health,info,metrics,prometheus` | An allow list: `health` and `info` need no token, `metrics` and `prometheus` are refused to everyone, and `env`, `loggers` and `heapdump` stay shut ([ADR-049](ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md), [#78](https://github.com/NaimElijah/HrSched/issues/78)). `info` names the build's `artifact`, `group`, `name` and `version`, the Maven version the logs carry as `service.version`, from the `build-info` goal in `backend/pom.xml`; it gives no build time, because Maven pins that to 1980 for reproducible jars. In the image it also names the commit, as `git.commit.id`, and nothing else |
 | `management.endpoints.web.discovery.enabled` | `false` | `GET /actuator` no longer lists the exposed endpoints, with links built from the request's `Host` header |
 | `management.endpoint.health.probes.enabled` | `true` | Liveness and readiness probes outside Kubernetes too |
 | `spring.datasource.hikari.data-source-properties.logServerErrorDetail` | `false` | Keeps a refused row ("Failing row contains (...)": a name, hours, an absence) out of the driver's exception text, and so out of the log. It covers the driver only: PostgreSQL's own log still writes the `DETAIL` unless the database sets `log_error_verbosity = terse`, which belongs to the deployment and is not configured here |

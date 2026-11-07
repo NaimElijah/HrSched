@@ -1,6 +1,8 @@
 package io.github.naimelijah.hrsched.scheduling.adapter.out.generation;
 
 import com.google.ortools.Loader;
+import com.google.ortools.sat.CpModel;
+import com.google.ortools.sat.CpSatHelper;
 import com.google.ortools.sat.CpSolver;
 import com.google.ortools.sat.CpSolverStatus;
 import io.github.naimelijah.hrsched.scheduling.application.port.out.GenerationRequest;
@@ -57,6 +59,7 @@ public class CpSatRosterGenerator implements RosterGenerator {
    * @param policy how long a generation may stay pending before it reads as lost
    * @throws IllegalArgumentException if the policy's lost-after does not exceed the time both
    *     searches may take, so that a solve still searching would be reported lost (ADR-046)
+   * @throws UnsatisfiedLinkError if the native libraries did not load
    */
   public CpSatRosterGenerator(
       MeterRegistry meters, GenerationProperties properties, GenerationPolicy policy) {
@@ -67,6 +70,7 @@ public class CpSatRosterGenerator implements RosterGenerator {
               .formatted(policy.lostAfter(), searching));
     }
     Loader.loadNativeLibraries();
+    requireTheNativeLibrariesLoaded();
     this.timeLimit = properties.timeLimitPerPhase();
     this.required =
         DistributionSummary.builder("hrsched.shifts.required")
@@ -78,6 +82,17 @@ public class CpSatRosterGenerator implements RosterGenerator {
             .description("Places one generation could not fill without breaking a rule")
             .baseUnit("places")
             .register(meters);
+  }
+
+  /**
+   * Proves the native libraries loaded, because {@link Loader#loadNativeLibraries()} does not. On
+   * every platform but Windows, OR-Tools 9.12's loader catches the {@link UnsatisfiedLinkError} of
+   * a failed load and returns, so a noexec {@code java.io.tmpdir} left the application ready with
+   * no solver (#378). Validating an empty model is the cheapest call that crosses into native code,
+   * and it throws that error when the libraries are missing.
+   */
+  private static void requireTheNativeLibrariesLoaded() {
+    CpSatHelper.validateModel(new CpModel().model());
   }
 
   /**

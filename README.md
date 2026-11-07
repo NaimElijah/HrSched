@@ -273,9 +273,9 @@ layer. Spotless checks formatting before any test, so `spotless:apply` comes fir
 | Architecture | The twenty architecture rules, and the ones with our own logic run against classes built to break them | `./mvnw spotless:apply test -Dtest='HexagonalArchitecture*Test'` |
 | Frontend | The one module that calls `fetch`, error-body validation, session renewal, and one test file per screen | `npm test` (from `frontend/`) |
 
-CI runs both gates, a dependency audit and a secret scan on every push and pull request into `main`
-or `dev` ([`ci.yml`](.github/workflows/ci.yml)), with no path filters. The audit fails on any known
-advisory unless `osv-scanner.toml` excuses it
+CI runs both gates, a dependency audit, a secret scan and the image's smoke test on every push and
+pull request into `main` or `dev` ([`ci.yml`](.github/workflows/ci.yml)), with no path filters. The
+audit fails on any known advisory unless `osv-scanner.toml` excuses it
 ([ADR-047](docs/ADRs/ADR-047-audit-dependencies-in-ci-with-osv-scanner.md)), the scan on a private key
 anywhere in the history ([ADR-060](docs/ADRs/ADR-060-scan-the-whole-history-for-committed-secrets.md)).
 Coverage is reported but never enforced ([ADR-015](docs/ADRs/ADR-015-report-coverage-without-a-threshold.md)):
@@ -285,9 +285,9 @@ Coverage is reported but never enforced ([ADR-015](docs/ADRs/ADR-015-report-cove
 ## Deployment and operations
 
 HrSched is not deployed anywhere; the planned AWS target is under
-[Status and limitations](#status-and-limitations). `./mvnw verify` builds the executable jar
-`backend/target/hrsched-0.0.1-SNAPSHOT.jar`, and Flyway migrates the database at startup, before the
-application reports ready.
+[Status and limitations](#status-and-limitations). It is packaged as the image `backend/Dockerfile`
+builds, which nothing runs yet ([how to build and run it](docs/operations.md#the-image)); Flyway
+migrates the database at startup, before the application reports ready.
 
 | Concern | Where |
 | :--- | :--- |
@@ -307,11 +307,11 @@ HrSched/
 ├── backend/       Spring Boot API; guidance in backend/CLAUDE.md
 │   ├── src/       a package per context (access, workforce, scheduling, notifications),
 │   │              the shared kernel and the wiring; Flyway SQL in resources/db/migration
-│   └── compose.yaml   local PostgreSQL for spring-boot:run
+│   └── compose.yaml · Dockerfile   local PostgreSQL · the image, checked by smoke-test-image.sh
 ├── frontend/      React SPA
 │   └── src/       api/ · auth/ · components/ · pages/ · test-support/
 ├── docs/          requirements/ (what) · architecture/ (how) · ADRs/ (why) · security/ · images/
-│                  api.md · operations.md (settings, meters)
+│                  api.md · operations.md (the image, settings, meters)
 ├── scripts/       run.mjs, the root task runner for dev and verify (ADR-014)
 └── .github/       CI and Dependabot
 ```
