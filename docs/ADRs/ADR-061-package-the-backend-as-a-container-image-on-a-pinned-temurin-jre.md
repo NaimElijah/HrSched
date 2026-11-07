@@ -117,8 +117,8 @@ CI's fifth job runs exactly that script on every push.
 
 **Easier**
 
-- **One image serves every environment.** #161 and #163 run what CI checked, with configuration
-  supplied by the environment.
+- **One image serves every environment.** #161 and #163 are to run the image CI builds and checks,
+  with configuration supplied by the environment; nothing pushes or runs it yet.
 - **The image proves itself.** A broken Dockerfile, a missing system library or an unloadable
   solver turns CI red rather than failing a deploy.
 - **Base-image fixes arrive as pull requests,** reviewed and gated like any other change.
@@ -132,7 +132,8 @@ CI's fifth job runs exactly that script on every push.
 - **The image is large.** The Ubuntu base, the JRE and a 141 MB jar holding natives for five
   platforms add up.
 - **The commit is public.** `/actuator/info` names it to anybody who can reach the port, recorded
-  as accepted in the threat model. The edge never routes `/actuator` outward (#153).
+  as accepted in the threat model. The planned edge is to route no `/actuator` path outward (#153),
+  which is not built yet.
 - **Fargate has no tmpfs.** A task with a read-only root filesystem needs a volume mounted at
   `/tmp` that allows execution; that is #161's to provide.
 - **AWS republishing the RDS bundle turns every build red** until the new checksum is pinned
