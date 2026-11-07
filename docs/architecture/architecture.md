@@ -28,7 +28,11 @@ exists anywhere in this repository**.
 
 The backend is a single Spring Boot process serving HTTP on 8080. Its code is organised **by
 bounded context**, each context a top-level package holding its own complete **hexagon**
-([ADR-006](../ADRs/ADR-006-organise-packages-by-bounded-context.md)).
+([ADR-006](../ADRs/ADR-006-organise-packages-by-bounded-context.md)). It ships as a container
+image that `backend/Dockerfile` builds, on a digest-pinned Temurin 21 JRE over Ubuntu 24.04, run
+as an unprivileged user and configured entirely by its environment
+([ADR-061](../ADRs/ADR-061-package-the-backend-as-a-container-image-on-a-pinned-temurin-jre.md)).
+Nothing runs it anywhere yet ([#161](https://github.com/NaimElijah/HrSched/issues/161)).
 
 ```mermaid
 flowchart TB
@@ -344,7 +348,9 @@ scheduling entry behind. A durable trail is [#31](https://github.com/NaimElijah/
 **At runtime: PostgreSQL, and nothing else.** No broker and no third-party API. The schema is
 created and changed only by the Flyway migrations in `backend/src/main/resources/db/migration`,
 applied on startup. Locally `backend/compose.yaml` supplies the database and Boot starts it; a
-deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`.
+deployment supplies `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`. The image carries AWS's
+RDS certificate bundle for a connection that verifies the server
+([#159](https://github.com/NaimElijah/HrSched/issues/159)), but no connection uses it yet.
 
 | Dependency | Used for | Justification |
 | --- | --- | --- |
@@ -383,10 +389,10 @@ the same commit. The reasons nobody wrote down, the constraints that bind the ve
 licence of the whole tree are in
 [ADR-051](../ADRs/ADR-051-record-why-each-frontend-dependency-is-there.md).
 
-**In CI, one more integration point.** `.github/workflows/ci.yml` runs four jobs on every push and
+**In CI, one more integration point.** `.github/workflows/ci.yml` runs five jobs on every push and
 on pull requests into `main` and `dev`: `backend` and `frontend`, each running its own project's
-verify command, `dependency-audit` and `secret-scan`. `dependency-audit` runs Google's OSV-Scanner
-image, pinned by digest, over the two named manifests `backend/pom.xml` and
+verify command, `dependency-audit`, `secret-scan` and `backend-image`. `dependency-audit` runs
+Google's OSV-Scanner image, pinned by digest, over the two named manifests `backend/pom.xml` and
 `frontend/package-lock.json`. It resolves Maven's transitive tree, Boot-managed versions included,
 through deps.dev, and compares every version against advisory data fetched live from osv.dev. Any
 advisory fails the job, and so does any scan error, unless `osv-scanner.toml` ignores the advisory
@@ -403,6 +409,15 @@ shallow clone, or a `.gitleaksignore`. A false positive takes an `[[allowlists]]
 detects a secret after the push and does not prevent it, and what it does not cover is in
 [ADR-060](../ADRs/ADR-060-scan-the-whole-history-for-committed-secrets.md). Nothing at runtime depends
 on either job.
+
+`backend-image` runs `backend/smoke-test-image.sh`, the command a developer runs. It builds the
+image from `backend/Dockerfile` and starts it against a throwaway PostgreSQL on a network of its
+own, read-only, with every capability dropped and given only the variables in `.env.example`. It
+fails unless readiness and health answer `UP`, `/actuator/info` names the version and the commit, the
+process is not root and can read the RDS bundle, no program in the image is setuid or setgid, and the
+same image with a `noexec` `/tmp` stops at startup
+([ADR-061](../ADRs/ADR-061-package-the-backend-as-a-container-image-on-a-pinned-temurin-jre.md)). It
+pushes nothing: no registry exists yet ([#163](https://github.com/NaimElijah/HrSched/issues/163)).
 
 ## Structural decisions not visible from the file layout
 

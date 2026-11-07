@@ -236,6 +236,15 @@ google-java-format is authoritative and not configurable — 2-space indent, fix
 hand-format; run `./mvnw spotless:apply`. `pom.xml` is indented with tabs (Spring Initializr's
 convention); `.editorconfig` encodes both, deliberately.
 
+## The image
+
+`backend/Dockerfile` builds the image (ADR-061). `sh backend/smoke-test-image.sh`, run from
+anywhere in the checkout with Docker up, builds it and checks it against a throwaway PostgreSQL;
+CI runs exactly that. The image build skips the tests and Spotless, which `./mvnw verify` gates, so
+what only the image can break (a system library, the entrypoint, the user, `/tmp`) is caught by the
+script and nowhere else. In Git Bash it works as is: it turns off path conversion itself, so pass
+it no Windows paths.
+
 ## Spring Boot 4.x renamed things
 
 Training data and most tutorials use the 3.x names, which will not compile here (verified against

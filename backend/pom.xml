@@ -260,11 +260,27 @@
 			  reach a packaged jar, and that must be changed at first sign-in anyway. See ADR-011
 			  and ADR-029. The plugin itself repackages the jar; maintained by the Spring team,
 			  Apache-2.0, its version set by the parent.
+
+			  build-info writes META-INF/build-info.properties, which /actuator/info publishes, so
+			  a running instance names the version its logs already carry as service.version
+			  (#157, #149). The commit is not written here: the image supplies it (ADR-061).
+			  build.time is off because Maven 3.10 pins project.build.outputTimestamp to
+			  1980-02-01 for reproducible jars, and a build date that is always wrong is worse
+			  than none.
 			-->
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 				<executions>
+					<execution>
+						<id>build-info</id>
+						<goals>
+							<goal>build-info</goal>
+						</goals>
+						<configuration>
+							<time>off</time>
+						</configuration>
+					</execution>
 					<execution>
 						<id>default-cli</id>
 						<configuration>

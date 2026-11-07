@@ -36,7 +36,8 @@ asked for.
 | Swaps | `POST /api/swaps`, `/{id}/approval`, `/{id}/rejection`; `GET` list and one | Asking: the person, Admin or Scheduler; deciding: Scheduler; reading: the two people it names, and every request to an Admin or a Scheduler |
 | Me | `GET /api/me/schedule?from&to`; `GET /api/notifications`; `POST /api/notifications/{id}/read` | Any member, their own only |
 
-`/actuator/health/**` and `/actuator/info` need no token. `/actuator/metrics` and
+`/actuator/health/**` and `/actuator/info` need no token; what `info` names is in
+[operations](operations.md#settings). `/actuator/metrics` and
 `/actuator/prometheus`, and every path beneath either, are refused to every caller: `401` without a
 token and `403` with any token, the Operator's included
 ([ADR-049](ADRs/ADR-049-refuse-the-metrics-to-every-caller-until-a-scraper-exists.md)).
