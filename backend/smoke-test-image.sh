@@ -27,6 +27,9 @@ export MSYS_NO_PATHCONV=1
 READY_TIMEOUT_SECONDS="${READY_TIMEOUT_SECONDS:-120}"
 # PostgreSQL accepts connections within seconds of starting; this only bounds a start that hangs.
 DATABASE_TIMEOUT_SECONDS=60
+# How long one HTTP request may take. Every answer checked here is immediate once the application is
+# up; the bound stops a connection that is accepted but never answered from hanging the run.
+REQUEST_TIMEOUT_SECONDS=10
 # The key size .env.example suggests for a deployment's signing key.
 SIGNING_KEY_BITS=3072
 # What the image reports as the commit: Spring shortens git.commit.id to this many characters.
@@ -38,7 +41,7 @@ repository=$(git rev-parse --show-toplevel)
 revision=$(git rev-parse HEAD)
 short_revision=$(printf '%s' "$revision" | cut -c "1-$SHORT_COMMIT_LENGTH")
 run="hrsched-smoke-$$"
-image="hrsched-backend:smoke"
+image="hrsched-backend:$run"
 network="$run"
 database="$run-db"
 application="$run-app"
@@ -49,21 +52,30 @@ fail() {
     exit 1
 }
 
-# Removing what may not exist yet is expected to fail, so those failures are discarded. The log is
-# shown only when something failed: it is a fresh database's, and holds no personal data.
+# Removing what may not exist yet is expected to fail, so those failures are discarded. When a check
+# failed, every container's log is shown before it goes: they are a fresh database's and the
+# applications started against it, and hold no personal data. The image is removed too; the build
+# cache that makes the next build quick is kept.
 cleanup() {
     status=$?
-    if [ "$status" -ne 0 ] && docker container inspect "$application" >/dev/null 2>&1; then
-        echo "--- the application's log ---" >&2
-        docker logs "$application" >&2 || true
+    if [ "$status" -ne 0 ]; then
+        for container in "$application" "$without_solver" "$database"; do
+            if docker container inspect "$container" >/dev/null 2>&1; then
+                echo "--- the log of $container ---" >&2
+                docker logs "$container" >&2 || true
+            fi
+        done
     fi
     docker rm --force "$application" "$without_solver" "$database" >/dev/null 2>&1 || true
     docker network rm "$network" >/dev/null 2>&1 || true
+    docker image rm "$image" >/dev/null 2>&1 || true
     exit "$status"
 }
 trap cleanup EXIT
-# dash runs the EXIT trap on an interrupt only once the interrupt itself is trapped.
-trap 'exit 130' INT TERM
+# dash runs the EXIT trap on a signal only once the signal itself is trapped. Each exits with the
+# status a shell reports for that signal.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Passes when the text contains the expected fragment. Boot answers compact JSON, and Git Bash has no
 # jq, so a fragment match is the portable check.
@@ -75,7 +87,9 @@ expect() {
 }
 
 echo "Building $image at $revision"
-docker build --build-arg REVISION="$revision" --tag "$image" "$repository/backend"
+# --load, because a buildx builder other than Docker's default keeps the result in its cache, where
+# docker run cannot find it.
+docker build --load --build-arg REVISION="$revision" --tag "$image" "$repository/backend"
 
 # The image compose.yaml names, read through compose itself, so the tag stays where the tests'
 # PostgresDatabase already expects it and nowhere else (#62).
@@ -132,25 +146,43 @@ base="http://127.0.0.1:$port"
 # Readiness answers 503 until the application is ready, and the connection is refused or dropped
 # before it listens, so every error is retried until the deadline. Each retry's error goes
 # unprinted; the one that matters is the failure below.
-readiness=$(curl --silent --fail --retry-all-errors --retry-connrefused \
-    --retry "$READY_TIMEOUT_SECONDS" --retry-delay 1 --retry-max-time "$READY_TIMEOUT_SECONDS" \
+readiness=$(curl --silent --fail --max-time "$REQUEST_TIMEOUT_SECONDS" --retry-all-errors \
+    --retry-connrefused --retry "$READY_TIMEOUT_SECONDS" --retry-delay 1 \
+    --retry-max-time "$READY_TIMEOUT_SECONDS" \
     "$base/actuator/health/readiness") || fail "readiness did not answer UP within ${READY_TIMEOUT_SECONDS}s"
 expect "readiness answers UP" "$readiness" '"status":"UP"'
 
 # Readiness reflects the application's own state, not the database's. Health's overall status
 # includes the database check, so it is asked too.
-health=$(curl --silent --show-error --fail "$base/actuator/health")
+health=$(curl --silent --show-error --fail --max-time "$REQUEST_TIMEOUT_SECONDS" "$base/actuator/health")
 expect "health, which includes the database check, answers UP" "$health" '"status":"UP"'
 
-info=$(curl --silent --show-error --fail "$base/actuator/info")
+info=$(curl --silent --show-error --fail --max-time "$REQUEST_TIMEOUT_SECONDS" "$base/actuator/info")
 expect "info names the artifact" "$info" '"artifact":"hrsched"'
 printf '%s' "$info" | grep -Eq '"version":"[^"]+"' || fail "info names no version: $info"
 echo "ok: info names a version"
 expect "info names the commit" "$info" "\"commit\":{\"id\":\"$short_revision\""
 
-uid=$(docker exec "$application" id -u)
+# Anybody may read /actuator/info, so it must name the build and the commit and nothing more: a
+# setting that adds the environment or the process to it would otherwise pass every check above.
+# The outer braces are dropped and every nested object, innermost first, collapsed to an O,
+# leaving only the top-level keys.
+top_level=$(printf '%s' "$info" | sed -e 's/^{//' -e 's/}$//' -e ':nested' -e 's/{[^{}]*}/O/' -e 't nested')
+case "$top_level" in
+    '"build":O,"git":O' | '"git":O,"build":O') echo "ok: info names nothing but the build and the commit" ;;
+    *) fail "info names more than the build and the commit: $info" ;;
+esac
+
+# The process that serves requests, not a process started beside it.
+uid=$(docker exec "$application" stat -c %u /proc/1)
 [ "$uid" != 0 ] || fail "the process runs as root"
 echo "ok: the process runs as uid $uid, not root"
+
+# The flags in the entrypoint, read from the running JVM's command line, so an entrypoint that lost
+# them, or passed them where the JVM ignores them, fails here.
+command_line=$(docker exec "$application" cat /proc/1/cmdline | tr '\000' ' ')
+expect "the JVM holds the heap to its share of the container" "$command_line" '-XX:MaxRAMPercentage=50'
+expect "the JVM exits when it runs out of heap" "$command_line" '-XX:+ExitOnOutOfMemoryError'
 
 # Searched as root, so no directory the application cannot read hides a program from the search.
 privileged=$(docker run --rm --user 0 --entrypoint find "$image" / -xdev -perm /6000 -type f)
@@ -171,8 +203,9 @@ while [ "$(docker container inspect --format '{{.State.Running}}' "$without_solv
         fail "the application was still running ${READY_TIMEOUT_SECONDS}s after starting without a loadable solver"
     sleep 1
 done
-docker logs "$without_solver" 2>&1 | grep -q UnsatisfiedLinkError ||
-    fail "the application without a loadable solver stopped, but its log names no UnsatisfiedLinkError"
+stopped=$(docker logs "$without_solver" 2>&1)
+expect "the application without a loadable solver names the generator as the cause" "$stopped" 'cpSatRosterGenerator'
+expect "and the UnsatisfiedLinkError as the reason" "$stopped" 'UnsatisfiedLinkError'
 echo "ok: where the solver cannot load, the application stops at startup"
 
 echo "The image at $short_revision passed every check."

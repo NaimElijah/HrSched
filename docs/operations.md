@@ -15,7 +15,8 @@ build it and check it in one step, with Docker running, from anywhere in a check
 sh backend/smoke-test-image.sh
 ```
 
-The script builds `hrsched-backend:smoke` and starts it against a throwaway PostgreSQL. It checks
+The script builds the image under a tag of its own run and starts it against a throwaway PostgreSQL,
+removing both when it ends. It checks
 that readiness and health answer `UP`, that `/actuator/info` names the version and the commit, that
 the process is not root, holds no capability and can read the certificate bundle, that no program in
 the image is setuid or setgid, and that a `/tmp` the solver cannot load from stops it at startup. `READY_TIMEOUT_SECONDS` (default 120) bounds each wait for the

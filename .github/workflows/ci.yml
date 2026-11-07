@@ -224,6 +224,9 @@ jobs:
   backend-image:
     name: Backend image
     runs-on: ubuntu-latest
+    # A cold build and two starts take a few minutes. The script bounds each of its waits; this
+    # bounds anything it did not foresee, short of GitHub's six hours.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
