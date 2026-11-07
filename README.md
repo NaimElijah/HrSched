@@ -307,7 +307,7 @@ HrSched/
 ├── backend/       Spring Boot API; guidance in backend/CLAUDE.md
 │   ├── src/       a package per context (access, workforce, scheduling, notifications),
 │   │              the shared kernel and the wiring; Flyway SQL in resources/db/migration
-│   └── compose.yaml   local PostgreSQL for spring-boot:run
+│   └── compose.yaml · Dockerfile   local PostgreSQL · the image, checked by smoke-test-image.sh
 ├── frontend/      React SPA
 │   └── src/       api/ · auth/ · components/ · pages/ · test-support/
 ├── docs/          requirements/ (what) · architecture/ (how) · ADRs/ (why) · security/ · images/
