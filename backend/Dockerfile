@@ -11,7 +11,7 @@
 # There is no `# syntax=` line on purpose: it would pull a Dockerfile frontend image by tag,
 # unpinned. The frontend built into BuildKit already understands ADD --checksum and RUN --mount.
 
-FROM eclipse-temurin:21.0.13_9-jdk-noble@sha256:114cabb73033ca4ce7ceec3deb62396bc1b716282bae051ed3c1d82e38fcab2d AS build
+FROM eclipse-temurin:21.0.13.1_2-jdk-noble@sha256:5f9489c60984e9715afba8e7da353e9d78d2a38c0517662f5cc29fc8094efe1f AS build
 
 # The Maven wrapper downloads Maven as a .zip and checks it against distributionSha256Sum. Without
 # unzip it fetches the .tar.gz instead and checks that against the same sum, which fails. The
@@ -35,14 +35,14 @@ RUN --mount=type=cache,target=/root/.m2/repository \
 # its commit. It is checked in a stage of its own, which BuildKit runs beside the build stage, so a
 # build that forgot it fails at once rather than after the Maven build. The same pinned JRE as below,
 # so no further image is pulled.
-FROM eclipse-temurin:21.0.13_9-jre-noble@sha256:0eda5830ed7b669abc246a8dc520ea8a23cab06f9a8d4b6964109e2f2394e46f AS revision
+FROM eclipse-temurin:21.0.13.1_2-jre-noble@sha256:897ec01ae1350622de0d5393a48a4ffffee8fe1609f248f4389578b919eaf9f5 AS revision
 ARG REVISION
 RUN test -n "$REVISION" || { echo 'Pass --build-arg REVISION="$(git rev-parse HEAD)"' >&2; exit 1; } \
     && printf 'git.commit.id=%s\n' "$REVISION" > /git.properties
 
 # A Temurin JRE, the vendor CI tests on, over Ubuntu 24.04, the release CI's ubuntu-latest runners
 # use as this is written. The OR-Tools natives need glibc and libstdc++ (ADR-044), so not Alpine.
-FROM eclipse-temurin:21.0.13_9-jre-noble@sha256:0eda5830ed7b669abc246a8dc520ea8a23cab06f9a8d4b6964109e2f2394e46f
+FROM eclipse-temurin:21.0.13.1_2-jre-noble@sha256:897ec01ae1350622de0d5393a48a4ffffee8fe1609f248f4389578b919eaf9f5
 
 # The account the process runs as, numeric so that a platform can check it is not root without
 # reading /etc/passwd. It is not the base image's `ubuntu` (UID 1000), which belongs to the sudo and
